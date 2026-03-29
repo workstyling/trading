@@ -171,11 +171,24 @@ app.post('/create-sell-order', async (req, res) => {
       throw new Error(response?.error || 'Failed to create order');
     }
 
-    console.log('Order created:', response);
+    console.log('Sell order response:', JSON.stringify(response, null, 2));
     // Parse response if it's a string
     const parsed = typeof response === 'string' ? JSON.parse(response) : response;
+
+    // Check for Coinbase error response
+    if (parsed.success === false || parsed.error_response) {
+      const errorMsg = parsed.error_response?.message || parsed.error_response?.error || parsed.error_response?.preview_failure_reason || 'Order rejected';
+      console.error('Coinbase rejected sell order:', errorMsg);
+      return res.json({ success: false, error: errorMsg, details: parsed });
+    }
+
     const orderId = parsed.success_response?.order_id || parsed.order_id;
-    console.log('Parsed order ID:', orderId);
+    if (!orderId) {
+      console.error('No order ID in sell response:', parsed);
+      return res.json({ success: false, error: 'No order ID returned', details: parsed });
+    }
+
+    console.log('Sell order created, ID:', orderId);
     ordersCache.ts = 0; // invalidate cache
     balanceCache.ts = 0;
     res.json({ success: true, order: parsed, order_id: orderId });
