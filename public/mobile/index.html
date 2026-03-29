@@ -853,9 +853,12 @@
           const filled = parseFloat(o.filled_size) || 0;
           const lp = o.limit_price ? fmt(o.limit_price) : (o.average_filled_price !== '0' ? fmt(o.average_filled_price) : '—');
           const isBuy = side === 'BUY' && filled > 0;
-          const targetPrice = isBuy ? (parseFloat(o.average_filled_price) * (1 + tradingSettings.sellMarkup / 100)) : 0;
-          const tpFmt = targetPrice > 0 ? fmt(targetPrice) : '';
+          const avgP = parseFloat(o.average_filled_price) || 0;
+          const targetPrice = isBuy && avgP > 0 ? avgP * (1 + tradingSettings.sellMarkup / 100) : 0;
           const tpDecimals = targetPrice < 1 ? 6 : (targetPrice < 100 ? 4 : 2);
+          // Use exact filled_size string from API to avoid float precision issues
+          const exactSize = o.filled_size || '0';
+          const exactTarget = targetPrice > 0 ? targetPrice.toFixed(tpDecimals) : '0';
 
           html += `<div class="monitor-order">
             <div class="monitor-order-left">
@@ -864,8 +867,8 @@
               <span style="color:var(--t2)">${filled > 0 ? filled.toFixed(filled < 1 ? 6 : 2) : '—'}</span>
             </div>
             <div class="monitor-actions">
-              ${isBuy ? `<button class="mon-sell-btn" onclick="createSellAt('${pair}','${filled}','${targetPrice.toFixed(tpDecimals)}')">+${tradingSettings.sellMarkup}%</button>` : ''}
-              ${isBuy ? `<button class="mon-sell-btn ask" onclick="sellAtAsk('${pair}','${filled}')">Ask</button>` : ''}
+              ${isBuy ? `<button class="mon-sell-btn" onclick="createSellAt('${pair}','${exactSize}','${exactTarget}')">+${tradingSettings.sellMarkup}%</button>` : ''}
+              ${isBuy ? `<button class="mon-sell-btn ask" onclick="sellAtAsk('${pair}','${exactSize}')">Ask</button>` : ''}
               <button class="mon-deselect" onclick="deselectOrder('${o.order_id}')">✕</button>
             </div>
           </div>`;
@@ -873,7 +876,8 @@
 
         // Sell All button
         if (totalFilled > 0) {
-          html += `<div style="margin-top:8px;"><button class="mon-sell-btn all" style="width:100%;padding:10px;" onclick="sellAtAsk('${pair}','${totalFilled}')">SELL ALL ${coin}</button></div>`;
+          const totalFilledStr = totalFilled.toFixed(totalFilled < 1 ? 8 : 6);
+          html += `<div style="margin-top:8px;"><button class="mon-sell-btn all" style="width:100%;padding:10px;" onclick="sellAtAsk('${pair}','${totalFilledStr}')">SELL ALL ${coin}</button></div>`;
         }
 
         html += `</div>`;
@@ -892,7 +896,7 @@
         body: JSON.stringify({ productId: pair, size: size, price: price })
       });
       if (r.success) { toast('Sell order created!'); loadOrders().then(updateMonitor); }
-      else toast(r.error || 'Failed', 'error');
+      else toast(r.error || (r.details?.error_response?.message) || 'Failed', 'error');
     }
 
     async function sellAtAsk(pair, size) {
