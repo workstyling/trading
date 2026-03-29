@@ -188,12 +188,11 @@
     .otbl .st-cancelled { color: var(--t3); }
     .otbl .pair-col { color: var(--blue); font-weight: 600; }
     .otbl th:nth-child(1), .otbl td:nth-child(1) { width: 34px; text-align: center; }
-    .otbl th:nth-child(2), .otbl td:nth-child(2) { } /* Pair - auto */
+    .otbl th:nth-child(2), .otbl td:nth-child(2) { width: 60px; } /* Pair */
     .otbl th:nth-child(3), .otbl td:nth-child(3) { width: 36px; } /* Side */
     .otbl th:nth-child(4), .otbl td:nth-child(4) { } /* Price - auto */
-    .otbl th:nth-child(5), .otbl td:nth-child(5) { width: 38px; text-align: center; } /* Fill */
-    .otbl th:nth-child(6), .otbl td:nth-child(6) { width: 38px; } /* Date */
-    .otbl th:nth-child(7), .otbl td:nth-child(7) { width: 56px; text-align: center; } /* Action */
+    .otbl th:nth-child(5), .otbl td:nth-child(5) { width: 42px; text-align: center; } /* Fill */
+    .otbl th:nth-child(6), .otbl td:nth-child(6) { width: 58px; text-align: center; } /* Action */
     .cancel-btn {
       padding: 5px 10px; border: 1px solid var(--loss); border-radius: 5px;
       background: transparent; color: var(--loss); font-size: 10px; font-weight: 600; cursor: pointer;
@@ -720,7 +719,7 @@
       }
 
       let html = `<div class="orders-table-wrap"><table class="otbl">
-        <thead><tr><th></th><th>Pair</th><th>Side</th><th>Price</th><th>Fill</th><th>Date</th><th>Action</th></tr></thead><tbody>`;
+        <thead><tr><th></th><th>Pair</th><th>Side</th><th>Price</th><th>Fill</th><th>Action</th></tr></thead><tbody>`;
 
       filtered.forEach((o, i) => {
         const st = o.status.toLowerCase();
@@ -744,7 +743,6 @@
           <td class="side-${side.toLowerCase()}">${side.toLowerCase()}</td>
           <td style="font-size:10px">${priceStr}</td>
           <td style="${fillClass};font-weight:600">${fillPct}%</td>
-          <td>${dateStr}</td>
           <td>${st === 'open' ? `<button class="cancel-btn" onclick="cancelOrder('${o.order_id}')">Cancel</button>` : '<span style="color:var(--t3)">—</span>'}</td>
         </tr>`;
       });
