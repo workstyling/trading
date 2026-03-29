@@ -187,12 +187,13 @@
     .otbl .st-filled { color: var(--green); }
     .otbl .st-cancelled { color: var(--t3); }
     .otbl .pair-col { color: var(--blue); font-weight: 600; }
-    .otbl th:nth-child(1), .otbl td:nth-child(1) { width: 36px; text-align: center; }
+    .otbl th:nth-child(1), .otbl td:nth-child(1) { width: 34px; text-align: center; }
     .otbl th:nth-child(2), .otbl td:nth-child(2) { } /* Pair - auto */
-    .otbl th:nth-child(3), .otbl td:nth-child(3) { width: 44px; } /* Side */
-    .otbl th:nth-child(4), .otbl td:nth-child(4) { width: 46px; text-align: center; } /* Fill */
-    .otbl th:nth-child(5), .otbl td:nth-child(5) { width: 46px; } /* Date */
-    .otbl th:nth-child(6), .otbl td:nth-child(6) { width: 62px; text-align: center; } /* Action */
+    .otbl th:nth-child(3), .otbl td:nth-child(3) { width: 36px; } /* Side */
+    .otbl th:nth-child(4), .otbl td:nth-child(4) { } /* Price - auto */
+    .otbl th:nth-child(5), .otbl td:nth-child(5) { width: 38px; text-align: center; } /* Fill */
+    .otbl th:nth-child(6), .otbl td:nth-child(6) { width: 38px; } /* Date */
+    .otbl th:nth-child(7), .otbl td:nth-child(7) { width: 56px; text-align: center; } /* Action */
     .cancel-btn {
       padding: 5px 10px; border: 1px solid var(--loss); border-radius: 5px;
       background: transparent; color: var(--loss); font-size: 10px; font-weight: 600; cursor: pointer;
@@ -685,7 +686,7 @@
       }
 
       let html = `<div class="orders-table-wrap"><table class="otbl">
-        <thead><tr><th></th><th>Pair</th><th>Side</th><th>Fill</th><th>Date</th><th>Action</th></tr></thead><tbody>`;
+        <thead><tr><th></th><th>Pair</th><th>Side</th><th>Price</th><th>Fill</th><th>Date</th><th>Action</th></tr></thead><tbody>`;
 
       filtered.forEach((o, i) => {
         const st = o.status.toLowerCase();
@@ -694,6 +695,9 @@
         const isSelected = selectedOrders.includes(o.order_id);
         const d = o.created_time ? new Date(o.created_time) : null;
         const dateStr = d ? `${d.getMonth()+1}/${d.getDate()}` : '—';
+        // Price
+        const priceVal = parseFloat(o.average_filled_price) || parseFloat(o.limit_price) || 0;
+        const priceStr = priceVal > 0 ? '$' + fmt(priceVal) : '—';
         // Fill %
         const baseSize = parseFloat(o.order_configuration?.limit_limit_gtc?.base_size || o.filled_size || '0');
         const filledSize = parseFloat(o.filled_size || '0');
@@ -704,6 +708,7 @@
           <td><input type="checkbox" class="order-checkbox" data-id="${o.order_id}" ${isSelected ? 'checked' : ''} onchange="toggleSelectOrder(this)"></td>
           <td class="pair-col">${coin}</td>
           <td class="side-${side.toLowerCase()}">${side.toLowerCase()}</td>
+          <td style="font-size:10px">${priceStr}</td>
           <td style="${fillClass};font-weight:600">${fillPct}%</td>
           <td>${dateStr}</td>
           <td>${st === 'open' ? `<button class="cancel-btn" onclick="cancelOrder('${o.order_id}')">Cancel</button>` : '<span style="color:var(--t3)">—</span>'}</td>
