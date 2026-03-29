@@ -1,0 +1,66 @@
+async function updateSellPurchaseAmount() {
+    try {
+        const coin = document.getElementById('sellCoinInput').value.toUpperCase();
+        const balanceResponse = await fetch(`/get-coin-balance/${coin}`);
+        const balanceData = await balanceResponse.json();
+        
+        const sellPurchaseAmountElement = document.getElementById('sellPurchaseAmount');
+        if (!sellPurchaseAmountElement) return;
+        
+        if (balanceData.success) {
+            const availableCoin = parseFloat(balanceData.balance || 0);
+            const totalCoin = parseFloat(balanceDaata.total || 0);
+            
+            const percentage = parseInt(document.getElementById('sellPercentageInput').value);
+            const amountToSell = (availableCoin * percentage) / 100;
+            
+            sellPurchaseAmountElement.innerHTML = `
+                ${amountToSell.toFixed(8)} ${coin}<br>
+                <span class="text-sm text-gray-500">
+                    Available: ${availableCoin.toFixed(8)} ${coin}<br>
+                    Total: ${totalCoin.toFixed(8)} ${coin}
+                </span>
+            `;
+        }
+    } catch (error) {
+        console.error('Error updating sell amount:', error);
+    }
+}
+
+
+app.get('/get-coin-balance/:coin', async (req, res) => {
+    try {
+        const coin = req.params.coin;
+        
+        // �������� ������ ���� ��������� � ����������� �������
+        const response = await client.listAccounts({
+            limit: '250' // �����: ����������� �����, ����� �������� ��� ��������
+        });
+        
+        const accountsData = typeof response === 'string' ? JSON.parse(response) : response;
+        
+        // ���� ������� � ������ ������� (� ������ ��������)
+        const account = accountsData.accounts?.find(acc => acc.currency.toUpperCase() === coin.toUpperCase());
+        
+        if (account && account.available_balance) {
+            // ���������� ��������� ������ � ����� ������
+            res.json({
+                success: true,
+                balance: account.available_balance.value,
+                total: account.hold.value
+            });
+        } else {
+            res.json({
+                success: true,
+                balance: '0',
+                total: '0'
+            });
+        }
+    } catch (error) {
+        console.error('Error getting balance:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});

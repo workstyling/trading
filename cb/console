@@ -1,0 +1,8 @@
+// Проверьте активные уведомления
+console.log('Active alerts:', JSON.parse(localStorage.getItem('priceAlerts') || '{}'));
+
+// Проверьте текущие цены
+getCurrentPrices();
+
+// Принудительно запустите проверку
+checkAllPriceAlerts();

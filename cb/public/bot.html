@@ -1,0 +1,1024 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Trading Bot</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link
+    href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600&display=swap"
+    rel="stylesheet">
+  <style>
+    :root {
+      --bg: #080c0f;
+      --bg-card: #0d1117;
+      --bg-el: #161d27;
+      --bg-el2: #1c2636;
+      --border: rgba(255, 255, 255, 0.06);
+      --border2: rgba(255, 255, 255, 0.1);
+      --acc: #f0a500;
+      --acc-dim: rgba(240, 165, 0, 0.12);
+      --green: #0ecb81;
+      --green-dim: rgba(14, 203, 129, 0.12);
+      --red: #f6465d;
+      --red-dim: rgba(246, 70, 93, 0.12);
+      --blue: #3b8beb;
+      --blue-dim: rgba(59, 139, 235, 0.12);
+      --text: #dde3ed;
+      --muted: #5a6478;
+      --dim: #2d3545;
+      --mono: 'JetBrains Mono', monospace;
+      --sans: 'Inter', sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html {
+      font-size: 14px;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    .wrap {
+      max-width: 960px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    /* ── Header ── */
+    .hdr {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 18px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+    }
+
+    .hdr-brand {
+      font-family: var(--mono);
+      font-size: 0.85rem;
+      color: var(--acc);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .hdr-brand svg {
+      opacity: 0.8;
+    }
+
+    .hdr-bal {
+      font-family: var(--mono);
+      font-size: 0.78rem;
+      color: var(--muted);
+    }
+
+    .hdr-bal b {
+      color: var(--green);
+      font-weight: 600;
+    }
+
+    /* ── Cards ── */
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 18px;
+    }
+
+    .card-title {
+      font-size: 0.65rem;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 12px;
+    }
+
+    /* ── Grid layouts ── */
+    .grid2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .grid3 {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 10px;
+    }
+
+    .grid4 {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+    }
+
+    .gridc {
+      display: grid;
+      grid-template-columns: 1fr 1fr auto auto;
+      gap: 10px;
+      align-items: end;
+    }
+
+    /* ── Controls ── */
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .field label {
+      font-size: 0.65rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .field input {
+      background: var(--bg-el);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 9px 12px;
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 0.92rem;
+      outline: none;
+      transition: border-color 0.15s;
+      width: 100%;
+    }
+
+    .field input:focus {
+      border-color: var(--acc);
+    }
+
+    .field input:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      height: 38px;
+      padding: 0 18px;
+      border: none;
+      border-radius: 6px;
+      font-family: var(--mono);
+      font-size: 0.78rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      cursor: pointer;
+      transition: all 0.15s;
+      white-space: nowrap;
+    }
+
+    .btn-go {
+      background: var(--green);
+      color: #000;
+    }
+
+    .btn-go:hover {
+      filter: brightness(1.1);
+    }
+
+    .btn-go:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+    }
+
+    .btn-stp {
+      background: var(--red-dim);
+      color: var(--red);
+      border: 1px solid var(--red);
+    }
+
+    .btn-stp:hover {
+      background: var(--red);
+      color: #000;
+    }
+
+    .btn-stp:disabled {
+      opacity: 0.25;
+      cursor: not-allowed;
+    }
+
+    /* ── Status ── */
+    .st-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 11px;
+      border-radius: 5px;
+      font-family: var(--mono);
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      flex-shrink: 0;
+    }
+
+    .badge::before {
+      content: '';
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+      animation: blink 2s infinite;
+    }
+
+    @keyframes blink {
+
+      0%,
+      100% {
+        opacity: 1
+      }
+
+      50% {
+        opacity: 0.3
+      }
+    }
+
+    .b-stopped {
+      background: rgba(90, 100, 120, 0.15);
+      color: #5a6478;
+    }
+
+    .b-scanning {
+      background: var(--acc-dim);
+      color: var(--acc);
+    }
+
+    .b-buying {
+      background: var(--green-dim);
+      color: var(--green);
+    }
+
+    .b-holding {
+      background: var(--blue-dim);
+      color: var(--blue);
+    }
+
+    .b-selling {
+      background: var(--red-dim);
+      color: var(--red);
+    }
+
+    .st-price {
+      font-family: var(--mono);
+      font-size: 1.15rem;
+      font-weight: 600;
+    }
+
+    .st-pair {
+      font-family: var(--mono);
+      font-size: 0.7rem;
+      color: var(--muted);
+    }
+
+    .st-note {
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      color: var(--muted);
+      margin-left: auto;
+    }
+
+    /* ── Indicators ── */
+    .ind {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .ind-lbl {
+      font-size: 0.62rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--dim);
+    }
+
+    .ind-val {
+      font-family: var(--mono);
+      font-size: 0.95rem;
+      font-weight: 500;
+    }
+
+    .c-buy {
+      color: var(--green);
+    }
+
+    .c-sell {
+      color: var(--red);
+    }
+
+    .c-wait {
+      color: var(--muted);
+    }
+
+    .c-dim {
+      color: var(--dim);
+    }
+
+    .rsi-track {
+      width: 100%;
+      height: 3px;
+      background: var(--bg-el2);
+      border-radius: 2px;
+      margin-top: 4px;
+      overflow: hidden;
+    }
+
+    .rsi-fill {
+      height: 100%;
+      border-radius: 2px;
+      transition: width .5s ease, background .5s ease;
+    }
+
+    /* ── Position ── */
+    .pos-item {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .pos-lbl {
+      font-size: 0.62rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--dim);
+    }
+
+    .pos-val {
+      font-family: var(--mono);
+      font-size: 0.9rem;
+      font-weight: 500;
+    }
+
+    .c-pos {
+      color: var(--green);
+    }
+
+    .c-neg {
+      color: var(--red);
+    }
+
+    .c-zero {
+      color: var(--muted);
+    }
+
+    /* ── Log ── */
+    .log-box {
+      max-height: 108px;
+      overflow-y: auto;
+    }
+
+    .log-box::-webkit-scrollbar {
+      width: 3px;
+    }
+
+    .log-box::-webkit-scrollbar-thumb {
+      background: var(--dim);
+      border-radius: 2px;
+    }
+
+    .log-entry {
+      display: flex;
+      gap: 10px;
+      padding: 3px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.025);
+      font-family: var(--mono);
+      font-size: 0.7rem;
+    }
+
+    .log-t {
+      color: var(--dim);
+      flex-shrink: 0;
+    }
+
+    .l-info {
+      color: #5a6478;
+    }
+
+    .l-success {
+      color: var(--green);
+    }
+
+    .l-warn {
+      color: var(--acc);
+    }
+
+    .l-error {
+      color: var(--red);
+    }
+
+    /* ── Stats ── */
+    .stat-grid {
+      display: flex;
+      gap: 28px;
+      flex-wrap: wrap;
+    }
+
+    .stat {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .stat-lbl {
+      font-size: 0.62rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--dim);
+    }
+
+    .stat-val {
+      font-family: var(--mono);
+      font-size: 0.95rem;
+      font-weight: 600;
+    }
+
+    /* ── Table ── */
+    .tbl {
+      width: 100%;
+      border-collapse: collapse;
+      font-family: var(--mono);
+      font-size: 0.75rem;
+    }
+
+    .tbl th {
+      text-align: left;
+      padding: 5px 8px;
+      font-size: 0.6rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--dim);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .tbl td {
+      padding: 7px 8px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.025);
+      color: var(--muted);
+    }
+
+    .tbl tr:last-child td {
+      border-bottom: none;
+    }
+
+    .tbl tr:hover td {
+      background: rgba(255, 255, 255, 0.015);
+    }
+
+    .empty {
+      text-align: center;
+      padding: 22px;
+      color: var(--dim);
+      font-size: 0.75rem;
+      font-family: var(--mono);
+    }
+
+    /* ── Separator ── */
+    .sep {
+      border: none;
+      border-top: 1px solid var(--border);
+    }
+
+    @media (max-width:620px) {
+      .gridc {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .grid4 {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .grid3 {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .grid2 {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+
+    <!-- Header -->
+    <div class="hdr">
+      <div class="hdr-brand">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+        </svg>
+        Trading Bot
+      </div>
+      <div class="hdr-bal">USD: <b id="usdBal">—</b></div>
+    </div>
+
+    <!-- Controls -->
+    <div class="card">
+      <div class="card-title">Настройки</div>
+      <div class="gridc">
+        <div class="field">
+          <label>Монета</label>
+          <input id="coinInp" type="text" value="BTC" maxlength="10" placeholder="BTC">
+        </div>
+        <div class="field">
+          <label>Сумма (USD)</label>
+          <input id="amtInp" type="number" value="100" min="10" step="1" placeholder="100">
+        </div>
+        <button class="btn btn-go" id="btnStart" onclick="startBot()">▶ СТАРТ</button>
+        <button class="btn btn-stp" id="btnStop" onclick="stopBot()" disabled>■ СТОП</button>
+      </div>
+    </div>
+
+    <!-- Status -->
+    <div class="card">
+      <div class="card-title">Статус</div>
+      <div class="st-row">
+        <div id="badge" class="badge b-stopped">Остановлен</div>
+        <div>
+          <div id="stPrice" class="st-price">—</div>
+          <div id="stPair" class="st-pair">—</div>
+        </div>
+        <div id="stNote" class="st-note">—</div>
+      </div>
+    </div>
+
+
+  </div><!-- /wrap -->
+
+  <script>
+    // ════════════════════════════════════════════════
+    // CONFIG
+    // ════════════════════════════════════════════════
+    const FEE = 0.004;    // 0.06% maker fee
+    const BUY_RSI = 35;        // buy when RSI below this
+    const SELL_RSI = 65;        // sell when RSI above this
+    const TP = 0.015;     // +1.5% take profit
+    const SL = -0.012;    // -1.2% stop loss
+    const GRAN = 300;       // 5-min candles
+    const RSI_P = 14;
+    const ORD_TTL = 120000;    // cancel order if not filled in 2 min
+    const SCAN_INT = 60000;     // scan interval
+    const POLL_INT = 5000;      // order poll interval
+    const SK = 'tbot_v3'; // localStorage key
+    const EX = 'https://api.exchange.coinbase.com';
+
+    // ════════════════════════════════════════════════
+    // STATE
+    // ════════════════════════════════════════════════
+    let S = {
+      status: 'STOPPED', // STOPPED | SCANNING | BUYING | HOLDING | SELLING
+      coin: 'BTC',
+      amount: 100,
+      prod: null,      // { priceD, sizeD, minSz }
+      pos: null,      // { orderId, baseSize, limitPrice, placedAt, filledPrice, filledSize }
+      sellOrd: null,      // { orderId, baseSize, limitPrice, placedAt }
+      trades: [],
+      totalPnL: 0,
+      wins: 0,
+      cycles: 0,
+      startedAt: null,
+      ind: { rsi: null, ema9: null, ema21: null, sig: 'WAIT' },
+    };
+
+    let scanTmr = null, pollTmr = null;
+
+    // ════════════════════════════════════════════════
+    // PERSIST
+    // ════════════════════════════════════════════════
+    function save() { try { localStorage.setItem(SK, JSON.stringify(S)); } catch { } }
+    function load() {
+      try {
+        const raw = localStorage.getItem(SK);
+        if (raw) { S = { ...S, ...JSON.parse(raw) }; return true; }
+      } catch { }
+      return false;
+    }
+
+    // ════════════════════════════════════════════════
+    // LOG
+    // ════════════════════════════════════════════════
+    function log(msg, type = 'info') {
+      console.log(`[Bot][${type}] ${msg}`);
+    }
+
+    // ════════════════════════════════════════════════
+    // MATH
+    // ════════════════════════════════════════════════
+    function calcRSI(cl, p = RSI_P) {
+      if (cl.length < p + 1) return null;
+      let g = 0, l = 0;
+      for (let i = 1; i <= p; i++) { const d = cl[i] - cl[i - 1]; d > 0 ? g += d : l -= d; }
+      let ag = g / p, al = l / p;
+      for (let i = p + 1; i < cl.length; i++) {
+        const d = cl[i] - cl[i - 1];
+        ag = (ag * (p - 1) + Math.max(d, 0)) / p;
+        al = (al * (p - 1) + Math.max(-d, 0)) / p;
+      }
+      return al === 0 ? 100 : 100 - 100 / (1 + ag / al);
+    }
+    function calcEMA(cl, p) {
+      if (cl.length < p) return null;
+      const k = 2 / (p + 1);
+      let e = cl.slice(0, p).reduce((a, b) => a + b) / p;
+      for (let i = p; i < cl.length; i++) e = cl[i] * k + e * (1 - k);
+      return e;
+    }
+
+    // ════════════════════════════════════════════════
+    // API
+    // ════════════════════════════════════════════════
+    async function apiTicker(coin) {
+      const r = await fetch(`${EX}/products/${coin}-USD/ticker`);
+      if (!r.ok) throw new Error(`Ticker ${r.status}`);
+      const d = await r.json();
+      return { bid: parseFloat(d.bid), ask: parseFloat(d.ask) };
+    }
+    async function apiCandles(coin) {
+      const end = Math.floor(Date.now() / 1000);
+      const start = end - 52 * GRAN;
+      const r = await fetch(`${EX}/products/${coin}-USD/candles?granularity=${GRAN}&start=${start}&end=${end}`);
+      if (!r.ok) throw new Error(`Candles ${r.status}`);
+      return await r.json(); // [[time,low,high,open,close,vol],...] newest first
+    }
+    async function apiProductInfo(coin) {
+      const r = await fetch(`${EX}/products/${coin}-USD`);
+      if (!r.ok) throw new Error(`ProductInfo ${r.status}`);
+      const d = await r.json();
+      const priceD = (d.quote_increment || '0.01').toString().replace(/^[^.]*\.?/, '').length;
+      const sizeD = (d.base_increment || '0.00000001').toString().replace(/^[^.]*\.?/, '').length;
+      const minSz = parseFloat(d.base_min_size || '0.00001');
+      return { priceD, sizeD, minSz };
+    }
+    async function apiUsdBal() {
+      try {
+        const r = await fetch('/get-usd-account');
+        const d = await r.json();
+        return d.success !== false ? parseFloat(d.balance || 0) : null;
+      } catch { return null; }
+    }
+    async function apiCreateOrder(coin, side, baseSize, limitPrice) {
+      const r = await fetch('/create-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ coin, side, baseSize: String(baseSize), limitPrice: String(limitPrice) })
+      });
+      const d = await r.json();
+      if (!d.success) throw new Error(d.error || 'Order failed');
+      const oid = d.order?.order_id || d.order?.success_response?.order_id;
+      if (!oid || oid === 'Unknown') throw new Error('No order_id in response');
+      return oid;
+    }
+    async function apiOrderStatus(orderId) {
+      const r = await fetch(`/check-order-status/${orderId}`);
+      return await r.json();
+    }
+    async function apiCancelOrder(orderId) {
+      try {
+        const r = await fetch(`/cancel-order/${orderId}`, { method: 'POST' });
+        const d = await r.json();
+        return !!d.success;
+      } catch { return false; }
+    }
+
+    // ════════════════════════════════════════════════
+    // INDICATORS
+    // ════════════════════════════════════════════════
+    async function refreshIndicators() {
+      const raw = await apiCandles(S.coin);
+      const closes = raw.map(c => c[4]).reverse(); // oldest → newest
+      const rsi = calcRSI(closes);
+      const ema9 = calcEMA(closes, 9);
+      const ema21 = calcEMA(closes, 21);
+      let sig = 'WAIT';
+      if (rsi !== null) { if (rsi < BUY_RSI) sig = 'BUY'; else if (rsi > SELL_RSI) sig = 'SELL'; }
+      S.ind = { rsi, ema9, ema21, sig };
+      save();
+      renderIndicators();
+      return S.ind;
+    }
+
+    // ════════════════════════════════════════════════
+    // BOT TICK
+    // ════════════════════════════════════════════════
+    async function tick() {
+      try {
+        const tk = await apiTicker(S.coin);
+        renderPrice(tk);
+
+        if (S.status === 'SCANNING') await doScan(tk);
+        else if (S.status === 'BUYING') await doBuyPoll();
+        else if (S.status === 'HOLDING') await doHold(tk);
+        else if (S.status === 'SELLING') await doSellPoll();
+      } catch (e) {
+        log(`Тик: ${e.message}`, 'error');
+        if (S.status !== 'STOPPED') schedScan();
+      }
+    }
+
+    async function doScan(tk) {
+      log('Сканирование...', 'info');
+      const { rsi, sig } = await refreshIndicators();
+      if (sig === 'BUY') {
+        log(`RSI ${rsi.toFixed(1)} < ${BUY_RSI} — сигнал покупки`, 'success');
+        await doBuy(tk.bid);
+      } else {
+        log(`RSI ${rsi ? rsi.toFixed(1) : '?'} — жду сигнала`, 'info');
+        schedScan();
+      }
+    }
+
+    async function doBuy(bestBid) {
+      const { priceD, sizeD, minSz } = S.prod;
+      const lp = parseFloat(bestBid.toFixed(priceD));
+      const size = parseFloat((S.amount / lp).toFixed(sizeD));
+
+      if (size < minSz) {
+        log(`Размер ${size} < мин ${minSz}`, 'warn');
+        schedScan(); return;
+      }
+      log(`Покупка ${size} ${S.coin} @ $${lp} (Limit/bid)`, 'success');
+      try {
+        const oid = await apiCreateOrder(S.coin, 'BUY', size, lp);
+        S.status = 'BUYING';
+        S.pos = { orderId: oid, baseSize: size, limitPrice: lp, placedAt: Date.now(), filledPrice: null, filledSize: null };
+        save(); renderStatus(); schedPoll();
+        log(`Ордер создан: ${oid}`, 'success');
+      } catch (e) {
+        log(`Ошибка создания: ${e.message}`, 'error');
+        schedScan();
+      }
+    }
+
+    async function doBuyPoll() {
+      const pos = S.pos;
+      if (!pos) { S.status = 'SCANNING'; save(); renderStatus(); schedScan(); return; }
+
+      if (Date.now() - pos.placedAt > ORD_TTL) {
+        log('Timeout — отмена buy ордера', 'warn');
+        await apiCancelOrder(pos.orderId);
+        S.status = 'SCANNING'; S.pos = null; save(); renderStatus(); schedScan(); return;
+      }
+
+      const st = await apiOrderStatus(pos.orderId);
+      const status = st.status || st.raw_response?.order?.status || st.raw_response?.status || 'OPEN';
+      log(`Buy ордер: ${status}`, 'info');
+
+      if (status === 'FILLED') {
+        const fp = parseFloat(st.filled_price || st.average_filled_price || st.raw_response?.average_filled_price || pos.limitPrice);
+        const fs = parseFloat(st.filled_size || st.raw_response?.filled_size || pos.baseSize);
+        const fee = fp * fs * FEE;
+
+        S.pos.filledPrice = fp;
+        S.pos.filledSize = fs;
+        S.pos.filledAt = Date.now();
+        S.status = 'HOLDING';
+        S.trades.push({ id: Date.now(), type: 'BUY', coin: S.coin, size: fs, price: fp, value: fp * fs, fee, pnl: null, ts: Date.now() });
+        save(); renderStatus(); renderTrades();
+        log(`Куплено ${fs} ${S.coin} @ $${fp} | fee $${fee.toFixed(4)}`, 'success');
+        schedScan();
+      } else if (['CANCELLED', 'EXPIRED', 'FAILED'].includes(status)) {
+        log(`Buy ордер ${status}`, 'warn');
+        S.status = 'SCANNING'; S.pos = null; save(); renderStatus(); schedScan();
+      } else {
+        schedPoll();
+      }
+    }
+
+    async function doHold(tk) {
+      const pos = S.pos;
+      if (!pos?.filledPrice) return;
+
+      const ask = tk.ask;
+      const entry = pos.filledPrice;
+      const sz = parseFloat(pos.filledSize || pos.baseSize);
+      const pnlPct = (ask - entry) / entry;
+      const pnlUsd = (ask - entry) * sz;
+      renderPosition(pos, ask, sz, pnlUsd, pnlPct);
+
+      const { rsi, sig } = await refreshIndicators();
+      let reason = null;
+      if (pnlPct >= TP) reason = `TP +${(pnlPct * 100).toFixed(2)}%`;
+      else if (pnlPct <= SL) reason = `SL ${(pnlPct * 100).toFixed(2)}%`;
+      else if (sig === 'SELL') reason = `RSI ${rsi.toFixed(1)} > ${SELL_RSI}`;
+
+      if (reason) {
+        log(`Продажа: ${reason}`, reason.startsWith('SL') ? 'warn' : 'success');
+        await doSell(ask, sz);
+      } else {
+        log(`Держу. PnL: ${pnlPct >= 0 ? '+' : ''}${(pnlPct * 100).toFixed(3)}%`, 'info');
+        schedScan();
+      }
+    }
+
+    async function doSell(bestAsk, filledSize) {
+      const { priceD, sizeD } = S.prod;
+      const lp = parseFloat(bestAsk.toFixed(priceD));
+      const size = parseFloat(filledSize.toFixed(sizeD));
+
+      log(`Продажа ${size} ${S.coin} @ $${lp} (Limit/ask)`, 'success');
+      try {
+        const oid = await apiCreateOrder(S.coin, 'SELL', size, lp);
+        S.status = 'SELLING';
+        S.sellOrd = { orderId: oid, baseSize: size, limitPrice: lp, placedAt: Date.now() };
+        save(); renderStatus(); schedPoll();
+        log(`Ордер продажи создан: ${oid}`, 'success');
+      } catch (e) {
+        log(`Ошибка продажи: ${e.message}`, 'error');
+        schedScan();
+      }
+    }
+
+    async function doSellPoll() {
+      const so = S.sellOrd;
+      const pos = S.pos;
+      if (!so || !pos) { S.status = 'SCANNING'; save(); renderStatus(); schedScan(); return; }
+
+      if (Date.now() - so.placedAt > ORD_TTL) {
+        log('Timeout — отмена sell ордера, повтор', 'warn');
+        await apiCancelOrder(so.orderId);
+        S.status = 'HOLDING'; S.sellOrd = null; save(); renderStatus(); schedScan(); return;
+      }
+
+      const st = await apiOrderStatus(so.orderId);
+      const status = st.status || st.raw_response?.order?.status || st.raw_response?.status || 'OPEN';
+      log(`Sell ордер: ${status}`, 'info');
+
+      if (status === 'FILLED') {
+        const sp = parseFloat(st.filled_price || st.average_filled_price || st.raw_response?.average_filled_price || so.limitPrice);
+        const ss = parseFloat(st.filled_size || st.raw_response?.filled_size || so.baseSize);
+        const ep = pos.filledPrice;
+        const sellFee = sp * ss * FEE;
+        const buyFee = ep * ss * FEE;
+        const pnl = (sp - ep) * ss - sellFee - buyFee;
+
+        S.totalPnL += pnl;
+        if (pnl > 0) S.wins++;
+        S.cycles++;
+        S.trades.push({ id: Date.now(), type: 'SELL', coin: S.coin, size: ss, price: sp, value: sp * ss, fee: sellFee, pnl, ts: Date.now() });
+        log(`Продано ${ss} ${S.coin} @ $${sp} | PnL: ${pnl >= 0 ? '+' : ''}$${pnl.toFixed(4)}`, pnl >= 0 ? 'success' : 'error');
+
+        S.status = 'SCANNING'; S.pos = null; S.sellOrd = null;
+        save(); renderStatus(); renderTrades(); renderStats(); clearPos();
+        schedScan();
+      } else if (['CANCELLED', 'EXPIRED', 'FAILED'].includes(status)) {
+        log(`Sell ордер ${status}`, 'warn');
+        S.status = 'HOLDING'; S.sellOrd = null; save(); renderStatus(); schedScan();
+      } else {
+        schedPoll();
+      }
+    }
+
+    // ════════════════════════════════════════════════
+    // TIMERS
+    // ════════════════════════════════════════════════
+    function clearTimers() {
+      if (scanTmr) { clearTimeout(scanTmr); scanTmr = null; }
+      if (pollTmr) { clearInterval(pollTmr); pollTmr = null; }
+    }
+    function schedScan() { clearTimers(); if (S.status !== 'STOPPED') scanTmr = setTimeout(tick, SCAN_INT); }
+    function schedPoll() { clearTimers(); if (S.status !== 'STOPPED') pollTmr = setInterval(tick, POLL_INT); }
+
+    // ════════════════════════════════════════════════
+    // START / STOP
+    // ════════════════════════════════════════════════
+    async function startBot() {
+      const coin = document.getElementById('coinInp').value.trim().toUpperCase();
+      const amount = parseFloat(document.getElementById('amtInp').value);
+      if (!coin || coin.length < 2) { alert('Введи монету (BTC, ETH…)'); return; }
+      if (!amount || amount < 10) { alert('Минимальная сумма $10'); return; }
+
+      setInputs(false);
+      log(`Запуск бота: ${coin} $${amount}`, 'success');
+
+      try {
+        S.prod = await apiProductInfo(coin);
+        log(`${coin}-USD: цена ${S.prod.priceD}dp, размер ${S.prod.sizeD}dp, мин ${S.prod.minSz}`, 'info');
+      } catch (e) {
+        log(`Ошибка инфо продукта: ${e.message}`, 'error');
+        setInputs(true); return;
+      }
+
+      S.coin = coin; S.amount = amount;
+      S.status = 'SCANNING'; S.startedAt = Date.now();
+      save(); renderStatus();
+      refreshBal();
+      log(`Стратегия: RSI(${RSI_P}) 5m | TP +${TP * 100}% | SL ${SL * 100}%`, 'info');
+      await tick();
+    }
+
+    function stopBot() {
+      clearTimers();
+      S.status = 'STOPPED'; save();
+      setInputs(true); renderStatus();
+      log('Бот остановлен', 'warn');
+    }
+
+    function setInputs(enabled) {
+      document.getElementById('btnStart').disabled = !enabled;
+      document.getElementById('btnStop').disabled = enabled;
+      document.getElementById('coinInp').disabled = !enabled;
+      document.getElementById('amtInp').disabled = !enabled;
+    }
+
+    // ════════════════════════════════════════════════
+    // RENDER
+    // ════════════════════════════════════════════════
+    function renderStatus() {
+      const map = {
+        STOPPED: ['b-stopped', 'Остановлен', '—'],
+        SCANNING: ['b-scanning', 'Сканирование', `RSI < ${BUY_RSI} для покупки`],
+        BUYING: ['b-buying', 'Покупка', 'Ожидание заполнения...'],
+        HOLDING: ['b-holding', 'В позиции', `TP +${TP * 100}% · SL ${SL * 100}%`],
+        SELLING: ['b-selling', 'Продажа', 'Ожидание заполнения...'],
+      };
+      const [cls, lbl, note] = map[S.status] || map.STOPPED;
+      const b = document.getElementById('badge');
+      b.className = `badge ${cls}`; b.textContent = lbl;
+      document.getElementById('stNote').textContent = note;
+      document.getElementById('stPair').textContent = S.coin ? `${S.coin}-USD · Limit 0.4%` : '—';
+    }
+    function renderPrice(tk) {
+      if (!tk) return;
+      document.getElementById('stPrice').textContent = `$${tk.bid.toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    }
+    function renderIndicators() { }
+    function renderPosition() { }
+    function clearPos() { }
+    function renderTrades() { }
+    function renderStats() { }
+    async function refreshBal() {
+      const b = await apiUsdBal();
+      if (b !== null) document.getElementById('usdBal').textContent = `$${b.toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    }
+
+    // ════════════════════════════════════════════════
+    // INIT
+    // ════════════════════════════════════════════════
+    async function init() {
+      load();
+      renderStatus(); renderTrades(); renderStats(); renderIndicators();
+      if (S.coin) document.getElementById('coinInp').value = S.coin;
+      if (S.amount) document.getElementById('amtInp').value = S.amount;
+      refreshBal();
+
+      if (S.status !== 'STOPPED') {
+        log('Восстановление после перезагрузки...', 'warn');
+        setInputs(false);
+        try {
+          S.prod = await apiProductInfo(S.coin);
+        } catch (e) {
+          log(`Ошибка восстановления: ${e.message}`, 'error');
+          stopBot(); return;
+        }
+        if (S.pos?.filledPrice) {
+          try {
+            const tk = await apiTicker(S.coin);
+            const sz = parseFloat(S.pos.filledSize || S.pos.baseSize);
+            renderPosition(S.pos, tk.ask, sz, (tk.ask - S.pos.filledPrice) * sz, (tk.ask - S.pos.filledPrice) / S.pos.filledPrice);
+          } catch { }
+        }
+        await tick();
+      }
+    }
+
+    init();
+  </script>
+</body>
+
+</html>

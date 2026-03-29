@@ -1,0 +1,525 @@
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    margin: 0;
+    padding: 15px;
+    background-color: #1a1a1a;
+    color: #ffffff;
+    font-size: 18px; /* Увеличен базовый размер */
+    line-height: 1.4;
+}
+
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 15px;
+}
+
+h1 {
+    text-align: center;
+    color: #4CAF50;
+    margin-bottom: 25px;
+    font-size: 2.2em; /* Увеличен размер */
+    font-weight: 600;
+}
+
+.coin-section {
+    margin-bottom: 25px;
+    border: 1px solid #333;
+    border-radius: 12px;
+    padding: 20px;
+    background-color: #2a2a2a;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+}
+
+.coin-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    padding-bottom: 15px;
+    border-bottom: 2px solid #444;
+    flex-wrap: wrap;
+    gap: 15px;
+}
+
+.coin-header h3 {
+    margin: 0;
+    font-size: 1.6em; /* Увеличен размер */
+    font-weight: bold;
+    color: #4CAF50;
+}
+
+.coin-header a {
+    color: #4CAF50;
+    text-decoration: none;
+    transition: color 0.3s ease;
+}
+
+.coin-header a:hover {
+    color: #66BB6A;
+}
+
+.coin-balance {
+    color: #ccc;
+    font-size: 1.1em; /* Увеличен размер */
+    font-weight: 500;
+}
+
+/* Десктопная таблица */
+.orders-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 15px;
+    background-color: #333;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.orders-table th,
+.orders-table td {
+    padding: 12px 10px; /* Увеличены отступы */
+    text-align: left;
+    border-bottom: 1px solid #444;
+    font-size: 1em; /* Увеличен размер */
+    vertical-align: middle;
+}
+
+.orders-table th {
+    background-color: #444;
+    color: #4CAF50;
+    font-weight: bold;
+    font-size: 1.1em; /* Увеличен размер заголовков */
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+.orders-table tr:hover {
+    background-color: #3a3a3a;
+}
+
+.orders-table tr:nth-child(even) {
+    background-color: #2e2e2e;
+}
+
+.copy-btn {
+    background-color: #4CAF50;
+    color: white;
+    border: none;
+    padding: 8px 12px; /* Увеличены отступы */
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9em; /* Увеличен размер */
+    font-weight: 500;
+    min-width: 60px;
+    transition: all 0.2s ease;
+}
+
+.copy-btn:hover {
+    background-color: #45a049;
+    transform: translateY(-1px);
+}
+
+.copy-btn:active {
+    transform: translateY(0);
+}
+
+.positive {
+    color: #4CAF50;
+    font-weight: 600;
+}
+
+.negative {
+    color: #f44336;
+    font-weight: 600;
+}
+
+.order-id {
+    font-family: 'Courier New', monospace;
+    font-size: 0.85em; /* Увеличен размер */
+    color: #aaa;
+    background-color: #1a1a1a;
+    padding: 4px 8px;
+    border-radius: 4px;
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.loading {
+    text-align: center;
+    color: #888;
+    font-style: italic;
+    padding: 50px 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+    font-size: 1.2em; /* Увеличен размер */
+}
+
+.spinner {
+    width: 50px;
+    height: 50px;
+    border: 5px solid #333;
+    border-top: 5px solid #4CAF50;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.no-orders {
+    text-align: center;
+    padding: 50px 20px;
+    color: #666;
+    font-size: 1.3em; /* Увеличен размер */
+    background: #2a2a2a;
+    border: 1px solid #444;
+    border-radius: 12px;
+    margin: 25px 0;
+}
+
+.error {
+    text-align: center;
+    padding: 25px 20px;
+    color: #dc3545;
+    background: #2a1a1a;
+    border: 2px solid #dc3545;
+    border-radius: 12px;
+    margin: 25px 0;
+    font-size: 1.2em; /* Увеличен размер */
+}
+
+/* Мобильные карточки */
+.mobile-cards {
+    display: none;
+}
+
+.mobile-card {
+    background: linear-gradient(135deg, #333, #2a2a2a);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 15px;
+    border-left: 5px solid #4CAF50;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.mobile-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(0,0,0,0.5);
+}
+
+.mobile-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #444;
+    font-weight: bold;
+    font-size: 1.3em; /* Увеличен размер */
+}
+
+.mobile-card-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    font-size: 1.1em; /* Увеличен размер */
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+
+.mobile-card-row:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+}
+
+.mobile-card-label {
+    color: #bbb;
+    font-weight: 500;
+    flex: 1;
+}
+
+.mobile-card-value {
+    font-weight: bold;
+    text-align: right;
+    flex: 1;
+}
+
+.summary-card {
+    border-left-color: #FF9800;
+    background: linear-gradient(135deg, #3a3a3a, #333);
+}
+
+.order-card {
+    border-left-color: #2196F3;
+}
+
+/* Responsive Design */
+@media (max-width: 1024px) {
+    body {
+        font-size: 17px;
+        padding: 12px;
+    }
+    
+    .container {
+        padding: 0 12px;
+    }
+    
+    .orders-table {
+        font-size: 0.95em;
+    }
+}
+
+@media (max-width: 768px) {
+    body {
+        font-size: 18px; /* Увеличен для планшетов */
+        padding: 10px;
+    }
+    
+    .container {
+        padding: 0 10px;
+    }
+    
+    h1 {
+        font-size: 2em;
+        margin-bottom: 20px;
+    }
+    
+    .coin-section {
+        padding: 15px;
+        margin-bottom: 20px;
+    }
+    
+    .coin-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+    }
+    
+    .coin-header h3 {
+        font-size: 1.5em;
+    }
+    
+    .coin-balance {
+        font-size: 1.1em;
+    }
+    
+    /* Скрываем таблицу на планшетах */
+    .orders-table {
+        display: none;
+    }
+    
+    /* Показываем мобильные карточки */
+    .mobile-cards {
+        display: block;
+    }
+    
+    .mobile-card {
+        padding: 18px;
+        margin-bottom: 12px;
+    }
+    
+    .mobile-card-header {
+        font-size: 1.25em;
+    }
+    
+    .mobile-card-row {
+        font-size: 1.05em;
+    }
+}
+
+@media (max-width: 480px) {
+    body {
+        font-size: 20px; /* Еще больше для телефонов */
+        padding: 8px;
+    }
+    
+    h1 {
+        font-size: 1.8em;
+    }
+    
+    .coin-section {
+        padding: 18px;
+        margin-bottom: 18px;
+    }
+    
+    .coin-header h3 {
+        font-size: 1.4em;
+    }
+    
+    .coin-balance {
+        font-size: 1.15em;
+    }
+    
+    .mobile-card {
+        padding: 20px;
+        margin-bottom: 15px;
+    }
+    
+    .mobile-card-header {
+        font-size: 1.3em;
+        margin-bottom: 18px;
+    }
+    
+    .mobile-card-row {
+        font-size: 1.15em;
+        padding: 10px 0;
+    }
+    
+    .copy-btn {
+        padding: 10px 15px;
+        font-size: 1em;
+        min-width: 70px;
+    }
+    
+    .loading {
+        font-size: 1.4em;
+        padding: 60px 20px;
+    }
+    
+    .no-orders {
+        font-size: 1.4em;
+        padding: 60px 20px;
+    }
+    
+    .error {
+        font-size: 1.3em;
+        padding: 40px 20px;
+    }
+}
+
+@media (max-width: 360px) {
+    body {
+        font-size: 22px; /* Максимальный размер для очень маленьких экранов */
+    }
+    
+    .mobile-card-row {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 5px;
+    }
+    
+    .mobile-card-value {
+        text-align: left;
+    }
+}
+
+/* Улучшения производительности */
+.orders-table {
+    will-change: transform;
+}
+
+.coin-section {
+    contain: layout style;
+}
+
+.mobile-card {
+    contain: layout style;
+}
+
+/* Плавные переходы */
+/* Цветовое кодирование для прибыли */
+.positive {
+    color: #28a745 !important; /* Зеленый для положительных значений */
+    font-weight: bold;
+}
+
+.negative {
+    color: #dc3545 !important; /* Красный для отрицательных значений */
+    font-weight: bold;
+}
+
+/* Анимация для плавного изменения цвета */
+.limit-profit, .market-profit {
+    transition: color 0.3s ease;
+}
+
+.copy-btn {
+    transition: all 0.2s ease;
+}
+
+.mobile-card {
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+/* Скрытие горизонтальной прокрутки */
+body {
+    overflow-x: hidden;
+}
+
+.container {
+    overflow-x: hidden;
+}
+
+.empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: #666;
+    max-width: 400px;
+    margin: 0 auto;
+}
+
+.empty-icon {
+    font-size: 4rem;
+    margin-bottom: 20px;
+    opacity: 0.7;
+}
+
+.empty-state h3 {
+    color: #333;
+    margin-bottom: 10px;
+    font-size: 1.5rem;
+}
+
+.empty-state p {
+    margin-bottom: 30px;
+    line-height: 1.5;
+}
+
+.empty-actions {
+    margin-top: 20px;
+}
+
+.refresh-btn {
+    background: #007bff;
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 1rem;
+    transition: background-color 0.2s;
+}
+
+.refresh-btn:hover {
+    background: #0056b3;
+}
+
+.orders-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    padding: 15px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border: 1px solid #e9ecef;
+}
+
+.orders-header h2 {
+    margin: 0;
+    color: #333;
+}
+
+.orders-count {
+    font-size: 14px;
+    color: #666;
+    font-weight: 500;
+}

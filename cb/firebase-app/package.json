@@ -1,0 +1,13 @@
+{
+  "name": "firebase-selected-orders",
+  "version": "1.0.0",
+  "description": "Firebase app for selected orders",
+  "main": "upload-to-firebase.js",
+  "scripts": {
+    "upload": "node upload-to-firebase.js"
+  },
+  "dependencies": {
+    "firebase-admin": "^11.0.0",
+    "node-fetch": "^2.6.7"
+  }
+}

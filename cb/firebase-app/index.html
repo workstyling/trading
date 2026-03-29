@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Selected Orders by Coin</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.1/css/all.min.css">
+    <link rel="stylesheet" href="css/improved-styles.css">
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+    <script type="module" src="create-full-test-data.js"></script>
+    
+    <style>
+        .selected-orders-by-coin {
+            padding: 20px;
+        }
+        
+        .coin-section {
+            margin-bottom: 40px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 20px;
+            background: #f9f9f9;
+        }
+        
+        .coin-title {
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #333;
+        }
+        
+        .coin-balance {
+            font-size: 16px;
+            margin-bottom: 20px;
+            color: #666;
+        }
+        
+        .summary-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+        }
+        
+        .summary-table th,
+        .summary-table td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: center;
+        }
+        
+        .summary-table th {
+            background: #f0f0f0;
+            font-weight: bold;
+        }
+        
+        .order-details {
+            margin-top: 20px;
+        }
+        
+        .order-details h4 {
+            font-size: 18px;
+            margin-bottom: 15px;
+            color: #333;
+        }
+        
+        .order-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        .order-table th,
+        .order-table td {
+            border: 1px solid #ddd;
+            padding: 6px;
+            text-align: center;
+            font-size: 12px;
+        }
+        
+        .order-table th {
+            background: #e0e0e0;
+            font-weight: bold;
+        }
+        
+        .copy-btn {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 2px 6px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 10px;
+        }
+        
+        .copy-btn:hover {
+            background: #0056b3;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            font-size: 18px;
+            color: #666;
+        }
+        
+        .no-data {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+        
+        .no-data h3 {
+            color: #333;
+            margin-bottom: 15px;
+        }
+        
+        .orders-list {
+            padding: 20px;
+        }
+        
+        .order-item {
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin-bottom: 10px;
+            background: white;
+        }
+        
+        .order-info {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+        
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 15px 20px;
+            border-radius: 4px;
+            color: white;
+            font-weight: bold;
+            z-index: 1000;
+            display: none;
+        }
+        
+        .notification.success {
+            background: #4caf50;
+        }
+        
+        .notification.error {
+            background: #f44336;
+        }
+        
+        .notification.info {
+            background: #2196f3;
+        }
+        
+        .error {
+            color: #f44336;
+            text-align: center;
+            padding: 20px;
+            font-size: 18px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid">
+        <div id="notification" class="notification"></div>
+        
+        <h1 class="text-2xl font-bold mb-4">Selected Orders by Coin</h1>
+        
+        <!-- Скрытые элементы для совместимости с scripts.js -->
+        <div style="display: none;">
+            <input type="text" id="coinInput" value="">
+            <input type="text" id="sellCoinInput" value="">
+            <div id="bestBidPrice"></div>
+            <div id="bestAskPrice"></div>
+        </div>
+        
+        <!-- Контейнер для выбранных ордеров -->
+        <div id="selected-orders-container">
+            <div class="loading">Загрузка данных из Firebase...</div>
+        </div>
+    </div>
+    
+    <!-- Подключаем скрипты в правильном порядке -->
+    <script src="fees.js"></script>
+    <script src="js/coins.js"></script>
+    <script src="firestore-database.js"></script>
+    <!-- Добавить в секцию с кнопками -->
+    <button onclick="loadFirestoreTestData()" class="test-btn">
+        Загрузить тестовые данные в Firestore
+    </button>
+    
+    <!-- Добавить скрипт -->
+    <script src="load-firestore-test-data.js"></script>
+    <script type="module" src="scripts.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>

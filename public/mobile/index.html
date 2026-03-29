@@ -1,0 +1,964 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>CSL Mobile</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📈</text></svg>">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #000; --s1: #111114; --s2: #1c1c1e; --s3: #2c2c2e;
+      --b0: rgba(255,255,255,.06); --b1: rgba(255,255,255,.10); --b2: rgba(255,255,255,.18);
+      --t0: #f5f5f7; --t1: #aeaeb2; --t2: #636366; --t3: #3a3a3c;
+      --red: #e82127; --green: #30d158; --loss: #ff453a; --blue: #0a84ff; --yellow: #ffd60a;
+      --r1: 10px; --r2: 14px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg); color: var(--t0);
+      font-family: -apple-system, BlinkMacSystemFont, 'Inter', sans-serif;
+      min-height: 100vh; min-height: 100dvh;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
+
+    /* ── Header ── */
+    .header {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(0,0,0,.85); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+      padding: 12px 16px; display: flex; align-items: center; justify-content: space-between;
+      border-bottom: 1px solid var(--b0);
+    }
+    .header-left { display: flex; align-items: center; gap: 10px; }
+    .header h1 { font-size: 18px; font-weight: 700; letter-spacing: -.3px; }
+    .header-balance {
+      font-family: 'JetBrains Mono', monospace; font-size: 16px; font-weight: 700; color: var(--green);
+    }
+
+    /* ── Tab Bar ── */
+    .tabs {
+      display: flex; background: var(--s1); border-bottom: 1px solid var(--b0);
+      position: sticky; top: 53px; z-index: 99;
+    }
+    .tab {
+      flex: 1; padding: 10px 0; text-align: center; font-size: 12px; font-weight: 600;
+      color: var(--t2); border: none; background: none; cursor: pointer;
+      border-bottom: 2px solid transparent; transition: all .2s;
+    }
+    .tab.active { color: var(--t0); border-bottom-color: var(--red); }
+
+    /* ── Panels ── */
+    .panel { display: none; padding: 12px; max-width: 500px; margin: 0 auto; }
+    .panel.active { display: block; }
+    #panelOrders { max-width: 100%; padding: 12px 0; margin: 0; }
+    .orders-filter { padding: 0 12px; }
+
+    /* ── Trade Panel ── */
+    .trade-coin {
+      display: flex; align-items: center; gap: 10px; margin-bottom: 12px;
+    }
+    .coin-input {
+      width: 80px; padding: 10px 12px; background: var(--s2); border: 1px solid var(--b1);
+      border-radius: var(--r1); color: var(--blue); font-size: 16px; font-weight: 700;
+      font-family: 'JetBrains Mono', monospace; text-transform: uppercase; text-align: center; outline: none;
+    }
+    .coin-input:focus { border-color: var(--blue); }
+    .save-coin-btn {
+      padding: 8px 12px; border: 1px solid var(--blue); border-radius: var(--r1);
+      background: transparent; color: var(--blue); font-size: 11px; font-weight: 600;
+      cursor: pointer; white-space: nowrap;
+    }
+    .save-coin-btn:active { background: var(--blue); color: #fff; }
+    .coin-prices {
+      display: flex; gap: 12px; flex: 1;
+    }
+    .coin-price-box {
+      display: flex; flex-direction: column; gap: 2px;
+    }
+    .coin-price-label { font-size: 9px; color: var(--t2); text-transform: uppercase; letter-spacing: .05em; }
+    .coin-price-val {
+      font-family: 'JetBrains Mono', monospace; font-size: 14px; font-weight: 600;
+    }
+    .price-bid { color: var(--green); }
+    .price-ask { color: var(--loss); }
+
+    .trade-amount {
+      display: flex; gap: 8px; align-items: center; margin-bottom: 12px;
+    }
+    .amt-btn {
+      width: 38px; height: 38px; border-radius: var(--r1); border: 1px solid var(--b1);
+      background: var(--s2); color: var(--t0); font-size: 18px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .amt-btn:active { background: var(--s3); }
+    .amt-input {
+      flex: 1; padding: 10px; background: var(--s2); border: 1px solid var(--b1);
+      border-radius: var(--r1); color: var(--t0); font-family: 'JetBrains Mono', monospace;
+      font-size: 16px; text-align: center; outline: none;
+    }
+    .amt-input:focus { border-color: var(--blue); }
+    .amt-usd {
+      font-family: 'JetBrains Mono', monospace; font-size: 14px; color: var(--t1);
+      min-width: 70px; text-align: right;
+    }
+
+    .trade-actions {
+      display: flex; gap: 8px; margin-bottom: 12px;
+    }
+    .trade-btn {
+      flex: 1; padding: 14px; border: none; border-radius: var(--r1);
+      font-size: 15px; font-weight: 700; cursor: pointer; transition: all .15s;
+    }
+    .trade-btn:active { transform: scale(.97); }
+    .btn-buy { background: var(--green); color: #000; }
+    .btn-sell { background: var(--red); color: #fff; }
+
+    .limit-section {
+      display: flex; gap: 8px; align-items: center; padding: 10px 0;
+      border-top: 1px solid var(--b0);
+    }
+    .limit-input {
+      flex: 1; padding: 10px; background: var(--s2); border: 1px solid var(--b1);
+      border-radius: var(--r1); color: var(--t0); font-family: 'JetBrains Mono', monospace;
+      font-size: 14px; outline: none;
+    }
+    .limit-input:focus { border-color: var(--yellow); }
+    .limit-input::placeholder { color: var(--t3); }
+    .btn-limit {
+      padding: 10px 16px; border: 1px solid var(--blue); border-radius: var(--r1);
+      background: transparent; color: var(--blue); font-size: 13px; font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-limit:active { background: var(--blue); color: #fff; }
+
+    /* ── Settings row ── */
+    .settings-row {
+      display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
+      padding: 10px 0; border-top: 1px solid var(--b0); margin-top: 8px;
+    }
+    .set-label { font-size: 10px; color: var(--t2); }
+    .set-input {
+      width: 52px; padding: 6px; background: var(--s2); border: 1px solid var(--b1);
+      border-radius: 6px; color: var(--green); font-family: 'JetBrains Mono', monospace;
+      font-size: 11px; text-align: right; outline: none;
+    }
+    .set-input:focus { border-color: var(--green); }
+    .set-unit { font-size: 10px; color: var(--t3); margin-right: 6px; }
+
+    /* ── Orders Panel ── */
+    .orders-filter {
+      display: flex; gap: 6px; margin-bottom: 10px; align-items: center;
+    }
+    .filter-btn {
+      padding: 6px 14px; border-radius: 20px; border: 1px solid var(--b1);
+      background: transparent; color: var(--t1); font-size: 12px; font-weight: 500; cursor: pointer;
+    }
+    .filter-btn.active { background: var(--red); border-color: var(--red); color: #fff; }
+    .order-search {
+      flex: 1; padding: 8px 12px; background: var(--s2); border: 1px solid var(--b1);
+      border-radius: 20px; color: var(--t0); font-size: 12px; outline: none;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .order-search::placeholder { color: var(--t3); }
+    .order-search:focus { border-color: var(--blue); }
+
+    /* ── Orders Table ── */
+    .orders-table-wrap {
+      border-top: 1px solid var(--b0); border-bottom: 1px solid var(--b0);
+      background: var(--s1); overflow: hidden;
+    }
+    .otbl {
+      width: 100%; border-collapse: collapse; font-family: 'JetBrains Mono', monospace; font-size: 13px;
+      table-layout: fixed;
+    }
+    .otbl th {
+      background: var(--s2); color: var(--t2); font-size: 10px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: .04em; padding: 10px 8px;
+      position: sticky; top: 0; z-index: 1; text-align: left;
+    }
+    .otbl td { padding: 12px 8px; border-bottom: 1px solid var(--b0); color: var(--t1); overflow: hidden; text-overflow: ellipsis; }
+    .otbl tr:active { background: var(--s2); }
+    .otbl .side-buy { color: var(--green); font-weight: 700; }
+    .otbl .side-sell { color: var(--loss); font-weight: 700; }
+    .otbl .st-open { color: var(--yellow); }
+    .otbl .st-filled { color: var(--green); }
+    .otbl .st-cancelled { color: var(--t3); }
+    .otbl .pair-col { color: var(--blue); font-weight: 600; }
+    .otbl th:nth-child(1), .otbl td:nth-child(1) { width: 36px; text-align: center; }
+    .otbl th:nth-child(2), .otbl td:nth-child(2) { } /* Pair - auto */
+    .otbl th:nth-child(3), .otbl td:nth-child(3) { width: 44px; } /* Side */
+    .otbl th:nth-child(4), .otbl td:nth-child(4) { width: 46px; text-align: center; } /* Fill */
+    .otbl th:nth-child(5), .otbl td:nth-child(5) { width: 46px; } /* Date */
+    .otbl th:nth-child(6), .otbl td:nth-child(6) { width: 62px; text-align: center; } /* Action */
+    .cancel-btn {
+      padding: 5px 10px; border: 1px solid var(--loss); border-radius: 5px;
+      background: transparent; color: var(--loss); font-size: 10px; font-weight: 600; cursor: pointer;
+    }
+    .cancel-btn:active { background: var(--loss); color: #fff; }
+
+    /* Custom checkbox */
+    .order-checkbox {
+      -webkit-appearance: none; appearance: none;
+      width: 24px; height: 24px; border: 2px solid var(--b2); border-radius: 6px;
+      background: var(--s2); cursor: pointer; position: relative; display: block; margin: 0 auto;
+    }
+    .order-checkbox:checked {
+      background: var(--blue); border-color: var(--blue);
+    }
+    .order-checkbox:checked::after {
+      content: '✓'; position: absolute; top: 50%; left: 50%;
+      transform: translate(-50%, -50%); color: #fff; font-size: 14px; font-weight: 700;
+    }
+    .order-checkbox:active { transform: scale(.9); }
+
+    /* ── Profit Panel ── */
+    .profit-summary {
+      background: var(--s1); border: 1px solid var(--b0); border-radius: var(--r2);
+      padding: 16px; margin-bottom: 12px; text-align: center;
+    }
+    .profit-label { font-size: 11px; color: var(--t2); text-transform: uppercase; letter-spacing: .08em; }
+    .profit-value {
+      font-size: 32px; font-weight: 700; font-family: 'JetBrains Mono', monospace;
+      margin-top: 4px;
+    }
+    .profit-positive { color: var(--green); }
+    .profit-negative { color: var(--loss); }
+
+    .profit-item {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 10px 12px; background: var(--s1); border: 1px solid var(--b0);
+      border-radius: var(--r1); margin-bottom: 6px;
+    }
+    .profit-item-left { display: flex; flex-direction: column; gap: 2px; }
+    .profit-coin { font-size: 13px; font-weight: 600; }
+    .profit-date { font-size: 10px; color: var(--t2); }
+    .profit-amount {
+      font-family: 'JetBrains Mono', monospace; font-size: 14px; font-weight: 700;
+    }
+
+    /* ── Holdings Panel ── */
+    .holding-card {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 12px; background: var(--s1); border: 1px solid var(--b0);
+      border-radius: var(--r1); margin-bottom: 8px;
+    }
+    .holding-left { display: flex; flex-direction: column; gap: 2px; }
+    .holding-coin { font-size: 15px; font-weight: 700; }
+    .holding-amount { font-size: 11px; color: var(--t1); font-family: 'JetBrains Mono', monospace; }
+    .holding-right { text-align: right; }
+    .holding-usd { font-size: 15px; font-weight: 700; font-family: 'JetBrains Mono', monospace; color: var(--green); }
+    .holding-price { font-size: 10px; color: var(--t2); font-family: 'JetBrains Mono', monospace; }
+    .holdings-total-bar {
+      background: var(--s1); border: 1px solid var(--b0); border-radius: var(--r2);
+      padding: 14px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;
+    }
+    .ht-label { font-size: 11px; color: var(--t2); text-transform: uppercase; letter-spacing: .06em; }
+    .ht-value { font-size: 22px; font-weight: 700; font-family: 'JetBrains Mono', monospace; color: var(--green); }
+
+    /* ── Loading / Toast ── */
+    .loading { text-align: center; padding: 40px; color: var(--t2); font-size: 13px; }
+    .spinner {
+      width: 24px; height: 24px; border: 2px solid var(--b1); border-top-color: var(--red);
+      border-radius: 50%; animation: spin .8s linear infinite; margin: 0 auto 10px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .toast-container {
+      position: fixed; bottom: 70px; left: 50%; transform: translateX(-50%);
+      z-index: 200; display: flex; flex-direction: column; gap: 6px; align-items: center;
+    }
+    .toast {
+      padding: 10px 20px; border-radius: 20px; font-size: 12px; font-weight: 600;
+      backdrop-filter: blur(10px); animation: toastIn .3s ease;
+    }
+    .toast-success { background: rgba(48,209,88,.9); color: #000; }
+    .toast-error { background: rgba(255,69,58,.9); color: #fff; }
+    @keyframes toastIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* ── Monitor Panel ── */
+    .monitor-group {
+      background: var(--s1); border: 1px solid var(--b0); border-radius: var(--r2);
+      padding: 12px; margin-bottom: 12px; overflow: hidden;
+    }
+    .monitor-group-header {
+      display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;
+    }
+    .monitor-coin {
+      font-size: 16px; font-weight: 700; font-family: 'JetBrains Mono', monospace;
+      color: var(--blue);
+    }
+    .monitor-pnl { font-family: 'JetBrains Mono', monospace; font-size: 14px; font-weight: 700; }
+    .monitor-stats {
+      display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-bottom: 10px;
+      font-size: 11px;
+    }
+    .monitor-stat {
+      background: var(--s2); border-radius: 6px; padding: 6px 8px;
+    }
+    .monitor-stat-label { font-size: 9px; color: var(--t2); text-transform: uppercase; display: block; }
+    .monitor-stat-val { font-family: 'JetBrains Mono', monospace; font-weight: 600; }
+    .monitor-order {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 8px 0; border-top: 1px solid var(--b0); font-size: 11px;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .monitor-order-left { display: flex; gap: 8px; align-items: center; }
+    .monitor-actions { display: flex; gap: 6px; }
+    .mon-sell-btn {
+      padding: 4px 10px; border-radius: 5px; font-size: 10px; font-weight: 600;
+      cursor: pointer; border: 1px solid var(--green); background: transparent; color: var(--green);
+    }
+    .mon-sell-btn:active { background: var(--green); color: #000; }
+    .mon-sell-btn.ask { border-color: var(--yellow); color: var(--yellow); }
+    .mon-sell-btn.ask:active { background: var(--yellow); color: #000; }
+    .mon-sell-btn.all { border-color: var(--red); color: var(--red); }
+    .mon-sell-btn.all:active { background: var(--red); color: #fff; }
+    .mon-deselect {
+      padding: 4px 8px; border-radius: 5px; font-size: 10px; cursor: pointer;
+      border: 1px solid var(--t3); background: transparent; color: var(--t2);
+    }
+    .order-checkbox {
+      width: 18px; height: 18px; accent-color: var(--blue); cursor: pointer;
+    }
+
+    /* ── Empty state ── */
+    .empty { text-align: center; padding: 40px 20px; color: var(--t3); font-size: 13px; }
+
+    /* ── Pull to refresh indicator ── */
+    .refresh-indicator {
+      text-align: center; padding: 8px; font-size: 11px; color: var(--t2);
+      display: none;
+    }
+    .refresh-indicator.visible { display: block; }
+  </style>
+</head>
+<body>
+  <!-- Header -->
+  <div class="header">
+    <div class="header-left">
+      <h1>CSL</h1>
+    </div>
+    <span class="header-balance" id="headerBalance">$0.00</span>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab active" data-tab="trade">Trade</button>
+    <button class="tab" data-tab="orders">Orders</button>
+    <button class="tab" data-tab="profit">Profit</button>
+    <button class="tab" data-tab="holdings">Holdings</button>
+  </div>
+
+  <!-- Trade Panel -->
+  <div class="panel active" id="panelTrade" data-tab="trade">
+    <div class="trade-coin">
+      <input type="text" class="coin-input" id="coinInput" value="BTC" maxlength="10" spellcheck="false" autocomplete="off">
+      <button class="save-coin-btn" onclick="saveCoin()">Save</button>
+      <div class="coin-prices">
+        <div class="coin-price-box">
+          <span class="coin-price-label">Bid</span>
+          <span class="coin-price-val price-bid" id="priceBid">...</span>
+        </div>
+        <div class="coin-price-box">
+          <span class="coin-price-label">Ask</span>
+          <span class="coin-price-val price-ask" id="priceAsk">...</span>
+        </div>
+      </div>
+    </div>
+    <div class="trade-amount">
+      <button class="amt-btn" onclick="adjustAmt(-5)">−</button>
+      <input type="number" class="amt-input" id="amtInput" value="100" step="1" min="1">
+      <button class="amt-btn" onclick="adjustAmt(5)">+</button>
+      <span class="amt-usd" id="amtUsd">$0.00</span>
+    </div>
+    <div class="trade-actions">
+      <button class="trade-btn btn-buy" id="btnBuy" onclick="executeBuy()">BUY</button>
+      <button class="trade-btn btn-sell" id="btnSell" onclick="executeSell()">SELL</button>
+    </div>
+    <div class="limit-section">
+      <input type="text" class="limit-input" id="limitPrice" placeholder="Limit price..." autocomplete="off">
+      <button class="btn-limit" onclick="executeBuyLimit()">Buy Limit</button>
+    </div>
+    <div class="settings-row">
+      <span class="set-label">Sell Markup</span>
+      <input type="number" class="set-input" id="setSellMarkup" step="0.01" value="1.38">
+      <span class="set-unit">%</span>
+      <span class="set-label">Limit Fee</span>
+      <input type="number" class="set-input" id="setLimitFee" step="0.001" value="0.06">
+      <span class="set-unit">%</span>
+      <span class="set-label">Mkt Fee</span>
+      <input type="number" class="set-input" id="setMktFee" step="0.001" value="0.125">
+      <span class="set-unit">%</span>
+    </div>
+    <!-- Monitor Section -->
+    <div style="margin-top:14px;" id="monitorSection">
+      <div id="monitorList"></div>
+    </div>
+  </div>
+
+  <!-- Orders Panel -->
+  <div class="panel" id="panelOrders" data-tab="orders">
+    <div class="orders-filter">
+      <button class="filter-btn active" data-filter="all" onclick="setFilter('all',this)">All</button>
+      <button class="filter-btn" data-filter="open" onclick="setFilter('open',this)">Open</button>
+      <button class="filter-btn" data-filter="filled" onclick="setFilter('filled',this)">Filled</button>
+      <input type="text" class="order-search" id="orderSearchM" placeholder="Search..." autocomplete="off">
+    </div>
+    <div id="ordersList" class="loading"><div class="spinner"></div>Loading orders...</div>
+  </div>
+
+  <!-- Profit Panel -->
+  <div class="panel" id="panelProfit" data-tab="profit">
+    <div class="profit-summary">
+      <div class="profit-label">Total Profit</div>
+      <div class="profit-value profit-positive" id="profitTotal">$0.00</div>
+    </div>
+    <div id="profitList"></div>
+  </div>
+
+  <!-- Holdings Panel -->
+  <div class="panel" id="panelHoldings" data-tab="holdings">
+    <div class="holdings-total-bar">
+      <span class="ht-label">Total Holdings</span>
+      <span class="ht-value" id="holdingsTotal">$0.00</span>
+    </div>
+    <div id="holdingsList" class="loading"><div class="spinner"></div>Loading...</div>
+  </div>
+
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script>
+    // ── State ──
+    let prices = { bid: 0, ask: 0 };
+    let allOrders = [];
+    let currentFilter = 'all';
+    let searchQuery = '';
+    const BASE = window.location.origin;
+    const SELECTED_KEY = 'mobileSelectedOrders';
+    let selectedOrders = JSON.parse(localStorage.getItem(SELECTED_KEY) || '[]');
+    let tradingSettings = { sellMarkup: 1.38, tradeFee: 0.06, marketFee: 0.125 };
+
+    // ── Tabs ──
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+        tab.classList.add('active');
+        const panel = document.getElementById('panel' + capitalize(tab.dataset.tab));
+        if (panel) panel.classList.add('active');
+      });
+    });
+    function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+
+    // ── Toast ──
+    function toast(msg, type = 'success') {
+      const el = document.createElement('div');
+      el.className = 'toast toast-' + type;
+      el.textContent = msg;
+      document.getElementById('toastContainer').appendChild(el);
+      setTimeout(() => el.remove(), 3000);
+    }
+
+    // ── Format helpers ──
+    function fmt(n) {
+      n = parseFloat(n);
+      if (n === 0) return '0';
+      if (Math.abs(n) < 0.001) return n.toFixed(8);
+      if (Math.abs(n) < 1) return n.toFixed(6);
+      if (Math.abs(n) < 100) return n.toFixed(4);
+      return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+    function fmtUsd(n) {
+      n = parseFloat(n);
+      return (n >= 0 ? '+' : '') + '$' + Math.abs(n).toFixed(2);
+    }
+    function shortId(id) { return id ? id.substring(0, 8) + '...' : '—'; }
+    function fmtDate(d) {
+      if (!d) return '—';
+      const dt = new Date(d);
+      return dt.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' }) +
+        ' ' + dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+    }
+
+    // ── API calls ──
+    async function api(url, opts) {
+      try {
+        const r = await fetch(BASE + url, opts);
+        return await r.json();
+      } catch (e) {
+        console.error('API error:', url, e);
+        return { success: false, error: e.message };
+      }
+    }
+
+    // ── Load balance ──
+    async function loadBalance() {
+      const r = await api('/get-balance');
+      if (r.success) {
+        document.getElementById('headerBalance').textContent = '$' + parseFloat(r.balance).toFixed(2);
+      }
+    }
+
+    // ── Load settings ──
+    async function loadSettings() {
+      const r = await api('/get-settings');
+      if (r.success) {
+        tradingSettings.sellMarkup = r.settings.sellMarkup;
+        tradingSettings.tradeFee = r.settings.tradeFee;
+        tradingSettings.marketFee = r.settings.marketFee;
+        document.getElementById('setSellMarkup').value = r.settings.sellMarkup;
+        document.getElementById('setLimitFee').value = r.settings.tradeFee;
+        document.getElementById('setMktFee').value = r.settings.marketFee;
+      }
+    }
+
+    // ── Price updates ──
+    let priceWs = null;
+    function connectPriceWs() {
+      const coin = document.getElementById('coinInput').value.trim().toUpperCase();
+      if (!coin) return;
+      if (priceWs) priceWs.close();
+      const pair = coin + '-USD';
+      priceWs = new WebSocket('wss://ws-feed.exchange.coinbase.com');
+      priceWs.onopen = () => {
+        priceWs.send(JSON.stringify({
+          type: 'subscribe', product_ids: [pair], channels: ['ticker']
+        }));
+      };
+      priceWs.onmessage = (e) => {
+        const d = JSON.parse(e.data);
+        if (d.type === 'ticker') {
+          if (d.best_bid) { prices.bid = parseFloat(d.best_bid); document.getElementById('priceBid').textContent = '$' + fmt(prices.bid); }
+          if (d.best_ask) { prices.ask = parseFloat(d.best_ask); document.getElementById('priceAsk').textContent = '$' + fmt(prices.ask); }
+          updateUsd();
+        }
+      };
+      priceWs.onerror = () => {};
+      priceWs.onclose = () => { setTimeout(connectPriceWs, 3000); };
+    }
+
+    function updateUsd() {
+      const pct = parseFloat(document.getElementById('amtInput').value) || 0;
+      const balance = parseFloat(document.getElementById('headerBalance').textContent.replace('$', '')) || 0;
+      const usd = (balance * pct / 100).toFixed(2);
+      document.getElementById('amtUsd').textContent = '$' + usd;
+    }
+
+    // Load saved coin
+    const savedCoin = localStorage.getItem('mobileTradeCoin');
+    if (savedCoin) document.getElementById('coinInput').value = savedCoin;
+
+    function saveCoin() {
+      const coin = document.getElementById('coinInput').value.trim().toUpperCase();
+      if (coin) {
+        localStorage.setItem('mobileTradeCoin', coin);
+        connectPriceWs();
+        toast('Saved: ' + coin);
+      }
+    }
+
+    document.getElementById('coinInput').addEventListener('change', connectPriceWs);
+    document.getElementById('amtInput').addEventListener('input', updateUsd);
+
+    function adjustAmt(delta) {
+      const inp = document.getElementById('amtInput');
+      inp.value = Math.max(1, (parseInt(inp.value) || 0) + delta);
+      updateUsd();
+    }
+
+    // ── Execute trades ──
+    async function executeBuy() {
+      const coin = document.getElementById('coinInput').value.trim().toUpperCase();
+      if (!coin || prices.bid <= 0) { toast('Invalid coin or price', 'error'); return; }
+      const pct = parseFloat(document.getElementById('amtInput').value) || 0;
+      const balance = parseFloat(document.getElementById('headerBalance').textContent.replace('$', '')) || 0;
+      const usd = (balance * pct / 100).toFixed(2);
+      if (parseFloat(usd) < 1) { toast('Amount too small', 'error'); return; }
+
+      document.getElementById('btnBuy').textContent = '...';
+      const r = await api('/create-buy-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ productId: coin + '-USD', quoteSize: usd, limitPrice: prices.bid.toString() })
+      });
+      document.getElementById('btnBuy').textContent = 'BUY';
+      if (r.success) {
+        toast('Buy order placed!');
+        if (r.order_id && !selectedOrders.includes(r.order_id)) {
+          selectedOrders.push(r.order_id);
+          localStorage.setItem(SELECTED_KEY, JSON.stringify(selectedOrders));
+        }
+        loadBalance(); loadOrders().then(updateMonitor);
+      } else toast(r.error || 'Failed', 'error');
+    }
+
+    async function executeSell() {
+      const coin = document.getElementById('coinInput').value.trim().toUpperCase();
+      if (!coin || prices.ask <= 0) { toast('Invalid coin or price', 'error'); return; }
+      // We need to know our holdings of this coin to sell
+      const holdingsR = await api('/get-holdings');
+      if (!holdingsR.success) { toast('Could not load holdings', 'error'); return; }
+      const holding = holdingsR.holdings.find(h => h.currency === coin);
+      if (!holding || holding.available <= 0) { toast('No ' + coin + ' to sell', 'error'); return; }
+
+      document.getElementById('btnSell').textContent = '...';
+      const r = await api('/create-sell-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ productId: coin + '-USD', size: holding.available.toString(), price: prices.ask.toString() })
+      });
+      document.getElementById('btnSell').textContent = 'SELL';
+      if (r.success) {
+        toast('Sell order placed!');
+        if (r.order_id && !selectedOrders.includes(r.order_id)) {
+          selectedOrders.push(r.order_id);
+          localStorage.setItem(SELECTED_KEY, JSON.stringify(selectedOrders));
+        }
+        loadBalance(); loadOrders().then(updateMonitor);
+      } else toast(r.error || 'Failed', 'error');
+    }
+
+    async function executeBuyLimit() {
+      const coin = document.getElementById('coinInput').value.trim().toUpperCase();
+      const lp = document.getElementById('limitPrice').value.trim();
+      if (!coin || !lp) { toast('Enter coin & price', 'error'); return; }
+      const pct = parseFloat(document.getElementById('amtInput').value) || 0;
+      const balance = parseFloat(document.getElementById('headerBalance').textContent.replace('$', '')) || 0;
+      const usd = (balance * pct / 100).toFixed(2);
+      if (parseFloat(usd) < 1) { toast('Amount too small', 'error'); return; }
+
+      const r = await api('/create-buy-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ productId: coin + '-USD', quoteSize: usd, limitPrice: lp })
+      });
+      if (r.success) {
+        toast('Limit order placed!');
+        if (r.order_id && !selectedOrders.includes(r.order_id)) {
+          selectedOrders.push(r.order_id);
+          localStorage.setItem(SELECTED_KEY, JSON.stringify(selectedOrders));
+        }
+        loadBalance(); loadOrders().then(updateMonitor);
+      } else toast(r.error || 'Failed', 'error');
+    }
+
+    // ── Orders ──
+    async function loadOrders() {
+      const r = await api('/get-latest-orders');
+      if (r.success) {
+        allOrders = r.orders;
+        renderOrders();
+        // Auto-add new orders created via mobile to selected
+      }
+    }
+
+    function setFilter(f, btn) {
+      currentFilter = f;
+      document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      renderOrders();
+    }
+
+    document.getElementById('orderSearchM').addEventListener('input', (e) => {
+      searchQuery = e.target.value.toLowerCase();
+      renderOrders();
+    });
+
+    function renderOrders() {
+      let filtered = allOrders;
+      if (currentFilter === 'open') filtered = filtered.filter(o => o.status === 'OPEN');
+      else if (currentFilter === 'filled') filtered = filtered.filter(o => o.status === 'FILLED');
+
+      if (searchQuery) {
+        filtered = filtered.filter(o =>
+          o.order_id.toLowerCase().includes(searchQuery) ||
+          o.product_id.toLowerCase().includes(searchQuery)
+        );
+      }
+
+      if (!filtered.length) {
+        document.getElementById('ordersList').innerHTML = '<div class="empty">No orders found</div>';
+        return;
+      }
+
+      let html = `<div class="orders-table-wrap"><table class="otbl">
+        <thead><tr><th></th><th>Pair</th><th>Side</th><th>Fill</th><th>Date</th><th>Action</th></tr></thead><tbody>`;
+
+      filtered.forEach((o, i) => {
+        const st = o.status.toLowerCase();
+        const side = o.side;
+        const coin = o.product_id.replace('-USD', '');
+        const isSelected = selectedOrders.includes(o.order_id);
+        const d = o.created_time ? new Date(o.created_time) : null;
+        const dateStr = d ? `${d.getMonth()+1}/${d.getDate()}` : '—';
+        // Fill %
+        const baseSize = parseFloat(o.order_configuration?.limit_limit_gtc?.base_size || o.filled_size || '0');
+        const filledSize = parseFloat(o.filled_size || '0');
+        const fillPct = baseSize > 0 ? Math.round((filledSize / baseSize) * 100) : 0;
+        const fillClass = fillPct === 100 ? 'color:var(--green)' : fillPct > 0 ? 'color:var(--yellow)' : 'color:var(--t2)';
+
+        html += `<tr>
+          <td><input type="checkbox" class="order-checkbox" data-id="${o.order_id}" ${isSelected ? 'checked' : ''} onchange="toggleSelectOrder(this)"></td>
+          <td class="pair-col">${coin}</td>
+          <td class="side-${side.toLowerCase()}">${side.toLowerCase()}</td>
+          <td style="${fillClass};font-weight:600">${fillPct}%</td>
+          <td>${dateStr}</td>
+          <td>${st === 'open' ? `<button class="cancel-btn" onclick="cancelOrder('${o.order_id}')">Cancel</button>` : '<span style="color:var(--t3)">—</span>'}</td>
+        </tr>`;
+      });
+
+      html += '</tbody></table></div>';
+      document.getElementById('ordersList').innerHTML = html;
+    }
+
+    function toggleSelectOrder(cb) {
+      const id = cb.dataset.id;
+      if (cb.checked) {
+        if (!selectedOrders.includes(id)) selectedOrders.push(id);
+      } else {
+        selectedOrders = selectedOrders.filter(x => x !== id);
+      }
+      localStorage.setItem(SELECTED_KEY, JSON.stringify(selectedOrders));
+      updateMonitor();
+    }
+
+    function deselectOrder(id) {
+      selectedOrders = selectedOrders.filter(x => x !== id);
+      localStorage.setItem(SELECTED_KEY, JSON.stringify(selectedOrders));
+      renderOrders();
+      updateMonitor();
+    }
+
+    // ── Monitor ──
+    const monitorPriceCache = {};
+
+    async function updateMonitor() {
+      const selected = allOrders.filter(o => selectedOrders.includes(o.order_id));
+      if (!selected.length) {
+        document.getElementById('monitorList').innerHTML = '';
+        return;
+      }
+
+      // Group by coin
+      const byCoin = {};
+      selected.forEach(o => {
+        const pair = o.product_id || 'UNKNOWN';
+        if (!byCoin[pair]) byCoin[pair] = [];
+        byCoin[pair].push(o);
+      });
+
+      let html = '';
+      for (const pair of Object.keys(byCoin).sort()) {
+        const orders = byCoin[pair];
+        const coin = pair.split('-')[0];
+
+        // Fetch live price
+        let bid = 0, ask = 0;
+        try {
+          const r = await fetch(`https://api.exchange.coinbase.com/products/${pair}/ticker`);
+          if (r.ok) {
+            const t = await r.json();
+            bid = parseFloat(t.bid) || 0;
+            ask = parseFloat(t.ask) || 0;
+            monitorPriceCache[pair] = { bid, ask };
+          } else if (monitorPriceCache[pair]) {
+            bid = monitorPriceCache[pair].bid;
+            ask = monitorPriceCache[pair].ask;
+          }
+        } catch {
+          if (monitorPriceCache[pair]) { bid = monitorPriceCache[pair].bid; ask = monitorPriceCache[pair].ask; }
+        }
+
+        // Calc totals
+        let totalFilled = 0, totalUSD = 0, buyFilled = 0, buyUSD = 0, buyWeighted = 0;
+        orders.forEach(o => {
+          const filled = parseFloat(o.filled_size) || 0;
+          const value = parseFloat(o.total_value) || 0;
+          const avg = parseFloat(o.average_filled_price) || 0;
+          if (o.side === 'BUY') {
+            totalFilled += filled; totalUSD += value;
+            buyFilled += filled; buyUSD += value; buyWeighted += filled * avg;
+          } else if (filled > 0) {
+            totalFilled -= filled; totalUSD -= value;
+          }
+        });
+
+        const avgBuy = buyFilled > 0 ? buyWeighted / buyFilled : 0;
+        const fee = tradingSettings.tradeFee / 100;
+        const limitPnL = totalFilled * ask * (1 - fee) - totalUSD;
+        const marketPnL = totalFilled * bid * (1 - tradingSettings.marketFee / 100) - totalUSD;
+        const pnlColor = limitPnL >= 0 ? 'var(--green)' : 'var(--loss)';
+        const mktColor = marketPnL >= 0 ? 'var(--green)' : 'var(--loss)';
+
+        html += `<div class="monitor-group">
+          <div class="monitor-group-header">
+            <span class="monitor-coin">${pair}</span>
+            <span class="monitor-pnl" style="color:${pnlColor}">${limitPnL >= 0 ? '+' : ''}$${Math.abs(limitPnL).toFixed(2)}</span>
+          </div>
+          <div class="monitor-stats">
+            <div class="monitor-stat"><span class="monitor-stat-label">Bid</span><span class="monitor-stat-val" style="color:var(--green)">$${fmt(bid)}</span></div>
+            <div class="monitor-stat"><span class="monitor-stat-label">Ask</span><span class="monitor-stat-val" style="color:var(--loss)">$${fmt(ask)}</span></div>
+            <div class="monitor-stat"><span class="monitor-stat-label">Avg Buy</span><span class="monitor-stat-val">$${fmt(avgBuy)}</span></div>
+            <div class="monitor-stat"><span class="monitor-stat-label">Filled</span><span class="monitor-stat-val">${totalFilled.toFixed(totalFilled < 1 ? 6 : 2)}</span></div>
+            <div class="monitor-stat"><span class="monitor-stat-label">Spent</span><span class="monitor-stat-val">$${totalUSD.toFixed(2)}</span></div>
+            <div class="monitor-stat"><span class="monitor-stat-label">Market</span><span class="monitor-stat-val" style="color:${mktColor}">${marketPnL >= 0 ? '+' : ''}$${Math.abs(marketPnL).toFixed(2)}</span></div>
+          </div>`;
+
+        // Individual orders
+        orders.forEach(o => {
+          const side = o.side;
+          const sColor = side === 'BUY' ? 'var(--green)' : 'var(--loss)';
+          const filled = parseFloat(o.filled_size) || 0;
+          const lp = o.limit_price ? fmt(o.limit_price) : (o.average_filled_price !== '0' ? fmt(o.average_filled_price) : '—');
+          const isBuy = side === 'BUY' && filled > 0;
+          const targetPrice = isBuy ? (parseFloat(o.average_filled_price) * (1 + tradingSettings.sellMarkup / 100)) : 0;
+          const tpFmt = targetPrice > 0 ? fmt(targetPrice) : '';
+          const tpDecimals = targetPrice < 1 ? 6 : (targetPrice < 100 ? 4 : 2);
+
+          html += `<div class="monitor-order">
+            <div class="monitor-order-left">
+              <span style="color:${sColor};font-weight:700;">${side}</span>
+              <span>$${lp}</span>
+              <span style="color:var(--t2)">${filled > 0 ? filled.toFixed(filled < 1 ? 6 : 2) : '—'}</span>
+            </div>
+            <div class="monitor-actions">
+              ${isBuy ? `<button class="mon-sell-btn" onclick="createSellAt('${pair}','${filled}','${targetPrice.toFixed(tpDecimals)}')">+${tradingSettings.sellMarkup}%</button>` : ''}
+              ${isBuy ? `<button class="mon-sell-btn ask" onclick="sellAtAsk('${pair}','${filled}')">Ask</button>` : ''}
+              <button class="mon-deselect" onclick="deselectOrder('${o.order_id}')">✕</button>
+            </div>
+          </div>`;
+        });
+
+        // Sell All button
+        if (totalFilled > 0) {
+          html += `<div style="margin-top:8px;"><button class="mon-sell-btn all" style="width:100%;padding:10px;" onclick="sellAtAsk('${pair}','${totalFilled}')">SELL ALL ${coin}</button></div>`;
+        }
+
+        html += `</div>`;
+      }
+
+      document.getElementById('monitorList').innerHTML = html;
+    }
+
+    async function createSellAt(pair, size, price) {
+      const r = await api('/create-sell-order', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ productId: pair, size: size, price: price })
+      });
+      if (r.success) { toast('Sell order created!'); loadOrders(); }
+      else toast(r.error || 'Failed', 'error');
+    }
+
+    async function sellAtAsk(pair, size) {
+      const cached = monitorPriceCache[pair];
+      if (!cached || !cached.ask) { toast('No ask price', 'error'); return; }
+      const r = await api('/create-sell-order', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ productId: pair, size: size, price: cached.ask.toString() })
+      });
+      if (r.success) { toast('Sell at Ask placed!'); loadOrders(); }
+      else toast(r.error || 'Failed', 'error');
+    }
+
+    async function cancelOrder(id) {
+      if (!confirm('Cancel this order?')) return;
+      const r = await api('/cancel-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId: id })
+      });
+      if (r.success) { toast('Order cancelled'); loadOrders(); loadBalance(); }
+      else toast(r.error || 'Failed', 'error');
+    }
+
+    // ── Profit ──
+    async function loadProfit() {
+      const r = await api('/get-profit-history');
+      if (r.success) {
+        const history = r.history || [];
+        let total = 0;
+        history.forEach(h => total += parseFloat(h.profit || 0));
+
+        const el = document.getElementById('profitTotal');
+        el.textContent = (total >= 0 ? '+$' : '-$') + Math.abs(total).toFixed(2);
+        el.className = 'profit-value ' + (total >= 0 ? 'profit-positive' : 'profit-negative');
+
+        document.getElementById('profitList').innerHTML = history.length
+          ? history.sort((a, b) => new Date(b.date) - new Date(a.date)).map(h => {
+              const p = parseFloat(h.profit || 0);
+              return `<div class="profit-item">
+                <div class="profit-item-left">
+                  <span class="profit-coin">${h.coin || '—'}</span>
+                  <span class="profit-date">${fmtDate(h.date)}</span>
+                </div>
+                <span class="profit-amount" style="color:${p >= 0 ? 'var(--green)' : 'var(--loss)'}">${p >= 0 ? '+' : ''}$${Math.abs(p).toFixed(2)}</span>
+              </div>`;
+            }).join('')
+          : '<div class="empty">No profit history yet</div>';
+      }
+    }
+
+    // ── Holdings ──
+    async function loadHoldings() {
+      const r = await api('/get-holdings');
+      if (r.success) {
+        const holdings = r.holdings || [];
+        let total = 0;
+        holdings.forEach(h => total += h.usdValue);
+
+        document.getElementById('holdingsTotal').textContent = '$' + total.toFixed(2);
+
+        document.getElementById('holdingsList').innerHTML = holdings.length
+          ? holdings.map(h => `<div class="holding-card">
+              <div class="holding-left">
+                <span class="holding-coin">${h.currency}</span>
+                <span class="holding-amount">${h.total.toFixed(h.total < 1 ? 6 : 2)} units</span>
+              </div>
+              <div class="holding-right">
+                <div class="holding-usd">$${h.usdValue.toFixed(2)}</div>
+                <div class="holding-price">@$${fmt(h.price)}</div>
+              </div>
+            </div>`).join('')
+          : '<div class="empty">No holdings</div>';
+      } else {
+        document.getElementById('holdingsList').innerHTML = '<div class="empty">Failed to load</div>';
+      }
+    }
+
+    // ── Settings save ──
+    ['setSellMarkup', 'setLimitFee', 'setMktFee'].forEach(id => {
+      document.getElementById(id).addEventListener('change', saveSettings);
+    });
+    async function saveSettings() {
+      await api('/save-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sellMarkup: document.getElementById('setSellMarkup').value,
+          tradeFee: document.getElementById('setLimitFee').value,
+          marketFee: document.getElementById('setMktFee').value
+        })
+      });
+    }
+
+    // ── Auto-refresh ──
+    function refreshAll() {
+      loadBalance();
+      loadOrders().then(updateMonitor);
+      loadProfit();
+      loadHoldings();
+    }
+
+    // Init
+    loadSettings();
+    refreshAll();
+    connectPriceWs();
+    setInterval(() => { loadBalance(); loadOrders().then(updateMonitor); }, 10000);
+    setInterval(loadHoldings, 30000);
+    setInterval(updateMonitor, 5000);
+  </script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+Used for
+API trading
+Permissions
+Read
+IP address allowlist (optional)
+API key
+c331c31c-fd53-4678-85b2-67fa948716b3
+Secret key
+8F2CD7DAB9F1AD8FD0854F78B8CF6454

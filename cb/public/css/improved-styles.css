@@ -1,0 +1,1946 @@
+/* Улучшенные стили без изменения HTML-структуры */
+
+/* Базовые стили */
+body {
+    background-color: #f8f9fa;
+    font-family: 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    color: #333;
+}
+
+/* Делаем контейнер еще шире */
+.container {
+    max-width: 1800px !important;
+    padding: 0 30px;
+    width: 95% !important;
+}
+
+/* Современный дизайн с улучшенной читаемостью */
+body {
+    background-color: #f0f2f5;
+    font-family: 'Segoe UI', Roboto, sans-serif;
+    color: #1a1f36;
+    line-height: 1.6;
+}
+
+.container {
+    max-width: 1600px !important;
+    padding: 20px;
+    margin: 0 auto;
+}
+
+/* Улучшенные карточки */
+.card {
+    background: #ffffff;
+    border-radius: 16px;
+    box-shadow: 0 1px 3px rgba(16, 24, 40, 0.1), 0 1px 2px rgba(16, 24, 40, 0.06);
+    border: none;
+    margin-bottom: 24px;
+    transition: all 0.2s ease;
+}
+
+.card-body {
+    padding: 24px;
+}
+
+/* Современные таблицы */
+
+.table th {
+    background-color: #f9fafb;
+    color: #6b7280;
+    font-weight: 600;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 8px 10px;
+    border-bottom: 2px solid #e5e7eb;
+}
+
+.table td {
+    padding: 10px 8px;
+    color: #1f2937;
+    border-bottom: 1px solid #e5e7eb;
+    vertical-align: middle;
+    font-size: 0.85rem;
+}
+
+.table tbody tr:hover {
+    background-color: #f8fafc;
+}
+
+/* Улучшенные формы */
+.form-control {
+    padding: 10px 14px;
+    border-radius: 8px;
+    border: 1px solid #d1d5db;
+    font-size: 0.925rem;
+    transition: all 0.2s ease;
+    background-color: #ffffff;
+}
+
+.form-control:focus {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1);
+    outline: none;
+}
+
+/* Современные кнопки */
+.btn {
+    padding: 10px 18px;
+    font-weight: 500;
+    border-radius: 8px;
+    transition: all 0.2s ease;
+    font-size: 0.925rem;
+}
+
+.percentage-button {
+    padding: 6px 12px;
+    font-size: 0.875rem;
+    border-radius: 6px;
+    border: 1px solid #e5e7eb;
+    background-color: #ffffff;
+    color: #4b5563;
+    margin: 0 4px;
+    transition: all 0.2s ease;
+}
+
+.percentage-button:hover {
+    background-color: #f3f4f6;
+    border-color: #d1d5db;
+}
+
+.percentage-button.active {
+    background-color: #3b82f6;
+    color: #ffffff;
+    border-color: #3b82f6;
+}
+
+/* Спиннер загрузки */
+.spinner-border {
+    color: #3b82f6;
+    width: 1.5rem;
+    height: 1.5rem;
+}
+
+/* Фиксированные уведомления */
+#notification {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10000;
+    border-radius: 8px;
+    padding: 16px 24px;
+    margin: 0;
+    font-size: 0.925rem;
+    background-color: #f0f9ff;
+    color: #0369a1;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    min-width: 300px;
+    text-align: center;
+    display: none;
+    animation: slideDown 0.3s ease-out;
+}
+
+#notification.show {
+    display: block;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateX(-50%) translateY(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+    }
+}
+
+.table-hover tbody tr {
+    transition: background-color 0.15s ease-in-out;
+}
+
+/* Стили для кнопок */
+.btn {
+    border-radius: 6px;
+    font-weight: 500;
+    padding: 8px 16px;
+    transition: all 0.2s;
+}
+
+.btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+.btn-primary {
+    background-color: #3b82f6;
+    border-color: #3b82f6;
+}
+
+.btn-primary:hover {
+    background-color: #2563eb;
+    border-color: #2563eb;
+}
+
+.btn-success {
+    background-color: #10b981;
+    border-color: #10b981;
+}
+
+.btn-success:hover {
+    background-color: #059669;
+    border-color: #059669;
+}
+
+.btn-danger {
+    background-color: #ef4444;
+    border-color: #ef4444;
+}
+
+.btn-danger:hover {
+    background-color: #dc2626;
+    border-color: #dc2626;
+}
+
+/* Стили для текста */
+.text-success {
+    color: #10b981 !important;
+    font-weight: 600;
+}
+
+.text-danger {
+    color: #ef4444 !important;
+    font-weight: 600;
+}
+
+/* Стили для форм */
+.form-control {
+    border-radius: 6px;
+    padding: 10px 15px;
+    border: 1px solid #ddd;
+    transition: all 0.2s;
+}
+
+.form-control:focus {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 0.2rem rgba(59, 130, 246, 0.25);
+}
+
+.form-group label {
+    font-weight: 600;
+    color: #555;
+    margin-bottom: 8px;
+}
+
+/* Стили для модальных окон */
+.modal-content {
+    border-radius: 10px;
+    border: none;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+    overflow: hidden;
+}
+
+.modal-header {
+    background-color: #f9fafb;
+    border-bottom: 1px solid #e5e7eb;
+    padding: 15px 20px;
+}
+
+.modal-title {
+    font-weight: 600;
+    color: #1a1f36;
+}
+
+/* Навигация */
+.nav-tabs {
+    border-bottom: 2px solid #e5e7eb;
+    margin-bottom: 20px;
+}
+
+.nav-tabs .nav-link {
+    border: none;
+    color: #6b7280;
+    font-weight: 500;
+    padding: 12px 20px;
+    border-radius: 8px 8px 0 0;
+    transition: all 0.2s ease;
+}
+
+.nav-tabs .nav-link.active {
+    background-color: #3b82f6;
+    color: #ffffff;
+    border-bottom: 2px solid #3b82f6;
+}
+
+.nav-tabs .nav-link:hover {
+    background-color: #f3f4f6;
+    color: #1f2937;
+}
+
+/* Бейджи */
+.badge {
+    font-size: 0.75rem;
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-weight: 600;
+}
+
+.badge-success {
+    background-color: #10b981;
+    color: #ffffff;
+}
+
+.badge-danger {
+    background-color: #ef4444;
+    color: #ffffff;
+}
+
+.badge-warning {
+    background-color: #f59e0b;
+    color: #ffffff;
+}
+
+.badge-info {
+    background-color: #3b82f6;
+    color: #ffffff;
+}
+
+/* Спиннер */
+.spinner-border {
+    width: 2rem;
+    height: 2rem;
+    border-width: 0.25em;
+}
+
+.spinner-border-sm {
+    width: 1rem;
+    height: 1rem;
+    border-width: 0.125em;
+}
+
+/* Статусы */
+.status-active {
+    color: #10b981;
+    font-weight: 600;
+}
+
+.status-inactive {
+    color: #6b7280;
+    font-weight: 500;
+}
+
+.status-error {
+    color: #ef4444;
+    font-weight: 600;
+}
+
+/* Отображение баланса */
+.balance-display {
+    background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+    border: 1px solid #0ea5e9;
+    border-radius: 8px;
+    padding: 12px 16px;
+    color: #0c4a6e;
+    font-weight: 600;
+    text-align: center;
+}
+
+/* Заголовки */
+h1, h2, h3, h4, h5, h6 {
+    color: #1a1f36;
+    font-weight: 600;
+    line-height: 1.4;
+}
+
+h1 {
+    font-size: 2rem;
+    margin-bottom: 1.5rem;
+}
+
+h2 {
+    font-size: 1.5rem;
+    margin-bottom: 1.25rem;
+}
+
+h3 {
+    font-size: 1.25rem;
+    margin-bottom: 1rem;
+}
+
+/* Подсказки */
+.tooltip {
+    font-size: 0.875rem;
+}
+
+.tooltip-inner {
+    background-color: #1f2937;
+    color: #ffffff;
+    border-radius: 6px;
+    padding: 8px 12px;
+}
+
+/* Выпадающие списки */
+.dropdown-menu {
+    border: none;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    border-radius: 8px;
+    padding: 8px 0;
+}
+
+.dropdown-item {
+    padding: 8px 16px;
+    color: #1f2937;
+    transition: all 0.2s ease;
+}
+
+.dropdown-item:hover {
+    background-color: #f3f4f6;
+    color: #1f2937;
+}
+
+.dropdown-item:active {
+    background-color: #3b82f6;
+    color: #ffffff;
+}
+
+/* Таблица выбранных ордеров */
+.selected-orders-table {
+    background: #ffffff;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.selected-orders-table th {
+    background-color: #f8fafc;
+    color: #374151;
+    font-weight: 600;
+    font-size: 0.55rem;
+    padding: 6px 8px;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.selected-orders-table td {
+    padding: 6px 8px;
+    font-size: 0.8rem;
+    border-bottom: 1px solid #f1f5f9;
+}
+
+.selected-orders-table tbody tr:hover {
+    background-color: #f8fafc;
+}
+
+/* Анимации */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.fade-in {
+    animation: fadeIn 0.3s ease-out;
+}
+
+/* Таблицы */
+.table {
+    margin-bottom: 0;
+    background-color: #ffffff;
+}
+
+.table-striped tbody tr:nth-of-type(odd) {
+    background-color: #f8fafc;
+}
+
+.table-hover tbody tr:hover {
+    background-color: #f1f5f9;
+}
+
+/* Чекбоксы */
+.form-check-input {
+    width: 1.25rem;
+    height: 1.25rem;
+    border: 2px solid #d1d5db;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+}
+
+.form-check-input:checked {
+    background-color: #3b82f6;
+    border-color: #3b82f6;
+}
+
+.form-check-input:focus {
+    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1);
+}
+
+/* Процентные изменения */
+.percentage-change {
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.875rem;
+}
+
+.percentage-change.positive {
+    background-color: #dcfce7;
+    color: #166534;
+}
+
+.percentage-change.negative {
+    background-color: #fef2f2;
+    color: #991b1b;
+}
+
+/* Компактные формы торговли */
+.buy-form {
+    background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 16px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.buy-form::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, #10b981, #3b82f6, #8b5cf6);
+    border-radius: 12px 12px 0 0;
+}
+
+.buy-form:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+}
+
+.buy-form h2 {
+    color: #1e293b;
+    font-size: 1.1rem;
+    margin-bottom: 12px;
+    font-weight: 700;
+    text-align: center;
+    position: relative;
+    padding-bottom: 8px;
+}
+
+.buy-form h2::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 40px;
+    height: 2px;
+    background: linear-gradient(90deg, #10b981, #3b82f6);
+    border-radius: 1px;
+}
+
+/* Ультра-компактная таблица цен */
+.price-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    background: white;
+    border-radius: 6px;
+    overflow: hidden;
+    margin-bottom: 0; /* Убираем отступ снизу */
+}
+
+.price-table td {
+    padding: 4px 6px; /* Уменьшаем отступы в ячейках */
+    border-bottom: 1px solid #f1f5f9;
+    vertical-align: middle;
+    font-size: 0.75rem; /* Уменьшаем размер шрифта */
+    line-height: 1.1;
+}
+
+.price-table td:first-child {
+    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+    font-weight: 600;
+    color: #475569;
+    width: 80px; /* Уменьшаем ширину первой колонки */
+    border-right: 1px solid #e2e8f0;
+    text-align: right;
+    padding-right: 6px;
+    font-size: 0.7rem;
+}
+
+.price-table tr:last-child td {
+    border-bottom: none;
+}
+
+/* Компактные инпуты */
+.coin-input {
+    text-transform: uppercase;
+    text-align: center;
+    font-weight: 700;
+    font-size: 0.8rem;
+    background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+    letter-spacing: 0.5px;
+    height: 28px; /* Уменьшаем высоту */
+    padding: 2px 6px;
+}
+
+.coin-input:focus {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+    background: white;
+}
+
+/* Компактные кнопки процентов */
+.percentage-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px; /* Уменьшаем расстояние между кнопками */
+    align-items: center;
+}
+
+.percentage-button {
+    background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
+    border: 1px solid #cbd5e1;
+    color: #475569;
+    padding: 2px 6px; /* Уменьшаем отступы */
+    border-radius: 3px;
+    font-size: 0.65rem; /* Уменьшаем размер шрифта */
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    min-width: 24px; /* Уменьшаем минимальную ширину */
+    height: 22px; /* Уменьшаем высоту */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.percentage-button:hover {
+    background: #f1f5f9;
+    border-color: #94a3b8;
+    transform: scale(1.02);
+}
+
+.percentage-button.active {
+    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+    color: white;
+    border-color: #2563eb;
+    box-shadow: 0 1px 4px rgba(59, 130, 246, 0.3);
+}
+
+.percentage-input {
+    width: 50px; /* Уменьшаем ширину */
+    height: 24px; /* Уменьшаем высоту */
+    text-align: center;
+    font-size: 0.7rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 3px;
+    padding: 2px;
+    font-weight: 600;
+    background: white;
+    transition: all 0.2s ease;
+}
+
+.percentage-input:focus {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+}
+
+/* Компактные кнопки Buy/Sell */
+.buy-button, .sell-button {
+    padding: 4px 8px; /* Уменьшаем отступы */
+    font-size: 0.7rem; /* Уменьшаем размер шрифта */
+    font-weight: 600;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    height: 28px; /* Уменьшаем высоту */
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.buy-button {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    color: white;
+}
+
+.buy-button:hover {
+    background: linear-gradient(135deg, #059669 0%, #047857 100%);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+}
+
+.sell-button {
+    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    color: white;
+}
+
+.sell-button:hover {
+    background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+}
+
+/* Компактные информационные блоки */
+.price-table div:not(.percentage-buttons):not(.flex) {
+    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+    border: 1px solid #e2e8f0;
+    border-radius: 3px;
+    padding: 4px 6px; /* Уменьшаем отступы */
+    font-weight: 600;
+    color: #475569;
+    height: 26px; /* Уменьшаем высоту */
+    display: flex;
+    align-items: center;
+    font-family: 'Courier New', monospace;
+    font-size: 0.7rem; /* Уменьшаем размер шрифта */
+    letter-spacing: 0.2px;
+}
+
+/* Цветовое кодирование для цен */
+#bestBidPrice, #purchaseAmount, #stopPrice, #limitPrice {
+    background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+    border: 1px solid #10b981;
+    color: #047857;
+    font-weight: 700;
+}
+
+#bestAskPrice, #sellPurchaseAmount {
+    background: linear-gradient(135deg, #fef2f2 0%, #fecaca 100%);
+    border: 1px solid #ef4444;
+    color: #dc2626;
+    font-weight: 700;
+}
+
+/* Flex контейнеры для процентов - более компактные */
+.price-table .flex {
+    display: flex;
+    align-items: center;
+    gap: 3px; /* Уменьшаем расстояние */
+}
+
+/* Уменьшаем ширину полей с.price-table td[style*="wi ценами в формах торговли */
+.price-table td[style*="width: 200px"] {
+    width: 100px !important;
+    max-width: none;
+}
+
+/* Специальные стили для полей цен */
+#bestBidPrice, #bestAskPrice, #stopPrice, #limitPrice {
+    width: 100% !important;
+    max-width: none;
+    font-size: 0.7rem;
+    padding: 2px 4px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Также обновим стили для purchaseAmount и sellPurchaseAmount */
+#purchaseAmount, #sellPurchaseAmount {
+    width: 100% !important;
+    max-width: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Адаптивность для мобильных - еще более компактно */
+@media (max-width: 768px) {
+    .trading-forms-container {
+        grid-template-columns: 1fr;
+        gap: 8px;
+    }
+    
+    .trading-form {
+        padding: 8px;
+    }
+    
+    .price-table td {
+        padding: 2px 4px;
+        font-size: 0.65rem;
+    }
+    
+    .price-table td:first-child {
+        width: 60px;
+        font-size: 0.6rem;
+    }
+    
+    .price-table td[style*="width: 200px"] {
+        width: 100px !important;
+        max-width: 100px;
+    }
+    
+    #bestBidPrice, #bestAskPrice, #stopPrice, #limitPrice {
+        width: 30px;
+        max-width: 30px;
+        font-size: 0.7rem;
+        padding: 2px 4px;
+    }
+    
+    #purchaseAmount, #sellPurchaseAmount {
+        width: 80px;
+        max-width: 80px;
+    }
+    
+    .percentage-button {
+        padding: 1px 4px;
+        font-size: 0.6rem;
+        min-width: 20px;
+        height: 18px;
+    }
+    
+    .percentage-input {
+        width: 40px;
+        height: 20px;
+        font-size: 0.65rem;
+    }
+    
+    .buy-button, .sell-button {
+        padding: 3px 6px;
+        font-size: 0.65rem;
+        height: 24px;
+    }
+    
+    .coin-input, .price-table div:not(.percentage-buttons):not(.flex) {
+        height: 24px;
+        font-size: 0.65rem;
+    }
+    
+    .buy-form {
+        padding: 12px;
+        margin-bottom: 12px;
+    }
+}
+
+/* Стили для инпутов */
+.percentage-label {
+    text-align: center;
+}
+
+.percentage-input {
+    text-align: center;
+}
+
+/* Стили для селекторов ордеров (галочки) */
+.selector-cell {
+    text-align: center;
+    width: 40px;
+    padding: 4px !important;
+}
+
+.order-selector {
+    width: 18px;
+    height: 18px;
+    border: 2px solid #d1d5db;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    position: relative;
+    display: inline-block;
+    background: #ffffff;
+}
+
+.order-selector:hover {
+    border-color: #3b82f6;
+    background-color: #f0f9ff;
+}
+
+.order-selector.selected {
+    background-color: #3b82f6;
+    border-color: #2563eb;
+}
+
+.order-selector.selected::after {
+    content: '✓';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: white;
+    font-size: 12px;
+    font-weight: bold;
+}
+
+/* Стили для таблицы лузеров */
+.high-volume {
+    color: #28a745;
+    font-weight: bold;
+}
+
+.text-red {
+    color: #dc3545;
+}
+
+.not-in-list {
+    opacity: 0.6;
+}
+
+.active-row {
+    background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%) !important;
+    border-left: 4px solid #3b82f6 !important;
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.2) !important;
+    transform: translateX(2px);
+    transition: all 0.2s ease;
+}
+
+.active-row:hover {
+    background: linear-gradient(135deg, #bfdbfe 0%, #93c5fd 100%) !important;
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3) !important;
+}
+
+#losersTableBody tr:hover {
+    background-color: #f0f7ff;
+}
+
+/* Общие стили */
+.card {
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    margin-bottom: 20px;
+}
+
+.positive {
+    color: #28a745;
+}
+
+.negative {
+    color: #dc3545;
+}
+
+.error {
+    color: #dc3545;
+    font-style: italic;
+}
+
+/* Стили для заголовков */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+    margin-bottom: 1rem;
+}
+
+.text-2xl {
+    font-size: 1.5rem;
+}
+
+.font-bold {
+    font-weight: 700;
+}
+
+.mb-4 {
+    margin-bottom: 1rem;
+}
+
+/* Стили для контейнеров */
+.w-full {
+    width: 100%;
+}
+
+.flex {
+    display: flex;
+}
+
+.items-center {
+    align-items: center;
+}
+
+.gap-2 {
+    gap: 0.5rem;
+}
+
+.gap-4 {
+    gap: 1rem;
+}
+
+.justify-between {
+    justify-content: space-between;
+}
+
+/* Дополнительные стили для таблицы ордеров */
+#ordersTableBody td:nth-child(3) {
+    cursor: pointer;
+    color: #2563eb;
+    transition: color 0.2s;
+}
+
+#ordersTableBody td:nth-child(3):hover {
+    color: #1d4ed8;
+    text-decoration: underline;
+}
+
+/* Оптимизация отступов для Latest Orders таблицы */
+#ordersTableBody th,
+#ordersTableBody td {
+    padding: 4px 6px;
+    font-size: 0.75rem;
+    white-space: nowrap;
+}
+
+#ordersTableBody th {
+    font-size: 0.65rem;
+    padding: 4px 6px;
+}
+
+/* Специальные стили для конкретных колонок Latest Orders */
+#ordersTableBody th:nth-child(1), /* # */
+#ordersTableBody td:nth-child(1) {
+    width: 30px;
+    max-width: 30px;
+    text-align: center;
+}
+
+#ordersTableBody th:nth-child(2), /* Order ID */
+#ordersTableBody td:nth-child(2) {
+    width: 80px;
+    max-width: 80px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#ordersTableBody th:nth-child(3), /* Pair */
+#ordersTableBody td:nth-child(3) {
+    width: 70px;
+    max-width: 70px;
+}
+
+#ordersTableBody th:nth-child(4), /* Side */
+#ordersTableBody td:nth-child(4) {
+    width: 50px;
+    max-width: 50px;
+    text-align: center;
+}
+
+#ordersTableBody th:nth-child(5), /* Type */
+#ordersTableBody td:nth-child(5) {
+    width: 60px;
+    max-width: 60px;
+}
+
+#ordersTableBody th:nth-child(6), /* Status */
+#ordersTableBody td:nth-child(6) {
+    width: 60px;
+    max-width: 60px;
+}
+
+#ordersTableBody th:nth-child(7), /* Created Date */
+#ordersTableBody td:nth-child(7) {
+    width: 80px;
+    max-width: 80px;
+}
+
+#ordersTableBody th:nth-child(8), /* Size */
+#ordersTableBody td:nth-child(8) {
+    width: 70px;
+    max-width: 70px;
+    text-align: right;
+}
+
+#ordersTableBody th:nth-child(9), /* Filled Size */
+#ordersTableBody td:nth-child(9) {
+    width: 70px;
+    max-width: 70px;
+    text-align: right;
+}
+
+#ordersTableBody th:nth-child(10), /* Limit Price */
+#ordersTableBody td:nth-child(10) {
+    width: 80px;
+    max-width: 80px;
+    text-align: right;
+}
+
+#ordersTableBody th:nth-child(11), /* Avg. Filled Price */
+#ordersTableBody td:nth-child(11) {
+    width: 80px;
+    max-width: 80px;
+    text-align: right;
+}
+
+#ordersTableBody th:nth-child(12), /* Total Value (USD) */
+#ordersTableBody td:nth-child(12) {
+    width: 90px;
+    max-width: 90px;
+    text-align: right;
+}
+
+#ordersTableBody th:nth-child(13), /* Completion % */
+#ordersTableBody td:nth-child(13) {
+    width: 70px;
+    max-width: 70px;
+    text-align: center;
+}
+
+#ordersTableBody th:nth-child(14), /* Fees */
+#ordersTableBody td:nth-child(14) {
+    width: 60px;
+    max-width: 60px;
+    text-align: right;
+}
+
+#ordersTableBody th:nth-child(15), /* Action */
+#ordersTableBody td:nth-child(15) {
+    width: 60px;
+    max-width: 60px;
+    text-align: center;
+}
+
+/* Общая оптимизация таблицы Latest Orders */
+#ordersTableBody {
+    table-layout: fixed;
+    width: 100%;
+}
+
+/* Компактные ячейки для лучшего размещения */
+.orders-container .table {
+    font-size: 0.8rem;
+    table-layout: fixed;
+    width: 100%;
+}
+
+.orders-container .table th {
+    padding: 6px 8px;
+    font-size: 0.7rem;
+}
+
+.orders-container .table td {
+    padding: 8px 6px;
+    font-size: 0.8rem;
+}
+
+/* Добавим стили для колонки Price +1% */
+.price-plus-one-percent {
+    color: #28a745 !important;
+    /* Зеленый цвет для колонки Price +1% */
+    font-weight: bold;
+}
+
+/* Убедимся, что все колонки таблицы видны */
+.selected-orders-table th,
+.selected-orders-table td {
+    padding: 4px 6px;
+    white-space: nowrap;
+    /* Убираем overflow: hidden и text-overflow: ellipsis */
+}
+
+.selected-orders-table th {
+    font-size: 0.55rem; /* Специально для заголовков */
+}
+
+.selected-orders-table td {
+    font-size: 0.7rem; /* Для обычных ячеек */
+}
+
+/* Добавим стили для кнопки копирования */
+.copy-btn {
+    background-color: #4CAF50;
+    border: none;
+    color: white;
+    padding: 5px 10px;
+    text-align: center;
+    text-decoration: none;
+    display: inline-block;
+    font-size: 12px;
+    margin: 2px;
+    cursor: pointer;
+    border-radius: 3px;
+}
+
+.copy-btn:hover {
+    background-color: #45a049;
+}
+
+.copy-btn i {
+    margin-right: 5px;
+}
+
+/* Добавим стили для кастомного алерта */
+.custom-alert {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background-color: #4CAF50;
+    color: white;
+    padding: 15px 20px;
+    border-radius: 5px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    z-index: 9999;
+    display: none;
+    font-weight: bold;
+    animation: fadeIn 0.3s ease-in-out;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Улучшенные стили для таблицы Selected Orders by Coin */
+.selected-orders-table {
+    background: #ffffff;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    border: 1px solid #e2e8f0;
+    margin-bottom: 16px;
+}
+
+/* Заголовки таблицы */
+.selected-orders-table th {
+    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+    color: #374151;
+    font-weight: 700;
+    font-size: 0.5rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 8px 6px;
+    border-bottom: 2px solid #e2e8f0;
+    border-right: 1px solid #e2e8f0;
+    text-align: center;
+    position: relative;
+    white-space: nowrap; /* Предотвращает перенос текста в заголовках */
+}
+
+.selected-orders-table th:last-child {
+    border-right: none;
+}
+
+/* Ячейки данных */
+.selected-orders-table td {
+    padding: 6px 4px;
+    font-size: 0.7rem;
+    border-bottom: 1px solid #f1f5f9;
+    border-right: 1px solid #f1f5f9;
+    text-align: center;
+    vertical-align: middle;
+    transition: all 0.2s ease;
+    white-space: nowrap; /* Предотвращает перенос текста */
+}
+
+.selected-orders-table td:last-child {
+    border-right: none;
+}
+
+/* Строки при наведении */
+.selected-orders-table tbody tr:hover {
+    background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.1);
+}
+
+.selected-orders-table tbody tr:hover td {
+    border-color: #bfdbfe;
+}
+
+/* Специальные стили для первой колонки (Num) */
+.selected-orders-table th:first-child,
+.selected-orders-table td:first-child {
+    width: 15px !important;
+    max-width: 15px !important;
+    font-weight: 600;
+    background: linear-gradient(135deg, #fafbfc 0%, #f4f6f8 100%);
+    border-right: 2px solid #e2e8f0;
+    padding: 2px !important;
+    font-size: 0.5rem !important;
+}
+
+/* Стили для кнопки Copy */
+.selected-orders-table .copy-btn {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    border: none;
+    color: white;
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-size: 0.6rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 1px 3px rgba(16, 185, 129, 0.3);
+}
+
+.selected-orders-table .copy-btn:hover {
+    background: linear-gradient(135deg, #059669 0%, #047857 100%);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 6px rgba(16, 185, 129, 0.4);
+}
+
+/* Цветовое кодирование для статусов */
+.selected-orders-table td[style*="color: green"],
+.selected-orders-table td.text-green {
+    color: #059669 !important;
+    font-weight: 600;
+    background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+}
+
+.selected-orders-table td[style*="color: red"],
+.selected-orders-table td.text-red {
+    color: #dc2626 !important;
+    font-weight: 600;
+    background: linear-gradient(135deg, #fef2f2 0%, #fecaca 100%);
+}
+
+/* Стили для процентов заполнения */
+.selected-orders-table td:nth-child(8) {
+    font-weight: 600;
+    background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+    color: #0369a1;
+}
+
+/* Альтернативные строки */
+.selected-orders-table tbody tr:nth-child(even) {
+    background: linear-gradient(135deg, #fafbfc 0%, #f8fafc 100%);
+}
+
+.selected-orders-table tbody tr:nth-child(odd) {
+    background: #ffffff;
+}
+
+/* Анимация появления */
+.selected-orders-table tbody tr {
+    animation: fadeInRow 0.3s ease-out;
+}
+
+@keyframes fadeInRow {
+    from {
+        opacity: 0;
+        transform: translateX(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+/* Улучшенные границы для всей таблицы */
+.selected-orders-table table {
+    border-collapse: separate;
+    border-spacing: 0;
+    width: 100% !important;
+    table-layout: fixed !important;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.selected-orders-table table {
+    width: 100% !important;
+    table-layout: fixed !important;
+}
+
+/* Стили для контейнера таблицы */
+.selected-orders-container {
+    background: #ffffff;
+    border-radius: 16px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+    border: 1px solid #e2e8f0;
+    padding: 16px;
+    margin-bottom: 20px;
+}
+
+.selected-orders-container h2 {
+    color: #1a1f36;
+    font-size: 0.9rem;
+    font-weight: 700;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid #e2e8f0;
+    text-align: center;
+}
+
+/* Дополнительные стили для форм */
+.form-control {
+    display: block;
+    width: 100%;
+    background-clip: padding-box;
+}
+
+/* Дополнительные стили для кнопок */
+.btn {
+    display: inline-block;
+    white-space: nowrap;
+    vertical-align: middle;
+    user-select: none;
+}
+
+/* Дополнительные стили для таблиц */
+table {
+    border-collapse: collapse;
+}
+
+th, td {
+    border: 1px solid #dee2e6;
+    text-align: left;
+    font-size: 12px
+}
+.text-green-600 {
+    color: #16a34a;
+}
+
+.text-red-600 {
+    color: #dc2626;
+}
+
+.text-green {
+    color: #22c55e;
+}
+
+.text-red {
+    color: #ef4444;
+}
+
+/* Стили для изменения ширины стакана цен и панели управления */
+.selected-orders-container {
+    width: 100% !important;
+    float: none;
+    margin-right: 0;
+    background: #ffffff;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    padding: 12px;
+}
+
+/* Стилизованная полоса прокрутки для Selected Orders by Coin */
+.selected-orders-container::-webkit-scrollbar {
+    width: 8px;
+}
+
+.selected-orders-container::-webkit-scrollbar-track {
+    background: #f1f5f9;
+    border-radius: 4px;
+}
+
+.selected-orders-container::-webkit-scrollbar-thumb {
+    background: linear-gradient(135deg, #cbd5e1 0%, #94a3b8 100%);
+    border-radius: 4px;
+    transition: all 0.2s ease;
+}
+
+.selected-orders-container::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(135deg, #94a3b8 0%, #64748b 100%);
+}
+
+.buy-form {
+    width: 100% !important;
+    float: none;
+}
+
+/* Очистка флоатов */
+.main-content::after {
+    content: "";
+    display: table;
+    clear: both;
+}
+
+/* Убеждаемся, что все таблицы имеют 100% ширину */
+.table {
+    width: 100% !important;
+    background: #ffffff;
+    margin-bottom: 0;
+    font-size: 0.925rem;
+}
+
+.price-table {
+    width: 100% !important;
+    table-layout: auto;
+    border-collapse: collapse;
+    margin-bottom: 1rem;
+}
+
+.selected-orders-table table {
+    width: 100% !important;
+    table-layout: auto;
+}
+
+/* Убираем текст с клавишами для экономии места */
+.percentage-buttons::after {
+    display: none;
+}
+
+/* Новые стили для макета с левым сайдбаром */
+.main-layout {
+    display: flex;
+    gap: 20px;
+    min-height: 100vh;
+}
+
+.sidebar {
+    width: 580px;
+    min-width: 450px;
+    background: #ffffff;
+    border-radius: 16px;
+    box-shadow: 0 1px 3px rgba(16, 24, 40, 0.1), 0 1px 2px rgba(16, 24, 40, 0.06);
+    padding: 20px;
+    height: 100vh;
+    position: sticky;
+    top: 0;
+    order: 1;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.selected-orders-sidebar {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.main-content {
+    flex: 1;
+    min-width: 0;
+    order: 2;
+}
+
+/* Правая колонка — Latest Orders */
+.right-sidebar {
+    width: 620px;
+    min-width: 480px;
+    order: 3;
+    display: flex;
+    flex-direction: column;
+}
+
+.right-sidebar .orders-container {
+    background: #ffffff;
+    border-radius: 16px;
+    box-shadow: 0 1px 3px rgba(16, 24, 40, 0.1), 0 1px 2px rgba(16, 24, 40, 0.06);
+    padding: 16px 20px;
+    position: sticky;
+    top: 16px;
+    max-height: calc(100vh - 32px);
+    overflow-y: auto;
+}
+
+.selected-orders-sidebar h2 {
+    color: #1a1f36;
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid #e5e7eb;
+    flex-shrink: 0;
+}
+
+/* Дополнительные стили для улучшения прокрутки */
+.selected-orders-scroll {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-right: 8px;
+    margin-bottom: 12px;
+    scroll-behavior: smooth;
+    scrollbar-width: thin;
+    scrollbar-color: #64748b #f1f5f9;
+    max-height: calc(100vh - 120px);
+    min-height: 200px;
+}
+
+/* Стили для прокрутки в сайдбаре */
+.selected-orders-scroll::-webkit-scrollbar {
+    width: 8px; /* Увеличиваем ширину для лучшей видимости */
+}
+
+.selected-orders-scroll::-webkit-scrollbar-track {
+    background: #f1f5f9;
+    border-radius: 4px;
+    border: 1px solid #e2e8f0; /* Добавляем границу для лучшей видимости */
+}
+
+.selected-orders-scroll::-webkit-scrollbar-thumb {
+    background: linear-gradient(135deg, #64748b 0%, #475569 100%); /* Делаем темнее */
+    border-radius: 4px;
+    border: 1px solid #334155; /* Добавляем границу */
+    transition: all 0.2s ease;
+}
+
+.selected-orders-scroll::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(135deg, #475569 0%, #334155 100%);
+    transform: scale(1.1); /* Небольшое увеличение при наведении */
+}
+
+.selected-orders-scroll::-webkit-scrollbar-thumb:active {
+    background: linear-gradient(135deg, #334155 0%, #1e293b 100%);
+}
+
+/* Стили для визуализации процента заполнения ордеров */
+.completion-cell {
+    position: relative;
+    background: none;
+    transition: background 0.3s ease;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.completion-cell span {
+    position: relative;
+    z-index: 1;
+    font-weight: 600;
+    color: #374151;
+}
+
+/* Полностью заполненные ордера - темно-зеленый фон */
+.completion-filled {
+    background: linear-gradient(
+        to right,
+        #15803d 0%,
+        #15803d 100%
+    ) !important;
+}
+
+.completion-filled span {
+    color: #ffffff !important; /* Белый текст на темно-зеленом */
+    font-weight: 700;
+}
+
+/* Частично заполненные ордера - зеленый градиент только для заполненной части */
+.completion-partial {
+    background: linear-gradient(
+        to right,
+        #22c55e 0%,
+        #22c55e var(--completion-width, 0%),
+        #f8fafc var(--completion-width, 0%),
+        #f8fafc 100%
+    ) !important;
+}
+
+.completion-partial span {
+    color: #15803d !important; /* Темно-зеленый текст */
+    font-weight: 600;
+}
+
+/* Нулевое заполнение - светло-красный фон с темно-красным текстом */
+.completion-cell[style*="--completion-width: 0%"] {
+    background: #fecaca !important;
+}
+
+.completion-cell[style*="--completion-width: 0%"] span {
+    color: #dc2626 !important; /* Темно-красный текст */
+    font-weight: 600;
+}
+
+/* Анимация при обновлении */
+.completion-cell {
+    animation: completionUpdate 0.5s ease-in-out;
+}
+
+@keyframes completionUpdate {
+    0% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(1.05);
+    }
+    100% {
+        transform: scale(1);
+    }
+}
+
+/* Оптимизация форм торговли - более компактные */
+.trading-forms-container {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px; /* Уменьшаем расстояние между формами */
+    margin-bottom: 16px; /* Уменьшаем отступ снизу */
+}
+
+.trading-form {
+    background: #ffffff;
+    border-radius: 8px; /* Уменьшаем радиус */
+    padding: 5px; /* Уменьшаем внутренние отступы */
+    box-shadow: 0 1px 3px rgba(16, 24, 40, 0.08);
+    border: 1px solid #e5e7eb;
+    width: 100%;
+}
+
+.trading-form h2 {
+    color: #1a1f36;
+    font-size: 1rem; /* Уменьшаем размер заголовка */
+    font-weight: 600;
+    margin-bottom: 8px; /* Уменьшаем отступ */
+    text-align: center;
+}
+
+/* Адаптивность для мобильных устройств */
+@media (max-width: 1200px) {
+    .main-layout {
+        flex-direction: column;
+    }
+
+    .sidebar {
+        width: 100%;
+        min-width: auto;
+        position: static;
+        order: 1;
+        height: 50vh;
+    }
+
+    .main-content {
+        order: 2;
+    }
+
+    .right-sidebar {
+        width: 100%;
+        min-width: auto;
+        order: 3;
+    }
+
+    .right-sidebar .orders-container {
+        position: static;
+        max-height: none;
+    }
+    
+    .selected-orders-scroll {
+        max-height: calc(50vh - 100px);
+    }
+    
+    .trading-forms-container {
+        grid-template-columns: 1fr;
+        gap: 12px;
+    }
+}
+
+@media (max-width: 768px) {
+    .container-fluid {
+        padding: 10px;
+    }
+    
+    .main-layout {
+        gap: 15px;
+    }
+    
+    .sidebar {
+        padding: 12px;
+        height: 40vh;
+    }
+    
+    .trading-form {
+        padding: 12px;
+    }
+    
+    .selected-orders-scroll {
+        max-height: calc(40vh - 80px);
+    }
+    
+    .selected-orders-container {
+        height: 40vh;
+        padding: 8px;
+    }
+    
+    .selected-orders-table th,
+    .selected-orders-table td {
+        padding: 3px 4px;
+        font-size: 0.6rem;
+    }
+}
+
+/* Анимация пульсации для активных уведомлений */
+@keyframes pulse-green {
+    0% {
+        box-shadow: 0 0 10px rgba(16, 185, 129, 0.4);
+        transform: scale(1);
+    }
+    50% {
+        box-shadow: 0 0 20px rgba(16, 185, 129, 0.8);
+        transform: scale(1.02);
+    }
+    100% {
+        box-shadow: 0 0 10px rgba(16, 185, 129, 0.4);
+        transform: scale(1);
+    }
+}
+
+/* Стили для кнопок Telegram */
+.telegram-btn {
+    position: relative;
+    overflow: hidden;
+    min-width: 90px;
+    text-align: center;
+}
+
+.telegram-btn:hover {
+    transform: translateY(-1px);
+}
+
+/* Дополнительные стили для строк с активными уведомлениями */
+.order-row.has-alert {
+    background-color: #f0fdf4 !important;
+    border-left: 4px solid #10b981 !important;
+    transition: all 0.3s ease;
+}
+
+.order-row.has-alert:hover {
+    background-color: #dcfce7 !important;
+}
+
+/* ============================================
+   PROFIT TABLE & COIN GROUP STYLES
+   ============================================ */
+
+.coin-group {
+    background: #0d1117;
+    border: 1px solid #21262d;
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 12px;
+}
+
+.coin-group:last-child {
+    border-bottom: none;
+}
+
+.coin-group h4 {
+    margin: 0 0 6px 0;
+    font-size: 14px;
+}
+
+.coin-group h4 a {
+    color: #4fc3f7;
+    text-decoration: none;
+}
+
+.coin-group h4 a:hover {
+    text-decoration: underline;
+}
+
+.coin-group .balance {
+    font-size: 11px;
+    color: #888;
+    margin-bottom: 8px;
+}
+
+/* Profit Table - Summary row */
+.profit-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-size: 10px;
+    margin-bottom: 8px;
+    background: #0d1117;
+    table-layout: fixed;
+}
+
+.profit-table th,
+.profit-table td {
+    padding: 4px 6px;
+    text-align: left;
+    border: 1px solid #1a2a1a;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.profit-table th {
+    background: #161b22;
+    color: #666;
+    font-size: 9px;
+    text-transform: uppercase;
+}
+
+.profit-table th:nth-child(1),
+.profit-table td:nth-child(1) { width: 35px; }
+
+.profit-table th:nth-child(2),
+.profit-table td:nth-child(2) { width: 110px; }
+
+.profit-table th:nth-child(3),
+.profit-table td:nth-child(3) { width: 110px; }
+
+.profit-table th:nth-child(4),
+.profit-table td:nth-child(4) { width: 100px; }
+
+.profit-table th:nth-child(5),
+.profit-table td:nth-child(5) { width: 70px; }
+
+.profit-table th:nth-child(6),
+.profit-table td:nth-child(6) { width: 70px; }
+
+.profit-table th:nth-child(7),
+.profit-table td:nth-child(7) { width: 80px; }
+
+.profit-table th:nth-child(8),
+.profit-table td:nth-child(8) { width: 120px; }
+
+.profit-table .fixed-ask {
+    background: #1a2a3a;
+    color: #4fc3f7;
+}
+
+.profit-table .profit-pos {
+    color: #4ade80;
+    font-weight: 600;
+}
+
+.profit-table .profit-neg {
+    color: #f87171;
+    font-weight: 600;
+}
+
+/* Selected Table - Orders list */
+.selected-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-size: 10px;
+}
+
+.selected-table th,
+.selected-table td {
+    padding: 4px 6px;
+    text-align: left;
+    border-bottom: 1px solid #1a1a1a;
+}
+
+.selected-table th {
+    color: #666;
+    font-size: 9px;
+    text-transform: uppercase;
+    background: #161b22;
+}
+
+.selected-table .side-buy {
+    color: #4ade80;
+}
+
+.selected-table .side-sell {
+    color: #f87171;
+}
+
+.selected-table .copy-btn {
+    padding: 2px 8px;
+    border: 1px solid #3b82f6;
+    border-radius: 3px;
+    background: #1a2a3a;
+    color: #3b82f6;
+    font-size: 9px;
+    cursor: pointer;
+}
+
+.selected-table .copy-btn:hover {
+    background: #3b82f6;
+    color: #fff;
+}

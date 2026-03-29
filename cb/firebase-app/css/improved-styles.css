@@ -1,0 +1,102 @@
+/* Улучшенные стили без изменения HTML-структуры */
+
+/* Базовые стили */
+body {
+    background-color: #f8f9fa;
+    font-family: 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    color: #333;
+}
+
+/* Делаем контейнер еще шире */
+.container {
+    max-width: 1800px !important;
+    padding: 0 30px;
+    width: 95% !important;
+}
+
+/* Современный дизайн с улучшенной читаемостью */
+body {
+    background-color: #f0f2f5;
+    font-family: 'Segoe UI', Roboto, sans-serif;
+    color: #1a1f36;
+    line-height: 1.6;
+}
+
+.container {
+    max-width: 1600px !important;
+    padding: 20px;
+    margin: 0 auto;
+}
+
+/* Улучшенные карточки */
+.card {
+    background: #ffffff;
+    border-radius: 16px;
+    box-shadow: 0 1px 3px rgba(16, 24, 40, 0.1), 0 1px 2px rgba(16, 24, 40, 0.06);
+    border: none;
+    margin-bottom: 24px;
+    transition: all 0.2s ease;
+}
+
+.card-body {
+    padding: 24px;
+}
+
+/* Современные таблицы */
+.table th {
+    background-color: #f9fafb;
+    color: #6b7280;
+    font-weight: 600;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 8px 10px;
+    border-bottom: 2px solid #e5e7eb;
+}
+
+.table td {
+    padding: 10px 8px;
+    color: #1f2937;
+    border-bottom: 1px solid #e5e7eb;
+    vertical-align: middle;
+    font-size: 0.85rem;
+}
+
+.table tbody tr:hover {
+    background-color: #f8fafc;
+}
+
+/* Улучшенные формы */
+.form-control {
+    padding: 10px 14px;
+    border-radius: 8px;
+    border: 1px solid #d1d5db;
+    font-size: 0.925rem;
+    transition: all 0.2s ease;
+    background-color: #ffffff;
+}
+
+.form-control:focus {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1);
+    outline: none;
+}
+
+/* Современные кнопки */
+.btn {
+    padding: 10px 18px;
+    font-weight: 500;
+    border-radius: 8px;
+    transition: all 0.2s ease;
+    font-size: 0.925rem;
+}
+
+.percentage-button {
+    padding: 6px 12px;
+    font-size: 0.875rem;
+    border-radius: 6px;
+    border: 1px solid #e5e7eb;
+    background-color: #ffffff;
+}
+
+/* Остальные стили... */

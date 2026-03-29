@@ -1,0 +1,986 @@
+/* ============================================
+   MOBILE RESPONSIVE STYLES
+   Crypto Signal Lab - Mobile Version
+   ============================================ */
+
+/* --- Mobile Bottom Navigation --- */
+.mobile-nav {
+  display: none;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: #0d1117;
+  border-top: 1px solid #21262d;
+  z-index: 9999;
+  padding: 0;
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+.mobile-nav-inner {
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  height: 56px;
+}
+
+.mobile-nav-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  height: 100%;
+  border: none;
+  background: none;
+  color: #6b7280;
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.2s;
+  gap: 3px;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-nav-btn i {
+  font-size: 18px;
+}
+
+.mobile-nav-btn.active {
+  color: #3b82f6;
+}
+
+.mobile-nav-btn:active {
+  color: #60a5fa;
+}
+
+/* --- Mobile Header Bar --- */
+.mobile-header {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: #0d1117;
+  border-bottom: 1px solid #21262d;
+  z-index: 9998;
+  padding: 8px 12px;
+  height: 48px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.mobile-header-title {
+  color: #e6edf3;
+  font-size: 14px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mobile-header-title span {
+  color: #3b82f6;
+}
+
+.mobile-header-balance {
+  color: #4ade80;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* --- Orders filter bar (mobile) --- */
+.mobile-orders-filter {
+  display: none;
+  padding: 8px 12px;
+  gap: 6px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  background: #161b22;
+  border-bottom: 1px solid #21262d;
+}
+
+.mobile-filter-btn {
+  padding: 4px 12px;
+  border-radius: 12px;
+  border: 1px solid #30363d;
+  background: #0d1117;
+  color: #8b949e;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.mobile-filter-btn.active {
+  background: #1f6feb;
+  border-color: #1f6feb;
+  color: #fff;
+}
+
+/* --- Search bar mobile --- */
+.mobile-search {
+  display: none;
+  padding: 6px 12px;
+  background: #0d1117;
+}
+
+.mobile-search input {
+  width: 100%;
+  height: 32px;
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  color: #e6edf3;
+  padding: 0 12px;
+  font-size: 13px;
+}
+
+.mobile-search input::placeholder {
+  color: #484f58;
+}
+
+/* ============================================
+   RESPONSIVE BREAKPOINTS
+   ============================================ */
+
+@media (max-width: 1024px) {
+  .mobile-nav,
+  .mobile-header {
+    display: flex;
+  }
+
+  .mobile-orders-filter,
+  .mobile-search {
+    display: flex;
+  }
+
+  body {
+    background: #0d1117;
+    color: #e6edf3;
+    padding-top: 48px;
+    padding-bottom: 56px;
+    padding-bottom: calc(56px + env(safe-area-inset-bottom, 0));
+    overflow-x: hidden;
+  }
+
+  .container-fluid {
+    padding: 0 !important;
+    margin: 0 !important;
+    max-width: 100% !important;
+  }
+
+  /* --- Hide desktop layout, show mobile panels --- */
+  .main-layout {
+    display: block !important;
+    min-height: auto;
+    gap: 0;
+  }
+
+  .sidebar,
+  .main-content,
+  .right-sidebar {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    position: static !important;
+    height: auto !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    background: transparent !important;
+    margin: 0 !important;
+    overflow: visible !important;
+  }
+
+  /* Tab panels: hide all, show active */
+  .sidebar,
+  .main-content,
+  .right-sidebar {
+    display: none !important;
+  }
+
+  .sidebar.mobile-active,
+  .main-content.mobile-active,
+  .right-sidebar.mobile-active {
+    display: block !important;
+  }
+
+  /* --- Notification fix --- */
+  #notification {
+    top: 52px;
+    width: calc(100% - 24px);
+    min-width: auto;
+    font-size: 13px;
+    padding: 10px 14px;
+  }
+
+  /* ============================================
+     ORDERS TAB (right-sidebar)
+     ============================================ */
+  .right-sidebar .orders-container {
+    background: #0d1117 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    position: static !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  .right-sidebar .orders-container h2 {
+    display: none; /* Hidden, mobile header shows title */
+  }
+
+  .right-sidebar .orders-container .table-responsive {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Orders table mobile styling */
+  .orders-container .table {
+    background: #0d1117 !important;
+    font-size: 11px !important;
+    margin: 0;
+    border-collapse: collapse;
+  }
+
+  .orders-container .table th {
+    background: #161b22 !important;
+    color: #8b949e !important;
+    font-size: 9px !important;
+    padding: 6px 4px !important;
+    border-bottom: 1px solid #21262d !important;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    white-space: nowrap;
+  }
+
+  .orders-container .table td {
+    color: #e6edf3 !important;
+    padding: 8px 4px !important;
+    border-bottom: 1px solid #21262d !important;
+    font-size: 11px !important;
+    white-space: nowrap;
+  }
+
+  .orders-container .table tbody tr:hover {
+    background: #161b22 !important;
+  }
+
+  .orders-container .table .active-row {
+    background: #1a2332 !important;
+    border-left: 3px solid #1f6feb !important;
+  }
+
+  /* Hide less important columns on mobile */
+  .orders-container .table th:nth-child(2),
+  .orders-container .table td:nth-child(2),
+  .orders-container .table th:nth-child(5),
+  .orders-container .table td:nth-child(5),
+  .orders-container .table th:nth-child(8),
+  .orders-container .table td:nth-child(8),
+  .orders-container .table th:nth-child(9),
+  .orders-container .table td:nth-child(9),
+  .orders-container .table th:nth-child(14),
+  .orders-container .table td:nth-child(14) {
+    display: none !important;
+  }
+
+  /* Style buy/sell text */
+  .orders-container .text-green {
+    color: #4ade80 !important;
+  }
+
+  .orders-container .text-red {
+    color: #f87171 !important;
+  }
+
+  /* Cancel button mobile */
+  .cancel-order-btn {
+    padding: 3px 8px !important;
+    font-size: 10px !important;
+    border-radius: 4px !important;
+    background: #da3633 !important;
+    color: #fff !important;
+    border: none !important;
+  }
+
+  /* Selector cell */
+  .selector-cell {
+    width: 30px !important;
+    padding: 4px 2px !important;
+  }
+
+  .order-selector {
+    width: 16px !important;
+    height: 16px !important;
+  }
+
+  /* ============================================
+     TRADE TAB (main-content)
+     ============================================ */
+  .main-content.mobile-active {
+    padding: 8px !important;
+  }
+
+  /* Hide AI chat on mobile initially */
+  #groqChat {
+    display: none;
+  }
+
+  .main-content h1 {
+    display: none;
+  }
+
+  #usdBalance {
+    margin: 0 0 8px 0 !important;
+    font-size: 13px;
+  }
+
+  /* Trading forms container */
+  .trading-forms-container {
+    display: flex !important;
+    flex-direction: column;
+    gap: 8px !important;
+    margin-bottom: 8px !important;
+  }
+
+  /* Trading form cards */
+  .buy-form,
+  .trading-form {
+    background: #161b22 !important;
+    border: 1px solid #21262d !important;
+    border-radius: 10px !important;
+    padding: 10px !important;
+    margin-bottom: 0 !important;
+    box-shadow: none !important;
+  }
+
+  .buy-form::before {
+    display: none;
+  }
+
+  .buy-form:hover {
+    transform: none !important;
+    box-shadow: none !important;
+  }
+
+  .buy-form h2 {
+    color: #e6edf3 !important;
+    font-size: 14px !important;
+    margin-bottom: 8px !important;
+    padding-bottom: 6px !important;
+  }
+
+  .buy-form h2::after {
+    display: none;
+  }
+
+  /* Reformat price-table for mobile: stack cells */
+  .price-table {
+    width: 100% !important;
+    border-spacing: 0;
+    background: transparent !important;
+    border: none !important;
+  }
+
+  .price-table tr {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-bottom: 4px;
+    align-items: center;
+  }
+
+  .price-table td {
+    display: inline-flex !important;
+    align-items: center;
+    border: none !important;
+    padding: 0 !important;
+    font-size: 12px !important;
+    background: transparent !important;
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    flex-shrink: 0;
+  }
+
+  .price-table td:first-child {
+    background: transparent !important;
+    border-right: none !important;
+    color: #8b949e !important;
+    font-size: 11px !important;
+    width: auto !important;
+    padding: 0 4px 0 0 !important;
+  }
+
+  .price-table td.font-medium {
+    color: #8b949e !important;
+    font-size: 11px !important;
+    min-width: fit-content;
+  }
+
+  /* Inputs in price-table */
+  .coin-input {
+    background: #0d1117 !important;
+    border: 1px solid #30363d !important;
+    color: #e6edf3 !important;
+    height: 30px !important;
+    width: 60px !important;
+    font-size: 12px !important;
+    border-radius: 6px !important;
+    padding: 0 6px !important;
+  }
+
+  .coin-input:focus {
+    border-color: #1f6feb !important;
+    box-shadow: 0 0 0 2px rgba(31, 111, 235, 0.2) !important;
+  }
+
+  .percentage-input {
+    background: #0d1117 !important;
+    border: 1px solid #30363d !important;
+    color: #e6edf3 !important;
+    height: 28px !important;
+    width: 50px !important;
+    font-size: 12px !important;
+    border-radius: 6px !important;
+  }
+
+  /* Price display boxes */
+  .price-table div:not(.percentage-buttons):not(.flex) {
+    background: #0d1117 !important;
+    border: 1px solid #30363d !important;
+    color: #e6edf3 !important;
+    height: 28px !important;
+    font-size: 11px !important;
+    border-radius: 6px !important;
+    padding: 0 8px !important;
+    min-width: 60px;
+  }
+
+  #bestBidPrice, #purchaseAmount, #stopPrice, #limitPrice {
+    background: #0a2e1a !important;
+    border: 1px solid #238636 !important;
+    color: #4ade80 !important;
+    width: auto !important;
+    max-width: none !important;
+  }
+
+  #bestAskPrice, #sellPurchaseAmount {
+    background: #2e0a0a !important;
+    border: 1px solid #da3633 !important;
+    color: #f87171 !important;
+    width: auto !important;
+    max-width: none !important;
+  }
+
+  #sellFixedAskPrice, #sellFixedAskMirror {
+    background: #1a2a3a !important;
+    border: 1px solid #1f6feb !important;
+    color: #58a6ff !important;
+  }
+
+  #sellFixedProfit {
+    background: #1a2a1a !important;
+    border: 1px solid #238636 !important;
+    color: #4ade80 !important;
+  }
+
+  /* Buy/Sell buttons */
+  .buy-button {
+    background: #238636 !important;
+    color: #fff !important;
+    height: 34px !important;
+    font-size: 12px !important;
+    font-weight: 700 !important;
+    border-radius: 6px !important;
+    padding: 0 12px !important;
+    min-width: 100px;
+    width: auto !important;
+  }
+
+  .buy-button:hover, .buy-button:active {
+    background: #2ea043 !important;
+    transform: none !important;
+    box-shadow: none !important;
+  }
+
+  .sell-button {
+    background: #da3633 !important;
+    color: #fff !important;
+    height: 34px !important;
+    font-size: 12px !important;
+    font-weight: 700 !important;
+    border-radius: 6px !important;
+    padding: 0 12px !important;
+    min-width: 100px;
+    width: auto !important;
+  }
+
+  .sell-button:hover, .sell-button:active {
+    background: #f85149 !important;
+    transform: none !important;
+    box-shadow: none !important;
+  }
+
+  /* Bot section */
+  #bot-section {
+    margin-top: 8px !important;
+  }
+
+  #bot-section .bot-card {
+    background: #161b22 !important;
+    border-radius: 10px !important;
+    border: 1px solid #21262d;
+    padding: 12px !important;
+    box-shadow: none !important;
+    color: #e6edf3;
+  }
+
+  #bot-section .bot-title {
+    color: #e6edf3 !important;
+  }
+
+  #bot-section .bot-sbar {
+    background: #0d1117 !important;
+    border: 1px solid #21262d;
+    border-radius: 8px !important;
+  }
+
+  #bot-section .bot-price {
+    color: #e6edf3 !important;
+  }
+
+  #bot-section .bot-snote {
+    color: #8b949e !important;
+  }
+
+  #bot-section .bot-field label {
+    color: #8b949e !important;
+  }
+
+  #bot-section .bot-field input {
+    background: #0d1117 !important;
+    border: 1px solid #30363d !important;
+    color: #e6edf3 !important;
+    border-radius: 6px !important;
+  }
+
+  #bot-section .bot-field input:focus {
+    border-color: #1f6feb !important;
+  }
+
+  /* ============================================
+     SELECTED ORDERS TAB (sidebar)
+     ============================================ */
+  .sidebar.mobile-active {
+    padding: 8px !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  .selected-orders-sidebar {
+    height: auto !important;
+  }
+
+  .selected-orders-sidebar h2 {
+    color: #e6edf3 !important;
+    font-size: 14px !important;
+    padding: 8px 4px !important;
+    margin-bottom: 8px !important;
+    border-bottom: 1px solid #21262d !important;
+  }
+
+  .selected-orders-scroll {
+    max-height: none !important;
+    min-height: auto !important;
+    overflow: visible !important;
+    padding-right: 0 !important;
+  }
+
+  /* Coin groups in selected orders */
+  .coin-group {
+    background: #161b22 !important;
+    border: 1px solid #21262d !important;
+    border-radius: 8px !important;
+    padding: 8px !important;
+    margin-bottom: 8px !important;
+  }
+
+  .coin-group h4 a {
+    color: #58a6ff !important;
+    font-size: 13px !important;
+  }
+
+  .coin-group .balance {
+    color: #8b949e !important;
+    font-size: 10px !important;
+  }
+
+  /* Profit table */
+  .profit-table {
+    font-size: 9px !important;
+    background: #0d1117 !important;
+  }
+
+  .profit-table th {
+    background: #161b22 !important;
+    color: #8b949e !important;
+    font-size: 8px !important;
+    padding: 3px 4px !important;
+  }
+
+  .profit-table td {
+    padding: 3px 4px !important;
+    color: #e6edf3 !important;
+    font-size: 9px !important;
+    border-color: #21262d !important;
+  }
+
+  .profit-table .fixed-ask {
+    background: #1a2a3a !important;
+    color: #58a6ff !important;
+  }
+
+  .profit-table .profit-pos {
+    color: #4ade80 !important;
+  }
+
+  .profit-table .profit-neg {
+    color: #f87171 !important;
+  }
+
+  /* Selected table */
+  .selected-table {
+    font-size: 9px !important;
+  }
+
+  .selected-table th {
+    background: #161b22 !important;
+    color: #8b949e !important;
+    font-size: 8px !important;
+    padding: 3px 4px !important;
+    border-color: #21262d !important;
+  }
+
+  .selected-table td {
+    padding: 3px 4px !important;
+    color: #e6edf3 !important;
+    font-size: 9px !important;
+    border-color: #21262d !important;
+  }
+
+  .selected-table .side-buy {
+    color: #4ade80 !important;
+  }
+
+  .selected-table .side-sell {
+    color: #f87171 !important;
+  }
+
+  .selected-table .copy-btn {
+    background: #1a2a3a !important;
+    border-color: #1f6feb !important;
+    color: #58a6ff !important;
+    font-size: 8px !important;
+    padding: 1px 6px !important;
+  }
+
+  /* Selected orders table */
+  .selected-orders-table {
+    background: #0d1117 !important;
+    border: 1px solid #21262d !important;
+    border-radius: 6px !important;
+    box-shadow: none !important;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .selected-orders-table th {
+    background: #161b22 !important;
+    color: #8b949e !important;
+    border-color: #21262d !important;
+    font-size: 8px !important;
+    padding: 4px 3px !important;
+  }
+
+  .selected-orders-table td {
+    color: #e6edf3 !important;
+    border-color: #21262d !important;
+    font-size: 9px !important;
+    padding: 4px 3px !important;
+  }
+
+  .selected-orders-table tbody tr:nth-child(even) {
+    background: #161b22 !important;
+  }
+
+  .selected-orders-table tbody tr:nth-child(odd) {
+    background: #0d1117 !important;
+  }
+
+  .selected-orders-table tbody tr:hover {
+    background: #1a2332 !important;
+    transform: none !important;
+    box-shadow: none !important;
+  }
+
+  .selected-orders-table td:first-child,
+  .selected-orders-table th:first-child {
+    background: #161b22 !important;
+  }
+
+  .selected-orders-container {
+    background: #0d1117 !important;
+    border: 1px solid #21262d !important;
+    border-radius: 8px !important;
+    box-shadow: none !important;
+    padding: 8px !important;
+  }
+
+  .selected-orders-container h2 {
+    color: #e6edf3 !important;
+    border-color: #21262d !important;
+    font-size: 12px !important;
+  }
+
+  /* Completion cells dark theme */
+  .completion-filled {
+    background: #238636 !important;
+  }
+
+  .completion-filled span {
+    color: #fff !important;
+  }
+
+  .completion-partial {
+    background: linear-gradient(
+      to right,
+      #238636 0%,
+      #238636 var(--completion-width, 0%),
+      #161b22 var(--completion-width, 0%),
+      #161b22 100%
+    ) !important;
+  }
+
+  .completion-partial span {
+    color: #4ade80 !important;
+  }
+
+  .completion-cell[style*="--completion-width: 0%"] {
+    background: #2e0a0a !important;
+  }
+
+  .completion-cell[style*="--completion-width: 0%"] span {
+    color: #f87171 !important;
+  }
+
+  /* Status colors */
+  .status-filled {
+    color: #4ade80 !important;
+  }
+
+  .status-open {
+    color: #58a6ff !important;
+  }
+
+  .status-cancelled {
+    color: #8b949e !important;
+  }
+
+  /* Card dark theme */
+  .card {
+    background: #161b22 !important;
+    border: 1px solid #21262d !important;
+    box-shadow: none !important;
+  }
+
+  .card-body {
+    padding: 12px !important;
+  }
+
+  /* Form controls dark theme */
+  .form-control {
+    background: #0d1117 !important;
+    border: 1px solid #30363d !important;
+    color: #e6edf3 !important;
+    font-size: 13px !important;
+  }
+
+  .form-control:focus {
+    border-color: #1f6feb !important;
+    box-shadow: 0 0 0 2px rgba(31, 111, 235, 0.2) !important;
+  }
+
+  .btn-primary {
+    background: #1f6feb !important;
+    border-color: #1f6feb !important;
+    font-size: 13px !important;
+    padding: 8px 16px !important;
+  }
+
+  /* General table dark theme */
+  table {
+    border-color: #21262d !important;
+  }
+
+  th, td {
+    border-color: #21262d !important;
+  }
+
+  /* Scrollbar dark */
+  ::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: #0d1117;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #30363d;
+    border-radius: 2px;
+  }
+
+  /* ============================================
+     PROFIT TAB (virtual - reuses sidebar content)
+     ============================================ */
+  #profitTab {
+    display: none;
+    padding: 8px;
+  }
+
+  #profitTab.mobile-active {
+    display: block !important;
+  }
+
+  #profitTab .profit-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 4px;
+    margin-bottom: 8px;
+  }
+
+  #profitTab .profit-header h2 {
+    color: #e6edf3;
+    font-size: 14px;
+    font-weight: 700;
+    margin: 0;
+  }
+
+  #profitTab .profit-total {
+    color: #4ade80;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 18px;
+    font-weight: 700;
+  }
+
+  #profitTab .profit-total.negative {
+    color: #f87171;
+  }
+
+  /* Holdings section */
+  .holdings-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    padding: 0 4px;
+  }
+
+  .holding-item {
+    background: #161b22;
+    border: 1px solid #21262d;
+    border-radius: 8px;
+    padding: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .holding-coin {
+    color: #58a6ff;
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  .holding-amount {
+    color: #8b949e;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    text-align: right;
+  }
+
+  /* Hide specific data on mobile */
+  #specificData {
+    display: none !important;
+  }
+
+  /* Fix for price table label */
+  .percentage-label {
+    text-align: left !important;
+  }
+
+  /* Coin status text */
+  #coinStatus, #sellCoinStatus {
+    color: #8b949e !important;
+    font-size: 11px !important;
+    margin-bottom: 4px !important;
+  }
+
+  /* Token time online hidden */
+  .token-time-online {
+    display: none !important;
+  }
+
+  /* Custom alert dark */
+  .custom-alert {
+    background: #238636 !important;
+    color: #fff !important;
+    font-size: 12px !important;
+    padding: 10px 16px !important;
+    border-radius: 8px !important;
+    top: 52px !important;
+    right: 12px !important;
+  }
+}
+
+/* ============================================
+   EXTRA SMALL SCREENS (< 480px)
+   ============================================ */
+@media (max-width: 480px) {
+  .price-table td {
+    font-size: 11px !important;
+  }
+
+  .buy-button, .sell-button {
+    height: 36px !important;
+    font-size: 11px !important;
+    min-width: 80px;
+  }
+
+  .coin-input {
+    width: 55px !important;
+  }
+
+  .profit-table,
+  .selected-table {
+    font-size: 8px !important;
+  }
+
+  .profit-table th,
+  .selected-table th {
+    font-size: 7px !important;
+  }
+
+  .holdings-grid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1,0 +1,14 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Разрешить чтение и запись для коллекции selected-orders
+    match /selected-orders/{document} {
+      allow read, write: if true;
+    }
+    
+    // Разрешить чтение и запись для коллекции orders
+    match /orders/{document} {
+      allow read, write: if true;
+    }
+  }
+}

@@ -1,0 +1,7 @@
+.env
+node_modules/
+cb/node_modules/
+cb/serviceAccountKey.json
+.claude/settings.local.json
+server.log
+*.png

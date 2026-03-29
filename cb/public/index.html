@@ -1,0 +1,1235 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Crypto Trading Dashboard</title>
+  <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.1/css/all.min.css">
+  <link rel="stylesheet" href="/css/improved-styles.css">
+  <link rel="stylesheet" href="/css/mobile.css">
+  <style>
+    /* ── Trading Bot Block ── */
+    #bot-section {
+      font-size: 0.875rem;
+    }
+
+    #bot-section .bot-card {
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 1px 3px rgba(16, 24, 40, .1), 0 1px 2px rgba(16, 24, 40, .06);
+      padding: 20px 24px;
+      margin-bottom: 24px;
+    }
+
+    #bot-section .bot-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    #bot-section .bot-title {
+      font-size: 1rem;
+      font-weight: 700;
+      margin: 0;
+    }
+
+    #bot-section .bot-controls {
+      display: flex;
+      align-items: flex-end;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+
+    #bot-section .bot-field {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    #bot-section .bot-field label {
+      font-size: 0.67rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: #6b7280;
+    }
+
+    #bot-section .bot-field input {
+      height: 34px;
+      padding: 0 10px;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      font-size: 0.875rem;
+      outline: none;
+      transition: border-color .15s;
+    }
+
+    #bot-section .bot-field input:focus {
+      border-color: #3b82f6;
+    }
+
+    #bot-section .bot-field input:disabled {
+      background: #f3f4f6;
+      color: #9ca3af;
+      cursor: not-allowed;
+    }
+
+    #bot-section .bot-field input[name=coin] {
+      width: 72px;
+    }
+
+    #bot-section .bot-field input[name=amt] {
+      width: 100px;
+    }
+
+    #bot-section .bbt {
+      height: 34px;
+      padding: 0 14px;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all .15s;
+      white-space: nowrap;
+      letter-spacing: .03em;
+    }
+
+    #bot-section .bbt-go {
+      background: #10b981;
+      color: #fff;
+    }
+
+    #bot-section .bbt-go:hover {
+      background: #059669;
+    }
+
+    #bot-section .bbt-go:disabled {
+      background: #d1fae5;
+      color: #6ee7b7;
+      cursor: not-allowed;
+    }
+
+    #bot-section .bbt-stp {
+      background: #fff1f2;
+      color: #f43f5e;
+      border: 1px solid #fda4af;
+    }
+
+    #bot-section .bbt-stp:hover {
+      background: #f43f5e;
+      color: #fff;
+    }
+
+    #bot-section .bbt-stp:disabled {
+      opacity: .35;
+      cursor: not-allowed;
+    }
+
+    /* status bar */
+    #bot-section .bot-sbar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: #f9fafb;
+      border-radius: 10px;
+      padding: 10px 14px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+
+    .bot-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 10px;
+      border-radius: 6px;
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    .bot-badge::before {
+      content: '';
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+      animation: botblink 2s infinite;
+    }
+
+    @keyframes botblink {
+
+      0%,
+      100% {
+        opacity: 1
+      }
+
+      50% {
+        opacity: .3
+      }
+    }
+
+    .bb-stopped {
+      background: #f3f4f6;
+      color: #9ca3af;
+    }
+
+    .bb-scanning {
+      background: #fffbeb;
+      color: #d97706;
+    }
+
+    .bb-buying {
+      background: #f0fdf4;
+      color: #16a34a;
+    }
+
+    .bb-holding {
+      background: #eff6ff;
+      color: #2563eb;
+    }
+
+    .bb-selling {
+      background: #fff1f2;
+      color: #f43f5e;
+    }
+
+    #bot-section .bot-price {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 1rem;
+      font-weight: 600;
+      color: #111827;
+    }
+
+    #bot-section .bot-pair {
+      font-size: 0.7rem;
+      color: #9ca3af;
+    }
+
+    #bot-section .bot-snote {
+      font-size: 0.75rem;
+      color: #9ca3af;
+      margin-left: auto;
+    }
+
+    /* indicators */
+    #bot-section .bot-inds {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      background: #f9fafb;
+      border-radius: 10px;
+      padding: 12px 14px;
+      margin-bottom: 12px;
+    }
+
+    #bot-section .bot-ind-lbl {
+      font-size: 0.62rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: #9ca3af;
+      margin-bottom: 2px;
+    }
+
+    #bot-section .bot-ind-val {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: #374151;
+    }
+
+    #bot-section .rsi-track {
+      height: 3px;
+      background: #e5e7eb;
+      border-radius: 2px;
+      margin-top: 4px;
+      overflow: hidden;
+    }
+
+    #bot-section .rsi-fill {
+      height: 100%;
+      border-radius: 2px;
+      transition: width .5s ease, background .5s ease;
+    }
+
+    .bi-buy {
+      color: #16a34a !important;
+    }
+
+    .bi-sell {
+      color: #f43f5e !important;
+    }
+
+    .bi-wait {
+      color: #9ca3af !important;
+    }
+
+    /* position */
+    #bot-section .bot-pos {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 8px;
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      border-radius: 10px;
+      padding: 10px 14px;
+      margin-bottom: 12px;
+    }
+
+    #bot-section .bot-pos.has-loss {
+      background: #fff1f2;
+      border-color: #fecdd3;
+    }
+
+    #bot-section .pos-lbl {
+      font-size: 0.6rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: #9ca3af;
+    }
+
+    #bot-section .pos-val {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: #111827;
+    }
+
+    .pv-pos {
+      color: #16a34a !important;
+    }
+
+    .pv-neg {
+      color: #f43f5e !important;
+    }
+
+    .pv-zero {
+      color: #9ca3af !important;
+    }
+
+    /* bottom row: log + stats */
+    #bot-section .bot-bottom {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    #bot-section .bot-log-box {
+      max-height: 96px;
+      overflow-y: auto;
+      background: #111827;
+      border-radius: 8px;
+      padding: 8px 10px;
+    }
+
+    #bot-section .bot-log-box::-webkit-scrollbar {
+      width: 3px;
+    }
+
+    #bot-section .bot-log-box::-webkit-scrollbar-thumb {
+      background: #374151;
+      border-radius: 2px;
+    }
+
+    #bot-section .bot-log-entry {
+      display: flex;
+      gap: 8px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.68rem;
+      padding: 2px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, .04);
+    }
+
+    #bot-section .bot-log-t {
+      color: #4b5563;
+      flex-shrink: 0;
+    }
+
+    .bl-info {
+      color: #6b7280 !important;
+    }
+
+    .bl-success {
+      color: #34d399 !important;
+    }
+
+    .bl-warn {
+      color: #fbbf24 !important;
+    }
+
+    .bl-error {
+      color: #f87171 !important;
+    }
+
+    #bot-section .bot-stats-box {
+      background: #f9fafb;
+      border-radius: 8px;
+      padding: 10px 14px;
+      display: flex;
+      gap: 22px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    #bot-section .bs-lbl {
+      font-size: 0.6rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: #9ca3af;
+    }
+
+    #bot-section .bs-val {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: #111827;
+    }
+
+    /* trade history toggle */
+    #bot-section .bot-hist-toggle {
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: #6b7280;
+      cursor: pointer;
+      background: none;
+      border: none;
+      padding: 0;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    #bot-section .bot-hist-toggle:hover {
+      color: #374151;
+    }
+
+    #bot-section .bot-hist-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+    }
+
+    #bot-section .bot-hist-table th {
+      font-size: 0.6rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: #9ca3af;
+      padding: 4px 8px;
+      border-bottom: 1px solid #e5e7eb;
+    }
+
+    #bot-section .bot-hist-table td {
+      padding: 6px 8px;
+      border-bottom: 1px solid #f3f4f6;
+      color: #6b7280;
+    }
+
+    #bot-section .bot-hist-table tr:hover td {
+      background: #f9fafb;
+    }
+
+    .ht-buy {
+      color: #16a34a !important;
+      font-weight: 700;
+    }
+
+    .ht-sell {
+      color: #f43f5e !important;
+      font-weight: 700;
+    }
+
+    .ht-empty {
+      text-align: center;
+      padding: 16px;
+      color: #d1d5db;
+    }
+
+    @media(max-width:640px) {
+      #bot-section .bot-inds {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      #bot-section .bot-pos {
+        grid-template-columns: repeat(3, 1fr);
+      }
+
+      #bot-section .bot-bottom {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .bot-inds,
+    #botPosRow,
+    .bot-pos,
+    .bot-bottom,
+    .bot-hist-toggle,
+    #botHistWrap,
+    #botRsi,
+    #botRsiBar,
+    #botEma9,
+    #botEma21,
+    #botSig,
+    #botLog,
+    #bsPnl,
+    #bsCyc,
+    #bsWin,
+    #bsWr,
+    #botHistBody,
+    #botHistCount {
+      display: none !important;
+    }
+  </style>
+  <!-- Firebase CDN -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+</head>
+
+<body>
+  <!-- Mobile Header -->
+  <div class="mobile-header">
+    <div class="mobile-header-title">
+      <i class="fas fa-chart-line" style="color:#3b82f6"></i>
+      Crypto Signal <span>Lab</span>
+    </div>
+    <div class="mobile-header-balance" id="mobileBalance">$0.00</div>
+  </div>
+
+  <div class="container-fluid">
+    <div id="notification"></div>
+
+    <!-- Новая структура с левым сайдбаром -->
+    <div class="main-layout">
+      <!-- Левый сайдбар для Selected Orders by Coin -->
+      <div class="sidebar">
+        <div class="selected-orders-sidebar">
+          <h2 class="text-xl font-bold mb-4">Selected Orders by Coin</h2>
+
+          <!-- Контейнер с прокруткой для ордеров -->
+          <div id="selectedOrdersContainer" class="selected-orders-scroll">
+            <!-- Orders tables will be loaded here -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Основная область справа -->
+      <div class="main-content">
+        <div id="groqChat" class="card mb-3">
+          <div class="card-body">
+            <div class="d-flex align-items-start">
+              <textarea id="groqPrompt" class="form-control mr-2" rows="2"
+                placeholder="Введите запрос для AI Groq..."></textarea>
+              <button id="groqAskBtn" class="btn btn-primary">Спросить AI</button>
+            </div>
+            <div id="groqAnswer" class="mt-2 small text-muted"></div>
+          </div>
+        </div>
+        <h1 class="text-2xl font-bold mb-4">Trading</h1>
+
+        <div id="usdBalance" class="mb-4"></div>
+        <div id="specificData" class="mb-4"></div>
+
+        <!-- Оптимизированные формы Buy и Sell Order -->
+        <div class="trading-forms-container">
+          <!-- Buy Order Form -->
+          <div class="buy-form trading-form">
+            <h2 class="text-xl font-bold mb-4">Buy Order</h2>
+            <p id="coinStatus" class="text-sm mb-2" style="min-height: 20px;"></p>
+            <table class="price-table w-full">
+              <tbody>
+                <tr>
+                  <td class="font-medium" style="width: 100px;">Coin:</td>
+                  <td style="width: 150px;">
+                    <input type="text" id="coinInput" value="IP" class="w-full p-2 border rounded coin-input">
+                  </td>
+                  <td class="font-medium" style="width: 120px;">Best Bid Price:</td>
+                  <td style="width: 200px;">
+                    <div id="bestBidPrice" class="p-2 border rounded bg-gray-50">
+                      Loading...
+                    </div>
+                  </td>
+                  <td class="font-medium percentage-label" style="width: 150px;">Purchase %:</td>
+                  <!-- Buy Order Form - убираем блок с кнопками процентов -->
+                  <td>
+                    <div class="flex items-center gap-2">
+                      <input type="number" id="percentageInput" value="100" min="1" max="100" step="1"
+                        class="w-24 p-2 border rounded percentage-input">
+                      <!-- Блок percentage-buttons полностью удален -->
+                    </div>
+                  </td>
+                  <td class="font-medium" style="width: 120px;">Buy Amount:</td>
+                  <td style="width: 150px;">
+                    <div id="purchaseAmount" class="p-2 border rounded bg-gray-50">
+                      $0.00
+                    </div>
+                  </td>
+                  <td style="width: 150px;">
+                    <button id="buyButton" class="buy-button w-full">
+                      Buy Limit Current Price
+                    </button>
+                  </td>
+                </tr>
+                <tr>
+                  <td class="font-medium" style="width: 120px;">Stop Price:</td>
+                  <td style="width: 200px;">
+                    <div id="stopPrice" class="p-2 rounded bg-gray-50">
+                      $0.00
+                    </div>
+                  </td>
+                  <td class="font-medium" style="width: 120px;">Limit Price:</td>
+                  <td style="width: 200px;">
+                    <div id="limitPrice" class="p-2 rounded bg-gray-50">
+                      $0.00
+                    </div>
+                  </td>
+                  <td colspan="4"></td>
+                  <td style="width: 150px;">
+                    <button id="buyStopLimitButton" class="buy-button w-full bg-indigo-600 hover:bg-indigo-700">
+                      Buy Stop Limit +0.00001
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Sell Order Form -->
+          <div class="buy-form trading-form">
+            <h2 class="text-xl font-bold mb-4">Sell Order</h2>
+            <p id="sellCoinStatus" class="text-sm mb-2" style="min-height: 20px;"></p>
+            <table class="price-table w-full">
+              <tbody>
+                <tr>
+                  <td class="font-medium" style="width: 100px;">Coin:</td>
+                  <td style="width: 150px;">
+                    <input type="text" id="sellCoinInput" value="IO" class="w-full p-2 border rounded coin-input">
+                  </td>
+                  <td class="font-medium" style="width: 120px;">Best Ask Price:</td>
+                  <td style="width: 200px;">
+                    <div id="bestAskPrice" class="p-2 border rounded bg-gray-50">
+                      Loading...
+                    </div>
+                  </td>
+                  <td class="font-medium" style="width: 120px;">Fixed Ask:</td>
+                  <td style="width: 200px;">
+                    <div id="sellFixedAskPrice" class="p-2 border rounded bg-gray-50">
+                      $0.00
+                    </div>
+                  </td>
+                  <td class="font-medium percentage-label" style="width: 150px;">Sell %:</td>
+                  <td>
+                    <div class="flex items-center gap-2">
+                      <input type="number" id="sellPercentageInput" value="100" min="1" max="100" step="1"
+                        class="w-24 p-2 border rounded percentage-input">
+                    </div>
+                  </td>
+                  <td class="font-medium" style="width: 120px;">Sell Amount:</td>
+                  <td style="width: 150px;">
+                    <div id="sellPurchaseAmount" class="p-2 border rounded bg-gray-50">
+                      0.00000000
+                    </div>
+                  </td>
+                  <td style="width: 150px;">
+                    <button id="sellButton" class="sell-button w-full">
+                      Sell Limit Current Price
+                    </button>
+                  </td>
+                  <!-- закрываем первую строку корректно -->
+                  <!-- Отдельная строка: Fixed Ask + Fixed Profit + кнопка -->
+                <tr>
+                  <td class="font-medium" style="width: 120px;">Fixed Ask:</td>
+                  <td style="width: 200px;">
+                    <div id="sellFixedAskMirror" class="p-2 border rounded bg-gray-50">
+                      $0.00
+                    </div>
+                  </td>
+                  <td class="font-medium" style="width: 120px;">Fixed Profit:</td>
+                  <td style="width: 200px;">
+                    <div id="sellFixedProfit" class="p-2 border rounded bg-gray-50">
+                      0.00
+                    </div>
+                  </td>
+                  <td colspan="6"></td>
+                  <td style="width: 180px;">
+                    <button id="sellFixedButton" class="sell-button w-full bg-red-600 hover:bg-red-700">
+                      Sell Limit Fixed Ask
+                    </button>
+                  </td>
+                </tr>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- ═══════════════════════════════════════ -->
+        <!-- TRADING BOT                            -->
+        <!-- ═══════════════════════════════════════ -->
+        <div id="bot-section" class="mt-4">
+          <div class="bot-card">
+
+            <!-- Head -->
+            <div class="bot-head">
+              <h6 class="bot-title">⚡ Trading Bot <small class="text-muted font-weight-normal"
+                  style="font-size:.8rem">RSI·5m·Limit 0.4%</small></h6>
+              <div id="botUsdBal" style="font-size:.8rem;color:#6b7280">USD: <b style="color:#16a34a">—</b></div>
+            </div>
+
+            <!-- Controls -->
+            <div class="bot-controls">
+              <div class="bot-field">
+                <label>Монета</label>
+                <input name="coin" id="botCoin" type="text" value="BTC" maxlength="10" placeholder="BTC">
+              </div>
+              <div class="bot-field">
+                <label>Сумма USD</label>
+                <input name="amt" id="botAmt" type="number" value="100" min="10" step="1">
+              </div>
+              <button class="bbt bbt-go" id="botBtnStart" onclick="Bot.start()">▶ СТАРТ</button>
+              <button class="bbt bbt-stp" id="botBtnStop" onclick="Bot.stop()" disabled>■ СТОП</button>
+            </div>
+
+            <!-- Status bar -->
+            <div class="bot-sbar">
+              <span id="botBadge" class="bot-badge bb-stopped">Остановлен</span>
+              <div>
+                <div id="botStPrice" class="bot-price">—</div>
+                <div id="botStPair" class="bot-pair">—</div>
+              </div>
+              <div id="botStNote" class="bot-snote">—</div>
+            </div>
+
+
+          </div>
+        </div>
+
+        <div class="token-time-online mb-4" style="display: none;">
+          <!-- Таблица с процентами -->
+        </div>
+      </div>
+
+      <!-- Правая колонка — Latest Orders -->
+      <div class="right-sidebar">
+        <div class="orders-container">
+          <h2>Latest Orders</h2>
+          <div class="table-responsive">
+            <table class="table table-striped table-hover">
+              <thead id="ordersTableHeader">
+                <!-- Заголовки таблицы будут добавлены через JavaScript -->
+              </thead>
+              <tbody id="ordersTableBody">
+                <!-- Данные таблицы будут добавлены через JavaScript -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="content">
+      <!-- Таблица будет добавлена сюда скриптом -->
+    </div>
+
+    <div id="customAlert" class="custom-alert">Order data copied to clipboard!</div>
+
+    <!-- Profit Tab (mobile only) -->
+    <div id="profitTab">
+      <div class="profit-header">
+        <h2>Total Profit</h2>
+        <div class="profit-total" id="mobileProfitTotal">$0.00</div>
+      </div>
+      <div id="mobileProfitList"></div>
+      <div style="margin-top: 12px;">
+        <div class="profit-header">
+          <h2>My Holdings</h2>
+          <div class="profit-total" id="mobileHoldingsTotal">$0.00</div>
+        </div>
+        <div id="mobileHoldingsList" class="holdings-grid"></div>
+      </div>
+    </div>
+
+    <!-- Mobile Bottom Navigation -->
+    <nav class="mobile-nav">
+      <div class="mobile-nav-inner">
+        <button class="mobile-nav-btn active" data-tab="orders" onclick="switchMobileTab('orders')">
+          <i class="fas fa-list-alt"></i>
+          Orders
+        </button>
+        <button class="mobile-nav-btn" data-tab="trade" onclick="switchMobileTab('trade')">
+          <i class="fas fa-exchange-alt"></i>
+          Trade
+        </button>
+        <button class="mobile-nav-btn" data-tab="selected" onclick="switchMobileTab('selected')">
+          <i class="fas fa-check-square"></i>
+          Selected
+        </button>
+        <button class="mobile-nav-btn" data-tab="profit" onclick="switchMobileTab('profit')">
+          <i class="fas fa-chart-bar"></i>
+          Profit
+        </button>
+      </div>
+    </nav>
+
+    <script src="/fees.js"></script>
+    <script type="module" src="/scripts.js"></script>
+
+    <script>
+      /* ═══════════════════════════════════════════
+         MOBILE TAB SWITCHING
+         ═══════════════════════════════════════════ */
+      function switchMobileTab(tab) {
+        // Remove active from all panels
+        document.querySelectorAll('.sidebar, .main-content, .right-sidebar, #profitTab').forEach(el => {
+          el.classList.remove('mobile-active');
+        });
+        // Remove active from all nav buttons
+        document.querySelectorAll('.mobile-nav-btn').forEach(btn => {
+          btn.classList.remove('active');
+        });
+        // Activate selected tab
+        const btn = document.querySelector(`.mobile-nav-btn[data-tab="${tab}"]`);
+        if (btn) btn.classList.add('active');
+
+        switch (tab) {
+          case 'orders':
+            document.querySelector('.right-sidebar')?.classList.add('mobile-active');
+            break;
+          case 'trade':
+            document.querySelector('.main-content')?.classList.add('mobile-active');
+            break;
+          case 'selected':
+            document.querySelector('.sidebar')?.classList.add('mobile-active');
+            break;
+          case 'profit':
+            document.getElementById('profitTab')?.classList.add('mobile-active');
+            loadMobileProfitData();
+            break;
+        }
+      }
+
+      async function loadMobileProfitData() {
+        // Load profit history
+        try {
+          const res = await fetch('/get-profit-history');
+          const data = await res.json();
+          if (data.success && data.history) {
+            const list = document.getElementById('mobileProfitList');
+            let total = 0;
+            const allEntries = data.history || [];
+            allEntries.forEach(e => total += parseFloat(e.profit || 0));
+            const entries = allEntries.slice(-20).reverse();
+            let html = '';
+            entries.forEach(entry => {
+              const profit = parseFloat(entry.profit || 0);
+              const color = profit >= 0 ? '#4ade80' : '#f87171';
+              const sign = profit >= 0 ? '+' : '';
+              const date = entry.date ? new Date(entry.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
+              html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;border-bottom:1px solid #21262d;font-size:12px;">
+                <div style="display:flex;align-items:center;gap:6px;">
+                  <span style="color:#58a6ff;font-weight:600;">${entry.coin || '—'}</span>
+                  <span style="color:#8b949e;font-size:10px;">${date}</span>
+                </div>
+                <span style="color:${color};font-weight:700;font-family:'JetBrains Mono',monospace;">${sign}$${Math.abs(profit).toFixed(2)}</span>
+              </div>`;
+            });
+            list.innerHTML = html || '<div style="color:#8b949e;text-align:center;padding:20px;">No profit history</div>';
+            const totalEl = document.getElementById('mobileProfitTotal');
+            totalEl.textContent = `${total >= 0 ? '+' : ''}$${Math.abs(total).toFixed(2)}`;
+            totalEl.className = `profit-total ${total < 0 ? 'negative' : ''}`;
+          }
+        } catch (e) { console.error('Profit load error:', e); }
+
+        // Load holdings
+        try {
+          const res = await fetch('/get-holdings');
+          const data = await res.json();
+          if (data.success && data.holdings) {
+            const list = document.getElementById('mobileHoldingsList');
+            let totalVal = 0;
+            let html = '';
+            data.holdings.sort((a, b) => (b.usdValue || 0) - (a.usdValue || 0)).forEach(h => {
+              totalVal += h.usdValue || 0;
+              html += `<div class="holding-item">
+                <div class="holding-coin">${h.currency}</div>
+                <div class="holding-amount">
+                  <div>${parseFloat(h.total || h.balance || 0).toLocaleString('en', {maximumFractionDigits: 2})}</div>
+                  <div style="color:#4ade80;font-size:9px;">$${(h.usdValue || 0).toFixed(2)}</div>
+                </div>
+              </div>`;
+            });
+            list.innerHTML = html || '<div style="color:#8b949e;text-align:center;padding:20px;">No holdings</div>';
+            document.getElementById('mobileHoldingsTotal').textContent = `$${totalVal.toFixed(2)}`;
+          }
+        } catch (e) { console.error('Holdings load error:', e); }
+      }
+
+      // Initialize mobile: set default tab on mobile
+      (function initMobile() {
+        const isMobile = window.matchMedia('(max-width: 1024px)').matches;
+        if (isMobile) {
+          // Default to orders tab
+          switchMobileTab('orders');
+          // Update mobile balance periodically
+          async function updateMobileBalance() {
+            try {
+              const res = await fetch('/get-usd-account');
+              const data = await res.json();
+              if (data.balance !== undefined) {
+                const bal = parseFloat(data.balance);
+                document.getElementById('mobileBalance').textContent = `$${bal.toFixed(2)}`;
+              }
+            } catch (e) {}
+          }
+          updateMobileBalance();
+          setInterval(updateMobileBalance, 15000);
+        }
+
+        // Listen for resize
+        window.matchMedia('(max-width: 1024px)').addEventListener('change', e => {
+          if (e.matches) {
+            switchMobileTab('orders');
+          } else {
+            // Desktop: remove mobile-active and show all
+            document.querySelectorAll('.sidebar, .main-content, .right-sidebar, #profitTab').forEach(el => {
+              el.classList.remove('mobile-active');
+            });
+          }
+        });
+      })();
+
+      /* ═══════════════════════════════════════════
+         TRADING BOT  (scoped — no global leaks)
+         ═══════════════════════════════════════════ */
+      const Bot = (() => {
+        const FEE = .0006, BUY_RSI = 35, SELL_RSI = 65, TP = .015, SL = -.012;
+        const GRAN = 300, RSI_P = 14, ORD_TTL = 120000, SCAN_INT = 60000, POLL_INT = 5000;
+        const SK = 'tbot_v4', EX = 'https://api.exchange.coinbase.com';
+
+        /* — state — */
+        let S = {
+          status: 'STOPPED', coin: 'BTC', amount: 100, prod: null,
+          pos: null, sellOrd: null, trades: [], totalPnL: 0, wins: 0, cycles: 0,
+          startedAt: null, ind: { rsi: null, ema9: null, ema21: null, sig: 'WAIT' },
+        };
+        let scanTmr = null, pollTmr = null;
+
+        /* — persist — */
+        function save() { try { localStorage.setItem(SK, JSON.stringify(S)); } catch { } }
+        function load() {
+          try { const r = localStorage.getItem(SK); if (r) { S = { ...S, ...JSON.parse(r) }; return true; } } catch { }
+          return false;
+        }
+
+        /* — log — */
+        function log(msg, type = 'info') {
+          console.log(`[Bot][${type}] ${msg}`);
+        }
+
+        /* — math — */
+        function rsi(cl, p = RSI_P) {
+          if (cl.length < p + 1) return null;
+          let g = 0, l = 0;
+          for (let i = 1; i <= p; i++) { const d = cl[i] - cl[i - 1]; d > 0 ? g += d : l -= d; }
+          let ag = g / p, al = l / p;
+          for (let i = p + 1; i < cl.length; i++) {
+            const d = cl[i] - cl[i - 1];
+            ag = (ag * (p - 1) + Math.max(d, 0)) / p; al = (al * (p - 1) + Math.max(-d, 0)) / p;
+          }
+          return al === 0 ? 100 : 100 - 100 / (1 + ag / al);
+        }
+        function ema(cl, p) {
+          if (cl.length < p) return null;
+          const k = 2 / (p + 1);
+          let e = cl.slice(0, p).reduce((a, b) => a + b) / p;
+          for (let i = p; i < cl.length; i++)e = cl[i] * k + e * (1 - k);
+          return e;
+        }
+
+        /* — helpers — */
+        function $(id) { return document.getElementById(id); }
+        function fmt(n, d = 2) { return n.toLocaleString('en', { minimumFractionDigits: d, maximumFractionDigits: d }); }
+
+        /* — api — */
+        async function ticker() {
+          const r = await fetch(`${EX}/products/${S.coin}-USD/ticker`);
+          if (!r.ok) throw new Error('Ticker ' + r.status);
+          const d = await r.json();
+          return { bid: parseFloat(d.bid), ask: parseFloat(d.ask) };
+        }
+        async function candles() {
+          const end = Math.floor(Date.now() / 1000), start = end - 52 * GRAN;
+          const r = await fetch(`${EX}/products/${S.coin}-USD/candles?granularity=${GRAN}&start=${start}&end=${end}`);
+          if (!r.ok) throw new Error('Candles ' + r.status);
+          return await r.json();
+        }
+        async function prodInfo() {
+          const r = await fetch(`${EX}/products/${S.coin}-USD`);
+          if (!r.ok) throw new Error('ProdInfo ' + r.status);
+          const d = await r.json();
+          const priceD = (d.quote_increment || '0.01').toString().replace(/^[^.]*\.?/, '').length;
+          const sizeD = (d.base_increment || '0.00000001').toString().replace(/^[^.]*\.?/, '').length;
+          return { priceD, sizeD, minSz: parseFloat(d.base_min_size || '0.00001') };
+        }
+        async function usdBal() {
+          try {
+            const r = await fetch('/get-usd-account'); const d = await r.json();
+            return d.success !== false ? parseFloat(d.balance || 0) : null;
+          } catch { return null; }
+        }
+        async function createOrd(side, baseSize, limitPrice) {
+          const r = await fetch('/create-order', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ coin: S.coin, side, baseSize: String(baseSize), limitPrice: String(limitPrice) })
+          });
+          const d = await r.json();
+          if (!d.success) throw new Error(d.error || 'Order failed');
+          const oid = d.order?.order_id || d.order?.success_response?.order_id;
+          if (!oid || oid === 'Unknown') throw new Error('No order_id');
+          return oid;
+        }
+        async function ordStatus(oid) {
+          const r = await fetch(`/check-order-status/${oid}`);
+          return await r.json();
+        }
+        async function cancelOrd(oid) {
+          try { const r = await fetch(`/cancel-order/${oid}`, { method: 'POST' }); const d = await r.json(); return !!d.success; }
+          catch { return false; }
+        }
+
+        /* — indicators — */
+        async function refreshInd() {
+          const raw = await candles();
+          const cl = raw.map(c => c[4]).reverse();
+          const r = rsi(cl), e9 = ema(cl, 9), e21 = ema(cl, 21);
+          let sig = 'WAIT';
+          if (r !== null) { if (r < BUY_RSI) sig = 'BUY'; else if (r > SELL_RSI) sig = 'SELL'; }
+          S.ind = { rsi: r, ema9: e9, ema21: e21, sig };
+          save(); renderInd();
+          return S.ind;
+        }
+
+        /* — bot tick — */
+        async function tick() {
+          try {
+            const tk = await ticker();
+            renderPrice(tk);
+            if (S.status === 'SCANNING') await doScan(tk);
+            else if (S.status === 'BUYING') await doBuyPoll();
+            else if (S.status === 'HOLDING') await doHold(tk);
+            else if (S.status === 'SELLING') await doSellPoll();
+          } catch (e) {
+            log(`Тик: ${e.message}`, 'error');
+            if (S.status !== 'STOPPED') schedScan();
+          }
+        }
+
+        async function doScan(tk) {
+          log('Сканирование...', 'info');
+          const { rsi: r, sig } = await refreshInd();
+          if (sig === 'BUY') { log(`RSI ${r.toFixed(1)} < ${BUY_RSI} — покупка`, 'success'); await doBuy(tk.bid); }
+          else { log(`RSI ${r ? r.toFixed(1) : '?'} — жду`, 'info'); schedScan(); }
+        }
+
+        async function doBuy(bestBid) {
+          const { priceD, sizeD, minSz } = S.prod;
+          const lp = parseFloat(bestBid.toFixed(priceD));
+          const sz = parseFloat((S.amount / lp).toFixed(sizeD));
+          if (sz < minSz) { log(`Размер ${sz} < мин ${minSz}`, 'warn'); schedScan(); return; }
+          log(`Покупка ${sz} ${S.coin} @ $${lp} (bid/Limit)`, 'success');
+          try {
+            const oid = await createOrd('BUY', sz, lp);
+            S.status = 'BUYING';
+            S.pos = { orderId: oid, baseSize: sz, limitPrice: lp, placedAt: Date.now(), filledPrice: null, filledSize: null };
+            save(); renderStatus(); schedPoll();
+            log(`Ордер: ${oid}`, 'success');
+          } catch (e) { log(`Ошибка: ${e.message}`, 'error'); schedScan(); }
+        }
+
+        async function doBuyPoll() {
+          const pos = S.pos;
+          if (!pos) { S.status = 'SCANNING'; save(); renderStatus(); schedScan(); return; }
+          if (Date.now() - pos.placedAt > ORD_TTL) {
+            log('Timeout — отмена buy', 'warn');
+            await cancelOrd(pos.orderId);
+            S.status = 'SCANNING'; S.pos = null; save(); renderStatus(); schedScan(); return;
+          }
+          const st = await ordStatus(pos.orderId);
+          const status = st.status || st.raw_response?.order?.status || st.raw_response?.status || 'OPEN';
+          log(`Buy ордер: ${status}`, 'info');
+          if (status === 'FILLED') {
+            const fp = parseFloat(st.filled_price || st.average_filled_price || st.raw_response?.average_filled_price || pos.limitPrice);
+            const fs = parseFloat(st.filled_size || st.raw_response?.filled_size || pos.baseSize);
+            const fee = fp * fs * FEE;
+            S.pos.filledPrice = fp; S.pos.filledSize = fs; S.pos.filledAt = Date.now();
+            S.status = 'HOLDING';
+            S.trades.push({ id: Date.now(), type: 'BUY', coin: S.coin, size: fs, price: fp, value: fp * fs, fee, pnl: null, ts: Date.now() });
+            save(); renderStatus(); renderTrades();
+            log(`Куплено ${fs} ${S.coin} @ $${fp} | fee $${fee.toFixed(4)}`, 'success');
+            schedScan();
+          } else if (['CANCELLED', 'EXPIRED', 'FAILED'].includes(status)) {
+            log(`Buy ${status}`, 'warn');
+            S.status = 'SCANNING'; S.pos = null; save(); renderStatus(); schedScan();
+          } else schedPoll();
+        }
+
+        async function doHold(tk) {
+          const pos = S.pos;
+          if (!pos?.filledPrice) return;
+          const ask = tk.ask, entry = pos.filledPrice;
+          const sz = parseFloat(pos.filledSize || pos.baseSize);
+          const pnlPct = (ask - entry) / entry, pnlUsd = (ask - entry) * sz;
+          renderPos(pos, ask, sz, pnlUsd, pnlPct);
+          const { rsi: r, sig } = await refreshInd();
+          let reason = null;
+          if (pnlPct >= TP) reason = `TP +${(pnlPct * 100).toFixed(2)}%`;
+          else if (pnlPct <= SL) reason = `SL ${(pnlPct * 100).toFixed(2)}%`;
+          else if (sig === 'SELL') reason = `RSI ${r.toFixed(1)} > ${SELL_RSI}`;
+          if (reason) { log(`Продажа: ${reason}`, reason.startsWith('SL') ? 'warn' : 'success'); await doSell(ask, sz); }
+          else { log(`Держу. PnL: ${pnlPct >= 0 ? '+' : ''}${(pnlPct * 100).toFixed(3)}%`, 'info'); schedScan(); }
+        }
+
+        async function doSell(bestAsk, filledSize) {
+          const { priceD, sizeD } = S.prod;
+          const lp = parseFloat(bestAsk.toFixed(priceD));
+          const sz = parseFloat(filledSize.toFixed(sizeD));
+          log(`Продажа ${sz} ${S.coin} @ $${lp} (ask/Limit)`, 'success');
+          try {
+            const oid = await createOrd('SELL', sz, lp);
+            S.status = 'SELLING';
+            S.sellOrd = { orderId: oid, baseSize: sz, limitPrice: lp, placedAt: Date.now() };
+            save(); renderStatus(); schedPoll();
+          } catch (e) { log(`Ошибка продажи: ${e.message}`, 'error'); schedScan(); }
+        }
+
+        async function doSellPoll() {
+          const so = S.sellOrd, pos = S.pos;
+          if (!so || !pos) { S.status = 'SCANNING'; save(); renderStatus(); schedScan(); return; }
+          if (Date.now() - so.placedAt > ORD_TTL) {
+            log('Timeout — отмена sell', 'warn');
+            await cancelOrd(so.orderId);
+            S.status = 'HOLDING'; S.sellOrd = null; save(); renderStatus(); schedScan(); return;
+          }
+          const st = await ordStatus(so.orderId);
+          const status = st.status || st.raw_response?.order?.status || st.raw_response?.status || 'OPEN';
+          log(`Sell ордер: ${status}`, 'info');
+          if (status === 'FILLED') {
+            const sp = parseFloat(st.filled_price || st.average_filled_price || st.raw_response?.average_filled_price || so.limitPrice);
+            const ss = parseFloat(st.filled_size || st.raw_response?.filled_size || so.baseSize);
+            const ep = pos.filledPrice;
+            const sFee = sp * ss * FEE, bFee = ep * ss * FEE, pnl = (sp - ep) * ss - sFee - bFee;
+            S.totalPnL += pnl; if (pnl > 0) S.wins++; S.cycles++;
+            S.trades.push({ id: Date.now(), type: 'SELL', coin: S.coin, size: ss, price: sp, value: sp * ss, fee: sFee, pnl, ts: Date.now() });
+            log(`Продано ${ss} ${S.coin} @ $${sp} | PnL: ${pnl >= 0 ? '+' : ''}$${pnl.toFixed(4)}`, pnl >= 0 ? 'success' : 'error');
+            S.status = 'SCANNING'; S.pos = null; S.sellOrd = null;
+            save(); renderStatus(); renderTrades(); renderStats(); clearPos(); schedScan();
+          } else if (['CANCELLED', 'EXPIRED', 'FAILED'].includes(status)) {
+            log(`Sell ${status}`, 'warn');
+            S.status = 'HOLDING'; S.sellOrd = null; save(); renderStatus(); schedScan();
+          } else schedPoll();
+        }
+
+        /* — timers — */
+        function clearTimers() {
+          if (scanTmr) { clearTimeout(scanTmr); scanTmr = null; }
+          if (pollTmr) { clearInterval(pollTmr); pollTmr = null; }
+        }
+        function schedScan() { clearTimers(); if (S.status !== 'STOPPED') scanTmr = setTimeout(tick, SCAN_INT); }
+        function schedPoll() { clearTimers(); if (S.status !== 'STOPPED') pollTmr = setInterval(tick, POLL_INT); }
+
+        /* — render — */
+        function renderStatus() {
+          const map = {
+            STOPPED: ['bb-stopped', 'Остановлен', '—'],
+            SCANNING: ['bb-scanning', 'Сканирование', `Жду RSI < ${BUY_RSI}`],
+            BUYING: ['bb-buying', 'Покупка', 'Ожидание заполнения...'],
+            HOLDING: ['bb-holding', 'В позиции', `TP +${TP * 100}% · SL ${SL * 100}%`],
+            SELLING: ['bb-selling', 'Продажа', 'Ожидание заполнения...'],
+          };
+          const [cls, lbl, note] = map[S.status] || map.STOPPED;
+          const b = $('botBadge'); b.className = `bot-badge ${cls}`; b.textContent = lbl;
+          $('botStNote').textContent = note;
+          $('botStPair').textContent = S.coin ? `${S.coin}-USD · Limit 0.4%` : '—';
+        }
+        function renderPrice(tk) {
+          if (!tk) return;
+          $('botStPrice').textContent = `$${fmt(tk.bid, 2)}`;
+        }
+        function renderInd() { }
+        function renderPos() { }
+        function clearPos() { }
+        function renderTrades() { }
+        function renderStats() { }
+        async function refreshBal() {
+          const b = await usdBal();
+          if (b !== null) $('botUsdBal').innerHTML = `USD: <b style="color:#16a34a">$${fmt(b, 2)}</b>`;
+        }
+
+        /* — public — */
+        async function start() {
+          const coin = $('botCoin').value.trim().toUpperCase();
+          const amount = parseFloat($('botAmt').value);
+          if (!coin || coin.length < 2) { alert('Введи монету (BTC, ETH…)'); return; }
+          if (!amount || amount < 10) { alert('Минимальная сумма $10'); return; }
+          setUI(false);
+          log(`Запуск: ${coin} $${amount}`, 'success');
+          try { S.prod = await prodInfo(); log(`${coin}: priceD=${S.prod.priceD}, sizeD=${S.prod.sizeD}`, 'info'); }
+          catch (e) { log(`Ошибка продукта: ${e.message}`, 'error'); setUI(true); return; }
+          S.coin = coin; S.amount = amount; S.status = 'SCANNING'; S.startedAt = Date.now();
+          save(); renderStatus(); refreshBal();
+          log(`Стратегия: RSI(${RSI_P}) 5m | TP +${TP * 100}% | SL ${SL * 100}%`, 'info');
+          await tick();
+        }
+        function stop() {
+          clearTimers(); S.status = 'STOPPED'; save(); setUI(true); renderStatus();
+          log('Бот остановлен', 'warn');
+        }
+        function setUI(enabled) {
+          $('botBtnStart').disabled = !enabled; $('botBtnStop').disabled = enabled;
+          $('botCoin').disabled = !enabled; $('botAmt').disabled = !enabled;
+        }
+        function toggleHistory() {
+          const w = $('botHistWrap'), open = w.style.display !== 'none';
+          w.style.display = open ? 'none' : 'block';
+          $('botHistArrow').textContent = open ? '▶' : '▼';
+        }
+
+        /* — init — */
+        (async () => {
+          load();
+          renderStatus(); renderTrades(); renderStats(); renderInd();
+          if (S.coin) $('botCoin').value = S.coin;
+          if (S.amount) $('botAmt').value = S.amount;
+          refreshBal();
+          if (S.status !== 'STOPPED') {
+            log('Восстановление после перезагрузки...', 'warn');
+            setUI(false);
+            try { S.prod = await prodInfo(); }
+            catch (e) { log(`Ошибка восстановления: ${e.message}`, 'error'); stop(); return; }
+            if (S.pos?.filledPrice) {
+              try { const tk = await ticker(); const sz = parseFloat(S.pos.filledSize || S.pos.baseSize); renderPos(S.pos, tk.ask, sz, (tk.ask - S.pos.filledPrice) * sz, (tk.ask - S.pos.filledPrice) / S.pos.filledPrice); }
+              catch { }
+            }
+            await tick();
+          }
+        })();
+
+        return { start, stop, toggleHistory };
+      })();
+    </script>
+</body>
+
+</html>
