@@ -558,6 +558,14 @@
       }
     }
 
+    function selectCoin(coin) {
+      document.getElementById('coinInput').value = coin;
+      localStorage.setItem('mobileTradeCoin', coin);
+      connectPriceWs();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      toast(coin + ' selected');
+    }
+
     document.getElementById('coinInput').addEventListener('change', connectPriceWs);
     document.getElementById('amtInput').addEventListener('input', updateUsd);
 
@@ -832,7 +840,7 @@
 
         html += `<div class="monitor-group">
           <div class="monitor-group-header">
-            <span class="monitor-coin">${pair}</span>
+            <span class="monitor-coin" style="cursor:pointer" onclick="selectCoin('${coin}')">${pair}</span>
             <span class="monitor-pnl" style="color:${pnlColor}">${limitPnL >= 0 ? '+' : ''}$${Math.abs(limitPnL).toFixed(2)}</span>
           </div>
           <div class="monitor-stats">
