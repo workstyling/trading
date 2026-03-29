@@ -164,6 +164,29 @@ app.post('/create-sell-order', async (req, res) => {
       }
     };
 
+    // Fetch product info to get correct precision
+    let quoteDecimals = 2, baseDecimals = 8;
+    try {
+      const prodRes = await fetch(`https://api.exchange.coinbase.com/products/${productId}`);
+      if (prodRes.ok) {
+        const prod = await prodRes.json();
+        if (prod.quote_increment) {
+          const inc = prod.quote_increment;
+          quoteDecimals = inc.includes('.') ? (inc.split('.')[1].replace(/0+$/, '').length || 0) : 0;
+        }
+        if (prod.base_increment) {
+          const inc = prod.base_increment;
+          baseDecimals = inc.includes('.') ? (inc.split('.')[1].replace(/0+$/, '').length || 0) : 0;
+        }
+      }
+    } catch (e) {
+      console.warn('Could not fetch product info for sell:', e.message);
+    }
+
+    // Fix precision
+    orderData.order_configuration.limit_limit_gtc.limit_price = parseFloat(price).toFixed(quoteDecimals);
+    orderData.order_configuration.limit_limit_gtc.base_size = parseFloat(size).toFixed(baseDecimals);
+
     console.log('Creating sell order:', orderData);
     const response = await client.createOrder(orderData);
 
