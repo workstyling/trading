@@ -542,9 +542,7 @@
     }
 
     function updateUsd() {
-      const pct = parseFloat(document.getElementById('amtInput').value) || 0;
-      const balance = parseFloat(document.getElementById('headerBalance').textContent.replace('$', '')) || 0;
-      const usd = (balance * pct / 100).toFixed(2);
+      const usd = getUsdAmount();
       document.getElementById('amtUsd').textContent = '$' + usd;
     }
 
@@ -570,14 +568,46 @@
       updateUsd();
     }
 
+    // ── Confirm dialog ──
+    function confirmTrade(msg) {
+      return new Promise(resolve => {
+        const overlay = document.createElement('div');
+        overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:300;display:flex;align-items:center;justify-content:center;';
+        overlay.innerHTML = `<div style="background:var(--s1);border:1px solid var(--b1);border-radius:14px;padding:20px;max-width:340px;width:90%;text-align:center;">
+          <div style="font-size:14px;font-weight:600;margin-bottom:16px;line-height:1.5;">${msg}</div>
+          <div style="display:flex;gap:10px;">
+            <button style="flex:1;padding:12px;border-radius:8px;border:1px solid var(--t3);background:var(--s2);color:var(--t0);font-size:14px;font-weight:600;cursor:pointer;" id="confirmNo">Cancel</button>
+            <button style="flex:1;padding:12px;border-radius:8px;border:none;background:var(--red);color:#fff;font-size:14px;font-weight:700;cursor:pointer;" id="confirmYes">Confirm</button>
+          </div>
+        </div>`;
+        document.body.appendChild(overlay);
+        overlay.querySelector('#confirmYes').onclick = () => { overlay.remove(); resolve(true); };
+        overlay.querySelector('#confirmNo').onclick = () => { overlay.remove(); resolve(false); };
+      });
+    }
+
+    // ── Get USD amount ──
+    function getUsdAmount() {
+      const val = parseFloat(document.getElementById('amtInput').value) || 0;
+      // If value looks like a percentage (<=100) and balance > 0, use as percentage
+      // Otherwise treat as direct USD amount
+      const balance = parseFloat(document.getElementById('headerBalance').textContent.replace(/[$,]/g, '')) || 0;
+      if (balance > 0 && val <= 100) {
+        return (balance * val / 100).toFixed(2);
+      }
+      // Direct USD amount
+      return val.toFixed(2);
+    }
+
     // ── Execute trades ──
     async function executeBuy() {
       const coin = document.getElementById('coinInput').value.trim().toUpperCase();
       if (!coin || prices.bid <= 0) { toast('Invalid coin or price', 'error'); return; }
-      const pct = parseFloat(document.getElementById('amtInput').value) || 0;
-      const balance = parseFloat(document.getElementById('headerBalance').textContent.replace('$', '')) || 0;
-      const usd = (balance * pct / 100).toFixed(2);
+      const usd = getUsdAmount();
       if (parseFloat(usd) < 1) { toast('Amount too small', 'error'); return; }
+
+      const ok = await confirmTrade(`BUY ${coin}<br>$${usd} at $${fmt(prices.bid)}`);
+      if (!ok) return;
 
       document.getElementById('btnBuy').textContent = '...';
       const r = await api('/create-buy-order', {
@@ -599,11 +629,14 @@
     async function executeSell() {
       const coin = document.getElementById('coinInput').value.trim().toUpperCase();
       if (!coin || prices.ask <= 0) { toast('Invalid coin or price', 'error'); return; }
-      // We need to know our holdings of this coin to sell
       const holdingsR = await api('/get-holdings');
       if (!holdingsR.success) { toast('Could not load holdings', 'error'); return; }
       const holding = holdingsR.holdings.find(h => h.currency === coin);
       if (!holding || holding.available <= 0) { toast('No ' + coin + ' to sell', 'error'); return; }
+
+      const sellUsd = (holding.available * prices.ask).toFixed(2);
+      const ok = await confirmTrade(`SELL ALL ${coin}<br>${holding.available.toFixed(6)} @ $${fmt(prices.ask)}<br>~$${sellUsd}`);
+      if (!ok) return;
 
       document.getElementById('btnSell').textContent = '...';
       const r = await api('/create-sell-order', {
@@ -626,10 +659,11 @@
       const coin = document.getElementById('coinInput').value.trim().toUpperCase();
       const lp = document.getElementById('limitPrice').value.trim();
       if (!coin || !lp) { toast('Enter coin & price', 'error'); return; }
-      const pct = parseFloat(document.getElementById('amtInput').value) || 0;
-      const balance = parseFloat(document.getElementById('headerBalance').textContent.replace('$', '')) || 0;
-      const usd = (balance * pct / 100).toFixed(2);
+      const usd = getUsdAmount();
       if (parseFloat(usd) < 1) { toast('Amount too small', 'error'); return; }
+
+      const ok = await confirmTrade(`BUY LIMIT ${coin}<br>$${usd} at $${lp}`);
+      if (!ok) return;
 
       const r = await api('/create-buy-order', {
         method: 'POST',
@@ -849,27 +883,36 @@
     }
 
     async function createSellAt(pair, size, price) {
+      const coin = pair.split('-')[0];
+      const usd = (parseFloat(size) * parseFloat(price)).toFixed(2);
+      const ok = await confirmTrade(`SELL ${coin}<br>${parseFloat(size).toFixed(6)} @ $${fmt(price)}<br>~$${usd}`);
+      if (!ok) return;
       const r = await api('/create-sell-order', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ productId: pair, size: size, price: price })
       });
-      if (r.success) { toast('Sell order created!'); loadOrders(); }
+      if (r.success) { toast('Sell order created!'); loadOrders().then(updateMonitor); }
       else toast(r.error || 'Failed', 'error');
     }
 
     async function sellAtAsk(pair, size) {
       const cached = monitorPriceCache[pair];
       if (!cached || !cached.ask) { toast('No ask price', 'error'); return; }
+      const coin = pair.split('-')[0];
+      const usd = (parseFloat(size) * cached.ask).toFixed(2);
+      const ok = await confirmTrade(`SELL ${coin} at Ask<br>${parseFloat(size).toFixed(6)} @ $${fmt(cached.ask)}<br>~$${usd}`);
+      if (!ok) return;
       const r = await api('/create-sell-order', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ productId: pair, size: size, price: cached.ask.toString() })
       });
-      if (r.success) { toast('Sell at Ask placed!'); loadOrders(); }
+      if (r.success) { toast('Sell at Ask placed!'); loadOrders().then(updateMonitor); }
       else toast(r.error || 'Failed', 'error');
     }
 
     async function cancelOrder(id) {
-      if (!confirm('Cancel this order?')) return;
+      const ok = await confirmTrade('Cancel this order?');
+      if (!ok) return;
       const r = await api('/cancel-order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
