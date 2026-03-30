@@ -2009,6 +2009,23 @@
       color: #000;
     }
 
+    .cancel-order-btn {
+      padding: 2px 8px;
+      border: 1px solid var(--loss);
+      border-radius: 5px;
+      background: transparent;
+      color: var(--loss);
+      font-size: 10px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+      margin-left: 4px;
+    }
+    .cancel-order-btn:hover {
+      background: var(--loss);
+      color: #fff;
+    }
+
     @keyframes toastOut {
       from {
         opacity: 1;
@@ -4654,6 +4671,11 @@
     }
 
     // Cancel order
+    async function cancelOrderFromSelected(orderId, coin) {
+      if (!confirm(`Cancel ${coin} order ${orderId.slice(0,8)}...?`)) return;
+      await cancelOrder(orderId);
+    }
+
     async function cancelOrder(orderId) {
       try {
         const res = await fetch('/cancel-order', {
@@ -7013,6 +7035,10 @@ Requirements:
           if (isBuy && filledVal > 0) {
             const checkMark = existingSellOrder ? `<span class="sell-exists" title="Sell order exists">✓</span>` : '';
             sellBtn = `<button class="sell-target-btn" onclick="createSellOrder('${pair}', '${o.filled_size}', '${targetPrice}')">+${tradingSettings.sellMarkup}%</button><button class="sell-ask-btn" onclick="sellAtCurrentAsk('${pair}', '${o.filled_size}')" title="Sell at Best Ask">Ask</button>${checkMark}`;
+          }
+          // Cancel button for OPEN orders (both buy and sell)
+          if (o.status === 'OPEN') {
+            sellBtn += ` <button class="cancel-order-btn" onclick="cancelOrderFromSelected('${o.order_id}', '${coin}')" title="Cancel order">Cancel</button>`;
           }
 
           // Position in order book (only for SELL Limit orders with status OPEN)
