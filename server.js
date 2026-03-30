@@ -599,21 +599,28 @@ const { execSync } = require('child_process');
 const isWindows = process.platform === 'win32';
 try {
   if (isWindows) {
-    const result = execSync(`netstat -ano | findstr :${PORT} | findstr LISTENING`, { encoding: 'utf8', timeout: 5000 });
+    const result = execSync(`cmd /c "netstat -ano | findstr :${PORT} | findstr LISTENING"`, { encoding: 'utf8', timeout: 5000, shell: true });
     const pids = new Set();
     result.trim().split('\n').forEach(line => {
       const pid = parseInt(line.trim().split(/\s+/).pop());
       if (pid && pid !== process.pid) pids.add(pid);
     });
     pids.forEach(pid => {
-      try { execSync(`taskkill /F /PID ${pid}`, { timeout: 5000 }); } catch {}
+      try { execSync(`cmd /c "taskkill /F /PID ${pid}"`, { encoding: 'utf8', timeout: 5000, shell: true });
+        console.log(`[STARTUP] Killed stale process on port ${PORT} (PID: ${pid})`);
+      } catch {}
     });
+    if (pids.size > 0) {
+      execSync('cmd /c "timeout /t 2 /nobreak >nul"', { timeout: 5000, shell: true });
+    }
   } else {
     const result = execSync(`lsof -ti:${PORT} 2>/dev/null || true`, { encoding: 'utf8', timeout: 5000 });
     result.trim().split('\n').filter(Boolean).forEach(pid => {
       const p = parseInt(pid);
       if (p && p !== process.pid) {
-        try { execSync(`kill -9 ${p}`, { timeout: 5000 }); } catch {}
+        try { execSync(`kill -9 ${p}`, { timeout: 5000 });
+          console.log(`[STARTUP] Killed stale process on port ${PORT} (PID: ${p})`);
+        } catch {}
       }
     });
   }
