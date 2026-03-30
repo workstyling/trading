@@ -8584,7 +8584,7 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
           } catch (e) { console.warn(`[Vol ${coin}]`, e.message); }
           await sleep(50);
           done++;
-          btn.textContent = `Loading… ${done}/${usdCoins.length}`;
+          document.getElementById('mhCoinsCount').textContent = `${done}/${usdCoins.length}`;
         }
 
         renderTop();
