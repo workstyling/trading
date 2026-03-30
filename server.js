@@ -611,7 +611,9 @@ try {
       } catch {}
     });
     if (pids.size > 0) {
-      execSync('cmd /c "timeout /t 2 /nobreak >nul"', { timeout: 5000, shell: true });
+      // Wait for port to be released
+      const wait = (ms) => { const end = Date.now() + ms; while (Date.now() < end) {} };
+      wait(2000);
     }
   } else {
     const result = execSync(`lsof -ti:${PORT} 2>/dev/null || true`, { encoding: 'utf8', timeout: 5000 });
@@ -626,20 +628,43 @@ try {
   }
 } catch (e) { /* no process on port - good */ }
 
-server = app.listen(PORT, () => {
-  console.log(`Server running at http://localhost:${PORT}`);
-});
+function startServer(retries = 5) {
+  server = app.listen(PORT, () => {
+    console.log(`Server running at http://localhost:${PORT}`);
+  });
 
-// Keep-alive and timeout settings to prevent hanging connections
-server.keepAliveTimeout = 65000;
-server.headersTimeout = 66000;
+  // Keep-alive and timeout settings to prevent hanging connections
+  server.keepAliveTimeout = 65000;
+  server.headersTimeout = 66000;
 
-// Handle server errors (e.g. EADDRINUSE)
-server.on('error', (err) => {
-  if (err.code === 'EADDRINUSE') {
-    console.error(`[ERROR] Port ${PORT} is already in use. Exiting.`);
-    process.exit(1);
-  } else {
-    console.error('[ERROR] Server error:', err);
-  }
-});
+  // Handle server errors (e.g. EADDRINUSE)
+  server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      if (retries > 0) {
+        console.error(`[ERROR] Port ${PORT} in use. Retrying in 3s... (${retries} attempts left)`);
+        // Try to kill the process holding the port
+        try {
+          if (isWindows) {
+            const result = execSync(`cmd /c "netstat -ano | findstr :${PORT} | findstr LISTENING"`, { encoding: 'utf8', timeout: 5000, shell: true });
+            result.trim().split('\n').forEach(line => {
+              const pid = parseInt(line.trim().split(/\s+/).pop());
+              if (pid && pid !== process.pid) {
+                try { execSync(`cmd /c "taskkill /F /PID ${pid}"`, { timeout: 5000, shell: true }); } catch {}
+              }
+            });
+          } else {
+            execSync(`fuser -k ${PORT}/tcp 2>/dev/null || true`, { timeout: 5000 });
+          }
+        } catch {}
+        setTimeout(() => startServer(retries - 1), 3000);
+      } else {
+        console.error(`[ERROR] Port ${PORT} still in use after retries. Exiting.`);
+        process.exit(1);
+      }
+    } else {
+      console.error('[ERROR] Server error:', err);
+    }
+  });
+}
+
+startServer();
