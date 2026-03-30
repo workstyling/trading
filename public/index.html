@@ -7004,7 +7004,7 @@ Requirements:
           let sellBtn = '';
           if (isBuy && filledVal > 0) {
             const checkMark = existingSellOrder ? `<span class="sell-exists" title="Sell order exists">✓</span>` : '';
-            sellBtn = `<button class="sell-target-btn" onclick="createSellOrder('${pair}', '${filled}', '${targetPrice}')">+${tradingSettings.sellMarkup}%</button><button class="sell-ask-btn" onclick="sellAtCurrentAsk('${pair}', '${filled}')" title="Sell at Best Ask">Ask</button>${checkMark}`;
+            sellBtn = `<button class="sell-target-btn" onclick="createSellOrder('${pair}', '${o.filled_size}', '${targetPrice}')">+${tradingSettings.sellMarkup}%</button><button class="sell-ask-btn" onclick="sellAtCurrentAsk('${pair}', '${o.filled_size}')" title="Sell at Best Ask">Ask</button>${checkMark}`;
           }
 
           // Position in order book (only for SELL Limit orders with status OPEN)
