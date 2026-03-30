@@ -369,10 +369,11 @@
       </div>
     </div>
     <div class="trade-amount">
+      <span style="font-size:11px;color:var(--t2);">$</span>
       <button class="amt-btn" onclick="adjustAmt(-5)">−</button>
       <input type="number" class="amt-input" id="amtInput" value="100" step="1" min="1">
       <button class="amt-btn" onclick="adjustAmt(5)">+</button>
-      <span class="amt-usd" id="amtUsd">$0.00</span>
+      <span style="font-size:11px;color:var(--t2);">USD</span>
     </div>
     <div class="trade-actions">
       <button class="trade-btn btn-buy" id="btnBuy" onclick="executeBuy()">BUY</button>
@@ -540,10 +541,7 @@
       priceWs.onclose = () => { setTimeout(connectPriceWs, 3000); };
     }
 
-    function updateUsd() {
-      const usd = getUsdAmount();
-      document.getElementById('amtUsd').textContent = '$' + usd;
-    }
+    function updateUsd() { /* direct USD input, no conversion needed */ }
 
     // Load saved coin
     const savedCoin = localStorage.getItem('mobileTradeCoin');
@@ -595,15 +593,7 @@
 
     // ── Get USD amount ──
     function getUsdAmount() {
-      const val = parseFloat(document.getElementById('amtInput').value) || 0;
-      // If value looks like a percentage (<=100) and balance > 0, use as percentage
-      // Otherwise treat as direct USD amount
-      const balance = parseFloat(document.getElementById('headerBalance').textContent.replace(/[$,]/g, '')) || 0;
-      if (balance > 0 && val <= 100) {
-        return (balance * val / 100).toFixed(2);
-      }
-      // Direct USD amount
-      return val.toFixed(2);
+      return (parseFloat(document.getElementById('amtInput').value) || 0).toFixed(2);
     }
 
     // ── Execute trades ──
