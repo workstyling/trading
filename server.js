@@ -596,25 +596,26 @@ app.get('/get-order-status/:orderId', async (req, res) => {
 
 // Kill any existing process on our port before starting
 const { execSync } = require('child_process');
+const isWindows = process.platform === 'win32';
 try {
-  const result = execSync(`netstat -ano | findstr :${PORT} | findstr LISTENING`, { encoding: 'utf8', timeout: 5000 });
-  const lines = result.trim().split('\n');
-  const pids = new Set();
-  lines.forEach(line => {
-    const parts = line.trim().split(/\s+/);
-    const pid = parseInt(parts[parts.length - 1]);
-    if (pid && pid !== process.pid) pids.add(pid);
-  });
-  pids.forEach(pid => {
-    try {
-      execSync(`taskkill /F /PID ${pid}`, { encoding: 'utf8', timeout: 5000 });
-      console.log(`[STARTUP] Killed stale process on port ${PORT} (PID: ${pid})`);
-    } catch (e) { /* already dead */ }
-  });
-  if (pids.size > 0) {
-    // Give OS time to release the port
-    const { execSync: execSync2 } = require('child_process');
-    execSync2('ping -n 2 127.0.0.1 >nul', { timeout: 5000 });
+  if (isWindows) {
+    const result = execSync(`netstat -ano | findstr :${PORT} | findstr LISTENING`, { encoding: 'utf8', timeout: 5000 });
+    const pids = new Set();
+    result.trim().split('\n').forEach(line => {
+      const pid = parseInt(line.trim().split(/\s+/).pop());
+      if (pid && pid !== process.pid) pids.add(pid);
+    });
+    pids.forEach(pid => {
+      try { execSync(`taskkill /F /PID ${pid}`, { timeout: 5000 }); } catch {}
+    });
+  } else {
+    const result = execSync(`lsof -ti:${PORT} 2>/dev/null || true`, { encoding: 'utf8', timeout: 5000 });
+    result.trim().split('\n').filter(Boolean).forEach(pid => {
+      const p = parseInt(pid);
+      if (p && p !== process.pid) {
+        try { execSync(`kill -9 ${p}`, { timeout: 5000 }); } catch {}
+      }
+    });
   }
 } catch (e) { /* no process on port - good */ }
 
