@@ -4250,6 +4250,7 @@
       let val = parseInt(input.value) || 100;
       val = Math.max(1, Math.min(100, val + delta));
       input.value = val;
+      localStorage.setItem('buySize', val);
       updateBuyUsdAmount();
     }
 
@@ -4271,7 +4272,14 @@
     }
 
     // Update USD amount when percentage changes
-    document.getElementById('buySize').addEventListener('input', updateBuyUsdAmount);
+    // Load saved buy size
+    const savedBuySize = localStorage.getItem('buySize');
+    if (savedBuySize) document.getElementById('buySize').value = savedBuySize;
+
+    document.getElementById('buySize').addEventListener('input', () => {
+      localStorage.setItem('buySize', document.getElementById('buySize').value);
+      updateBuyUsdAmount();
+    });
 
     async function executeBuyOrder() {
       console.log('executeBuyOrder called');
