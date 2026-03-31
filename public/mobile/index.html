@@ -172,14 +172,13 @@
     }
     .otbl {
       width: 100%; border-collapse: collapse; font-family: 'JetBrains Mono', monospace; font-size: 13px;
-      table-layout: fixed;
     }
     .otbl th {
       background: var(--s2); color: var(--t2); font-size: 10px; font-weight: 600;
       text-transform: uppercase; letter-spacing: .04em; padding: 10px 8px;
       position: sticky; top: 0; z-index: 1; text-align: left;
     }
-    .otbl td { padding: 12px 8px; border-bottom: 1px solid var(--b0); color: var(--t1); overflow: hidden; text-overflow: ellipsis; }
+    .otbl td { padding: 12px 8px; border-bottom: 1px solid var(--b0); color: var(--t1); white-space: nowrap; }
     .otbl tr:active { background: var(--s2); }
     .otbl .side-buy { color: var(--green); font-weight: 700; }
     .otbl .side-sell { color: var(--loss); font-weight: 700; }
