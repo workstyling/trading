@@ -7291,11 +7291,23 @@ Requirements:
       document.getElementById('selectedOrders').style.display = 'block';
       // Immediately update with order book data
       setTimeout(updateSelectedPrices, 100);
-      // Fetch real balances for each coin
+      // Show real balances - use cache first, then fetch
+      if (holdingsCache) {
+        holdingsCache.forEach(h => {
+          const el = document.getElementById('realBal_' + h.currency);
+          if (el) {
+            el.textContent = `| Real: ${fmtSize(h.available)} (hold: ${fmtSize(h.hold)})`;
+            el.style.color = 'var(--t1)';
+          }
+        });
+      }
       fetchRealBalances();
     }
 
     async function fetchRealBalances() {
+      // Use cached holdings if available, otherwise fetch
+      const els = document.querySelectorAll('[id^="realBal_"]');
+      if (!els.length) return;
       try {
         const r = await fetch('/get-holdings');
         const data = await r.json();
@@ -7309,6 +7321,16 @@ Requirements:
         });
       } catch {}
     }
+    // Pre-fetch holdings on load and cache
+    let holdingsCache = null;
+    async function preloadHoldings() {
+      try {
+        const r = await fetch('/get-holdings');
+        const data = await r.json();
+        if (data.success) holdingsCache = data.holdings;
+      } catch {}
+    }
+    preloadHoldings();
 
     // Fees (dynamic from settings)
     function getFeeLimit() { return tradingSettings.tradeFee / 100; }
