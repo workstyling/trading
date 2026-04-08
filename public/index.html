@@ -8913,8 +8913,8 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
       } catch (e) { }
     }
 
-    // Auto-load on page start (delay to avoid 429 rate limit on initial load)
-    setTimeout(loadCoinsPanel, 2000);
+    // Disabled: Research panel replaces loadCoinsPanel to avoid 429 rate limits
+    // setTimeout(loadCoinsPanel, 2000);
   </script>
   <div class="toast-container" id="toastContainer"></div>
   <script>
