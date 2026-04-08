@@ -4738,6 +4738,17 @@
     const ORDERS_SERVER = '';
     const SELECTED_ORDERS_KEY = 'selectedOrders';
     let selectedOrders = JSON.parse(safeStorage.getItem(SELECTED_ORDERS_KEY) || '[]');
+    const MUTED_ORDERS_KEY = 'mutedOrders';
+    let mutedOrders = JSON.parse(safeStorage.getItem(MUTED_ORDERS_KEY) || '[]');
+    function toggleMuteOrder(orderId) {
+      if (mutedOrders.includes(orderId)) {
+        mutedOrders = mutedOrders.filter(id => id !== orderId);
+      } else {
+        mutedOrders.push(orderId);
+      }
+      safeStorage.setItem(MUTED_ORDERS_KEY, JSON.stringify(mutedOrders));
+      updateSelectedOrdersView();
+    }
     let allOrders = [];
     let prevOrderStatuses = {}; // Track order statuses for completion detection
     // Track which BUY orders are selected for progress bar per coin { "BTC": ["order_id1", "order_id2"], ... }
@@ -6943,9 +6954,10 @@ Requirements:
           }
         }
 
-        // Calculate totals (only BUY orders for profit calc, skip unfilled SELL orders)
+        // Calculate totals (only BUY orders for profit calc, skip unfilled SELL orders and muted orders)
         let totalFilled = 0, totalUSD = 0, buyFilled = 0, buyUSD = 0, buyWeightedPrice = 0;
         orders.forEach(o => {
+          if (mutedOrders.includes(o.order_id)) return; // Skip muted
           const filled = parseFloat(o.filled_size) || 0;
           const value = Math.round((parseFloat(o.total_value) || 0) * 100) / 100;
           const avgPrice = parseFloat(o.average_filled_price) || 0;
@@ -7196,9 +7208,10 @@ Requirements:
               : barSelectedOrders[coin] === o.order_id;
             barCell = `<div class="bar-selector${isBarActive ? ' active' : ''}" data-order-id="${o.order_id}" data-coin="${coin}" title="Include in progress bar"></div>`;
           }
-          h += `<tr data-order-id="${o.order_id}">
+          const isMuted = mutedOrders.includes(o.order_id);
+          h += `<tr data-order-id="${o.order_id}" style="${isMuted ? 'opacity:0.3;' : ''}">
             <td><div class="order-selector${isSelected ? ' selected' : ''}" data-order-id="${o.order_id}"></div></td>
-            <td>${barCell}</td>
+            <td style="display:flex;gap:4px;align-items:center;">${barCell}<input type="checkbox" ${isMuted ? '' : 'checked'} onchange="toggleMuteOrder('${o.order_id}')" title="${isMuted ? 'Enable in calculations' : 'Disable from calculations'}" style="width:14px;height:14px;accent-color:var(--green);cursor:pointer;"></td>
             <td>${orderId}</td>
             <td class="${sideClass}">${side.toLowerCase()}</td>
             <td style="color:${orderType === 'Market' ? '#f87171' : '#4ade80'}">${orderType}</td>
