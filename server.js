@@ -598,6 +598,74 @@ app.get('/api/cryptorank/currencies', async (req, res) => {
   }
 });
 
+// API: Research - Coinbase coins with market data
+let researchCache = { data: null, ts: 0 };
+const RESEARCH_CACHE_TTL = 60000; // 1 minute
+
+app.get('/api/research', async (req, res) => {
+  try {
+    const now = Date.now();
+    if (researchCache.data && (now - researchCache.ts) < RESEARCH_CACHE_TTL) {
+      return res.json({ success: true, coins: researchCache.data });
+    }
+
+    // Get all Coinbase USD pairs
+    const cbRes = await fetch('https://api.exchange.coinbase.com/products');
+    const products = await cbRes.json();
+    const usdCoins = products
+      .filter(p => p.quote_currency === 'USD' && p.status === 'online')
+      .map(p => p.base_currency);
+
+    // Get CryptoRank data (top 500)
+    const crData = await cryptorankFetch('/currencies', {
+      limit: 500,
+      sortBy: 'rank',
+      sortDirection: 'ASC'
+    });
+    const crCoins = crData.data || [];
+
+    // Match Coinbase coins with CryptoRank data
+    const coins = [];
+    for (const symbol of usdCoins) {
+      const cr = crCoins.find(c => c.symbol === symbol);
+      if (cr) {
+        coins.push({
+          symbol: cr.symbol,
+          name: cr.name,
+          rank: cr.rank,
+          price: cr.values?.USD?.price || 0,
+          marketCap: cr.values?.USD?.marketCap || 0,
+          volume24h: cr.values?.USD?.volume24h || 0,
+          change24h: cr.values?.USD?.percentChange24h || 0,
+          change7d: cr.values?.USD?.percentChange7d || 0,
+          change30d: cr.values?.USD?.percentChange30d || 0,
+        });
+      } else {
+        // Coin not in CryptoRank, add with basic info
+        coins.push({
+          symbol,
+          name: symbol,
+          rank: 9999,
+          price: 0,
+          marketCap: 0,
+          volume24h: 0,
+          change24h: 0,
+          change7d: 0,
+          change30d: 0,
+        });
+      }
+    }
+
+    coins.sort((a, b) => a.rank - b.rank);
+    researchCache = { data: coins, ts: now };
+    res.json({ success: true, coins });
+  } catch (error) {
+    console.error('Research API error:', error);
+    if (researchCache.data) return res.json({ success: true, coins: researchCache.data });
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // API: CryptoRank Currency Details
 app.get('/api/cryptorank/currency/:key', async (req, res) => {
   try {
