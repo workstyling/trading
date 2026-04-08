@@ -644,12 +644,30 @@ app.get('/api/research', async (req, res) => {
           rank: cg.market_cap_rank || 9999,
           price: cg.current_price || 0,
           marketCap: cg.market_cap || 0,
-          volume24h: cg.total_volume || 0,
+          volume24h: 0, // Will be filled with Coinbase volume
           change24h: cg.price_change_percentage_24h_in_currency || 0,
           change7d: cg.price_change_percentage_7d_in_currency || 0,
           change30d: cg.price_change_percentage_30d_in_currency || 0,
         });
       }
+    }
+
+    // Fetch Coinbase 24h volume for each coin (batched)
+    const BATCH = 20;
+    for (let i = 0; i < coins.length; i += BATCH) {
+      const batch = coins.slice(i, i + BATCH);
+      await Promise.all(batch.map(async (coin) => {
+        try {
+          const r = await fetch(`https://api.exchange.coinbase.com/products/${coin.symbol}-USD/stats`);
+          if (r.ok) {
+            const stats = await r.json();
+            const vol = parseFloat(stats.volume || 0);
+            const price = parseFloat(stats.last || coin.price);
+            coin.volume24h = vol * price; // Convert to USD
+          }
+        } catch {}
+      }));
+      if (i + BATCH < coins.length) await sleep(100);
     }
 
     coins.sort((a, b) => a.rank - b.rank);
