@@ -652,25 +652,34 @@ app.get('/api/research', async (req, res) => {
       }
     }
 
-    // Fetch Coinbase 24h volume for each coin (batched)
-    const BATCH = 20;
-    for (let i = 0; i < coins.length; i += BATCH) {
-      const batch = coins.slice(i, i + BATCH);
-      await Promise.all(batch.map(async (coin) => {
-        try {
-          const r = await fetch(`https://api.exchange.coinbase.com/products/${coin.symbol}-USD/stats`);
-          if (r.ok) {
-            const stats = await r.json();
-            const vol = parseFloat(stats.volume || 0);
-            const price = parseFloat(stats.last || coin.price);
-            coin.volume24h = vol * price; // Convert to USD
-          }
-        } catch {}
-      }));
-      if (i + BATCH < coins.length) await sleep(100);
-    }
-
     coins.sort((a, b) => a.rank - b.rank);
+
+    // Use CoinGecko volume initially, fetch Coinbase volume in background
+    coins.forEach(c => {
+      const cg = cgCoins.find(x => x.symbol.toUpperCase() === c.symbol);
+      if (cg) c.volume24h = cg.total_volume || 0;
+    });
+
+    // Background: fetch Coinbase volumes and update cache
+    (async () => {
+      const BATCH = 15;
+      for (let i = 0; i < coins.length; i += BATCH) {
+        const batch = coins.slice(i, i + BATCH);
+        await Promise.all(batch.map(async (coin) => {
+          try {
+            const r = await fetch(`https://api.exchange.coinbase.com/products/${coin.symbol}-USD/stats`);
+            if (r.ok) {
+              const stats = await r.json();
+              const vol = parseFloat(stats.volume || 0);
+              const price = parseFloat(stats.last || coin.price);
+              coin.volume24h = vol * price;
+            }
+          } catch {}
+        }));
+        await sleep(200);
+      }
+      researchCache.ts = Date.now(); // Refresh cache with CB volumes
+    })();
     researchCache = { data: coins, ts: now };
     res.json({ success: true, coins });
   } catch (error) {
