@@ -7291,37 +7291,36 @@ Requirements:
       document.getElementById('selectedOrders').style.display = 'block';
       // Immediately update with order book data
       setTimeout(updateSelectedPrices, 100);
-      // Show real balances - use cache first, then refresh
+      // Show real balances from cache, or fetch if not ready
       if (balancesCache) {
-        balancesCache.forEach(h => {
-          const el = document.getElementById('realBal_' + h.currency);
-          if (el) {
-            el.textContent = `| Real: ${fmtSize(h.available)} (hold: ${fmtSize(h.hold)})`;
-            el.style.color = 'var(--t1)';
-          }
-        });
+        applyRealBalances();
       } else {
         fetchRealBalances();
       }
     }
 
+    let balancesCache = null;
     async function fetchRealBalances() {
       try {
         const r = await fetch('/get-balances');
         const data = await r.json();
         if (!data.success) return;
         balancesCache = data.balances;
-        data.balances.forEach(h => {
-          const el = document.getElementById('realBal_' + h.currency);
-          if (el) {
-            el.textContent = `| Real: ${fmtSize(h.available)} (hold: ${fmtSize(h.hold)})`;
-            el.style.color = 'var(--t1)';
-          }
-        });
+        applyRealBalances();
       } catch {}
     }
-    let balancesCache = null;
+    function applyRealBalances() {
+      if (!balancesCache) return;
+      balancesCache.forEach(h => {
+        const el = document.getElementById('realBal_' + h.currency);
+        if (el) {
+          el.textContent = `| Real: ${fmtSize(h.available)} (hold: ${fmtSize(h.hold)})`;
+          el.style.color = 'var(--t1)';
+        }
+      });
+    }
     fetchRealBalances();
+    setInterval(fetchRealBalances, 15000);
 
     // Fees (dynamic from settings)
     function getFeeLimit() { return tradingSettings.tradeFee / 100; }
