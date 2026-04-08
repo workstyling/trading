@@ -8790,7 +8790,7 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
       };
 
       let h = `<table class="rtbl"><thead><tr>
-        <th>#</th><th>Coin</th><th>Price</th><th>MCap</th><th>Vol 24h</th>
+        <th>Coin</th><th>Price</th><th>MCap</th><th>Vol 24h (CB)</th>
         <th style="cursor:pointer" onclick="setResearchSort('change24h',document.querySelector('[data-sort=change24h]'))">24H</th>
         <th style="cursor:pointer" onclick="setResearchSort('change7d',document.querySelector('[data-sort=change7d]'))">7D</th>
         <th style="cursor:pointer" onclick="setResearchSort('change30d',document.querySelector('[data-sort=change30d]'))">30D</th>
@@ -8799,7 +8799,6 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
 
       sorted.forEach((c, i) => {
         h += `<tr>
-          <td style="color:var(--t3);font-size:10px;">${c.rank < 9999 ? c.rank : '—'}</td>
           <td><a class="coin-link" href="https://www.tradingview.com/chart/?symbol=COINBASE%3A${c.symbol}USD" target="_blank">${c.symbol}</a> <span style="color:var(--t3);font-size:9px;">${c.name !== c.symbol ? c.name : ''}</span></td>
           <td>${fmtP(c.price)}</td>
           <td style="font-size:10px;">${fmtMcap(c.marketCap)}</td>
