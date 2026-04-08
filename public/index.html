@@ -8730,7 +8730,7 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
 
     // ========== RESEARCH ==========
     let researchData = [];
-    let researchSortBy = 'change30d';
+    let researchSortBy = localStorage.getItem('researchSort') || 'change30d';
 
     async function loadResearch() {
       try {
@@ -8748,8 +8748,9 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
 
     function setResearchSort(sort, btn) {
       researchSortBy = sort;
+      localStorage.setItem('researchSort', sort);
       document.querySelectorAll('.research-filter-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
+      if (btn) btn.classList.add('active');
       renderResearch();
     }
 
@@ -8814,7 +8815,10 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
       document.getElementById('researchTable').innerHTML = h;
     }
 
-    // Load research on start
+    // Load research on start - restore saved filter
+    document.querySelectorAll('.research-filter-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.sort === researchSortBy);
+    });
     loadResearch();
 
     const chatHistory = [{ role: 'system', content: 'You are a helpful crypto trading assistant. Be concise.' }];
