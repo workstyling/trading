@@ -6961,7 +6961,7 @@ Requirements:
 
         h += `<div class="coin-group" data-coin="${coin}">
           <h4><a href="https://www.tradingview.com/chart/?symbol=COINBASE%3A${coin}USD" target="_blank">${pair}</a> <button class="select-coin-btn" onclick="selectCoinForBuy('${coin}')" title="Set for Buy">⬆</button></h4>
-          <div class="balance">Balance: ${fmtSize(totalFilled)} ${coin} (avail: ${fmtSize(totalFilled)}, hold: 0) ${totalFilled > 0 ? `<button class="sell-all-btn" onclick="sellAllCoin('${pair}', '${totalFilled}')">SELL ALL</button>` : ''} <button class="${btnClass}" onclick="saveGroupProfit('${coin}', ${groupProfit.toFixed(2)}, '${filledBuys.map(o => o.order_id).join(',')}', '${filledSells.map(o => o.order_id).join(',')}')" ${btnDisabled ? 'disabled' : ''}>${btnText}</button></div>
+          <div class="balance">Selected: ${fmtSize(totalFilled)} ${coin} <span id="realBal_${coin}" style="color:var(--t2);font-size:10px;">(loading real balance...)</span> ${totalFilled > 0 ? `<button class="sell-all-btn" onclick="sellAllCoin('${pair}', '${totalFilled}')">SELL ALL</button>` : ''} <button class="${btnClass}" onclick="saveGroupProfit('${coin}', ${groupProfit.toFixed(2)}, '${filledBuys.map(o => o.order_id).join(',')}', '${filledSells.map(o => o.order_id).join(',')}')" ${btnDisabled ? 'disabled' : ''}>${btnText}</button></div>
 
           <table class="profit-table" data-pair="${pair}" data-filled="${totalFilled}" data-usd="${totalUSD}" data-avgbuy="${avgBuyPrice}">
             <thead><tr><th>Num</th><th>Best Bid</th><th>Best Ask</th><th>Filled Size</th><th>USD</th><th>Avg Buy</th><th>Limit</th><th>Market</th></tr></thead>
@@ -7291,6 +7291,23 @@ Requirements:
       document.getElementById('selectedOrders').style.display = 'block';
       // Immediately update with order book data
       setTimeout(updateSelectedPrices, 100);
+      // Fetch real balances for each coin
+      fetchRealBalances();
+    }
+
+    async function fetchRealBalances() {
+      try {
+        const r = await fetch('/get-holdings');
+        const data = await r.json();
+        if (!data.success) return;
+        data.holdings.forEach(h => {
+          const el = document.getElementById('realBal_' + h.currency);
+          if (el) {
+            el.textContent = `| Real: ${fmtSize(h.available)} (hold: ${fmtSize(h.hold)})`;
+            el.style.color = 'var(--t1)';
+          }
+        });
+      } catch {}
     }
 
     // Fees (dynamic from settings)
