@@ -284,35 +284,50 @@ async function getPrice(currency) {
   return 0;
 }
 
-// Fast balances endpoint (no price lookups)
+// Fast balances endpoint (no price lookups, cached)
+let balancesCache = { data: null, ts: 0 };
+const BALANCES_CACHE_TTL = 15000; // 15 seconds
+
+async function fetchAccountBalances() {
+  const accounts = [];
+  let cursor = undefined;
+  do {
+    const params = { limit: 250 };
+    if (cursor) params.cursor = cursor;
+    const result = await client.listAccounts(params);
+    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    accounts.push(...(data.accounts || []));
+    cursor = data.has_next ? data.cursor : null;
+  } while (cursor);
+
+  return accounts
+    .filter(a => {
+      const avail = parseFloat(a.available_balance?.value || 0);
+      const hold = parseFloat(a.hold?.value || 0);
+      return (avail + hold) > 0;
+    })
+    .map(a => ({
+      currency: a.currency,
+      available: parseFloat(a.available_balance?.value || 0),
+      hold: parseFloat(a.hold?.value || 0),
+      total: parseFloat(a.available_balance?.value || 0) + parseFloat(a.hold?.value || 0)
+    }));
+}
+
+// Pre-fetch on startup
+fetchAccountBalances().then(b => { balancesCache = { data: b, ts: Date.now() }; }).catch(() => {});
+
 app.get('/get-balances', async (req, res) => {
   try {
-    const accounts = [];
-    let cursor = undefined;
-    do {
-      const params = { limit: 250 };
-      if (cursor) params.cursor = cursor;
-      const result = await client.listAccounts(params);
-      const data = typeof result === 'string' ? JSON.parse(result) : result;
-      accounts.push(...(data.accounts || []));
-      cursor = data.has_next ? data.cursor : null;
-    } while (cursor);
-
-    const balances = accounts
-      .filter(a => {
-        const avail = parseFloat(a.available_balance?.value || 0);
-        const hold = parseFloat(a.hold?.value || 0);
-        return (avail + hold) > 0;
-      })
-      .map(a => ({
-        currency: a.currency,
-        available: parseFloat(a.available_balance?.value || 0),
-        hold: parseFloat(a.hold?.value || 0),
-        total: parseFloat(a.available_balance?.value || 0) + parseFloat(a.hold?.value || 0)
-      }));
-
+    const now = Date.now();
+    if (balancesCache.data && (now - balancesCache.ts) < BALANCES_CACHE_TTL) {
+      return res.json({ success: true, balances: balancesCache.data });
+    }
+    const balances = await fetchAccountBalances();
+    balancesCache = { data: balances, ts: now };
     res.json({ success: true, balances });
   } catch (e) {
+    if (balancesCache.data) return res.json({ success: true, balances: balancesCache.data });
     res.json({ success: false, error: e.message });
   }
 });
