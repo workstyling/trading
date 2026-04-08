@@ -598,9 +598,12 @@ app.get('/api/cryptorank/currencies', async (req, res) => {
   }
 });
 
-// API: Research - Coinbase coins with market data
+// API: Research - Coinbase coins with market data from CoinGecko
 let researchCache = { data: null, ts: 0 };
-const RESEARCH_CACHE_TTL = 60000; // 1 minute
+const RESEARCH_CACHE_TTL = 120000; // 2 minutes
+
+// Stablecoins to exclude
+const STABLECOINS = new Set(['USDT', 'USDC', 'DAI', 'BUSD', 'TUSD', 'USDP', 'GUSD', 'FRAX', 'USDS', 'PYUSD', 'EURC', 'EUR', 'GBP', 'CBETH']);
 
 app.get('/api/research', async (req, res) => {
   try {
@@ -609,49 +612,42 @@ app.get('/api/research', async (req, res) => {
       return res.json({ success: true, coins: researchCache.data });
     }
 
-    // Get all Coinbase USD pairs
+    // Get Coinbase USD pairs
     const cbRes = await fetch('https://api.exchange.coinbase.com/products');
     const products = await cbRes.json();
-    const usdCoins = products
+    const usdCoins = new Set(products
       .filter(p => p.quote_currency === 'USD' && p.status === 'online')
-      .map(p => p.base_currency);
+      .map(p => p.base_currency)
+      .filter(s => !STABLECOINS.has(s)));
 
-    // Get CryptoRank data (top 500)
-    const crData = await cryptorankFetch('/currencies', {
-      limit: 500,
-      sortBy: 'rank',
-      sortDirection: 'ASC'
-    });
-    const crCoins = crData.data || [];
+    // Get CoinGecko market data (multiple pages to cover all coins)
+    const cgCoins = [];
+    for (let page = 1; page <= 5; page++) {
+      try {
+        const r = await fetch(`https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=250&page=${page}&sparkline=false&price_change_percentage=24h,7d,30d`);
+        if (!r.ok) break;
+        const data = await r.json();
+        if (!data.length) break;
+        cgCoins.push(...data);
+        await sleep(500); // Rate limit
+      } catch { break; }
+    }
 
-    // Match Coinbase coins with CryptoRank data
+    // Match Coinbase coins with CoinGecko data
     const coins = [];
     for (const symbol of usdCoins) {
-      const cr = crCoins.find(c => c.symbol === symbol);
-      if (cr) {
-        coins.push({
-          symbol: cr.symbol,
-          name: cr.name,
-          rank: cr.rank,
-          price: cr.values?.USD?.price || 0,
-          marketCap: cr.values?.USD?.marketCap || 0,
-          volume24h: cr.values?.USD?.volume24h || 0,
-          change24h: cr.values?.USD?.percentChange24h || 0,
-          change7d: cr.values?.USD?.percentChange7d || 0,
-          change30d: cr.values?.USD?.percentChange30d || 0,
-        });
-      } else {
-        // Coin not in CryptoRank, add with basic info
+      const cg = cgCoins.find(c => c.symbol.toUpperCase() === symbol);
+      if (cg) {
         coins.push({
           symbol,
-          name: symbol,
-          rank: 9999,
-          price: 0,
-          marketCap: 0,
-          volume24h: 0,
-          change24h: 0,
-          change7d: 0,
-          change30d: 0,
+          name: cg.name,
+          rank: cg.market_cap_rank || 9999,
+          price: cg.current_price || 0,
+          marketCap: cg.market_cap || 0,
+          volume24h: cg.total_volume || 0,
+          change24h: cg.price_change_percentage_24h_in_currency || 0,
+          change7d: cg.price_change_percentage_7d_in_currency || 0,
+          change30d: cg.price_change_percentage_30d_in_currency || 0,
         });
       }
     }
