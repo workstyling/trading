@@ -700,26 +700,35 @@ app.get('/get-order-status/:orderId', async (req, res) => {
   }
 });
 
-// Start server with retry on EADDRINUSE
-function startServer(retries = 3) {
-  server = app.listen(PORT, () => {
-    console.log(`Server running at http://localhost:${PORT}`);
+// Start server — check port first, then listen
+const net = require('net');
+
+function checkPort(port) {
+  return new Promise((resolve) => {
+    const tester = net.createServer()
+      .once('error', () => resolve(false))
+      .once('listening', () => { tester.close(); resolve(true); })
+      .listen(port);
   });
+}
 
-  server.keepAliveTimeout = 65000;
-  server.headersTimeout = 66000;
-
-  server.on('error', (err) => {
-    if (err.code === 'EADDRINUSE' && retries > 0) {
-      console.log(`[STARTUP] Port ${PORT} busy, retrying in 2s... (${retries} left)`);
-      setTimeout(() => startServer(retries - 1), 2000);
-    } else if (err.code === 'EADDRINUSE') {
-      console.error(`[ERROR] Port ${PORT} still in use. Exiting.`);
-      process.exit(1);
-    } else {
-      console.error('[ERROR] Server error:', err);
+async function startServer(retries = 10) {
+  for (let i = 0; i < retries; i++) {
+    const free = await checkPort(PORT);
+    if (free) {
+      server = app.listen(PORT, () => {
+        console.log(`Server running at http://localhost:${PORT}`);
+      });
+      server.keepAliveTimeout = 65000;
+      server.headersTimeout = 66000;
+      server.on('error', (err) => console.error('[SERVER ERROR]', err.message));
+      return;
     }
-  });
+    console.log(`[STARTUP] Port ${PORT} busy, waiting... (${i + 1}/${retries})`);
+    await new Promise(r => setTimeout(r, 2000));
+  }
+  console.error(`[ERROR] Port ${PORT} still in use after ${retries} attempts. Exiting.`);
+  process.exit(1);
 }
 
 startServer();
