@@ -743,7 +743,7 @@ try {
     if (pids.size > 0) {
       // Wait for port to be released
       const wait = (ms) => { const end = Date.now() + ms; while (Date.now() < end) {} };
-      wait(2000);
+      wait(4000);
     }
   } else {
     const result = execSync(`lsof -ti:${PORT} 2>/dev/null || true`, { encoding: 'utf8', timeout: 5000 });
