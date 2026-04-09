@@ -8804,10 +8804,12 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
       };
 
       let h = `<table class="rtbl"><thead><tr>
-        <th>Coin</th><th>Price</th><th>MCap</th><th>Vol 24h</th>
-        <th style="cursor:pointer" onclick="setResearchSort('change24h',document.querySelector('[data-sort=change24h]'))">24H</th>
-        <th style="cursor:pointer" onclick="setResearchSort('change7d',document.querySelector('[data-sort=change7d]'))">7D</th>
-        <th style="cursor:pointer" onclick="setResearchSort('change30d',document.querySelector('[data-sort=change30d]'))">30D</th>
+        <th>Coin</th><th>Price</th>
+        <th style="cursor:pointer;${researchSortBy==='marketCap'?'color:var(--red);':''}" onclick="setResearchSort('marketCap',document.querySelector('[data-sort=marketCap]'))">MCap${researchSortBy==='marketCap'?' ▼':''}</th>
+        <th style="cursor:pointer;${researchSortBy==='volume24h'?'color:var(--red);':''}" onclick="setResearchSort('volume24h',document.querySelector('[data-sort=volume24h]'))">Vol 24h${researchSortBy==='volume24h'?' ▼':''}</th>
+        <th style="cursor:pointer;${researchSortBy==='change24h'?'color:var(--red);':''}" onclick="setResearchSort('change24h',document.querySelector('[data-sort=change24h]'))">24H${researchSortBy==='change24h'?' ▼':''}</th>
+        <th style="cursor:pointer;${researchSortBy==='change7d'?'color:var(--red);':''}" onclick="setResearchSort('change7d',document.querySelector('[data-sort=change7d]'))">7D${researchSortBy==='change7d'?' ▼':''}</th>
+        <th style="cursor:pointer;${researchSortBy==='change30d'?'color:var(--red);':''}" onclick="setResearchSort('change30d',document.querySelector('[data-sort=change30d]'))">30D${researchSortBy==='change30d'?' ▼':''}</th>
         <th>Buy</th>
       </tr></thead><tbody>`;
 
