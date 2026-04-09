@@ -8747,7 +8747,7 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
 
     async function loadResearch() {
       try {
-        const r = await fetch('/api/research');
+        const r = await fetch('/api/research?t=' + Date.now());
         const data = await r.json();
         if (data.success) {
           researchData = data.coins;

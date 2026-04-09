@@ -600,7 +600,7 @@ app.get('/api/cryptorank/currencies', async (req, res) => {
 
 // API: Research - Coinbase coins with CryptoRank v1 data
 let researchCache = { data: null, ts: 0 };
-const RESEARCH_CACHE_TTL = 120000; // 2 minutes
+const RESEARCH_CACHE_TTL = 300000; // 5 minutes
 const STABLECOINS = new Set(['USDT', 'USDC', 'DAI', 'BUSD', 'TUSD', 'USDP', 'GUSD', 'FRAX', 'USDS', 'PYUSD', 'EURC', 'EUR', 'GBP', 'CBETH']);
 
 app.get('/api/research', async (req, res) => {
