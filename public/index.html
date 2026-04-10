@@ -4747,10 +4747,16 @@
         const r = await fetch('/get-selected-orders');
         const data = await r.json();
         if (data.success) {
-          selectedOrders = data.selected || [];
-          mutedOrders = data.muted || [];
-          safeStorage.setItem(SELECTED_ORDERS_KEY, JSON.stringify(selectedOrders));
-          safeStorage.setItem(MUTED_ORDERS_KEY, JSON.stringify(mutedOrders));
+          if (data.selected && data.selected.length > 0) {
+            // Server has data — use it
+            selectedOrders = data.selected;
+            mutedOrders = data.muted || [];
+            safeStorage.setItem(SELECTED_ORDERS_KEY, JSON.stringify(selectedOrders));
+            safeStorage.setItem(MUTED_ORDERS_KEY, JSON.stringify(mutedOrders));
+          } else if (selectedOrders.length > 0) {
+            // Server empty but local has data — push local to server
+            saveSelectedToServer();
+          }
         }
       } catch {}
     }
