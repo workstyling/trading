@@ -1018,7 +1018,8 @@
     // ── Auto-refresh ──
     function refreshAll() {
       loadBalance();
-      syncSelectedFromServer().then(() => {
+      // Load selected from server, then orders
+      syncSelectedFromServer().finally(() => {
         loadOrders().then(updateMonitor);
       });
       loadProfit();
