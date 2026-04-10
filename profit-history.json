@@ -363,5 +363,153 @@
       "7f592329-3ea9-4fe8-8885-44a8024ea5f0"
     ],
     "date": "2026-03-28T20:58:38.233Z"
+  },
+  {
+    "id": 1774813551833,
+    "coin": "SOL",
+    "profit": -6.35,
+    "buyOrders": [
+      "b71c599c-41e1-48f3-943e-57f610dd3fbf"
+    ],
+    "sellOrders": [
+      "dc868903-bf03-4984-8e97-b0b0d922bdd9"
+    ],
+    "date": "2026-03-29T19:45:51.833Z"
+  },
+  {
+    "id": 1774832825008,
+    "coin": "TAO",
+    "profit": 0.95,
+    "buyOrders": [
+      "3d75bece-b801-4ed0-bcd4-c158b778ceca"
+    ],
+    "sellOrders": [
+      "9072e3c3-c77e-42bc-8df9-8e995401ec18"
+    ],
+    "date": "2026-03-30T01:07:05.008Z"
+  },
+  {
+    "id": 1774839233326,
+    "coin": "MON",
+    "profit": 5.45,
+    "buyOrders": [
+      "4e4e696e-ba2f-48b4-af7f-44a1bc543e0c"
+    ],
+    "sellOrders": [
+      "b4230b86-5150-496a-b601-0b47e6e2c75d",
+      "bf4eda8f-23fe-4c2e-a8a9-0588ebd3663a",
+      "c86af835-07f4-4dca-b783-490201617631",
+      "c0be4c62-5c1d-4af4-9b6e-d4274185ce08"
+    ],
+    "date": "2026-03-30T02:53:53.326Z"
+  },
+  {
+    "id": 1774840719428,
+    "coin": "NKN",
+    "profit": 3.99,
+    "buyOrders": [
+      "944dab4b-9cc0-45fd-84ba-1d1366a3b600"
+    ],
+    "sellOrders": [
+      "34030790-17bf-43c6-94cf-3de16cc7f820"
+    ],
+    "date": "2026-03-30T03:18:39.428Z"
+  },
+  {
+    "id": 1774842750121,
+    "coin": "NOM",
+    "profit": 2.85,
+    "buyOrders": [
+      "20410c8a-8dcf-44b5-abf4-19c7c0df475a"
+    ],
+    "sellOrders": [
+      "6987b280-e110-4db3-aadd-d3ba2519fe62"
+    ],
+    "date": "2026-03-30T03:52:30.121Z"
+  },
+  {
+    "id": 1775362763409,
+    "coin": "CORECHAIN",
+    "profit": 12.91,
+    "buyOrders": [
+      "08d3f27d-3fef-47f3-b98a-43324306ad76",
+      "9735f126-7310-461d-b841-e0abb4fd374a"
+    ],
+    "sellOrders": [
+      "ec181b6d-68ab-45a8-ab4c-59d36225099e"
+    ],
+    "date": "2026-04-05T04:19:23.409Z"
+  },
+  {
+    "id": 1775611988256,
+    "coin": "WLD",
+    "profit": 5.5,
+    "buyOrders": [
+      "294f0807-6d23-4bac-a6ac-7fc761ea104b"
+    ],
+    "sellOrders": [
+      "17b074c7-b247-470d-bcea-461318e17306"
+    ],
+    "date": "2026-04-08T01:33:08.256Z"
+  },
+  {
+    "id": 1775611991337,
+    "coin": "KITE",
+    "profit": 13.92,
+    "buyOrders": [
+      "af5933c0-68b4-4eba-98ec-232c7142aa00"
+    ],
+    "sellOrders": [
+      "59d97478-9af6-4798-861c-438af63b27da"
+    ],
+    "date": "2026-04-08T01:33:11.337Z"
+  },
+  {
+    "id": 1775611994223,
+    "coin": "XRP",
+    "profit": 26.13,
+    "buyOrders": [
+      "b00013e8-7217-444a-bd71-cdf016709854"
+    ],
+    "sellOrders": [
+      "a29eb913-4b5f-4442-bf97-fbaff0bd9f39"
+    ],
+    "date": "2026-04-08T01:33:14.223Z"
+  },
+  {
+    "id": 1775644040833,
+    "coin": "DOGE",
+    "profit": 2.23,
+    "buyOrders": [
+      "30f3e995-ec86-4c1b-95a9-2a1c7c4dfb38"
+    ],
+    "sellOrders": [
+      "94c6eae2-cf7f-4b08-a3e7-15503dd7ed4d"
+    ],
+    "date": "2026-04-08T10:27:20.833Z"
+  },
+  {
+    "id": 1775767999293,
+    "coin": "SUI",
+    "profit": 19.37,
+    "buyOrders": [
+      "48d69cff-61d5-48b9-9ce6-619c6cc0cbf6"
+    ],
+    "sellOrders": [
+      "07f7c86e-cbeb-4b70-aacc-31ea26a00c61"
+    ],
+    "date": "2026-04-09T20:53:19.293Z"
+  },
+  {
+    "id": 1775788144989,
+    "coin": "VVV",
+    "profit": 5.69,
+    "buyOrders": [
+      "5fe7872a-7cf7-42fc-8a9a-a814d6d9a72e"
+    ],
+    "sellOrders": [
+      "ae4902e5-b577-4723-9519-d62d10fd42e9"
+    ],
+    "date": "2026-04-10T02:29:04.989Z"
   }
 ]
