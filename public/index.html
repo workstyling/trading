@@ -5422,6 +5422,7 @@ Requirements:
 
     function saveSelectedOrders() {
       safeStorage.setItem(SELECTED_ORDERS_KEY, JSON.stringify(selectedOrders));
+      saveSelectedToServer();
       updateSelectedOrdersView();
       syncAllOrderSelectors();
     }
