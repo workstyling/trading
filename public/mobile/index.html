@@ -446,8 +446,7 @@
         const data = await r.json();
         if (data.success) {
           selectedOrders = data.selected || [];
-          renderOrders();
-          updateMonitor();
+          if (allOrders.length) { renderOrders(); updateMonitor(); }
         }
       } catch {}
     }
@@ -457,7 +456,6 @@
         body: JSON.stringify({ selected: selectedOrders, muted: [] })
       }).catch(() => {});
     }
-    syncSelectedFromServer();
     let tradingSettings = { sellMarkup: 1.38, tradeFee: 0.06, marketFee: 0.125 };
 
     // ── Tabs ──
@@ -1020,7 +1018,9 @@
     // ── Auto-refresh ──
     function refreshAll() {
       loadBalance();
-      loadOrders().then(updateMonitor);
+      syncSelectedFromServer().then(() => {
+        loadOrders().then(updateMonitor);
+      });
       loadProfit();
       loadHoldings();
     }
