@@ -1030,7 +1030,7 @@
     loadSettings();
     refreshAll();
     connectPriceWs();
-    setInterval(() => { loadBalance(); loadOrders().then(updateMonitor); }, 10000);
+    setInterval(() => { loadBalance(); syncSelectedFromServer().finally(() => loadOrders().then(updateMonitor)); }, 10000);
     setInterval(loadHoldings, 30000);
     setInterval(updateMonitor, 5000);
   </script>
