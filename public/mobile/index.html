@@ -437,7 +437,27 @@
     let searchQuery = '';
     const BASE = window.location.origin;
     const SELECTED_KEY = 'mobileSelectedOrders';
-    let selectedOrders = JSON.parse(localStorage.getItem(SELECTED_KEY) || '[]');
+    let selectedOrders = [];
+
+    // Sync with server
+    async function syncSelectedFromServer() {
+      try {
+        const r = await fetch(BASE + '/get-selected-orders');
+        const data = await r.json();
+        if (data.success) {
+          selectedOrders = data.selected || [];
+          renderOrders();
+          updateMonitor();
+        }
+      } catch {}
+    }
+    function saveSelectedToServer() {
+      fetch(BASE + '/save-selected-orders', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ selected: selectedOrders, muted: [] })
+      }).catch(() => {});
+    }
+    syncSelectedFromServer();
     let tradingSettings = { sellMarkup: 1.38, tradeFee: 0.06, marketFee: 0.125 };
 
     // ── Tabs ──
@@ -615,7 +635,7 @@
         toast('Buy order placed!');
         if (r.order_id && !selectedOrders.includes(r.order_id)) {
           selectedOrders.push(r.order_id);
-          localStorage.setItem(SELECTED_KEY, JSON.stringify(selectedOrders));
+          saveSelectedToServer();
         }
         loadBalance(); loadOrders().then(updateMonitor);
       } else toast(r.error || 'Failed', 'error');
@@ -644,7 +664,7 @@
         toast('Sell order placed!');
         if (r.order_id && !selectedOrders.includes(r.order_id)) {
           selectedOrders.push(r.order_id);
-          localStorage.setItem(SELECTED_KEY, JSON.stringify(selectedOrders));
+          saveSelectedToServer();
         }
         loadBalance(); loadOrders().then(updateMonitor);
       } else toast(r.error || 'Failed', 'error');
@@ -669,7 +689,7 @@
         toast('Limit order placed!');
         if (r.order_id && !selectedOrders.includes(r.order_id)) {
           selectedOrders.push(r.order_id);
-          localStorage.setItem(SELECTED_KEY, JSON.stringify(selectedOrders));
+          saveSelectedToServer();
         }
         loadBalance(); loadOrders().then(updateMonitor);
       } else toast(r.error || 'Failed', 'error');
@@ -754,13 +774,13 @@
       } else {
         selectedOrders = selectedOrders.filter(x => x !== id);
       }
-      localStorage.setItem(SELECTED_KEY, JSON.stringify(selectedOrders));
+      saveSelectedToServer();
       updateMonitor();
     }
 
     function deselectOrder(id) {
       selectedOrders = selectedOrders.filter(x => x !== id);
-      localStorage.setItem(SELECTED_KEY, JSON.stringify(selectedOrders));
+      saveSelectedToServer();
       renderOrders();
       updateMonitor();
     }

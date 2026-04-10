@@ -128,6 +128,32 @@ app.post('/save-settings', (req, res) => {
   }
 });
 
+// API: Selected orders (shared across devices)
+const selectedOrdersFile = path.join(__dirname, 'selected-orders.json');
+function loadSelectedOrders() {
+  try {
+    if (fs.existsSync(selectedOrdersFile)) return JSON.parse(fs.readFileSync(selectedOrdersFile, 'utf8'));
+  } catch {}
+  return { selected: [], muted: [] };
+}
+function saveSelectedOrders(data) {
+  fs.writeFileSync(selectedOrdersFile, JSON.stringify(data, null, 2));
+}
+
+app.get('/get-selected-orders', (req, res) => {
+  res.json({ success: true, ...loadSelectedOrders() });
+});
+
+app.post('/save-selected-orders', (req, res) => {
+  try {
+    const { selected, muted } = req.body;
+    saveSelectedOrders({ selected: selected || [], muted: muted || [] });
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
 // API: Get profit history
 app.get('/get-profit-history', (req, res) => {
   const history = loadProfitHistory();

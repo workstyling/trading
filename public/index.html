@@ -4396,7 +4396,7 @@
           const newOrderId = data.order_id;
           if (newOrderId && !selectedOrders.includes(newOrderId)) {
             selectedOrders.push(newOrderId);
-            safeStorage.setItem(SELECTED_ORDERS_KEY, JSON.stringify(selectedOrders));
+            safeStorage.setItem(SELECTED_ORDERS_KEY, JSON.stringify(selectedOrders)); saveSelectedToServer();
           }
           loadUsdBalance();
           setTimeout(loadLatestOrders, 1000);
@@ -4458,7 +4458,7 @@
           const newOrderId = data.order_id;
           if (newOrderId && !selectedOrders.includes(newOrderId)) {
             selectedOrders.push(newOrderId);
-            safeStorage.setItem(SELECTED_ORDERS_KEY, JSON.stringify(selectedOrders));
+            safeStorage.setItem(SELECTED_ORDERS_KEY, JSON.stringify(selectedOrders)); saveSelectedToServer();
           }
           loadUsdBalance();
           setTimeout(loadLatestOrders, 1000);
@@ -4610,7 +4610,7 @@
           console.log('selectedOrders before:', JSON.stringify(selectedOrders));
           if (newOrderId && !selectedOrders.includes(newOrderId)) {
             selectedOrders.push(newOrderId);
-            safeStorage.setItem(SELECTED_ORDERS_KEY, JSON.stringify(selectedOrders));
+            safeStorage.setItem(SELECTED_ORDERS_KEY, JSON.stringify(selectedOrders)); saveSelectedToServer();
             console.log('selectedOrders after:', JSON.stringify(selectedOrders));
           } else {
             console.log('Order ID not added - empty or already exists');
@@ -4656,7 +4656,7 @@
           const newOrderId = data.order_id;
           if (newOrderId && !selectedOrders.includes(newOrderId)) {
             selectedOrders.push(newOrderId);
-            safeStorage.setItem(SELECTED_ORDERS_KEY, JSON.stringify(selectedOrders));
+            safeStorage.setItem(SELECTED_ORDERS_KEY, JSON.stringify(selectedOrders)); saveSelectedToServer();
           }
           await new Promise(r => setTimeout(r, 1000));
           await loadLatestOrders();
@@ -4740,6 +4740,29 @@
     let selectedOrders = JSON.parse(safeStorage.getItem(SELECTED_ORDERS_KEY) || '[]');
     const MUTED_ORDERS_KEY = 'mutedOrders';
     let mutedOrders = JSON.parse(safeStorage.getItem(MUTED_ORDERS_KEY) || '[]');
+
+    // Sync selected/muted orders with server
+    async function syncSelectedFromServer() {
+      try {
+        const r = await fetch('/get-selected-orders');
+        const data = await r.json();
+        if (data.success) {
+          selectedOrders = data.selected || [];
+          mutedOrders = data.muted || [];
+          safeStorage.setItem(SELECTED_ORDERS_KEY, JSON.stringify(selectedOrders));
+          safeStorage.setItem(MUTED_ORDERS_KEY, JSON.stringify(mutedOrders));
+        }
+      } catch {}
+    }
+    function saveSelectedToServer() {
+      fetch('/save-selected-orders', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ selected: selectedOrders, muted: mutedOrders })
+      }).catch(() => {});
+    }
+    // Load from server on start
+    syncSelectedFromServer();
+
     function toggleMuteOrder(orderId) {
       if (mutedOrders.includes(orderId)) {
         mutedOrders = mutedOrders.filter(id => id !== orderId);
@@ -4747,6 +4770,7 @@
         mutedOrders.push(orderId);
       }
       safeStorage.setItem(MUTED_ORDERS_KEY, JSON.stringify(mutedOrders));
+      saveSelectedToServer();
       updateSelectedOrdersView();
     }
     let allOrders = [];
