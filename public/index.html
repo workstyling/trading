@@ -1147,6 +1147,7 @@
       background: rgba(255, 255, 255, 0.02);
       border: 1px solid rgba(255, 255, 255, 0.05);
       border-radius: var(--r1);
+      cursor: crosshair;
     }
 
     .price-progress-bar {
@@ -7406,10 +7407,10 @@ Requirements:
       // Immediately update with order book data
       setTimeout(updateSelectedPrices, 100);
 
-      // Add hover handlers for progress bars
-      document.querySelectorAll('.price-progress-bar').forEach(bar => {
-        const container = bar.closest('.price-progress-container');
-        if (!container) return;
+      // Add hover handlers for progress bars (entire container area)
+      document.querySelectorAll('.price-progress-container').forEach(container => {
+        const bar = container.querySelector('.price-progress-bar');
+        if (!bar) return;
         const buyPrice = parseFloat(container.dataset.buyPrice) || 0;
         const filled = parseFloat(container.dataset.filled) || 0;
         const spent = parseFloat(container.dataset.spent) || 0;
@@ -7419,24 +7420,40 @@ Requirements:
         const tooltip = bar.querySelector('.price-hover-tooltip');
         const hoverLine = bar.querySelector('.price-hover-line');
 
-        bar.addEventListener('mousemove', (e) => {
+        function calcHover(e) {
           const rect = bar.getBoundingClientRect();
-          const x = e.clientX - rect.left;
+          const x = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
           const pct = x / rect.width;
           const changePct = leftMax + pct * (rightMax - leftMax);
           const hoverPrice = buyPrice * (1 + changePct / 100);
           const revenue = filled * hoverPrice * (1 - fee);
           const profit = revenue - spent;
+          return { pct, hoverPrice, profit };
+        }
+
+        container.addEventListener('mousemove', (e) => {
+          const { pct, hoverPrice, profit } = calcHover(e);
           const profitColor = profit >= 0 ? '#30d158' : '#ff453a';
+          const priceStr = hoverPrice < 1 ? hoverPrice.toFixed(6) : hoverPrice.toFixed(2);
           tooltip.style.display = 'block';
           tooltip.style.left = (pct * 100) + '%';
-          tooltip.innerHTML = `<span style="color:${profitColor};font-weight:700;">${profit >= 0 ? '+' : ''}$${profit.toFixed(2)}</span> <span style="color:#888;">@ $${hoverPrice < 1 ? hoverPrice.toFixed(6) : hoverPrice.toFixed(2)}</span>`;
+          tooltip.innerHTML = `<span style="color:${profitColor};font-weight:700;">${profit >= 0 ? '+' : ''}$${profit.toFixed(2)}</span> <span style="color:#888;">@ $${priceStr}</span>`;
           hoverLine.style.display = 'block';
           hoverLine.style.left = (pct * 100) + '%';
         });
-        bar.addEventListener('mouseleave', () => {
+
+        container.addEventListener('mouseleave', () => {
           tooltip.style.display = 'none';
           hoverLine.style.display = 'none';
+        });
+
+        container.addEventListener('click', (e) => {
+          const { hoverPrice, profit } = calcHover(e);
+          const priceStr = hoverPrice < 1 ? hoverPrice.toFixed(6) : hoverPrice.toFixed(2);
+          const text = `$${priceStr} | ${profit >= 0 ? '+' : ''}$${profit.toFixed(2)}`;
+          navigator.clipboard.writeText(priceStr).then(() => {
+            showCustomAlert(`Copied: $${priceStr} (profit: ${profit >= 0 ? '+' : ''}$${profit.toFixed(2)})`);
+          });
         });
       });
       // Show real balances from cache, or fetch if not ready
