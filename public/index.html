@@ -1278,6 +1278,32 @@
       color: var(--t2);
     }
 
+    .price-hover-tooltip {
+      position: absolute;
+      top: -42px;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.9);
+      border: 1px solid var(--b2);
+      border-radius: 6px;
+      padding: 4px 8px;
+      font-size: 10px;
+      font-family: 'JetBrains Mono', monospace;
+      white-space: nowrap;
+      pointer-events: none;
+      z-index: 10;
+      display: none;
+    }
+    .price-hover-line {
+      position: absolute;
+      top: 0;
+      width: 1px;
+      height: 16px;
+      background: rgba(255,255,255,0.4);
+      transform: translateX(-50%);
+      pointer-events: none;
+      display: none;
+    }
+
     .price-progress-container+.price-progress-container {
       margin-top: 8px;
       border-top: 1px solid var(--b0);
@@ -7309,12 +7335,14 @@ Requirements:
 
             const currentLabelPos = Math.max(14, currentPos);
             h += `
-            <div class="price-progress-container" id="progress_${coin}_${idx}" data-buy-price="${buyPrice}" data-target-price="${targetSellPrice}" data-breakeven-pct="${breakevenPct}" data-order-id="${buyOrder.order_id}">
+            <div class="price-progress-container" id="progress_${coin}_${idx}" data-buy-price="${buyPrice}" data-target-price="${targetSellPrice}" data-breakeven-pct="${breakevenPct}" data-order-id="${buyOrder.order_id}" data-filled="${filledSize}" data-spent="${(filledSize * buyPrice).toFixed(2)}" data-fee="${fee}" data-left-max="${leftMax}" data-right-max="${rightMax}">
               <div class="price-progress-top">
                 <span class="info-order" style="left:0;color:#888;font-size:9px;">#${orderIdShort}</span>
                 <span class="info-current ${isProfit ? 'profit' : 'loss'}" style="left:${currentLabelPos}%">${currentPct >= 0 ? '+' : ''}${currentPct.toFixed(2)}%</span>
               </div>
-              <div class="price-progress-bar">
+              <div class="price-progress-bar" style="cursor:crosshair;">
+                <div class="price-hover-tooltip"></div>
+                <div class="price-hover-line"></div>
                 <div class="price-progress-track"></div>
                 <div class="price-progress-fill" style="left:${fillLeft}%;width:${fillWidth}%;background:${progressColor}"></div>
                 <div class="price-marker center-marker" style="left:${centerPos}%"></div>
@@ -7377,6 +7405,40 @@ Requirements:
       document.getElementById('selectedOrders').style.display = 'block';
       // Immediately update with order book data
       setTimeout(updateSelectedPrices, 100);
+
+      // Add hover handlers for progress bars
+      document.querySelectorAll('.price-progress-bar').forEach(bar => {
+        const container = bar.closest('.price-progress-container');
+        if (!container) return;
+        const buyPrice = parseFloat(container.dataset.buyPrice) || 0;
+        const filled = parseFloat(container.dataset.filled) || 0;
+        const spent = parseFloat(container.dataset.spent) || 0;
+        const fee = parseFloat(container.dataset.fee) || 0;
+        const leftMax = parseFloat(container.dataset.leftMax) || -5;
+        const rightMax = parseFloat(container.dataset.rightMax) || 5;
+        const tooltip = bar.querySelector('.price-hover-tooltip');
+        const hoverLine = bar.querySelector('.price-hover-line');
+
+        bar.addEventListener('mousemove', (e) => {
+          const rect = bar.getBoundingClientRect();
+          const x = e.clientX - rect.left;
+          const pct = x / rect.width;
+          const changePct = leftMax + pct * (rightMax - leftMax);
+          const hoverPrice = buyPrice * (1 + changePct / 100);
+          const revenue = filled * hoverPrice * (1 - fee);
+          const profit = revenue - spent;
+          const profitColor = profit >= 0 ? '#30d158' : '#ff453a';
+          tooltip.style.display = 'block';
+          tooltip.style.left = (pct * 100) + '%';
+          tooltip.innerHTML = `<span style="color:${profitColor};font-weight:700;">${profit >= 0 ? '+' : ''}$${profit.toFixed(2)}</span> <span style="color:#888;">@ $${hoverPrice < 1 ? hoverPrice.toFixed(6) : hoverPrice.toFixed(2)}</span>`;
+          hoverLine.style.display = 'block';
+          hoverLine.style.left = (pct * 100) + '%';
+        });
+        bar.addEventListener('mouseleave', () => {
+          tooltip.style.display = 'none';
+          hoverLine.style.display = 'none';
+        });
+      });
       // Show real balances from cache, or fetch if not ready
       if (balancesCache) {
         applyRealBalances();
