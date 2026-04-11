@@ -7450,10 +7450,17 @@ Requirements:
         container.addEventListener('click', (e) => {
           const { hoverPrice, profit } = calcHover(e);
           const priceStr = hoverPrice < 1 ? hoverPrice.toFixed(6) : hoverPrice.toFixed(2);
-          const text = `$${priceStr} | ${profit >= 0 ? '+' : ''}$${profit.toFixed(2)}`;
-          navigator.clipboard.writeText(priceStr).then(() => {
-            showCustomAlert(`Copied: $${priceStr} (profit: ${profit >= 0 ? '+' : ''}$${profit.toFixed(2)})`);
-          });
+          // Copy with fallback for HTTP
+          try {
+            const ta = document.createElement('textarea');
+            ta.value = priceStr;
+            ta.style.cssText = 'position:fixed;left:-9999px';
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+          } catch {}
+          showCustomAlert(`Copied: $${priceStr} (profit: ${profit >= 0 ? '+' : ''}$${profit.toFixed(2)})`);
         });
       });
       // Show real balances from cache, or fetch if not ready
