@@ -4708,6 +4708,39 @@
       );
     }
 
+    async function sellAllLimit(productId, size, coin) {
+      const priceInput = document.getElementById('limitSellPrice_' + coin);
+      const price = priceInput ? priceInput.value.trim() : '';
+      if (!price || isNaN(parseFloat(price))) {
+        showCustomAlert('Enter a valid limit price', true);
+        return;
+      }
+      const usd = (parseFloat(size) * parseFloat(price)).toFixed(2);
+      showConfirmModal(
+        'Confirm Limit Sell',
+        `Sell <strong>${fmtSize(parseFloat(size))} ${coin}</strong> at <strong>$${price}</strong>?<br>~$${usd}`,
+        async () => {
+          try {
+            const res = await fetch('/create-sell-order', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ productId, size, price })
+            });
+            const data = await res.json();
+            if (data.success) {
+              showCustomAlert('Limit sell order created!');
+              await loadLatestOrders();
+              loadUsdBalance();
+            } else {
+              showCustomAlert('Error: ' + (data.error || 'Failed'), true);
+            }
+          } catch (e) {
+            showCustomAlert('Error: ' + e.message, true);
+          }
+        }
+      );
+    }
+
     // Cancel order and remove from selected
     async function cancelOrderAndRemove(orderId) {
       try {
@@ -7073,7 +7106,11 @@ Requirements:
 
         h += `<div class="coin-group" data-coin="${coin}">
           <h4><a href="https://www.tradingview.com/chart/?symbol=COINBASE%3A${coin}USD" target="_blank">${pair}</a> <button class="select-coin-btn" onclick="selectCoinForBuy('${coin}')" title="Set for Buy">⬆</button></h4>
-          <div class="balance">Selected: ${fmtSize(totalFilled)} ${coin} <span id="realBal_${coin}" style="color:var(--t2);font-size:10px;">(loading real balance...)</span> ${totalFilled > 0 ? `<button class="sell-all-btn" onclick="sellAllCoin('${pair}', '${totalFilled}')">SELL ALL</button>` : ''} <button class="${btnClass}" onclick="saveGroupProfit('${coin}', ${groupProfit.toFixed(2)}, '${filledBuys.map(o => o.order_id).join(',')}', '${filledSells.map(o => o.order_id).join(',')}')" ${btnDisabled ? 'disabled' : ''}>${btnText}</button></div>
+          <div class="balance">Selected: ${fmtSize(totalFilled)} ${coin} <span id="realBal_${coin}" style="color:var(--t2);font-size:10px;">(loading real balance...)</span> ${totalFilled > 0 ? `<button class="sell-all-btn" onclick="sellAllCoin('${pair}', '${totalFilled}')">SELL ALL</button>` : ''} <button class="${btnClass}" onclick="saveGroupProfit('${coin}', ${groupProfit.toFixed(2)}, '${filledBuys.map(o => o.order_id).join(',')}', '${filledSells.map(o => o.order_id).join(',')}')" ${btnDisabled ? 'disabled' : ''}>${btnText}</button>
+          ${totalFilled > 0 ? `<span style="margin-left:10px;display:inline-flex;align-items:center;gap:4px;">
+            <input type="text" id="limitSellPrice_${coin}" placeholder="Limit price" style="width:90px;padding:3px 6px;background:var(--s3);border:1px solid var(--b1);border-radius:5px;color:var(--t0);font-family:'JetBrains Mono',monospace;font-size:11px;outline:none;" autocomplete="off">
+            <button onclick="sellAllLimit('${pair}','${totalFilled}','${coin}')" style="padding:3px 10px;border:1px solid var(--yellow);border-radius:5px;background:transparent;color:var(--yellow);font-size:10px;font-weight:600;cursor:pointer;">Sell Limit</button>
+          </span>` : ''}</div>
 
           <table class="profit-table" data-pair="${pair}" data-filled="${totalFilled}" data-usd="${totalUSD}" data-avgbuy="${avgBuyPrice}">
             <thead><tr><th>Num</th><th>Best Bid</th><th>Best Ask</th><th>Filled Size</th><th>USD</th><th>Avg Buy</th><th>Limit</th><th>Market</th></tr></thead>
