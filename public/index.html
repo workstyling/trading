@@ -3977,6 +3977,20 @@
         <div id="topVolumes"></div>
         <div id="coinsList"></div>
 
+        <!-- Recovery Scanner -->
+        <div id="recoveryPanel" style="border:1px solid var(--b0);border-radius:var(--r2);background:var(--s1);overflow:hidden;margin-top:14px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--s2);border-bottom:1px solid var(--b0);">
+            <h3 style="margin:0;font-size:13px;font-weight:600;color:var(--green);">Recovery Scanner — Drop + Bounce</h3>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <span id="recoveryCount" style="font-size:10px;color:var(--t2);"></span>
+              <button onclick="loadRecovery(true)" style="padding:3px 10px;border:1px solid var(--green);border-radius:5px;background:transparent;color:var(--green);font-size:10px;font-weight:600;cursor:pointer;">Refresh</button>
+            </div>
+          </div>
+          <div id="recoveryTable" style="max-height:400px;overflow-y:auto;">
+            <div style="text-align:center;padding:30px;color:var(--t2);font-size:12px;">Loading recovery scan...</div>
+          </div>
+        </div>
+
         <!-- Research Panel -->
         <div id="researchPanel" style="border:1px solid var(--b0);border-radius:var(--r2);background:var(--s1);overflow:hidden;margin-top:14px;">
           <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--s2);border-bottom:1px solid var(--b0);">
@@ -3992,20 +4006,6 @@
           </div>
           <div id="researchTable" style="max-height:500px;overflow-y:auto;">
             <div style="text-align:center;padding:30px;color:var(--t2);font-size:12px;">Loading research data...</div>
-          </div>
-        </div>
-
-        <!-- Recovery Scanner -->
-        <div id="recoveryPanel" style="border:1px solid var(--b0);border-radius:var(--r2);background:var(--s1);overflow:hidden;margin-top:14px;">
-          <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--s2);border-bottom:1px solid var(--b0);">
-            <h3 style="margin:0;font-size:13px;font-weight:600;color:var(--green);">Recovery Scanner — Drop + Bounce</h3>
-            <div style="display:flex;gap:8px;align-items:center;">
-              <span id="recoveryCount" style="font-size:10px;color:var(--t2);"></span>
-              <button onclick="loadRecovery(true)" style="padding:3px 10px;border:1px solid var(--green);border-radius:5px;background:transparent;color:var(--green);font-size:10px;font-weight:600;cursor:pointer;">Refresh</button>
-            </div>
-          </div>
-          <div id="recoveryTable" style="max-height:400px;overflow-y:auto;">
-            <div style="text-align:center;padding:30px;color:var(--t2);font-size:12px;">Loading recovery scan...</div>
           </div>
         </div>
       </div>
