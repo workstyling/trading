@@ -1537,17 +1537,18 @@
     }
 
     .buy-usd-field {
-      width: 80px;
-      min-width: 80px;
-      max-width: 80px;
-      height: 26px;
-      padding: 0 6px;
+      width: 120px;
+      min-width: 120px;
+      max-width: 120px;
+      height: 34px;
+      padding: 0 10px;
       border: 1px solid var(--b1);
       border-radius: var(--r1);
       background: var(--s3);
       color: var(--green);
       font-family: 'JetBrains Mono', monospace;
-      font-size: 11px;
+      font-size: 16px;
+      font-weight: 700;
       text-align: right;
       margin-left: 6px;
       box-sizing: border-box;
@@ -4406,7 +4407,7 @@
     async function executeBuyOrder() {
       console.log('executeBuyOrder called');
       const quoteSize = parseFloat(document.getElementById('buyUsdAmount').value.replace(/[$,]/g, '')) || 0;
-      console.log('Buy order params:', { pct, balanceText, balance, quoteSize, coin: selectedBuyCoin });
+      console.log('Buy order params:', { quoteSize, coin: selectedBuyCoin });
       if (!quoteSize || quoteSize < 1) {
         showCustomAlert('Amount too small', true);
         return;
