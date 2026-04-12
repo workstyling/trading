@@ -7120,8 +7120,13 @@ Requirements:
         const btnText = alreadySaved ? `Already Saved (${alreadySaved.profit >= 0 ? '+' : ''}$${savedProfitFmt})` : `Save Profit ${profitText}`;
         const btnClass = alreadySaved ? 'save-profit-btn saved' : 'save-profit-btn';
 
+        // Check if any order was created today
+        const today = new Date().toDateString();
+        const hasToday = orders.some(o => o.created_time && new Date(o.created_time).toDateString() === today);
+        const todayBadge = hasToday ? ' <span style="color:var(--green);font-size:10px;font-weight:700;">Today</span>' : '';
+
         h += `<div class="coin-group" data-coin="${coin}">
-          <h4><a href="https://www.tradingview.com/chart/?symbol=COINBASE%3A${coin}USD" target="_blank">${pair}</a> <button class="select-coin-btn" onclick="selectCoinForBuy('${coin}')" title="Set for Buy">⬆</button></h4>
+          <h4><a href="https://www.tradingview.com/chart/?symbol=COINBASE%3A${coin}USD" target="_blank">${pair}</a>${todayBadge} <button class="select-coin-btn" onclick="selectCoinForBuy('${coin}')" title="Set for Buy">⬆</button></h4>
           <div class="balance">Selected: ${fmtSize(totalFilled)} ${coin} <span id="realBal_${coin}" style="color:var(--t2);font-size:10px;">(loading real balance...)</span> ${totalFilled > 0 ? `<button class="sell-all-btn" onclick="sellAllCoin('${pair}', '${totalFilled}')">SELL ALL</button>` : ''} <button class="${btnClass}" onclick="saveGroupProfit('${coin}', ${groupProfit.toFixed(2)}, '${filledBuys.map(o => o.order_id).join(',')}', '${filledSells.map(o => o.order_id).join(',')}')" ${btnDisabled ? 'disabled' : ''}>${btnText}</button>
           ${totalFilled > 0 ? `<span style="margin-left:10px;display:inline-flex;align-items:center;gap:4px;">
             <input type="text" id="limitSellPrice_${coin}" placeholder="Limit price" style="width:90px;padding:3px 6px;background:var(--s3);border:1px solid var(--b1);border-radius:5px;color:var(--t0);font-family:'JetBrains Mono',monospace;font-size:11px;outline:none;" autocomplete="off">
