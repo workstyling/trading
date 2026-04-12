@@ -9085,7 +9085,7 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
           <td><a class="coin-link" href="https://www.tradingview.com/chart/?symbol=COINBASE%3A${c.symbol}USD" target="_blank">${c.symbol}</a> <span style="color:var(--t3);font-size:9px;">${c.name !== c.symbol ? c.name : ''}</span></td>
           <td>${fmtP(c.price)}</td>
           <td style="font-size:10px;">${fmtMcap(c.marketCap)}</td>
-          <td style="font-size:10px;">${researchVolReady && !researchVolLoading && researchVolProgress >= 100 ? fmtVol(c.volume24h) : '<span style="color:var(--t3);font-size:9px;">...</span>'}</td>
+          <td style="font-size:10px;">${researchVolReady && !researchVolLoading ? fmtVol(c.volume24h) : '<span style="color:var(--t3);font-size:9px;">...</span>'}</td>
           <td>${fmtChg(c.change24h)}</td>
           <td>${fmtChg(c.change7d)}</td>
           <td>${fmtChg(c.change30d)}</td>
