@@ -656,6 +656,8 @@ async function fetchAllCbVolumes() {
       await sleep(1000);
     }
     console.log(`[VOLUMES] Done: ${fetched}/${pairs.length} volumes cached`);
+    // Invalidate research cache so next request gets fresh volumes
+    researchCache.ts = 0;
   } catch (e) {
     console.error('[VOLUMES] Error:', e.message);
   } finally {
