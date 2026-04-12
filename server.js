@@ -764,27 +764,17 @@ async function runRecoveryScan() {
             // 4. Drop size (bigger drop = more room to recover)
             // 5. Recovery % (shows momentum)
             // 6. Penalize low liquidity
+            // Volume from last candle
+            const lastVol = volumes[volumes.length - 1] || 0;
+            const volume24hUsd = lastVol * currentPrice;
+
             const freshBonus = daysFromBottom <= 6 ? 15 : daysFromBottom <= 10 ? 8 : 0;
-            const volScore = Math.min(volIncrease * 12, 30); // up to 30pts for volume surge
+            const volScore = Math.min(volIncrease * 12, 30);
             const trendScore = isRising ? 20 : 0;
-            const dropScore = Math.min(Math.abs(dropPct) * 0.2, 15); // up to 15pts
-            const recoveryScore = Math.min(recoveryPct * 0.3, 15); // up to 15pts
+            const dropScore = Math.min(Math.abs(dropPct) * 0.2, 15);
+            const recoveryScore = Math.min(recoveryPct * 0.3, 15);
             const liquidityPenalty = volume24hUsd < 50000 ? -10 : volume24hUsd < 200000 ? -5 : 0;
             const score = volScore + trendScore + freshBonus + dropScore + recoveryScore + liquidityPenalty;
-
-            // Get real 24h volume from Coinbase stats
-            let volume24hUsd = 0;
-            try {
-              for (let attempt = 0; attempt < 2; attempt++) {
-                const statsR = await fetch(`https://api.exchange.coinbase.com/products/${coin}-USD/stats`);
-                if (statsR.status === 429) { await sleep(1000); continue; }
-                if (statsR.ok) {
-                  const stats = await statsR.json();
-                  volume24hUsd = (parseFloat(stats.volume) || 0) * currentPrice;
-                }
-                break;
-              }
-            } catch {}
 
             if (results.length <= 5) console.log(`[RECOVERY] MATCH: ${coin} drop=${dropPct.toFixed(1)}% rec=${recoveryPct.toFixed(1)}% days=${daysFromBottom} score=${score.toFixed(1)}`);
             results.push({
