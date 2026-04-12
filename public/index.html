@@ -8922,6 +8922,7 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
     // ========== RESEARCH ==========
     let researchData = [];
     let researchSortBy = localStorage.getItem('researchSort') || 'change30d';
+    let researchSortDir = localStorage.getItem('researchSortDir') || 'asc'; // asc=most dropped, desc=most grown
 
     async function loadResearch() {
       try {
@@ -8938,8 +8939,15 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
     }
 
     function setResearchSort(sort, btn) {
-      researchSortBy = sort;
-      localStorage.setItem('researchSort', sort);
+      if (researchSortBy === sort) {
+        // Toggle direction on second click
+        researchSortDir = researchSortDir === 'asc' ? 'desc' : 'asc';
+      } else {
+        researchSortBy = sort;
+        researchSortDir = 'asc';
+      }
+      localStorage.setItem('researchSort', researchSortBy);
+      localStorage.setItem('researchSortDir', researchSortDir);
       document.querySelectorAll('.research-filter-btn').forEach(b => b.classList.remove('active'));
       if (btn) btn.classList.add('active');
       renderResearch();
@@ -8947,11 +8955,11 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
 
     function renderResearch() {
       const sorted = [...researchData].sort((a, b) => {
+        const dir = researchSortDir === 'asc' ? 1 : -1;
         if (researchSortBy === 'marketCap' || researchSortBy === 'volume24h') {
-          return (b[researchSortBy] || 0) - (a[researchSortBy] || 0);
+          return ((b[researchSortBy] || 0) - (a[researchSortBy] || 0)) * dir;
         }
-        // For change sorts — most dropped first (ascending)
-        return (a[researchSortBy] || 0) - (b[researchSortBy] || 0);
+        return ((a[researchSortBy] || 0) - (b[researchSortBy] || 0)) * dir;
       });
 
       const fmtMcap = (n) => {
@@ -8983,11 +8991,11 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
 
       let h = `<table class="rtbl"><thead><tr>
         <th>Coin</th><th>Price</th>
-        <th style="cursor:pointer;${researchSortBy==='marketCap'?'color:var(--red);':''}" onclick="setResearchSort('marketCap',document.querySelector('[data-sort=marketCap]'))">MCap${researchSortBy==='marketCap'?' ▼':''}</th>
-        <th style="cursor:pointer;${researchSortBy==='volume24h'?'color:var(--red);':''}" onclick="setResearchSort('volume24h',document.querySelector('[data-sort=volume24h]'))">Vol 24h${researchSortBy==='volume24h'?' ▼':''}</th>
-        <th style="cursor:pointer;${researchSortBy==='change24h'?'color:var(--red);':''}" onclick="setResearchSort('change24h',document.querySelector('[data-sort=change24h]'))">24H${researchSortBy==='change24h'?' ▼':''}</th>
-        <th style="cursor:pointer;${researchSortBy==='change7d'?'color:var(--red);':''}" onclick="setResearchSort('change7d',document.querySelector('[data-sort=change7d]'))">7D${researchSortBy==='change7d'?' ▼':''}</th>
-        <th style="cursor:pointer;${researchSortBy==='change30d'?'color:var(--red);':''}" onclick="setResearchSort('change30d',document.querySelector('[data-sort=change30d]'))">30D${researchSortBy==='change30d'?' ▼':''}</th>
+        <th style="cursor:pointer;${researchSortBy==='marketCap'?'color:var(--red);':''}" onclick="setResearchSort('marketCap',document.querySelector('[data-sort=marketCap]'))">MCap${researchSortBy==='marketCap'?(researchSortDir==='asc'?' ▲':' ▼'):''}</th>
+        <th style="cursor:pointer;${researchSortBy==='volume24h'?'color:var(--red);':''}" onclick="setResearchSort('volume24h',document.querySelector('[data-sort=volume24h]'))">Vol${researchSortBy==='volume24h'?(researchSortDir==='asc'?' ▲':' ▼'):''}</th>
+        <th style="cursor:pointer;${researchSortBy==='change24h'?'color:var(--red);':''}" onclick="setResearchSort('change24h',document.querySelector('[data-sort=change24h]'))">24H${researchSortBy==='change24h'?(researchSortDir==='asc'?' ▼':' ▲'):''}</th>
+        <th style="cursor:pointer;${researchSortBy==='change7d'?'color:var(--red);':''}" onclick="setResearchSort('change7d',document.querySelector('[data-sort=change7d]'))">7D${researchSortBy==='change7d'?(researchSortDir==='asc'?' ▼':' ▲'):''}</th>
+        <th style="cursor:pointer;${researchSortBy==='change30d'?'color:var(--red);':''}" onclick="setResearchSort('change30d',document.querySelector('[data-sort=change30d]'))">30D${researchSortBy==='change30d'?(researchSortDir==='asc'?' ▼':' ▲'):''}</th>
         <th>Buy</th>
       </tr></thead><tbody>`;
 
