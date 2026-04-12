@@ -843,7 +843,8 @@ app.get('/api/recovery-scan', async (req, res) => {
       }
       return res.json({ success: true, results: [], refreshing: true });
     }
-    res.json({ success: true, results: recoveryCacheData.data || [], scanning: recoveryScanRunning });
+    const lastScan = recoveryCacheData.ts ? Math.round((Date.now() - recoveryCacheData.ts) / 1000) : null;
+    res.json({ success: true, results: recoveryCacheData.data || [], scanning: recoveryScanRunning, lastScanAgo: lastScan });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }

@@ -9048,6 +9048,13 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
           renderRecovery(data.results);
           const panel = document.getElementById('recoveryPanel');
           const existingBar = panel.querySelector('.scan-progress');
+          const agoText = data.lastScanAgo !== null ? (() => {
+            const s = data.lastScanAgo;
+            if (s < 60) return s + 's ago';
+            if (s < 3600) return Math.floor(s/60) + 'm ago';
+            return Math.floor(s/3600) + 'h ago';
+          })() : '';
+
           if (data.refreshing || data.scanning) {
             document.getElementById('recoveryCount').innerHTML = data.results.length + ' found <span style="color:var(--yellow);font-size:9px;animation:pulse 1.5s infinite;">⟳ scanning...</span>';
             if (!existingBar) {
@@ -9056,8 +9063,9 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
               panel.querySelector('div').style.position = 'relative';
               panel.querySelector('div').appendChild(bar);
             }
-          } else if (existingBar) {
-            existingBar.remove();
+          } else {
+            if (existingBar) existingBar.remove();
+            document.getElementById('recoveryCount').innerHTML = data.results.length + ' found <span style="color:var(--t2);font-size:9px;">' + agoText + '</span>';
           }
         }
       } catch (e) {
