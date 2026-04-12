@@ -7123,9 +7123,9 @@ Requirements:
           const savedIds = [...(e.buyOrders || []), ...(e.sellOrders || [])];
           return currentOrderIds.some(id => savedIds.includes(id));
         });
-        const btnDisabled = !canSaveProfit || alreadySaved;
+        const btnDisabled = !canSaveProfit;
         const savedProfitFmt = alreadySaved ? alreadySaved.profit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '';
-        const btnText = alreadySaved ? `Already Saved (${alreadySaved.profit >= 0 ? '+' : ''}$${savedProfitFmt})` : `Save Profit ${profitText}`;
+        const btnText = alreadySaved ? `Update Profit (was +$${savedProfitFmt}) → ${profitText}` : `Save Profit ${profitText}`;
         const btnClass = alreadySaved ? 'save-profit-btn saved' : 'save-profit-btn';
 
         // Check if any order was created today
