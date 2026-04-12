@@ -675,6 +675,25 @@ app.get('/api/research', async (req, res) => {
     coins.sort((a, b) => a.rank - b.rank);
     researchCache = { data: coins, ts: now };
     res.json({ success: true, coins });
+
+    // Background: fetch Coinbase 24h volumes
+    (async () => {
+      for (let i = 0; i < coins.length; i += 2) {
+        const batch = coins.slice(i, i + 2);
+        await Promise.all(batch.map(async (coin) => {
+          try {
+            const sr = await fetch(`https://api.exchange.coinbase.com/products/${coin.symbol}-USD/stats`);
+            if (sr.ok) {
+              const stats = await sr.json();
+              coin.volume24h = (parseFloat(stats.volume) || 0) * (parseFloat(stats.last) || coin.price);
+            }
+          } catch {}
+        }));
+        await sleep(800);
+      }
+      researchCache = { data: coins, ts: Date.now() };
+      console.log('[RESEARCH] Coinbase volumes updated');
+    })();
   } catch (error) {
     console.error('Research API error:', error);
     if (researchCache.data) return res.json({ success: true, coins: researchCache.data });
