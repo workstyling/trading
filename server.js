@@ -701,16 +701,21 @@ app.get('/api/recovery-scan', async (req, res) => {
       .map(p => p.base_currency);
 
     const results = [];
-    const BATCH = 10;
+    const BATCH = 5;
 
     for (let i = 0; i < pairs.length; i += BATCH) {
       const batch = pairs.slice(i, i + BATCH);
       await Promise.all(batch.map(async (coin) => {
         try {
-          // Get daily candles (last 30 days)
-          const r = await fetch(`https://api.exchange.coinbase.com/products/${coin}-USD/candles?granularity=86400`);
-          if (!r.ok) return;
-          const candles = await r.json();
+          // Get daily candles (last 30 days) with retry on 429
+          let candles = null;
+          for (let attempt = 0; attempt < 3; attempt++) {
+            const r = await fetch(`https://api.exchange.coinbase.com/products/${coin}-USD/candles?granularity=86400`);
+            if (r.status === 429) { await sleep(1000 * (attempt + 1)); continue; }
+            if (!r.ok) return;
+            candles = await r.json();
+            break;
+          }
           if (!Array.isArray(candles) || candles.length < 10) return;
 
           // Candles: [time, low, high, open, close, volume] — newest first
@@ -764,10 +769,14 @@ app.get('/api/recovery-scan', async (req, res) => {
             // Get real 24h volume from Coinbase stats
             let volume24hUsd = 0;
             try {
-              const statsR = await fetch(`https://api.exchange.coinbase.com/products/${coin}-USD/stats`);
-              if (statsR.ok) {
-                const stats = await statsR.json();
-                volume24hUsd = (parseFloat(stats.volume) || 0) * currentPrice;
+              for (let attempt = 0; attempt < 2; attempt++) {
+                const statsR = await fetch(`https://api.exchange.coinbase.com/products/${coin}-USD/stats`);
+                if (statsR.status === 429) { await sleep(1000); continue; }
+                if (statsR.ok) {
+                  const stats = await statsR.json();
+                  volume24hUsd = (parseFloat(stats.volume) || 0) * currentPrice;
+                }
+                break;
               }
             } catch {}
 
@@ -788,7 +797,7 @@ app.get('/api/recovery-scan', async (req, res) => {
           }
         } catch {}
       }));
-      await sleep(150);
+      await sleep(500);
     }
 
     results.sort((a, b) => b.score - a.score);
