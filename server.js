@@ -747,7 +747,7 @@ async function runRecoveryScan() {
           if (scanned <= 5) console.log(`[RECOVERY] ${coin}: drop=${dropPct.toFixed(1)}% rec=${recoveryPct.toFixed(1)}% days=${daysFromBottom} peak=${maxPrice} bot=${minPrice} cur=${currentPrice}`);
 
           // Filter: significant drop (>20%) AND some recovery (>2%) AND bottom was recent (last 15 days)
-          if (dropPct < -20 && recoveryPct > 2 && daysFromBottom > 0 && daysFromBottom <= 15) {
+          if (dropPct < -15 && recoveryPct > 1 && daysFromBottom > 0 && daysFromBottom <= 20) {
             // Check trend: last 3 days going up
             const last3 = closes.slice(-3);
             const isRising = last3.length >= 3 && last3[2] > last3[0];
@@ -786,6 +786,7 @@ async function runRecoveryScan() {
               }
             } catch {}
 
+            if (results.length <= 5) console.log(`[RECOVERY] MATCH: ${coin} drop=${dropPct.toFixed(1)}% rec=${recoveryPct.toFixed(1)}% days=${daysFromBottom} score=${score.toFixed(1)}`);
             results.push({
               coin,
               currentPrice,
