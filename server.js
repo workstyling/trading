@@ -746,9 +746,20 @@ app.get('/api/recovery-scan', async (req, res) => {
             const prevVol = volumes.slice(-15, -5).reduce((a, b) => a + b, 0) / 10;
             const volIncrease = prevVol > 0 ? recentVol / prevVol : 1;
 
-            // Score: bigger drop + bigger recovery + rising trend + volume increase
-            const score = Math.abs(dropPct) * 0.3 + recoveryPct * 0.3 +
-              (isRising ? 15 : 0) + Math.min(volIncrease * 10, 20);
+            // Score formula — prioritize best buy opportunities:
+            // 1. Volume surge (strongest signal — big money entering)
+            // 2. Rising trend (confirmed reversal)
+            // 3. Fresh bottom (2-6 days = sweet spot)
+            // 4. Drop size (bigger drop = more room to recover)
+            // 5. Recovery % (shows momentum)
+            // 6. Penalize low liquidity
+            const freshBonus = daysFromBottom <= 6 ? 15 : daysFromBottom <= 10 ? 8 : 0;
+            const volScore = Math.min(volIncrease * 12, 30); // up to 30pts for volume surge
+            const trendScore = isRising ? 20 : 0;
+            const dropScore = Math.min(Math.abs(dropPct) * 0.2, 15); // up to 15pts
+            const recoveryScore = Math.min(recoveryPct * 0.3, 15); // up to 15pts
+            const liquidityPenalty = volume24hUsd < 50000 ? -10 : volume24hUsd < 200000 ? -5 : 0;
+            const score = volScore + trendScore + freshBonus + dropScore + recoveryScore + liquidityPenalty;
 
             // Get real 24h volume from Coinbase stats
             let volume24hUsd = 0;
