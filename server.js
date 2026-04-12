@@ -632,7 +632,8 @@ const STABLECOINS = new Set(['USDT', 'USDC', 'DAI', 'BUSD', 'TUSD', 'USDP', 'GUS
 app.get('/api/research', async (req, res) => {
   try {
     const now = Date.now();
-    if (researchCache.data && (now - researchCache.ts) < RESEARCH_CACHE_TTL) {
+    const forceRefresh = req.query.refresh === '1';
+    if (!forceRefresh && researchCache.data && (now - researchCache.ts) < RESEARCH_CACHE_TTL) {
       return res.json({ success: true, coins: researchCache.data });
     }
 

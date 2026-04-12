@@ -3924,12 +3924,12 @@
                 </div>
               </div>
               <div class="buy-input-group">
-                <button class="buy-input-btn minus" onclick="adjustBuySize(-5)">−</button>
+                <button class="buy-input-btn minus" onclick="adjustBuySize(-1)">−</button>
                 <input type="number" class="buy-size-input" id="buySize" step="1" min="1" value="100">
-                <button class="buy-input-btn plus" onclick="adjustBuySize(5)">+</button>
+                <button class="buy-input-btn plus" onclick="adjustBuySize(1)">+</button>
               </div>
               <span class="buy-pct-label">%</span>
-              <input type="text" class="buy-usd-field" id="buyUsdAmount" value="$0.00" readonly>
+              <input type="text" class="buy-usd-field" id="buyUsdAmount" value="$0.00" onclick="this.select()" onchange="onUsdAmountChange(this.value)">
               <span class="buy-usd-label">USD</span>
               <button class="buy-btn" id="buyBtn" onclick="executeBuyOrder()">BUY</button>
               <span class="limit-separator">|</span>
@@ -4010,6 +4010,7 @@
               <button class="research-filter-btn" data-sort="marketCap" onclick="setResearchSort('marketCap',this)">MCap</button>
               <button class="research-filter-btn" data-sort="volume24h" onclick="setResearchSort('volume24h',this)">Vol</button>
               <span id="researchCount" style="font-size:10px;color:var(--t2);margin-left:8px;"></span>
+              <button onclick="loadResearch(true)" style="padding:3px 10px;border:1px solid var(--blue);border-radius:5px;background:transparent;color:var(--blue);font-size:10px;font-weight:600;cursor:pointer;">Refresh</button>
             </div>
           </div>
           <div id="researchTable" style="max-height:500px;overflow-y:auto;">
@@ -4377,6 +4378,19 @@
       }
     }
 
+    // Allow user to type direct USD amount
+    function onUsdAmountChange(val) {
+      const usd = parseFloat(val.replace(/[$,]/g, '')) || 0;
+      if (usd > 0) {
+        // Set percentage to 0 to indicate manual USD mode
+        document.getElementById('buySize').value = 0;
+        localStorage.setItem('buySize', 0);
+        document.getElementById('buyUsdAmount').value = '$' + usd.toFixed(2);
+        // Store manual amount
+        localStorage.setItem('buyUsdManual', usd.toFixed(2));
+      }
+    }
+
     // Update USD amount when percentage changes
     // Load saved buy size
     const savedBuySize = localStorage.getItem('buySize');
@@ -4392,9 +4406,14 @@
       const pct = parseInt(document.getElementById('buySize').value) || 0;
       const balanceText = document.getElementById('usdBalance').textContent;
       const balance = parseFloat(balanceText.replace(/[$,]/g, '')) || 0;
-      // Apply 0.5% buffer for 100% to avoid "insufficient balance" due to holds/fees
-      const effectivePct = pct >= 100 ? 99.5 : pct;
-      const quoteSize = (balance * effectivePct / 100);
+      let quoteSize;
+      if (pct === 0) {
+        // Manual USD amount
+        quoteSize = parseFloat(document.getElementById('buyUsdAmount').value.replace(/[$,]/g, '')) || 0;
+      } else {
+        const effectivePct = pct >= 100 ? 99.5 : pct;
+        quoteSize = (balance * effectivePct / 100);
+      }
       console.log('Buy order params:', { pct, balanceText, balance, quoteSize, coin: selectedBuyCoin });
       if (!quoteSize || quoteSize < 1) {
         showCustomAlert('Amount too small', true);
@@ -4620,10 +4639,10 @@
     document.addEventListener('keydown', (e) => {
       if (e.ctrlKey && (e.key === '+' || e.key === '=' || e.code === 'NumpadAdd')) {
         e.preventDefault();
-        adjustBuySize(5);
+        adjustBuySize(1);
       } else if (e.ctrlKey && (e.key === '-' || e.code === 'NumpadSubtract')) {
         e.preventDefault();
-        adjustBuySize(-5);
+        adjustBuySize(-1);
       } else if (e.ctrlKey && (e.key === 'Enter' || e.code === 'Enter' || e.code === 'NumpadEnter')) {
         e.preventDefault();
         executeBuyOrder();
