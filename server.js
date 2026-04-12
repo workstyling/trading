@@ -681,7 +681,7 @@ app.get('/api/research', async (req, res) => {
     const now = Date.now();
     const forceRefresh = req.query.refresh === '1';
     if (!forceRefresh && researchCache.data && (now - researchCache.ts) < RESEARCH_CACHE_TTL) {
-      return res.json({ success: true, coins: researchCache.data });
+      return res.json({ success: true, coins: researchCache.data, volumesReady: cbVolumeCache.size > 0, volumesLoading: cbVolumeFetching, volumeProgress: cbVolumeProgress });
     }
 
     // Get Coinbase USD pairs
@@ -720,12 +720,15 @@ app.get('/api/research', async (req, res) => {
       }
     }
 
-    // Apply cached Coinbase volumes
-    if (cbVolumeCache.size > 0) {
-      coins.forEach(c => {
-        const vol = cbVolumeCache.get(c.symbol);
-        if (vol !== undefined) c.volume24h = vol;
-      });
+    // Apply cached Coinbase volumes (always use if available)
+    coins.forEach(c => {
+      const vol = cbVolumeCache.get(c.symbol);
+      if (vol !== undefined) c.volume24h = vol;
+    });
+
+    // If refresh requested and volumes not loading, trigger volume refresh too
+    if (forceRefresh && !cbVolumeFetching) {
+      fetchAllCbVolumes();
     }
 
     coins.sort((a, b) => a.rank - b.rank);
