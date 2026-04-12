@@ -3486,6 +3486,14 @@
       box-shadow: 0 4px 20px rgba(48, 209, 88, .1);
     }
 
+    @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
+    @keyframes scanBar { 0% { left:-30%; } 100% { left:100%; } }
+    .scan-progress {
+      position:absolute; bottom:0; left:0; height:2px; width:30%;
+      background:linear-gradient(90deg, transparent, var(--green), transparent);
+      animation: scanBar 2s linear infinite;
+    }
+
     /* ── Research Panel ── */
     .research-filter-btn {
       padding: 3px 10px; border-radius: 4px; border: 1px solid var(--b1);
@@ -9026,8 +9034,18 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
         const data = await r.json();
         if (data.success) {
           renderRecovery(data.results);
-          if (data.refreshing) {
-            document.getElementById('recoveryCount').innerHTML = data.results.length + ' found <span style="color:var(--yellow);font-size:9px;">rescanning ~5min...</span>';
+          const panel = document.getElementById('recoveryPanel');
+          const existingBar = panel.querySelector('.scan-progress');
+          if (data.refreshing || data.scanning) {
+            document.getElementById('recoveryCount').innerHTML = data.results.length + ' found <span style="color:var(--yellow);font-size:9px;animation:pulse 1.5s infinite;">⟳ scanning...</span>';
+            if (!existingBar) {
+              const bar = document.createElement('div');
+              bar.className = 'scan-progress';
+              panel.querySelector('div').style.position = 'relative';
+              panel.querySelector('div').appendChild(bar);
+            }
+          } else if (existingBar) {
+            existingBar.remove();
           }
         }
       } catch (e) {

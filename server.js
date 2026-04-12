@@ -842,7 +842,7 @@ app.get('/api/recovery-scan', async (req, res) => {
       }
       return res.json({ success: true, results: [], refreshing: true });
     }
-    res.json({ success: true, results: recoveryCacheData.data || [] });
+    res.json({ success: true, results: recoveryCacheData.data || [], scanning: recoveryScanRunning });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
