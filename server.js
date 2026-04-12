@@ -728,7 +728,7 @@ app.get('/api/research', async (req, res) => {
 
     coins.sort((a, b) => a.rank - b.rank);
     researchCache = { data: coins, ts: now };
-    res.json({ success: true, coins });
+    res.json({ success: true, coins, volumesReady: cbVolumeCache.size > 0, volumesLoading: cbVolumeFetching });
   } catch (error) {
     console.error('Research API error:', error);
     if (researchCache.data) return res.json({ success: true, coins: researchCache.data });

@@ -8969,14 +8969,23 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
     let researchSortBy = localStorage.getItem('researchSort') || 'change30d';
     let researchSortDir = localStorage.getItem('researchSortDir') || 'asc'; // asc=most dropped, desc=most grown
 
-    async function loadResearch() {
+    let researchVolReady = false;
+    async function loadResearch(forceRefresh = false) {
       try {
-        const r = await fetch('/api/research?t=' + Date.now());
+        const r = await fetch('/api/research?' + (forceRefresh ? 'refresh=1&' : '') + 't=' + Date.now());
         const data = await r.json();
         if (data.success) {
           researchData = data.coins;
-          document.getElementById('researchCount').textContent = `${researchData.length} coins`;
+          researchVolReady = data.volumesReady;
+          const volStatus = data.volumesReady ? '' : data.volumesLoading ?
+            ' <span style="color:var(--yellow);font-size:9px;animation:pulse 1.5s infinite;">⟳ vol loading...</span>' :
+            ' <span style="color:var(--t3);font-size:9px;">vol: global</span>';
+          document.getElementById('researchCount').innerHTML = `${researchData.length} coins${volStatus}`;
           renderResearch();
+          // Poll until volumes ready
+          if (!data.volumesReady && data.volumesLoading) {
+            setTimeout(() => loadResearch(), 10000);
+          }
         }
       } catch (e) {
         document.getElementById('researchTable').innerHTML = '<div style="padding:20px;color:var(--loss);">Error loading research data</div>';
