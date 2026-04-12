@@ -685,13 +685,13 @@ app.get('/api/research', async (req, res) => {
 // API: Recovery Scanner - finds coins with big drop + early recovery
 let recoveryCacheData = { data: null, ts: 0 };
 
-app.get('/api/recovery-scan', async (req, res) => {
+// Background recovery scan
+let recoveryScanRunning = false;
+async function runRecoveryScan() {
+  if (recoveryScanRunning) return;
+  recoveryScanRunning = true;
+  console.log('[RECOVERY] Scan started...');
   try {
-    const now = Date.now();
-    const forceRefresh = req.query.refresh === '1';
-    if (!forceRefresh && recoveryCacheData.data && (now - recoveryCacheData.ts) < 300000) {
-      return res.json({ success: true, results: recoveryCacheData.data, cached: true });
-    }
 
     // Get Coinbase USD pairs
     const cbRes = await fetch('https://api.exchange.coinbase.com/products');
@@ -701,7 +701,7 @@ app.get('/api/recovery-scan', async (req, res) => {
       .map(p => p.base_currency);
 
     const results = [];
-    const BATCH = 5;
+    const BATCH = 3;
 
     for (let i = 0; i < pairs.length; i += BATCH) {
       const batch = pairs.slice(i, i + BATCH);
@@ -797,15 +797,36 @@ app.get('/api/recovery-scan', async (req, res) => {
           }
         } catch {}
       }));
-      await sleep(500);
+      await sleep(800);
     }
 
     results.sort((a, b) => b.score - a.score);
-    recoveryCacheData = { data: results, ts: now };
-    res.json({ success: true, results });
+    recoveryCacheData = { data: results, ts: Date.now() };
+    console.log(`[RECOVERY] Scan complete: ${results.length} found`);
   } catch (error) {
     console.error('Recovery scan error:', error);
-    if (recoveryCacheData.data) return res.json({ success: true, results: recoveryCacheData.data });
+  } finally {
+    recoveryScanRunning = false;
+  }
+}
+
+// Auto-scan on startup (delayed to avoid 429 conflicts)
+setTimeout(runRecoveryScan, 15000);
+// Re-scan every 30 minutes
+setInterval(runRecoveryScan, 30 * 60 * 1000);
+
+app.get('/api/recovery-scan', async (req, res) => {
+  try {
+    const forceRefresh = req.query.refresh === '1';
+    if (forceRefresh) {
+      runRecoveryScan(); // fire and forget
+      if (recoveryCacheData.data) {
+        return res.json({ success: true, results: recoveryCacheData.data, cached: true, refreshing: true });
+      }
+      return res.json({ success: true, results: [], refreshing: true });
+    }
+    res.json({ success: true, results: recoveryCacheData.data || [] });
+  } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
 });
