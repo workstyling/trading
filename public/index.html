@@ -3630,38 +3630,37 @@
         font-size: 10px;
       }
 
-      /* Balance - hide settings on small screens */
+      /* Balance & settings compact */
       .balance-label { font-size: 11px; }
+      .balance-value { font-size: 16px !important; }
+      #tradingSettings {
+        width: 100% !important; flex-wrap: wrap !important; gap: 4px !important;
+        margin-left: 0 !important; margin-top: 6px !important;
+      }
       .settings-label { font-size: 9px !important; }
       .settings-unit { font-size: 9px !important; }
       .settings-input { width: 45px !important; font-size: 10px !important; padding: 2px 4px !important; }
 
-      /* Buy panel */
-      #buyPanel {
-        padding: 8px 10px;
-      }
+      /* Buy panel — stacked layout */
+      #buyPanel { padding: 8px !important; }
       .buy-row {
-        display: grid;
-        grid-template-columns: 70px 1fr;
-        gap: 6px;
-        align-items: center;
+        flex-wrap: wrap !important; gap: 8px !important;
       }
-      .buy-coin-input {
-        width: 100%;
-        font-size: 13px;
-      }
-      .buy-prices {
-        display: flex;
-        gap: 6px;
-        grid-column: 1 / -1;
-      }
-      .buy-input-group, .buy-pct-label { grid-column: 1; }
-      .buy-usd-field { width: 80px !important; min-width: 80px !important; max-width: 80px !important; font-size: 14px !important; }
-      .buy-usd-label { font-size: 10px; }
-      .buy-btn { padding: 8px 16px !important; font-size: 13px !important; }
-      .limit-separator { display: none; }
-      .limit-price-input { grid-column: 1 / -1; width: 100% !important; }
-      .buy-limit-btn { font-size: 11px !important; }
+      .buy-coin-input { width: 100% !important; font-size: 15px !important; padding: 8px !important; }
+      .buy-prices { width: 100%; display: flex; gap: 10px; }
+      .buy-price-item { flex: 1; }
+      .buy-price-label { font-size: 9px !important; }
+      .buy-price-value { font-size: 13px !important; }
+      .buy-input-group { order: 10; }
+      .buy-input-btn { width: 32px !important; height: 32px !important; font-size: 16px !important; }
+      .buy-size-input { width: 50px !important; height: 32px !important; font-size: 13px !important; }
+      .buy-pct-label { font-size: 10px !important; }
+      .buy-usd-field { width: 90px !important; min-width: 90px !important; max-width: 90px !important; height: 32px !important; font-size: 15px !important; }
+      .buy-usd-label { font-size: 10px !important; }
+      .buy-btn { padding: 10px 20px !important; font-size: 14px !important; }
+      .limit-separator { display: none !important; }
+      .limit-price-input { width: 100% !important; padding: 8px !important; font-size: 13px !important; }
+      .buy-limit-btn { padding: 8px 14px !important; font-size: 12px !important; }
       .buy-price-label {
         font-size: 8px;
       }
