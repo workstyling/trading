@@ -628,6 +628,7 @@ app.get('/api/cryptorank/currencies', async (req, res) => {
 const cbVolumeCache = new Map();
 let cbVolumeFetching = false;
 let cbVolumeProgress = 0;
+let cbVolumeLastUpdate = 0;
 
 async function fetchAllCbVolumes() {
   if (cbVolumeFetching) return;
@@ -658,6 +659,7 @@ async function fetchAllCbVolumes() {
       cbVolumeProgress = Math.round((i + 2) / pairs.length * 100);
     }
     cbVolumeProgress = 100;
+    cbVolumeLastUpdate = Date.now();
     console.log(`[VOLUMES] Done: ${fetched}/${pairs.length} volumes cached`);
     researchCache.ts = 0;
   } catch (e) {
@@ -681,7 +683,8 @@ app.get('/api/research', async (req, res) => {
     const now = Date.now();
     const forceRefresh = req.query.refresh === '1';
     if (!forceRefresh && researchCache.data && (now - researchCache.ts) < RESEARCH_CACHE_TTL) {
-      return res.json({ success: true, coins: researchCache.data, volumesReady: cbVolumeCache.size > 0, volumesLoading: cbVolumeFetching, volumeProgress: cbVolumeProgress });
+      const lastVol = cbVolumeLastUpdate ? Math.round((now - cbVolumeLastUpdate) / 1000) : null;
+      return res.json({ success: true, coins: researchCache.data, volumesReady: cbVolumeCache.size > 0, volumesLoading: cbVolumeFetching, volumeProgress: cbVolumeProgress, volUpdatedAgo: lastVol });
     }
 
     // Get Coinbase USD pairs
@@ -733,7 +736,8 @@ app.get('/api/research', async (req, res) => {
 
     coins.sort((a, b) => a.rank - b.rank);
     researchCache = { data: coins, ts: now };
-    res.json({ success: true, coins, volumesReady: cbVolumeCache.size > 0, volumesLoading: cbVolumeFetching, volumeProgress: cbVolumeProgress });
+    const lastVol = cbVolumeLastUpdate ? Math.round((Date.now() - cbVolumeLastUpdate) / 1000) : null;
+    res.json({ success: true, coins, volumesReady: cbVolumeCache.size > 0, volumesLoading: cbVolumeFetching, volumeProgress: cbVolumeProgress, volUpdatedAgo: lastVol });
   } catch (error) {
     console.error('Research API error:', error);
     if (researchCache.data) return res.json({ success: true, coins: researchCache.data });

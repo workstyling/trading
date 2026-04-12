@@ -8971,6 +8971,18 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
 
     let researchVolReady = false;
     let researchPolling = null;
+    let researchVolTs = 0;
+
+    function updateResearchTimer() {
+      if (!researchVolTs) return;
+      const s = Math.round((Date.now() - researchVolTs) / 1000);
+      const ago = s < 60 ? s + 's' : s < 3600 ? Math.floor(s/60) + 'm' : Math.floor(s/3600) + 'h';
+      const el = document.getElementById('researchCount');
+      if (el && !el.innerHTML.includes('volumes') && !el.innerHTML.includes('loading')) {
+        el.innerHTML = `${researchData.length} coins <span style="color:var(--t2);font-size:9px;">${ago} ago</span>`;
+      }
+    }
+    setInterval(updateResearchTimer, 10000);
 
     async function loadResearch(forceRefresh = false) {
       try {
@@ -8986,8 +8998,9 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
             document.getElementById('researchCount').innerHTML = `${researchData.length} coins <span style="color:var(--yellow);font-size:9px;animation:pulse 1.5s infinite;">${statusText}</span>`;
             if (!researchPolling) researchPolling = setInterval(() => loadResearch(), 6000);
           } else {
-            document.getElementById('researchCount').textContent = `${researchData.length} coins ✓`;
             if (researchPolling) { clearInterval(researchPolling); researchPolling = null; }
+            researchVolTs = data.volUpdatedAgo ? Date.now() - data.volUpdatedAgo * 1000 : Date.now();
+            updateResearchTimer();
           }
           renderResearch();
 
