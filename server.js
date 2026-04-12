@@ -845,16 +845,17 @@ setInterval(runRecoveryScan, 30 * 60 * 1000);
 
 app.get('/api/recovery-scan', async (req, res) => {
   try {
-    const forceRefresh = req.query.refresh === '1';
-    if (forceRefresh) {
-      runRecoveryScan(); // fire and forget
-      if (recoveryCacheData.data) {
-        return res.json({ success: true, results: recoveryCacheData.data, cached: true, refreshing: true });
-      }
-      return res.json({ success: true, results: [], refreshing: true });
+    if (req.query.refresh === '1') {
+      runRecoveryScan();
     }
     const lastScan = recoveryCacheData.ts ? Math.round((Date.now() - recoveryCacheData.ts) / 1000) : null;
-    res.json({ success: true, results: recoveryCacheData.data || [], scanning: recoveryScanRunning, lastScanAgo: lastScan, scanProgress: recoveryScanProgress });
+    res.json({
+      success: true,
+      results: recoveryCacheData.data || [],
+      scanning: recoveryScanRunning,
+      scanProgress: recoveryScanProgress,
+      lastScanAgo: lastScan
+    });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
