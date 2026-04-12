@@ -8980,10 +8980,11 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
           researchData = data.coins;
           researchVolReady = data.volumesReady;
 
-          if (data.volumesLoading && !data.volumesReady) {
+          if (!data.volumesReady) {
             const vp = data.volumeProgress || 0;
-            document.getElementById('researchCount').innerHTML = `${researchData.length} coins <span style="color:var(--yellow);font-size:9px;animation:pulse 1.5s infinite;">⟳ volumes ${vp}%</span>`;
-            if (!researchPolling) researchPolling = setInterval(() => loadResearch(), 10000);
+            const statusText = data.volumesLoading ? `⟳ volumes ${vp}%` : '⟳ waiting for volumes...';
+            document.getElementById('researchCount').innerHTML = `${researchData.length} coins <span style="color:var(--yellow);font-size:9px;animation:pulse 1.5s infinite;">${statusText}</span>`;
+            if (!researchPolling) researchPolling = setInterval(() => loadResearch(), 8000);
           } else {
             document.getElementById('researchCount').textContent = `${researchData.length} coins`;
             if (researchPolling) { clearInterval(researchPolling); researchPolling = null; }
