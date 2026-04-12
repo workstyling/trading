@@ -7205,16 +7205,16 @@ Requirements:
             sellBtn += ` <button class="cancel-order-btn" onclick="cancelOrderFromSelected('${o.order_id}', '${coin}')" title="Cancel order">Cancel</button>`;
           }
 
-          // Position in order book (only for SELL Limit orders with status OPEN)
+          // Position in order book (for OPEN Limit orders — both BUY and SELL)
           let posCell = '<span style="color:#555;">—</span>';
-          if (isSellOrder) {
+          {
             const isOpen = o.status === 'OPEN';
             const isLimitOrder = orderType === 'Limit';
             const hasLimitPrice = o.limit_price || o.order_configuration?.limit_limit_gtc?.limit_price;
             const limitPriceVal = o.limit_price || o.order_configuration?.limit_limit_gtc?.limit_price || '';
             if (isOpen && isLimitOrder && hasLimitPrice) {
               const posId = `pos_${o.order_id.slice(0, 8)}`;
-              posCell = `<span id="${posId}" class="order-pos" data-pair="${pair}" data-limit="${limitPriceVal}" data-side="SELL">...</span>`;
+              posCell = `<span id="${posId}" class="order-pos" data-pair="${pair}" data-limit="${limitPriceVal}" data-side="${side}">...</span>`;
             }
           }
 
@@ -7336,7 +7336,7 @@ Requirements:
             <td><span class="${pctClass}">${pct}%</span></td>
             <td class="target-price">${targetPriceFmt}</td>
             <td>${sellBtn}</td>
-            <td>${isBuy ? '<span style="color:#555;">—</span>' : posCell}</td>
+            <td>${posCell}</td>
             <td id="value_${o.order_id ? o.order_id.slice(0, 8) : ''}">${valueCell}</td>
           </tr>`;
         });
