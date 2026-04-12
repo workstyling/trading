@@ -624,6 +624,49 @@ app.get('/api/cryptorank/currencies', async (req, res) => {
   }
 });
 
+// Global Coinbase volume cache — shared between Research and Recovery
+const cbVolumeCache = new Map();
+let cbVolumeFetching = false;
+
+async function fetchAllCbVolumes() {
+  if (cbVolumeFetching) return;
+  cbVolumeFetching = true;
+  console.log('[VOLUMES] Fetching Coinbase volumes...');
+  try {
+    const cbRes = await fetch('https://api.exchange.coinbase.com/products');
+    const products = await cbRes.json();
+    const pairs = products
+      .filter(p => p.quote_currency === 'USD' && p.status === 'online')
+      .map(p => p.base_currency);
+
+    let fetched = 0;
+    for (let i = 0; i < pairs.length; i += 2) {
+      const batch = pairs.slice(i, i + 2);
+      await Promise.all(batch.map(async (coin) => {
+        try {
+          const r = await fetch(`https://api.exchange.coinbase.com/products/${coin}-USD/stats`);
+          if (r.status === 429) return;
+          if (r.ok) {
+            const s = await r.json();
+            const vol = (parseFloat(s.volume) || 0) * (parseFloat(s.last) || 0);
+            if (vol > 0) { cbVolumeCache.set(coin, vol); fetched++; }
+          }
+        } catch {}
+      }));
+      await sleep(1000);
+    }
+    console.log(`[VOLUMES] Done: ${fetched}/${pairs.length} volumes cached`);
+  } catch (e) {
+    console.error('[VOLUMES] Error:', e.message);
+  } finally {
+    cbVolumeFetching = false;
+  }
+}
+
+// Fetch volumes 30s after start, then every 30min
+setTimeout(fetchAllCbVolumes, 30000);
+setInterval(fetchAllCbVolumes, 30 * 60 * 1000);
+
 // API: Research - Coinbase coins with CryptoRank v1 data
 let researchCache = { data: null, ts: 0 };
 const RESEARCH_CACHE_TTL = 300000; // 5 minutes
@@ -673,11 +716,11 @@ app.get('/api/research', async (req, res) => {
       }
     }
 
-    // Use Coinbase volumes from recovery scan if available
-    if (recoveryCacheData.data) {
+    // Apply cached Coinbase volumes
+    if (cbVolumeCache.size > 0) {
       coins.forEach(c => {
-        const rec = recoveryCacheData.data.find(r => r.coin === c.symbol);
-        if (rec && rec.volume24h) c.volume24h = rec.volume24h;
+        const vol = cbVolumeCache.get(c.symbol);
+        if (vol !== undefined) c.volume24h = vol;
       });
     }
 
@@ -773,16 +816,8 @@ async function runRecoveryScan() {
             // 3. Fresh bottom (2-6 days = sweet spot)
             // 4. Drop size (bigger drop = more room to recover)
             // 5. Recovery % (shows momentum)
-            // 6. Penalize low liquidity — get real 24h volume from stats
-            let volume24hUsd = 0;
-            try {
-              for (let a = 0; a < 2; a++) {
-                const sr = await fetch(`https://api.exchange.coinbase.com/products/${coin}-USD/stats`);
-                if (sr.status === 429) { await sleep(2000); continue; }
-                if (sr.ok) { const st = await sr.json(); volume24hUsd = (parseFloat(st.volume) || 0) * currentPrice; }
-                break;
-              }
-            } catch {}
+            // 6. Penalize low liquidity — use cached volume or candle fallback
+            let volume24hUsd = cbVolumeCache.get(coin) || 0;
             if (!volume24hUsd) volume24hUsd = (volumes[volumes.length - 1] || 0) * currentPrice;
 
             const freshBonus = daysFromBottom <= 6 ? 15 : daysFromBottom <= 10 ? 8 : 0;
