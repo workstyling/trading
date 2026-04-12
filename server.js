@@ -629,6 +629,19 @@ const cbVolumeCache = new Map();
 let cbVolumeFetching = false;
 let cbVolumeProgress = 0;
 let cbVolumeLastUpdate = 0;
+const cbVolumeCacheFile = path.join(__dirname, 'volume-cache.json');
+
+// Load cached volumes from file on startup
+try {
+  if (fs.existsSync(cbVolumeCacheFile)) {
+    const saved = JSON.parse(fs.readFileSync(cbVolumeCacheFile, 'utf8'));
+    if (saved.data) {
+      Object.entries(saved.data).forEach(([k, v]) => cbVolumeCache.set(k, v));
+      cbVolumeLastUpdate = saved.ts || 0;
+      console.log(`[VOLUMES] Loaded ${cbVolumeCache.size} cached volumes from file`);
+    }
+  }
+} catch {}
 
 async function fetchAllCbVolumes() {
   if (cbVolumeFetching) return;
@@ -661,6 +674,12 @@ async function fetchAllCbVolumes() {
     cbVolumeProgress = 100;
     cbVolumeLastUpdate = Date.now();
     console.log(`[VOLUMES] Done: ${fetched}/${pairs.length} volumes cached`);
+    // Save to file for persistence across restarts
+    try {
+      const data = {};
+      cbVolumeCache.forEach((v, k) => { data[k] = v; });
+      fs.writeFileSync(cbVolumeCacheFile, JSON.stringify({ data, ts: cbVolumeLastUpdate }));
+    } catch {}
     researchCache.ts = 0;
   } catch (e) {
     console.error('[VOLUMES] Error:', e.message);
