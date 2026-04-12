@@ -750,9 +750,15 @@ app.get('/api/recovery-scan', async (req, res) => {
             const score = Math.abs(dropPct) * 0.3 + recoveryPct * 0.3 +
               (isRising ? 15 : 0) + Math.min(volIncrease * 10, 20);
 
-            // Last day volume in USD
-            const lastDayVol = volumes[volumes.length - 1] || 0;
-            const volume24hUsd = lastDayVol * currentPrice;
+            // Get real 24h volume from Coinbase stats
+            let volume24hUsd = 0;
+            try {
+              const statsR = await fetch(`https://api.exchange.coinbase.com/products/${coin}-USD/stats`);
+              if (statsR.ok) {
+                const stats = await statsR.json();
+                volume24hUsd = (parseFloat(stats.volume) || 0) * currentPrice;
+              }
+            } catch {}
 
             results.push({
               coin,
