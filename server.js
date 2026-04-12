@@ -682,6 +682,102 @@ app.get('/api/research', async (req, res) => {
   }
 });
 
+// API: Recovery Scanner - finds coins with big drop + early recovery
+let recoveryCacheData = { data: null, ts: 0 };
+
+app.get('/api/recovery-scan', async (req, res) => {
+  try {
+    const now = Date.now();
+    if (recoveryCacheData.data && (now - recoveryCacheData.ts) < 300000) { // 5min cache
+      return res.json({ success: true, results: recoveryCacheData.data });
+    }
+
+    // Get Coinbase USD pairs
+    const cbRes = await fetch('https://api.exchange.coinbase.com/products');
+    const products = await cbRes.json();
+    const pairs = products
+      .filter(p => p.quote_currency === 'USD' && p.status === 'online')
+      .map(p => p.base_currency);
+
+    const results = [];
+    const BATCH = 10;
+
+    for (let i = 0; i < pairs.length; i += BATCH) {
+      const batch = pairs.slice(i, i + BATCH);
+      await Promise.all(batch.map(async (coin) => {
+        try {
+          // Get daily candles (last 30 days)
+          const r = await fetch(`https://api.exchange.coinbase.com/products/${coin}-USD/candles?granularity=86400`);
+          if (!r.ok) return;
+          const candles = await r.json();
+          if (!Array.isArray(candles) || candles.length < 10) return;
+
+          // Candles: [time, low, high, open, close, volume] — newest first
+          const sorted = candles.slice(0, 30).reverse(); // oldest to newest
+          const closes = sorted.map(c => parseFloat(c[4]));
+          const volumes = sorted.map(c => parseFloat(c[5]));
+
+          // Find the highest point in last 30 days
+          let maxPrice = 0, maxIdx = 0;
+          closes.forEach((p, i) => { if (p > maxPrice) { maxPrice = p; maxIdx = i; } });
+
+          // Find the lowest point AFTER the peak
+          let minPrice = Infinity, minIdx = 0;
+          for (let j = maxIdx; j < closes.length; j++) {
+            if (closes[j] < minPrice) { minPrice = closes[j]; minIdx = j; }
+          }
+
+          // Current price
+          const currentPrice = closes[closes.length - 1];
+          const dropPct = maxPrice > 0 ? ((minPrice - maxPrice) / maxPrice) * 100 : 0;
+          const recoveryPct = minPrice > 0 ? ((currentPrice - minPrice) / minPrice) * 100 : 0;
+          const fromPeakPct = maxPrice > 0 ? ((currentPrice - maxPrice) / maxPrice) * 100 : 0;
+          const daysFromBottom = closes.length - 1 - minIdx;
+
+          // Filter: significant drop (>20%) AND some recovery (>2%) AND bottom was recent (last 15 days)
+          if (dropPct < -20 && recoveryPct > 2 && daysFromBottom > 0 && daysFromBottom <= 15) {
+            // Check trend: last 3 days going up
+            const last3 = closes.slice(-3);
+            const isRising = last3.length >= 3 && last3[2] > last3[0];
+
+            // Average volume last 5 days vs previous 10 days
+            const recentVol = volumes.slice(-5).reduce((a, b) => a + b, 0) / 5;
+            const prevVol = volumes.slice(-15, -5).reduce((a, b) => a + b, 0) / 10;
+            const volIncrease = prevVol > 0 ? recentVol / prevVol : 1;
+
+            // Score: bigger drop + bigger recovery + rising trend + volume increase
+            const score = Math.abs(dropPct) * 0.3 + recoveryPct * 0.3 +
+              (isRising ? 15 : 0) + Math.min(volIncrease * 10, 20);
+
+            results.push({
+              coin,
+              currentPrice,
+              peakPrice: maxPrice,
+              bottomPrice: minPrice,
+              dropPct: Math.round(dropPct * 100) / 100,
+              recoveryPct: Math.round(recoveryPct * 100) / 100,
+              fromPeakPct: Math.round(fromPeakPct * 100) / 100,
+              daysFromBottom,
+              isRising,
+              volIncrease: Math.round(volIncrease * 100) / 100,
+              score: Math.round(score * 10) / 10,
+            });
+          }
+        } catch {}
+      }));
+      await sleep(150);
+    }
+
+    results.sort((a, b) => b.score - a.score);
+    recoveryCacheData = { data: results, ts: now };
+    res.json({ success: true, results });
+  } catch (error) {
+    console.error('Recovery scan error:', error);
+    if (recoveryCacheData.data) return res.json({ success: true, results: recoveryCacheData.data });
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // API: CryptoRank Currency Details
 app.get('/api/cryptorank/currency/:key', async (req, res) => {
   try {
