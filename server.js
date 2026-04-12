@@ -627,6 +627,7 @@ app.get('/api/cryptorank/currencies', async (req, res) => {
 // Global Coinbase volume cache — shared between Research and Recovery
 const cbVolumeCache = new Map();
 let cbVolumeFetching = false;
+let cbVolumeProgress = 0;
 
 async function fetchAllCbVolumes() {
   if (cbVolumeFetching) return;
@@ -654,9 +655,10 @@ async function fetchAllCbVolumes() {
         } catch {}
       }));
       await sleep(1000);
+      cbVolumeProgress = Math.round((i + 2) / pairs.length * 100);
     }
+    cbVolumeProgress = 100;
     console.log(`[VOLUMES] Done: ${fetched}/${pairs.length} volumes cached`);
-    // Invalidate research cache so next request gets fresh volumes
     researchCache.ts = 0;
   } catch (e) {
     console.error('[VOLUMES] Error:', e.message);
@@ -728,7 +730,7 @@ app.get('/api/research', async (req, res) => {
 
     coins.sort((a, b) => a.rank - b.rank);
     researchCache = { data: coins, ts: now };
-    res.json({ success: true, coins, volumesReady: cbVolumeCache.size > 0, volumesLoading: cbVolumeFetching });
+    res.json({ success: true, coins, volumesReady: cbVolumeCache.size > 0, volumesLoading: cbVolumeFetching, volumeProgress: cbVolumeProgress });
   } catch (error) {
     console.error('Research API error:', error);
     if (researchCache.data) return res.json({ success: true, coins: researchCache.data });
