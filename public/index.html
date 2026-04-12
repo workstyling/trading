@@ -9018,6 +9018,9 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
         const data = await r.json();
         if (data.success) {
           renderRecovery(data.results);
+          if (data.refreshing) {
+            document.getElementById('recoveryCount').innerHTML = data.results.length + ' found <span style="color:var(--yellow);font-size:9px;">rescanning ~5min...</span>';
+          }
         }
       } catch (e) {
         document.getElementById('recoveryTable').innerHTML = '<div style="padding:20px;color:var(--loss);">Error loading scan</div>';
