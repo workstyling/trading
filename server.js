@@ -784,10 +784,17 @@ async function runRecoveryScan() {
             // 3. Fresh bottom (2-6 days = sweet spot)
             // 4. Drop size (bigger drop = more room to recover)
             // 5. Recovery % (shows momentum)
-            // 6. Penalize low liquidity
-            // Volume from last candle
-            const lastVol = volumes[volumes.length - 1] || 0;
-            const volume24hUsd = lastVol * currentPrice;
+            // 6. Penalize low liquidity — get real 24h volume from stats
+            let volume24hUsd = 0;
+            try {
+              for (let a = 0; a < 2; a++) {
+                const sr = await fetch(`https://api.exchange.coinbase.com/products/${coin}-USD/stats`);
+                if (sr.status === 429) { await sleep(2000); continue; }
+                if (sr.ok) { const st = await sr.json(); volume24hUsd = (parseFloat(st.volume) || 0) * currentPrice; }
+                break;
+              }
+            } catch {}
+            if (!volume24hUsd) volume24hUsd = (volumes[volumes.length - 1] || 0) * currentPrice;
 
             const freshBonus = daysFromBottom <= 6 ? 15 : daysFromBottom <= 10 ? 8 : 0;
             const volScore = Math.min(volIncrease * 12, 30);
