@@ -701,8 +701,9 @@ async function runRecoveryScan() {
       .map(p => p.base_currency);
 
     const results = [];
-    const BATCH = 3;
+    const BATCH = 2;
 
+    let scanned = 0, skipped429 = 0;
     for (let i = 0; i < pairs.length; i += BATCH) {
       const batch = pairs.slice(i, i + BATCH);
       await Promise.all(batch.map(async (coin) => {
@@ -716,7 +717,9 @@ async function runRecoveryScan() {
             candles = await r.json();
             break;
           }
+          if (!candles) { skipped429++; return; }
           if (!Array.isArray(candles) || candles.length < 10) return;
+          scanned++;
 
           // Candles: [time, low, high, open, close, volume] — newest first
           const sorted = candles.slice(0, 30).reverse(); // oldest to newest
@@ -797,12 +800,13 @@ async function runRecoveryScan() {
           }
         } catch {}
       }));
-      await sleep(800);
+      await sleep(1200);
+      if (i % 50 === 0 && i > 0) console.log(`[RECOVERY] Progress: ${i}/${pairs.length}...`);
     }
 
     results.sort((a, b) => b.score - a.score);
     recoveryCacheData = { data: results, ts: Date.now() };
-    console.log(`[RECOVERY] Scan complete: ${results.length} found`);
+    console.log(`[RECOVERY] Scan complete: ${results.length} found (scanned: ${scanned}/${pairs.length}, 429s: ${skipped429})`);
   } catch (error) {
     console.error('Recovery scan error:', error);
   } finally {
