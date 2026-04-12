@@ -4021,7 +4021,7 @@
             </div>
           </div>
           <div id="recoveryTable" style="max-height:400px;overflow-y:auto;">
-            <div style="text-align:center;padding:30px;color:var(--t2);font-size:12px;">Loading recovery scan...</div>
+            <div id="recoveryLoading" style="text-align:center;padding:30px;color:var(--t2);font-size:12px;">Waiting for scan data...</div>
           </div>
         </div>
 
@@ -9088,6 +9088,11 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
             bar.className = 'scan-progress';
             header.style.position = 'relative';
             header.appendChild(bar);
+          }
+          // Update loading message
+          const loadEl = document.getElementById('recoveryLoading');
+          if (loadEl && data.results.length === 0) {
+            loadEl.innerHTML = `<span style="animation:pulse 1.5s infinite;">Scanning ${pct}%... please wait</span>`;
           }
           // Start polling if not already
           if (!recoveryPolling) {
