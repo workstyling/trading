@@ -9037,41 +9037,52 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
     }
 
     // ========== RECOVERY SCANNER ==========
+    let recoveryScanTs = 0;
+    let recoveryPolling = null;
+
     async function loadRecovery(forceRefresh = false) {
-      if (forceRefresh) {
-        document.getElementById('recoveryTable').innerHTML = '<div style="text-align:center;padding:30px;color:var(--t2);font-size:12px;">Scanning all coins... (takes ~30s)</div>';
-      }
       try {
         const r = await fetch('/api/recovery-scan?' + (forceRefresh ? 'refresh=1&' : '') + 't=' + Date.now());
         const data = await r.json();
         if (data.success) {
-          renderRecovery(data.results);
+          if (data.results.length > 0) renderRecovery(data.results);
+          if (data.lastScanAgo !== null) recoveryScanTs = Date.now() - data.lastScanAgo * 1000;
+
           const panel = document.getElementById('recoveryPanel');
           const existingBar = panel.querySelector('.scan-progress');
-          const agoText = data.lastScanAgo !== null ? (() => {
-            const s = data.lastScanAgo;
-            if (s < 60) return s + 's ago';
-            if (s < 3600) return Math.floor(s/60) + 'm ago';
-            return Math.floor(s/3600) + 'h ago';
-          })() : '';
 
-          if (data.refreshing || data.scanning) {
-            document.getElementById('recoveryCount').innerHTML = data.results.length + ' found <span style="color:var(--yellow);font-size:9px;animation:pulse 1.5s infinite;">⟳ scanning...</span>';
+          if (data.scanning) {
+            const pct = data.scanProgress || 0;
+            document.getElementById('recoveryCount').innerHTML = (data.results.length || '0') + ` found <span style="color:var(--yellow);font-size:9px;animation:pulse 1.5s infinite;">⟳ ${pct}%</span>`;
             if (!existingBar) {
               const bar = document.createElement('div');
               bar.className = 'scan-progress';
               panel.querySelector('div').style.position = 'relative';
               panel.querySelector('div').appendChild(bar);
             }
+            if (!recoveryPolling) recoveryPolling = setInterval(() => loadRecovery(), 5000);
           } else {
             if (existingBar) existingBar.remove();
-            document.getElementById('recoveryCount').innerHTML = data.results.length + ' found <span style="color:var(--t2);font-size:9px;">' + agoText + '</span>';
+            if (recoveryPolling) { clearInterval(recoveryPolling); recoveryPolling = null; }
+            updateRecoveryTimer();
           }
         }
       } catch (e) {
         document.getElementById('recoveryTable').innerHTML = '<div style="padding:20px;color:var(--loss);">Error loading scan</div>';
       }
     }
+
+    function updateRecoveryTimer() {
+      if (!recoveryScanTs) return;
+      const s = Math.round((Date.now() - recoveryScanTs) / 1000);
+      const agoText = s < 60 ? s + 's ago' : s < 3600 ? Math.floor(s/60) + 'm ago' : Math.floor(s/3600) + 'h ago';
+      const el = document.getElementById('recoveryCount');
+      if (el && !el.innerHTML.includes('scanning')) {
+        const count = el.textContent.match(/\d+/)?.[0] || '0';
+        el.innerHTML = count + ' found <span style="color:var(--t2);font-size:9px;">' + agoText + '</span>';
+      }
+    }
+    setInterval(updateRecoveryTimer, 10000);
 
     function renderRecovery(results) {
       document.getElementById('recoveryCount').textContent = results.length + ' found';

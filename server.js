@@ -707,6 +707,7 @@ let recoveryCacheData = { data: null, ts: 0 };
 
 // Background recovery scan
 let recoveryScanRunning = false;
+let recoveryScanProgress = 0; // 0-100
 async function runRecoveryScan() {
   if (recoveryScanRunning) return;
   recoveryScanRunning = true;
@@ -815,11 +816,13 @@ async function runRecoveryScan() {
         } catch {}
       }));
       await sleep(1200);
-      if (i % 50 === 0 && i > 0) console.log(`[RECOVERY] Progress: ${i}/${pairs.length}...`);
+      recoveryScanProgress = Math.round((i + BATCH) / pairs.length * 100);
+      if (i % 50 === 0 && i > 0) console.log(`[RECOVERY] Progress: ${i}/${pairs.length} (${recoveryScanProgress}%)...`);
     }
 
     results.sort((a, b) => b.score - a.score);
     recoveryCacheData = { data: results, ts: Date.now() };
+    recoveryScanProgress = 100;
     console.log(`[RECOVERY] Scan complete: ${results.length} found (scanned: ${scanned}/${pairs.length}, 429s: ${skipped429})`);
   } catch (error) {
     console.error('Recovery scan error:', error);
@@ -844,7 +847,7 @@ app.get('/api/recovery-scan', async (req, res) => {
       return res.json({ success: true, results: [], refreshing: true });
     }
     const lastScan = recoveryCacheData.ts ? Math.round((Date.now() - recoveryCacheData.ts) / 1000) : null;
-    res.json({ success: true, results: recoveryCacheData.data || [], scanning: recoveryScanRunning, lastScanAgo: lastScan });
+    res.json({ success: true, results: recoveryCacheData.data || [], scanning: recoveryScanRunning, lastScanAgo: lastScan, scanProgress: recoveryScanProgress });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
