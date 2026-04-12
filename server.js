@@ -743,6 +743,9 @@ async function runRecoveryScan() {
           const fromPeakPct = maxPrice > 0 ? ((currentPrice - maxPrice) / maxPrice) * 100 : 0;
           const daysFromBottom = closes.length - 1 - minIdx;
 
+          // Log first few coins for debug
+          if (scanned <= 5) console.log(`[RECOVERY] ${coin}: drop=${dropPct.toFixed(1)}% rec=${recoveryPct.toFixed(1)}% days=${daysFromBottom} peak=${maxPrice} bot=${minPrice} cur=${currentPrice}`);
+
           // Filter: significant drop (>20%) AND some recovery (>2%) AND bottom was recent (last 15 days)
           if (dropPct < -20 && recoveryPct > 2 && daysFromBottom > 0 && daysFromBottom <= 15) {
             // Check trend: last 3 days going up
