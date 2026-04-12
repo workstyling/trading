@@ -3929,7 +3929,7 @@
                 <button class="buy-input-btn plus" onclick="adjustBuySize(1)">+</button>
               </div>
               <span class="buy-pct-label">%</span>
-              <input type="text" class="buy-usd-field" id="buyUsdAmount" value="$0.00" onclick="this.select()" onchange="onUsdAmountChange(this.value)">
+              <input type="text" class="buy-usd-field" id="buyUsdAmount" value="0" onclick="this.select()" onchange="onUsdAmountChange(this.value)">
               <span class="buy-usd-label">USD</span>
               <button class="buy-btn" id="buyBtn" onclick="executeBuyOrder()">BUY</button>
               <span class="limit-separator">|</span>
@@ -4370,7 +4370,7 @@
       const usdAmount = (balance * effectivePct / 100).toFixed(2);
       const usdField = document.getElementById('buyUsdAmount');
       const oldValue = usdField.value;
-      usdField.value = '$' + usdAmount;
+      usdField.value = usdAmount;
       // Flash effect on change
       if (oldValue !== usdField.value) {
         usdField.style.background = '#1a3a1a';
@@ -4382,12 +4382,14 @@
     function onUsdAmountChange(val) {
       const usd = parseFloat(val.replace(/[$,]/g, '')) || 0;
       if (usd > 0) {
-        // Set percentage to 0 to indicate manual USD mode
-        document.getElementById('buySize').value = 0;
-        localStorage.setItem('buySize', 0);
-        document.getElementById('buyUsdAmount').value = '$' + usd.toFixed(2);
-        // Store manual amount
-        localStorage.setItem('buyUsdManual', usd.toFixed(2));
+        document.getElementById('buyUsdAmount').value = usd.toFixed(2);
+        // Calculate what % this is
+        const balance = parseFloat(document.getElementById('usdBalance').textContent.replace(/[$,]/g, '')) || 0;
+        if (balance > 0) {
+          const pct = Math.min(100, Math.round(usd / balance * 100));
+          document.getElementById('buySize').value = pct;
+          localStorage.setItem('buySize', pct);
+        }
       }
     }
 
@@ -4403,17 +4405,7 @@
 
     async function executeBuyOrder() {
       console.log('executeBuyOrder called');
-      const pct = parseInt(document.getElementById('buySize').value) || 0;
-      const balanceText = document.getElementById('usdBalance').textContent;
-      const balance = parseFloat(balanceText.replace(/[$,]/g, '')) || 0;
-      let quoteSize;
-      if (pct === 0) {
-        // Manual USD amount
-        quoteSize = parseFloat(document.getElementById('buyUsdAmount').value.replace(/[$,]/g, '')) || 0;
-      } else {
-        const effectivePct = pct >= 100 ? 99.5 : pct;
-        quoteSize = (balance * effectivePct / 100);
-      }
+      const quoteSize = parseFloat(document.getElementById('buyUsdAmount').value.replace(/[$,]/g, '')) || 0;
       console.log('Buy order params:', { pct, balanceText, balance, quoteSize, coin: selectedBuyCoin });
       if (!quoteSize || quoteSize < 1) {
         showCustomAlert('Amount too small', true);
