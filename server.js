@@ -688,8 +688,9 @@ let recoveryCacheData = { data: null, ts: 0 };
 app.get('/api/recovery-scan', async (req, res) => {
   try {
     const now = Date.now();
-    if (recoveryCacheData.data && (now - recoveryCacheData.ts) < 300000) { // 5min cache
-      return res.json({ success: true, results: recoveryCacheData.data });
+    const forceRefresh = req.query.refresh === '1';
+    if (!forceRefresh && recoveryCacheData.data && (now - recoveryCacheData.ts) < 300000) {
+      return res.json({ success: true, results: recoveryCacheData.data, cached: true });
     }
 
     // Get Coinbase USD pairs
@@ -749,6 +750,10 @@ app.get('/api/recovery-scan', async (req, res) => {
             const score = Math.abs(dropPct) * 0.3 + recoveryPct * 0.3 +
               (isRising ? 15 : 0) + Math.min(volIncrease * 10, 20);
 
+            // Last day volume in USD
+            const lastDayVol = volumes[volumes.length - 1] || 0;
+            const volume24hUsd = lastDayVol * currentPrice;
+
             results.push({
               coin,
               currentPrice,
@@ -760,6 +765,7 @@ app.get('/api/recovery-scan', async (req, res) => {
               daysFromBottom,
               isRising,
               volIncrease: Math.round(volIncrease * 100) / 100,
+              volume24h: Math.round(volume24hUsd),
               score: Math.round(score * 10) / 10,
             });
           }

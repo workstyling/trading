@@ -4001,7 +4001,7 @@
             <h3 style="margin:0;font-size:13px;font-weight:600;color:var(--green);">Recovery Scanner — Drop + Bounce</h3>
             <div style="display:flex;gap:8px;align-items:center;">
               <span id="recoveryCount" style="font-size:10px;color:var(--t2);"></span>
-              <button onclick="loadRecovery()" style="padding:3px 10px;border:1px solid var(--green);border-radius:5px;background:transparent;color:var(--green);font-size:10px;font-weight:600;cursor:pointer;">Refresh</button>
+              <button onclick="loadRecovery(true)" style="padding:3px 10px;border:1px solid var(--green);border-radius:5px;background:transparent;color:var(--green);font-size:10px;font-weight:600;cursor:pointer;">Refresh</button>
             </div>
           </div>
           <div id="recoveryTable" style="max-height:400px;overflow-y:auto;">
@@ -9004,10 +9004,12 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
     }
 
     // ========== RECOVERY SCANNER ==========
-    async function loadRecovery() {
-      document.getElementById('recoveryTable').innerHTML = '<div style="text-align:center;padding:30px;color:var(--t2);font-size:12px;">Scanning all coins... (takes ~30s)</div>';
+    async function loadRecovery(forceRefresh = false) {
+      if (forceRefresh) {
+        document.getElementById('recoveryTable').innerHTML = '<div style="text-align:center;padding:30px;color:var(--t2);font-size:12px;">Scanning all coins... (takes ~30s)</div>';
+      }
       try {
-        const r = await fetch('/api/recovery-scan?t=' + Date.now());
+        const r = await fetch('/api/recovery-scan?' + (forceRefresh ? 'refresh=1&' : '') + 't=' + Date.now());
         const data = await r.json();
         if (data.success) {
           renderRecovery(data.results);
@@ -9031,9 +9033,17 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
         return '$' + n.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
       };
 
+      const fmtV = (n) => {
+        if (!n) return '—';
+        if (n >= 1e9) return '$' + (n/1e9).toFixed(1) + 'B';
+        if (n >= 1e6) return '$' + (n/1e6).toFixed(1) + 'M';
+        if (n >= 1e3) return '$' + (n/1e3).toFixed(0) + 'K';
+        return '$' + n.toFixed(0);
+      };
+
       let h = `<table class="rtbl"><thead><tr>
-        <th>Coin</th><th>Price</th><th>Peak</th><th>Drop</th><th>Bottom</th>
-        <th>Recovery</th><th>Days</th><th>Trend</th><th>Vol</th><th>Score</th><th>Buy</th>
+        <th>Coin</th><th>Price</th><th>Drop</th>
+        <th>Recovery</th><th>Days</th><th>Trend</th><th>Vol Chg</th><th>Vol 24h</th><th>Score</th><th>Buy</th>
       </tr></thead><tbody>`;
 
       results.forEach(r => {
@@ -9044,13 +9054,12 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
         h += `<tr>
           <td><a class="coin-link" href="https://www.tradingview.com/chart/?symbol=COINBASE%3A${r.coin}USD" target="_blank">${r.coin}</a></td>
           <td>${fmtP(r.currentPrice)}</td>
-          <td style="font-size:10px;color:var(--t2);">${fmtP(r.peakPrice)}</td>
           <td style="color:var(--loss);font-weight:600;">${r.dropPct.toFixed(1)}%</td>
-          <td style="font-size:10px;color:var(--t2);">${fmtP(r.bottomPrice)}</td>
           <td style="color:var(--green);font-weight:600;">+${r.recoveryPct.toFixed(1)}%</td>
           <td style="text-align:center;">${r.daysFromBottom}d</td>
           <td>${trendIcon}</td>
           <td style="font-size:10px;">${volText}</td>
+          <td style="font-size:10px;">${fmtV(r.volume24h)}</td>
           <td style="color:${scoreColor};font-weight:700;">${r.score}</td>
           <td><button class="select-coin-btn" onclick="selectCoinForBuy('${r.coin}')" title="Buy ${r.coin}">↑</button></td>
         </tr>`;
