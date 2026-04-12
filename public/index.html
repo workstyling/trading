@@ -4036,7 +4036,7 @@
               <button class="research-filter-btn" data-sort="marketCap" onclick="setResearchSort('marketCap',this)">MCap</button>
               <button class="research-filter-btn" data-sort="volume24h" onclick="setResearchSort('volume24h',this)">Vol</button>
               <span id="researchCount" style="font-size:10px;color:var(--t2);margin-left:8px;"></span>
-              <button onclick="this.textContent='Loading...';loadResearch(true);setTimeout(()=>this.textContent='Refresh',2000)" style="padding:3px 10px;border:1px solid var(--blue);border-radius:5px;background:transparent;color:var(--blue);font-size:10px;font-weight:600;cursor:pointer;">Refresh</button>
+              <button onclick="this.textContent='Refreshing...';this.disabled=true;loadResearch(true);setTimeout(()=>{this.textContent='Refresh';this.disabled=false},3000)" style="padding:3px 10px;border:1px solid var(--blue);border-radius:5px;background:transparent;color:var(--blue);font-size:10px;font-weight:600;cursor:pointer;">Refresh</button>
             </div>
           </div>
           <div id="researchTable" style="max-height:500px;overflow-y:auto;">
@@ -8980,13 +8980,13 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
           researchData = data.coins;
           researchVolReady = data.volumesReady;
 
-          if (!data.volumesReady) {
+          if (!data.volumesReady || data.volumesLoading) {
             const vp = data.volumeProgress || 0;
-            const statusText = data.volumesLoading ? `⟳ volumes ${vp}%` : '⟳ waiting for volumes...';
+            const statusText = data.volumesLoading ? `⟳ volumes ${vp}%` : '⟳ loading...';
             document.getElementById('researchCount').innerHTML = `${researchData.length} coins <span style="color:var(--yellow);font-size:9px;animation:pulse 1.5s infinite;">${statusText}</span>`;
-            if (!researchPolling) researchPolling = setInterval(() => loadResearch(), 8000);
+            if (!researchPolling) researchPolling = setInterval(() => loadResearch(), 6000);
           } else {
-            document.getElementById('researchCount').textContent = `${researchData.length} coins`;
+            document.getElementById('researchCount').textContent = `${researchData.length} coins ✓`;
             if (researchPolling) { clearInterval(researchPolling); researchPolling = null; }
           }
           renderResearch();
