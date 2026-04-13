@@ -4061,10 +4061,9 @@
               <button class="research-filter-btn active" data-sort="change30d" onclick="setResearchSort('change30d',this)">30D</button>
               <button class="research-filter-btn" data-sort="change7d" onclick="setResearchSort('change7d',this)">7D</button>
               <button class="research-filter-btn" data-sort="change24h" onclick="setResearchSort('change24h',this)">24H</button>
-              <button class="research-filter-btn" data-sort="marketCap" onclick="setResearchSort('marketCap',this)">MCap</button>
               <button class="research-filter-btn" data-sort="volume24h" onclick="setResearchSort('volume24h',this)">Vol</button>
               <span id="researchCount" style="font-size:10px;color:var(--t2);margin-left:8px;"></span>
-              <button onclick="this.textContent='Refreshing...';this.disabled=true;loadResearch(true);setTimeout(()=>{this.textContent='Refresh';this.disabled=false},3000)" style="padding:3px 10px;border:1px solid var(--blue);border-radius:5px;background:transparent;color:var(--blue);font-size:10px;font-weight:600;cursor:pointer;">Refresh</button>
+              <button onclick="this.textContent='Starting...';loadResearch(true);setTimeout(()=>this.textContent='Refresh',2000)" style="padding:3px 10px;border:1px solid var(--blue);border-radius:5px;background:transparent;color:var(--blue);font-size:10px;font-weight:600;cursor:pointer;">Refresh</button>
             </div>
           </div>
           <div id="researchTable" style="max-height:500px;overflow-y:auto;">
@@ -8999,16 +8998,15 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
 
     let researchVolReady = false;
     let researchVolLoading = false;
-    let researchVolProgress = 0;
     let researchPolling = null;
-    let researchVolTs = 0;
+    let researchScanTs = 0;
 
     function updateResearchTimer() {
-      if (!researchVolTs) return;
-      const s = Math.round((Date.now() - researchVolTs) / 1000);
+      if (!researchScanTs) return;
+      const s = Math.round((Date.now() - researchScanTs) / 1000);
       const ago = s < 60 ? s + 's' : s < 3600 ? Math.floor(s/60) + 'm' : Math.floor(s/3600) + 'h';
       const el = document.getElementById('researchCount');
-      if (el && !el.innerHTML.includes('volumes') && !el.innerHTML.includes('loading')) {
+      if (el && !el.innerHTML.includes('Scanning') && !el.innerHTML.includes('loading')) {
         el.innerHTML = `${researchData.length} coins <span style="color:var(--t2);font-size:9px;">${ago} ago</span>`;
       }
     }
@@ -9019,28 +9017,20 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
         const r = await fetch('/api/research?' + (forceRefresh ? 'refresh=1&' : '') + 't=' + Date.now());
         const data = await r.json();
         if (data.success) {
-          researchData = data.coins;
-          researchVolReady = data.volumesReady;
-          researchVolLoading = data.volumesLoading || false;
-          researchVolProgress = data.volumeProgress || 0;
+          if (data.coins.length > 0) researchData = data.coins;
+          researchVolReady = !data.scanning && data.coins.length > 0;
+          researchVolLoading = data.scanning;
+          if (data.lastScanAgo !== null) researchScanTs = Date.now() - data.lastScanAgo * 1000;
 
-          if (!data.volumesReady || data.volumesLoading || (data.volumeProgress > 0 && data.volumeProgress < 100)) {
-            const vp = data.volumeProgress || 0;
-            const statusText = data.volumesLoading ? `⟳ volumes ${vp}%` : '⟳ loading...';
-            document.getElementById('researchCount').innerHTML = `${researchData.length} coins <span style="color:var(--yellow);font-size:9px;animation:pulse 1.5s infinite;">${statusText}</span>`;
-            if (!researchPolling) researchPolling = setInterval(() => loadResearch(), 6000);
+          if (data.scanning) {
+            const pct = data.scanProgress || 0;
+            document.getElementById('researchCount').innerHTML = `<span style="color:var(--yellow);font-weight:600;animation:pulse 1.5s infinite;">⟳ Scanning ${pct}%</span>`;
+            if (!researchPolling) researchPolling = setInterval(() => loadResearch(), 5000);
           } else {
             if (researchPolling) { clearInterval(researchPolling); researchPolling = null; }
-            researchVolTs = data.volUpdatedAgo ? Date.now() - data.volUpdatedAgo * 1000 : Date.now();
             updateResearchTimer();
           }
           renderResearch();
-
-          // Update loading placeholder
-          const loadEl = document.getElementById('researchLoading');
-          if (loadEl && data.volumesLoading) {
-            loadEl.innerHTML = '<span style="animation:pulse 1.5s infinite;">Loading volumes...</span>';
-          }
         }
       } catch (e) {
         document.getElementById('researchTable').innerHTML = '<div style="padding:20px;color:var(--loss);">Error loading research data</div>';
@@ -9100,7 +9090,6 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
 
       let h = `<table class="rtbl"><thead><tr>
         <th>Coin</th><th>Price</th>
-        <th style="cursor:pointer;${researchSortBy==='marketCap'?'color:var(--red);':''}" onclick="setResearchSort('marketCap',document.querySelector('[data-sort=marketCap]'))">MCap${researchSortBy==='marketCap'?(researchSortDir==='asc'?' ▲':' ▼'):''}</th>
         <th style="cursor:pointer;${researchSortBy==='volume24h'?'color:var(--red);':''}" onclick="setResearchSort('volume24h',document.querySelector('[data-sort=volume24h]'))">Vol 24h${researchSortBy==='volume24h'?(researchSortDir==='asc'?' ▲':' ▼'):''}</th>
         <th style="cursor:pointer;${researchSortBy==='change24h'?'color:var(--red);':''}" onclick="setResearchSort('change24h',document.querySelector('[data-sort=change24h]'))">24H${researchSortBy==='change24h'?(researchSortDir==='asc'?' ▼':' ▲'):''}</th>
         <th style="cursor:pointer;${researchSortBy==='change7d'?'color:var(--red);':''}" onclick="setResearchSort('change7d',document.querySelector('[data-sort=change7d]'))">7D${researchSortBy==='change7d'?(researchSortDir==='asc'?' ▼':' ▲'):''}</th>
@@ -9112,8 +9101,7 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
         h += `<tr>
           <td><a class="coin-link" href="https://www.tradingview.com/chart/?symbol=COINBASE%3A${c.symbol}USD" target="_blank">${c.symbol}</a> <span style="color:var(--t3);font-size:9px;">${c.name !== c.symbol ? c.name : ''}</span></td>
           <td>${fmtP(c.price)}</td>
-          <td style="font-size:10px;">${fmtMcap(c.marketCap)}</td>
-          <td style="font-size:10px;">${researchVolReady && !researchVolLoading ? fmtVol(c.volume24h) : '<span style="color:var(--t3);font-size:9px;">...</span>'}</td>
+          <td style="font-size:10px;">${researchVolReady ? fmtVol(c.volume24h) : '<span style="color:var(--t3);font-size:9px;">...</span>'}</td>
           <td>${fmtChg(c.change24h)}</td>
           <td>${fmtChg(c.change7d)}</td>
           <td>${fmtChg(c.change30d)}</td>

@@ -692,76 +692,101 @@ async function fetchAllCbVolumes() {
 setTimeout(fetchAllCbVolumes, 30000);
 setInterval(fetchAllCbVolumes, 30 * 60 * 1000);
 
-// API: Research - Coinbase coins with CryptoRank v1 data
+// API: Research - 100% Coinbase data
 let researchCache = { data: null, ts: 0 };
 const RESEARCH_CACHE_TTL = 300000; // 5 minutes
 const STABLECOINS = new Set(['USDT', 'USDC', 'DAI', 'BUSD', 'TUSD', 'USDP', 'GUSD', 'FRAX', 'USDS', 'PYUSD', 'EURC', 'EUR', 'GBP', 'CBETH']);
 
-app.get('/api/research', async (req, res) => {
-  try {
-    const now = Date.now();
-    const forceRefresh = req.query.refresh === '1';
-    if (!forceRefresh && researchCache.data && (now - researchCache.ts) < RESEARCH_CACHE_TTL) {
-      const lastVol = cbVolumeLastUpdate ? Math.round((now - cbVolumeLastUpdate) / 1000) : null;
-      return res.json({ success: true, coins: researchCache.data, volumesReady: cbVolumeCache.size > 0, volumesLoading: cbVolumeFetching, volumeProgress: cbVolumeProgress, volUpdatedAgo: lastVol });
-    }
+// Research data cache (from background scan)
+let researchCoinsCache = [];
+let researchScanRunning = false;
+let researchScanProgress = 0;
+let researchLastScan = 0;
 
-    // Get Coinbase USD pairs
+async function runResearchScan() {
+  if (researchScanRunning) return;
+  researchScanRunning = true;
+  researchScanProgress = 0;
+  console.log('[RESEARCH] Scan started...');
+  try {
     const cbRes = await fetch('https://api.exchange.coinbase.com/products');
     const products = await cbRes.json();
-    const usdCoins = new Set(products
+    const pairs = products
       .filter(p => p.quote_currency === 'USD' && p.status === 'online')
       .map(p => p.base_currency)
-      .filter(s => !STABLECOINS.has(s)));
+      .filter(s => !STABLECOINS.has(s));
 
-    // Get CryptoRank v1 data (has percentChange fields)
-    const crCoins = [];
-    const r = await fetch(`https://api.cryptorank.io/v1/currencies?limit=1000&api_key=${CRYPTORANK_API_KEY}`);
-    if (r.ok) {
-      const d = await r.json();
-      if (d.data) crCoins.push(...d.data);
-    }
-
-    // Match Coinbase coins with CryptoRank data
     const coins = [];
-    for (const symbol of usdCoins) {
-      const cr = crCoins.find(c => c.symbol === symbol);
-      if (cr && cr.values?.USD) {
-        const v = cr.values.USD;
-        coins.push({
-          symbol,
-          name: cr.name,
-          rank: cr.rank || 9999,
-          price: v.price || 0,
-          marketCap: v.marketCap || 0,
-          volume24h: v.volume24h || 0,
-          change24h: v.percentChange24h || 0,
-          change7d: v.percentChange7d || 0,
-          change30d: v.percentChange30d || 0,
-        });
-      }
+    for (let i = 0; i < pairs.length; i += 2) {
+      const batch = pairs.slice(i, i + 2);
+      await Promise.all(batch.map(async (coin) => {
+        try {
+          // Get daily candles for 24h, 7d, 30d changes
+          const r = await fetch(`https://api.exchange.coinbase.com/products/${coin}-USD/candles?granularity=86400`);
+          if (!r.ok) return;
+          const candles = await r.json();
+          if (!Array.isArray(candles) || candles.length < 2) return;
+
+          const sorted = candles.slice(0, 30).reverse(); // oldest to newest
+          const closes = sorted.map(c => parseFloat(c[4]));
+          const currentPrice = closes[closes.length - 1];
+
+          // Calculate changes
+          const change24h = closes.length >= 2 ? ((currentPrice - closes[closes.length - 2]) / closes[closes.length - 2] * 100) : 0;
+          const change7d = closes.length >= 7 ? ((currentPrice - closes[closes.length - 7]) / closes[closes.length - 7] * 100) : 0;
+          const change30d = closes.length >= 30 ? ((currentPrice - closes[0]) / closes[0] * 100) : (closes.length >= 2 ? ((currentPrice - closes[0]) / closes[0] * 100) : 0);
+
+          // Volume and market cap from cache
+          const volume24h = cbVolumeCache.get(coin) || 0;
+
+          coins.push({
+            symbol: coin,
+            name: coin,
+            price: currentPrice,
+            marketCap: 0,
+            volume24h,
+            change24h: Math.round(change24h * 100) / 100,
+            change7d: Math.round(change7d * 100) / 100,
+            change30d: Math.round(change30d * 100) / 100,
+          });
+        } catch {}
+      }));
+      await sleep(800);
+      researchScanProgress = Math.round((i + 2) / pairs.length * 100);
     }
 
-    // Apply cached Coinbase volumes (always use if available)
-    coins.forEach(c => {
-      const vol = cbVolumeCache.get(c.symbol);
-      if (vol !== undefined) c.volume24h = vol;
-    });
-
-    // If refresh requested and volumes not loading, trigger volume refresh too
-    if (forceRefresh && !cbVolumeFetching) {
-      fetchAllCbVolumes();
-    }
-
-    coins.sort((a, b) => a.rank - b.rank);
-    researchCache = { data: coins, ts: now };
-    const lastVol = cbVolumeLastUpdate ? Math.round((Date.now() - cbVolumeLastUpdate) / 1000) : null;
-    res.json({ success: true, coins, volumesReady: cbVolumeCache.size > 0, volumesLoading: cbVolumeFetching, volumeProgress: cbVolumeProgress, volUpdatedAgo: lastVol });
-  } catch (error) {
-    console.error('Research API error:', error);
-    if (researchCache.data) return res.json({ success: true, coins: researchCache.data });
-    res.status(500).json({ success: false, error: error.message });
+    // Sort by volume desc
+    coins.sort((a, b) => b.volume24h - a.volume24h);
+    researchCoinsCache = coins;
+    researchLastScan = Date.now();
+    researchScanProgress = 100;
+    console.log(`[RESEARCH] Scan complete: ${coins.length} coins`);
+  } catch (e) {
+    console.error('[RESEARCH] Error:', e.message);
+  } finally {
+    researchScanRunning = false;
   }
+}
+
+// Auto-scan 20s after start, then every 30min
+setTimeout(runResearchScan, 20000);
+setInterval(runResearchScan, 30 * 60 * 1000);
+
+app.get('/api/research', (req, res) => {
+  if (req.query.refresh === '1' && !researchScanRunning) {
+    runResearchScan();
+  }
+  const lastScan = researchLastScan ? Math.round((Date.now() - researchLastScan) / 1000) : null;
+  res.json({
+    success: true,
+    coins: researchCoinsCache,
+    scanning: researchScanRunning,
+    scanProgress: researchScanProgress,
+    lastScanAgo: lastScan,
+    volumesReady: !researchScanRunning && researchCoinsCache.length > 0,
+    volumesLoading: researchScanRunning,
+    volumeProgress: researchScanProgress,
+  });
 });
 
 // API: Recovery Scanner - finds coins with big drop + early recovery
