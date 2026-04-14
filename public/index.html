@@ -4873,7 +4873,15 @@
     // Cancel order
     async function cancelOrderFromSelected(orderId, coin) {
       if (!confirm(`Cancel ${coin} order ${orderId.slice(0,8)}...?`)) return;
+      // Check if order has any fills before cancelling
+      const order = allOrders.find(o => o.order_id === orderId);
+      const hasFills = order && parseFloat(order.filled_size || 0) > 0;
       await cancelOrder(orderId);
+      // Remove from selected if no fills
+      if (!hasFills) {
+        selectedOrders = selectedOrders.filter(id => id !== orderId);
+        saveSelectedOrders();
+      }
     }
 
     async function cancelOrder(orderId) {
