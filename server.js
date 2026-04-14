@@ -940,6 +940,136 @@ app.get('/api/recovery-scan', async (req, res) => {
   }
 });
 
+// API: Dip Scanner — finds coins at bottom on 15min candles
+let dipCacheData = { data: null, ts: 0 };
+let dipScanRunning = false;
+let dipScanProgress = 0;
+
+async function runDipScan() {
+  if (dipScanRunning) return;
+  dipScanRunning = true;
+  dipScanProgress = 0;
+  console.log('[DIP] Scan started...');
+  try {
+    const cbRes = await fetch('https://api.exchange.coinbase.com/products');
+    const products = await cbRes.json();
+    const pairs = products
+      .filter(p => p.quote_currency === 'USD' && p.status === 'online')
+      .map(p => p.base_currency)
+      .filter(s => !STABLECOINS.has(s));
+
+    const results = [];
+    let scanned = 0;
+
+    for (let i = 0; i < pairs.length; i += 2) {
+      const batch = pairs.slice(i, i + 2);
+      await Promise.all(batch.map(async (coin) => {
+        try {
+          // 15-min candles (last ~24h = 96 candles)
+          const r = await fetch(`https://api.exchange.coinbase.com/products/${coin}-USD/candles?granularity=900`);
+          if (!r.ok) return;
+          const candles = await r.json();
+          if (!Array.isArray(candles) || candles.length < 20) return;
+          scanned++;
+
+          const sorted = candles.slice(0, 96).reverse(); // oldest to newest
+          const closes = sorted.map(c => parseFloat(c[4]));
+          const lows = sorted.map(c => parseFloat(c[1]));
+          const highs = sorted.map(c => parseFloat(c[2]));
+          const opens = sorted.map(c => parseFloat(c[3]));
+          const volumes = sorted.map(c => parseFloat(c[5]));
+
+          const currentPrice = closes[closes.length - 1];
+
+          // Find peak in last 24h (96 candles)
+          const peak = Math.max(...highs);
+          // Find bottom in last 24h
+          const bottom = Math.min(...lows);
+          const bottomIdx = lows.indexOf(bottom);
+
+          // Drop from peak
+          const dropPct = ((bottom - peak) / peak) * 100;
+
+          // How close to bottom now (0% = at bottom, 100% = at peak)
+          const range = peak - bottom;
+          const fromBottom = range > 0 ? ((currentPrice - bottom) / range) * 100 : 50;
+
+          // Candles since bottom
+          const candlesSinceBottom = closes.length - 1 - bottomIdx;
+
+          // Last 3 candles trend
+          const last3 = closes.slice(-3);
+          const last3Rising = last3.length >= 3 && last3[2] > last3[0];
+          const lastGreen = closes.length >= 2 && closes[closes.length - 1] > opens[opens.length - 1];
+
+          // Recent volume vs average
+          const recentVol = volumes.slice(-4).reduce((a, b) => a + b, 0) / 4;
+          const avgVol = volumes.slice(0, -4).reduce((a, b) => a + b, 0) / Math.max(1, volumes.length - 4);
+          const volSurge = avgVol > 0 ? recentVol / avgVol : 1;
+
+          // Volume in USD
+          const vol24h = cbVolumeCache.get(coin) || 0;
+
+          // Filter: significant drop, near bottom, recent bottom
+          if (dropPct < -5 && fromBottom < 25 && candlesSinceBottom <= 20 && candlesSinceBottom >= 1) {
+            // Score
+            const dropScore = Math.min(Math.abs(dropPct) * 1.5, 30);
+            const nearBottomScore = Math.max(0, 25 - fromBottom); // closer to bottom = higher
+            const freshScore = candlesSinceBottom <= 5 ? 20 : candlesSinceBottom <= 10 ? 12 : 5;
+            const trendScore = last3Rising ? 15 : lastGreen ? 8 : 0;
+            const volScore = Math.min(volSurge * 8, 20);
+            const liqPenalty = vol24h < 50000 ? -10 : vol24h < 200000 ? -5 : 0;
+            const score = dropScore + nearBottomScore + freshScore + trendScore + volScore + liqPenalty;
+
+            results.push({
+              coin,
+              currentPrice,
+              peakPrice: peak,
+              bottomPrice: bottom,
+              dropPct: Math.round(dropPct * 100) / 100,
+              fromBottom: Math.round(fromBottom * 10) / 10,
+              candlesSinceBottom,
+              minutesSinceBottom: candlesSinceBottom * 15,
+              isRising: last3Rising,
+              lastGreen,
+              volSurge: Math.round(volSurge * 100) / 100,
+              volume24h: vol24h,
+              score: Math.round(score * 10) / 10,
+            });
+          }
+        } catch {}
+      }));
+      await sleep(800);
+      dipScanProgress = Math.round((i + 2) / pairs.length * 100);
+    }
+
+    results.sort((a, b) => b.score - a.score);
+    dipCacheData = { data: results, ts: Date.now() };
+    dipScanProgress = 100;
+    console.log(`[DIP] Scan complete: ${results.length} found (scanned: ${scanned}/${pairs.length})`);
+  } catch (e) {
+    console.error('[DIP] Error:', e.message);
+  } finally {
+    dipScanRunning = false;
+  }
+}
+
+// Auto-scan 45s after start, then every 15min
+setTimeout(runDipScan, 45000);
+setInterval(runDipScan, 15 * 60 * 1000);
+
+app.get('/api/dip-scan', (req, res) => {
+  if (req.query.refresh === '1' && !dipScanRunning) runDipScan();
+  const lastScan = dipCacheData.ts ? Math.round((Date.now() - dipCacheData.ts) / 1000) : null;
+  res.json({
+    success: true,
+    results: dipCacheData.data || [],
+    scanning: dipScanRunning,
+    scanProgress: dipScanProgress,
+    lastScanAgo: lastScan,
+  });
+});
+
 // API: CryptoRank Currency Details
 app.get('/api/cryptorank/currency/:key', async (req, res) => {
   try {

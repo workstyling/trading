@@ -4053,6 +4053,20 @@
           </div>
         </div>
 
+        <!-- Dip Scanner -->
+        <div id="dipPanel" style="border:1px solid var(--b0);border-radius:var(--r2);background:var(--s1);overflow:hidden;margin-top:14px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--s2);border-bottom:1px solid var(--b0);position:relative;">
+            <h3 style="margin:0;font-size:13px;font-weight:600;color:var(--yellow);">Dip Scanner — Buy at Bottom (15min)</h3>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <span id="dipCount" style="font-size:10px;color:var(--t2);"></span>
+              <button onclick="this.textContent='Starting...';loadDip(true);setTimeout(()=>this.textContent='Refresh',2000)" style="padding:3px 10px;border:1px solid var(--yellow);border-radius:5px;background:transparent;color:var(--yellow);font-size:10px;font-weight:600;cursor:pointer;">Refresh</button>
+            </div>
+          </div>
+          <div id="dipTable" style="max-height:400px;overflow-y:auto;">
+            <div style="text-align:center;padding:30px;color:var(--t2);font-size:12px;">Waiting for scan data...</div>
+          </div>
+        </div>
+
         <!-- Research Panel -->
         <div id="researchPanel" style="border:1px solid var(--b0);border-radius:var(--r2);background:var(--s1);overflow:hidden;margin-top:14px;">
           <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--s2);border-bottom:1px solid var(--b0);">
@@ -9112,6 +9126,97 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
       h += '</tbody></table>';
       document.getElementById('researchTable').innerHTML = h;
     }
+
+    // ========== DIP SCANNER ==========
+    let dipScanTs = 0;
+    let dipPolling = null;
+    let dipWasScanning = false;
+
+    async function loadDip(forceRefresh = false) {
+      try {
+        const r = await fetch('/api/dip-scan?' + (forceRefresh ? 'refresh=1&' : '') + 't=' + Date.now());
+        const data = await r.json();
+        if (!data.success) return;
+        if (data.lastScanAgo !== null) dipScanTs = Date.now() - data.lastScanAgo * 1000;
+
+        if (data.scanning) {
+          dipWasScanning = true;
+          document.getElementById('dipCount').innerHTML = `<span style="color:var(--yellow);font-weight:600;animation:pulse 1.5s infinite;">⟳ Scanning ${data.scanProgress || 0}%</span>`;
+          if (!dipPolling) dipPolling = setInterval(() => loadDip(), 4000);
+          if (data.results.length > 0) renderDip(data.results);
+        } else {
+          if (dipPolling) { clearInterval(dipPolling); dipPolling = null; }
+          if (data.results.length > 0) renderDip(data.results);
+          if (dipWasScanning) {
+            dipWasScanning = false;
+            document.getElementById('dipCount').innerHTML = `<span style="color:var(--green);font-weight:700;">${data.results.length} found ✓</span>`;
+            setTimeout(updateDipTimer, 3000);
+          } else {
+            updateDipTimer();
+          }
+        }
+      } catch (e) { console.error('Dip load error:', e); }
+    }
+
+    function updateDipTimer() {
+      if (!dipScanTs) return;
+      const s = Math.round((Date.now() - dipScanTs) / 1000);
+      const ago = s < 60 ? s + 's' : s < 3600 ? Math.floor(s/60) + 'm' : Math.floor(s/3600) + 'h';
+      const el = document.getElementById('dipCount');
+      if (el && !el.innerHTML.includes('Scanning')) {
+        const count = el.textContent.match(/\d+/)?.[0] || '0';
+        el.innerHTML = `${count} found <span style="color:var(--t2);font-size:9px;">${ago} ago</span>`;
+      }
+    }
+    setInterval(updateDipTimer, 10000);
+
+    function renderDip(results) {
+      const fmtP = (n) => {
+        if (n < 0.001) return '$' + n.toFixed(8);
+        if (n < 1) return '$' + n.toFixed(6);
+        if (n < 100) return '$' + n.toFixed(4);
+        return '$' + n.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+      };
+      const fmtV = (n) => {
+        if (!n) return '—';
+        if (n >= 1e9) return '$' + (n/1e9).toFixed(1) + 'B';
+        if (n >= 1e6) return '$' + (n/1e6).toFixed(1) + 'M';
+        if (n >= 1e3) return '$' + (n/1e3).toFixed(0) + 'K';
+        return '$' + n.toFixed(0);
+      };
+
+      let h = `<table class="rtbl"><thead><tr>
+        <th>Coin</th><th>Price</th><th>Drop</th><th>From Bottom</th>
+        <th>Time</th><th>Trend</th><th>Vol Surge</th><th>Vol 24h</th><th>Score</th><th>Buy</th>
+      </tr></thead><tbody>`;
+
+      results.forEach(r => {
+        const timeText = r.minutesSinceBottom < 60 ? r.minutesSinceBottom + 'min' : Math.floor(r.minutesSinceBottom/60) + 'h' + (r.minutesSinceBottom%60) + 'm';
+        const trendIcon = r.isRising ? '<span style="color:var(--green);">↑ Rising</span>' : r.lastGreen ? '<span style="color:var(--green);">↑ Green</span>' : '<span style="color:var(--loss);">↓ Red</span>';
+        const volText = r.volSurge >= 1.5 ? `<span style="color:var(--green);">${r.volSurge}x</span>` : `${r.volSurge}x`;
+        const scoreColor = r.score >= 50 ? 'var(--green)' : r.score >= 35 ? 'var(--yellow)' : 'var(--t1)';
+        const bottomText = r.fromBottom < 5 ? `<span style="color:var(--green);font-weight:700;">${r.fromBottom}%</span>` : `${r.fromBottom}%`;
+
+        h += `<tr>
+          <td><a class="coin-link" href="https://www.tradingview.com/chart/?symbol=COINBASE%3A${r.coin}USD" target="_blank">${r.coin}</a></td>
+          <td>${fmtP(r.currentPrice)}</td>
+          <td style="color:var(--loss);font-weight:600;">${r.dropPct.toFixed(1)}%</td>
+          <td>${bottomText}</td>
+          <td style="font-size:10px;">${timeText} ago</td>
+          <td>${trendIcon}</td>
+          <td style="font-size:10px;">${volText}</td>
+          <td style="font-size:10px;">${fmtV(r.volume24h)}</td>
+          <td style="color:${scoreColor};font-weight:700;">${r.score}</td>
+          <td><button class="select-coin-btn" onclick="selectCoinForBuy('${r.coin}')" title="Buy ${r.coin}">↑</button></td>
+        </tr>`;
+      });
+
+      h += '</tbody></table>';
+      if (!results.length) h = '<div class="empty" style="padding:20px;text-align:center;color:var(--t3);">No dips found</div>';
+      document.getElementById('dipTable').innerHTML = h;
+    }
+
+    loadDip();
 
     // ========== RECOVERY SCANNER ==========
     let recoveryScanTs = 0;
