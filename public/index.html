@@ -4946,6 +4946,7 @@
     }
     let allOrders = [];
     let prevOrderStatuses = {}; // Track order statuses for completion detection
+    let recentlyFilled = {}; // Track when orders got filled { orderId: timestamp }
     // Track which BUY orders are selected for progress bar per coin { "BTC": ["order_id1", "order_id2"], ... }
     const BAR_SELECTED_KEY = 'barSelectedOrders';
     let barSelectedOrders = JSON.parse(safeStorage.getItem(BAR_SELECTED_KEY) || '{}');
@@ -7414,7 +7415,11 @@ Requirements:
             barCell = `<div class="bar-selector${isBarActive ? ' active' : ''}" data-order-id="${o.order_id}" data-coin="${coin}" title="Include in progress bar"></div>`;
           }
           const isMuted = mutedOrders.includes(o.order_id);
-          const isRecentFill = isSellOrder && o.status === 'FILLED' && o.created_time && (Date.now() - new Date(o.created_time).getTime()) < 600000;
+          // Track when orders get filled
+          if (o.status === 'FILLED' && !recentlyFilled[o.order_id] && prevOrderStatuses[o.order_id] === 'OPEN') {
+            recentlyFilled[o.order_id] = Date.now();
+          }
+          const isRecentFill = isSellOrder && o.status === 'FILLED' && recentlyFilled[o.order_id] && (Date.now() - recentlyFilled[o.order_id]) < 600000;
           const rowStyle = isMuted ? 'opacity:0.3;' : isRecentFill ? 'background:rgba(48,209,88,0.12);border-left:3px solid var(--green);' : '';
           h += `<tr data-order-id="${o.order_id}" style="${rowStyle}">
             <td><div class="order-selector${isSelected ? ' selected' : ''}" data-order-id="${o.order_id}"></div></td>
