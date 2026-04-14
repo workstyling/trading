@@ -7416,8 +7416,12 @@ Requirements:
           }
           const isMuted = mutedOrders.includes(o.order_id);
           // Track when orders get filled
-          if (o.status === 'FILLED' && !recentlyFilled[o.order_id] && prevOrderStatuses[o.order_id] === 'OPEN') {
-            recentlyFilled[o.order_id] = Date.now();
+          if (o.status === 'FILLED' && !recentlyFilled[o.order_id]) {
+            if (prevOrderStatuses[o.order_id] === 'OPEN') {
+              recentlyFilled[o.order_id] = Date.now(); // just filled
+            } else if (o.created_time && (Date.now() - new Date(o.created_time).getTime()) < 300000) {
+              recentlyFilled[o.order_id] = new Date(o.created_time).getTime(); // recently created & filled
+            }
           }
           const isRecentFill = o.status === 'FILLED' && recentlyFilled[o.order_id] && (Date.now() - recentlyFilled[o.order_id]) < 300000;
           const isRecentOpen = o.status === 'OPEN' && o.created_time && (Date.now() - new Date(o.created_time).getTime()) < 300000;
