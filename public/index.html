@@ -9040,6 +9040,9 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
             const pct = data.scanProgress || 0;
             document.getElementById('researchCount').innerHTML = `<span style="color:var(--yellow);font-weight:600;animation:pulse 1.5s infinite;">⟳ Scanning ${pct}%</span>`;
             if (!researchPolling) researchPolling = setInterval(() => loadResearch(), 5000);
+          } else if (data.coins.length === 0 && !data.lastScanAgo) {
+            document.getElementById('researchCount').innerHTML = `<span style="color:var(--t2);font-size:9px;animation:pulse 1.5s infinite;">⟳ starting...</span>`;
+            if (!researchPolling) researchPolling = setInterval(() => loadResearch(), 5000);
           } else {
             if (researchPolling) { clearInterval(researchPolling); researchPolling = null; }
             updateResearchTimer();
