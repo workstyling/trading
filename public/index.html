@@ -9141,9 +9141,16 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
 
         if (data.scanning) {
           dipWasScanning = true;
-          document.getElementById('dipCount').innerHTML = `<span style="color:var(--yellow);font-weight:600;animation:pulse 1.5s infinite;">⟳ Scanning ${data.scanProgress || 0}%</span>`;
+          const pct = data.scanProgress || 0;
+          document.getElementById('dipCount').innerHTML = `<span style="color:var(--yellow);font-weight:600;animation:pulse 1.5s infinite;">⟳ Scanning ${pct}%</span>`;
+          document.getElementById('dipTable').querySelector('div[style]')?.remove();
           if (!dipPolling) dipPolling = setInterval(() => loadDip(), 4000);
           if (data.results.length > 0) renderDip(data.results);
+          else document.getElementById('dipTable').innerHTML = `<div style="text-align:center;padding:20px;color:var(--yellow);font-size:12px;animation:pulse 1.5s infinite;">Scanning ${pct}%... please wait</div>`;
+        } else if (data.results.length === 0 && !data.lastScanAgo) {
+          // Not started yet — keep polling
+          document.getElementById('dipCount').innerHTML = `<span style="color:var(--t2);font-size:9px;animation:pulse 1.5s infinite;">⟳ starting...</span>`;
+          if (!dipPolling) dipPolling = setInterval(() => loadDip(), 4000);
         } else {
           if (dipPolling) { clearInterval(dipPolling); dipPolling = null; }
           if (data.results.length > 0) renderDip(data.results);
@@ -9257,17 +9264,15 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
           }
           // Show cached results while scanning
           if (data.results.length > 0) renderRecovery(data.results);
+        } else if (data.results.length === 0 && !data.lastScanAgo) {
+          // Not started yet — keep polling
+          document.getElementById('recoveryCount').innerHTML = `<span style="color:var(--t2);font-size:9px;animation:pulse 1.5s infinite;">⟳ starting...</span>`;
+          if (!recoveryPolling) recoveryPolling = setInterval(() => loadRecovery(), 4000);
         } else {
-          // Scan finished
           if (bar) bar.remove();
           if (recoveryPolling) { clearInterval(recoveryPolling); recoveryPolling = null; }
+          if (data.results.length > 0) { renderRecovery(data.results); lastRecoveryCount = data.results.length; }
 
-          if (data.results.length > 0) {
-            renderRecovery(data.results);
-            lastRecoveryCount = data.results.length;
-          }
-
-          // Flash green if just finished scanning
           if (wasScanning) {
             wasScanning = false;
             document.getElementById('recoveryCount').innerHTML =
