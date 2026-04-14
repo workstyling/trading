@@ -7414,7 +7414,9 @@ Requirements:
             barCell = `<div class="bar-selector${isBarActive ? ' active' : ''}" data-order-id="${o.order_id}" data-coin="${coin}" title="Include in progress bar"></div>`;
           }
           const isMuted = mutedOrders.includes(o.order_id);
-          h += `<tr data-order-id="${o.order_id}" style="${isMuted ? 'opacity:0.3;' : ''}">
+          const isRecentFill = isSellOrder && o.status === 'FILLED' && o.created_time && (Date.now() - new Date(o.created_time).getTime()) < 600000;
+          const rowStyle = isMuted ? 'opacity:0.3;' : isRecentFill ? 'background:rgba(48,209,88,0.12);border-left:3px solid var(--green);' : '';
+          h += `<tr data-order-id="${o.order_id}" style="${rowStyle}">
             <td><div class="order-selector${isSelected ? ' selected' : ''}" data-order-id="${o.order_id}"></div></td>
             <td style="display:flex;gap:4px;align-items:center;">${barCell}<input type="checkbox" ${isMuted ? '' : 'checked'} onchange="toggleMuteOrder('${o.order_id}')" title="${isMuted ? 'Enable in calculations' : 'Disable from calculations'}" style="width:14px;height:14px;accent-color:var(--green);cursor:pointer;"></td>
             <td>${orderId}</td>
