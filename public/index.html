@@ -7457,9 +7457,10 @@ Requirements:
           const breakevenPct = ((breakevenPrice - buyPrice) / buyPrice * 100);
 
           if (buyPrice > 0) {
-            const currentBid = bestBid > 0 ? bestBid : buyPrice;
+            const currentAsk = bestAsk > 0 ? bestAsk : buyPrice;
+            const effectivePrice = currentAsk * (1 - fee); // what you actually get after fee
             const targetPct = ((targetSellPrice - buyPrice) / buyPrice * 100);
-            const currentPct = ((currentBid - buyPrice) / buyPrice * 100);
+            const currentPct = ((effectivePrice - buyPrice) / buyPrice * 100);
 
             const rightMax = targetPct + 1;
             const baseLeft = -(targetPct + 1);
@@ -7779,13 +7780,15 @@ Requirements:
         // Update all progress bars for this coin (multiple bars supported)
         const progressBars = document.querySelectorAll(`[id^="progress_${coin}"]`);
         progressBars.forEach(progressEl => {
-          if (bestBid > 0) {
+          if (bestAsk > 0) {
             const buyPrice = parseFloat(progressEl.dataset.buyPrice) || 0;
             const targetSellPrice = parseFloat(progressEl.dataset.targetPrice) || 0;
+            const fee = parseFloat(progressEl.dataset.fee) || getFeeLimit();
 
             if (buyPrice > 0) {
+              const effectivePrice = bestAsk * (1 - fee);
               const targetPct = ((targetSellPrice - buyPrice) / buyPrice * 100);
-              const currentPct = ((bestBid - buyPrice) / buyPrice * 100);
+              const currentPct = ((effectivePrice - buyPrice) / buyPrice * 100);
               const breakevenPct = parseFloat(progressEl.dataset.breakevenPct) || 0.12;
 
               const rightMax = targetPct + 1;
