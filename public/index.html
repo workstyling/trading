@@ -9070,6 +9070,7 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
     }
 
     function renderResearch() {
+      if (!researchData.length) return;
       const sorted = [...researchData].sort((a, b) => {
         const dir = researchSortDir === 'asc' ? 1 : -1;
         if (researchSortBy === 'marketCap' || researchSortBy === 'volume24h') {
