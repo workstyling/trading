@@ -1171,6 +1171,108 @@ async function runPredictorScan(tf = predictorState.tf) {
 setTimeout(() => runPredictorScan().catch(e => console.error('[PREDICTOR] init scan:', e.message)), 60000);
 setInterval(() => runPredictorScan().catch(e => console.error('[PREDICTOR] periodic scan:', e.message)), 10 * 60 * 1000);
 
+// ── Full-market scan: every online USD pair on Coinbase, heuristic-only (no NN training) ──
+const predictorAllState = {
+  scanning: false,
+  progress: 0,
+  scanned: 0,
+  total: 0,
+  lastScanAt: 0,
+  tf: '1h',
+  results: [],
+};
+
+async function runPredictorAllScan(tf = '1h') {
+  if (predictorAllState.scanning) return;
+  predictorAllState.scanning = true;
+  predictorAllState.progress = 0;
+  predictorAllState.scanned = 0;
+  predictorAllState.tf = tf;
+  console.log(`[PREDICTOR-ALL] Scan started on ${tf}`);
+  try {
+    const cbRes = await fetch('https://api.exchange.coinbase.com/products');
+    const products = await cbRes.json();
+    const pairs = products
+      .filter(p => p.quote_currency === 'USD' && p.status === 'online')
+      .map(p => p.base_currency)
+      .filter(s => !STABLECOINS.has(s));
+    predictorAllState.total = pairs.length;
+
+    const out = [];
+    const BATCH = 2;
+    for (let i = 0; i < pairs.length; i += BATCH) {
+      const batch = pairs.slice(i, i + BATCH);
+      await Promise.all(batch.map(async (symbol) => {
+        try {
+          const r = await predictor.predictSymbol(symbol, tf, { candleCount: 200 });
+          if (!r.error && r.signal) {
+            const vol24h = cbVolumeCache.get(symbol) || 0;
+            out.push({
+              symbol, tf,
+              direction: r.signal.direction,
+              probability: r.signal.probability,
+              confidence: r.signal.confidence,
+              heuristic: r.signal.heuristic,
+              price: r.signal.price,
+              stop: r.signal.stop,
+              tp: r.signal.tp,
+              riskReward: r.signal.riskReward,
+              rsi: r.indicators.rsi14,
+              atr: r.indicators.atr14,
+              volume24h: vol24h,
+            });
+          }
+        } catch {}
+      }));
+      predictorAllState.scanned += batch.length;
+      predictorAllState.progress = Math.round(predictorAllState.scanned / pairs.length * 100);
+      await sleep(700);
+    }
+
+    out.sort((a, b) => {
+      const dirRank = d => d === 'BUY' ? 0 : d === 'SELL' ? 1 : 2;
+      const ra = dirRank(a.direction), rb = dirRank(b.direction);
+      if (ra !== rb) return ra - rb;
+      return b.confidence - a.confidence;
+    });
+    predictorAllState.results = out;
+    predictorAllState.lastScanAt = Date.now();
+    console.log(`[PREDICTOR-ALL] Scan complete: ${out.length} coins, ${out.filter(x=>x.direction!=='HOLD').length} signals`);
+  } catch (e) {
+    console.error('[PREDICTOR-ALL] error:', e.message);
+  } finally {
+    predictorAllState.scanning = false;
+    predictorAllState.progress = 100;
+  }
+}
+
+// Auto-scan all coins 90s after start, then every 30 minutes
+setTimeout(() => runPredictorAllScan().catch(e => console.error('[PREDICTOR-ALL] init:', e.message)), 90000);
+setInterval(() => runPredictorAllScan().catch(e => console.error('[PREDICTOR-ALL] periodic:', e.message)), 30 * 60 * 1000);
+
+app.get('/api/predictor/scan-all', (req, res) => {
+  if (req.query.refresh === '1' && !predictorAllState.scanning) {
+    runPredictorAllScan(req.query.tf || predictorAllState.tf).catch(() => {});
+  }
+  const minVol = parseFloat(req.query.minVol) || 0;
+  const dirFilter = (req.query.dir || '').toUpperCase();
+  let results = predictorAllState.results;
+  if (minVol > 0) results = results.filter(r => r.volume24h >= minVol);
+  if (dirFilter && ['BUY', 'SELL', 'HOLD'].includes(dirFilter)) {
+    results = results.filter(r => r.direction === dirFilter);
+  }
+  res.json({
+    success: true,
+    scanning: predictorAllState.scanning,
+    progress: predictorAllState.progress,
+    scanned: predictorAllState.scanned,
+    total: predictorAllState.total,
+    lastScanAgo: predictorAllState.lastScanAt ? Math.round((Date.now() - predictorAllState.lastScanAt) / 1000) : null,
+    tf: predictorAllState.tf,
+    results,
+  });
+});
+
 // API: get current scan results + status
 app.get('/api/predictor/scan', (req, res) => {
   if (req.query.refresh === '1' && !predictorState.scanning) {

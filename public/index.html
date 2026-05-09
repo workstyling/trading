@@ -4457,10 +4457,33 @@
           </div>
         </div>
 
+        <!-- ALL Coinbase coins scan -->
+        <div class="pred-card">
+          <div class="pred-card-head">
+            <h3>🌐 Scan ALL Coinbase coins <span style="color:var(--t2);font-size:10px;font-weight:400;">(heuristic-only, ~3-5 min)</span></h3>
+            <div class="pred-controls">
+              <label>Filter</label>
+              <select class="pred-select" id="predAllDir">
+                <option value="">All</option>
+                <option value="BUY" selected>BUY only</option>
+                <option value="SELL">SELL only</option>
+                <option value="HOLD">HOLD only</option>
+              </select>
+              <label>Min vol $</label>
+              <input type="number" class="pred-input" id="predAllMinVol" value="100000" step="50000" min="0" style="width:100px;">
+              <button class="pred-btn primary" id="predAllRefreshBtn" onclick="refreshPredictorAll()">Refresh</button>
+              <span id="predAllStatus" style="font-size:10px;color:var(--t2);">Idle</span>
+            </div>
+          </div>
+          <div id="predAllTable" style="max-height:600px;overflow-y:auto;">
+            <div style="text-align:center;padding:30px;color:var(--t2);font-size:12px;">Waiting for first scan... auto-runs 90s after server start.</div>
+          </div>
+        </div>
+
         <!-- Watchlist scan results -->
         <div class="pred-card">
           <div class="pred-card-head">
-            <h3>Watchlist scan</h3>
+            <h3>Watchlist scan <span style="color:var(--t2);font-size:10px;font-weight:400;">(NN-trained, 15 coins)</span></h3>
             <span id="predScanProgress" style="font-size:10px;color:var(--t2);"></span>
           </div>
           <div id="predScanTable" style="max-height:550px;overflow-y:auto;">
@@ -9766,6 +9789,7 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
       try { safeStorage.setItem('activeTab', name); } catch {}
       if (name === 'predictor') {
         loadPredictorScan();
+        loadPredictorAll();
         loadPredictorWatchlist();
         loadPredictorSignals();
       }
@@ -9796,6 +9820,64 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
       if (dir === 'BUY') return '<span class="badge-buy">BUY</span>';
       if (dir === 'SELL') return '<span class="badge-sell">SELL</span>';
       return '<span class="badge-hold">HOLD</span>';
+    }
+
+    let predictorAllPolling = null;
+    async function loadPredictorAll() {
+      try {
+        const tf = document.getElementById('predTf').value;
+        const dir = document.getElementById('predAllDir').value;
+        const minVol = document.getElementById('predAllMinVol').value;
+        const r = await fetch(`/api/predictor/scan-all?tf=${tf}&dir=${dir}&minVol=${minVol}`);
+        const data = await r.json();
+        if (!data.success) return;
+        renderPredictorAll(data);
+        if (data.scanning && !predictorAllPolling) {
+          predictorAllPolling = setInterval(loadPredictorAll, 4000);
+        } else if (!data.scanning && predictorAllPolling) {
+          clearInterval(predictorAllPolling); predictorAllPolling = null;
+        }
+      } catch (e) { console.error('Predictor-all load error:', e); }
+    }
+    function refreshPredictorAll() {
+      const tf = document.getElementById('predTf').value;
+      const btn = document.getElementById('predAllRefreshBtn');
+      btn.textContent = 'Starting...';
+      fetch(`/api/predictor/scan-all?tf=${tf}&refresh=1`)
+        .then(() => setTimeout(() => { btn.textContent = 'Refresh'; loadPredictorAll(); }, 1500));
+    }
+    function renderPredictorAll(data) {
+      const status = document.getElementById('predAllStatus');
+      if (data.scanning) {
+        status.innerHTML = `<span style="color:var(--blue);">Scanning ${data.scanned}/${data.total} (${data.progress}%)</span>`;
+      } else {
+        const totalSignals = data.results.length;
+        status.innerHTML = `${totalSignals} matched · <span style="color:var(--t1);">${predFmt.ago(data.lastScanAgo)}</span>`;
+      }
+      const tbl = document.getElementById('predAllTable');
+      if (!data.results.length) {
+        tbl.innerHTML = `<div style="text-align:center;padding:30px;color:var(--t2);font-size:12px;">${data.scanning ? 'Scanning... results will appear as they come in.' : 'No coins match current filters.'}</div>`;
+        return;
+      }
+      const rows = data.results.slice(0, 100).map((r, i) => `<tr>
+        <td style="color:var(--t2);">${i+1}</td>
+        <td><b>${r.symbol}</b></td>
+        <td>${dirBadge(r.direction)}</td>
+        <td><span class="pred-bar"><span class="pred-bar-fill" style="width:${(r.probability*100).toFixed(0)}%;"></span></span>${(r.probability*100).toFixed(1)}%</td>
+        <td style="color:${r.confidence>0.5?'var(--green)':r.confidence>0.3?'var(--yellow)':'var(--t2)'}">${(r.confidence*100).toFixed(0)}%</td>
+        <td>${predFmt.price(r.price)}</td>
+        <td>${r.stop != null ? predFmt.price(r.stop) : '—'}</td>
+        <td>${r.tp != null ? predFmt.price(r.tp) : '—'}</td>
+        <td>${r.riskReward != null ? '1:' + r.riskReward : '—'}</td>
+        <td>${r.rsi != null ? r.rsi.toFixed(1) : '—'}</td>
+        <td>${r.heuristic >= 0 ? '+' : ''}${r.heuristic}</td>
+        <td>$${r.volume24h ? (r.volume24h/1000).toFixed(0)+'k' : '—'}</td>
+        <td><button class="pred-btn" style="padding:3px 8px;font-size:10px;" onclick="document.getElementById('predCoin').value='${r.symbol}';predictCoin();window.scrollTo({top:0,behavior:'smooth'});">→</button></td>
+      </tr>`).join('');
+      tbl.innerHTML = `<table class="pred-table">
+        <thead><tr>
+          <th>#</th><th>Coin</th><th>Signal</th><th>P(up)</th><th>Conf</th><th>Price</th><th>Stop</th><th>TP</th><th>RR</th><th>RSI</th><th>Heur</th><th>Vol 24h</th><th></th>
+        </tr></thead><tbody>${rows}</tbody></table>`;
     }
 
     async function loadPredictorScan() {
@@ -10026,10 +10108,14 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
       } catch (e) { console.error('signals load:', e); }
     }
 
-    // Refresh scan when timeframe changes
+    // Refresh scan when timeframe changes; reload all-coins table on filter change
     document.addEventListener('DOMContentLoaded', () => {
       const tfSel = document.getElementById('predTf');
-      if (tfSel) tfSel.addEventListener('change', () => refreshPredictorScan());
+      if (tfSel) tfSel.addEventListener('change', () => { refreshPredictorScan(); loadPredictorAll(); });
+      const dirSel = document.getElementById('predAllDir');
+      if (dirSel) dirSel.addEventListener('change', loadPredictorAll);
+      const minVolInp = document.getElementById('predAllMinVol');
+      if (minVolInp) minVolInp.addEventListener('change', loadPredictorAll);
     });
   </script>
   <div class="toast-container" id="toastContainer"></div>
