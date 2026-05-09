@@ -10146,6 +10146,10 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
 
     /* ═══════════════════════════ MOONSHOTS ═══════════════════════════ */
     let moonshotsPolling = null;
+    let moonSortBy = 'score';
+    let moonSortDir = 'desc';
+    let moonLastData = null;
+
     async function loadMoonshots() {
       try {
         const minScore = document.getElementById('moonMinScore').value;
@@ -10154,6 +10158,7 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
         const r = await fetch(`/api/moonshots/scan?minScore=${minScore}&minVol=${minVol}&fresh=${fresh}`);
         const data = await r.json();
         if (!data.success) return;
+        moonLastData = data;
         renderMoonshots(data);
         if (data.scanning && !moonshotsPolling) {
           moonshotsPolling = setInterval(loadMoonshots, 5000);
@@ -10168,27 +10173,62 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
       fetch('/api/moonshots/scan?refresh=1')
         .then(() => setTimeout(() => { btn.textContent = 'Refresh'; loadMoonshots(); }, 1500));
     }
+
+    function setMoonSort(field) {
+      if (moonSortBy === field) {
+        moonSortDir = moonSortDir === 'desc' ? 'asc' : 'desc';
+      } else {
+        moonSortBy = field;
+        moonSortDir = 'desc';
+      }
+      if (moonLastData) renderMoonshots(moonLastData);
+    }
+
     function renderMoonshots(data) {
       const status = document.getElementById('moonStatus');
       if (data.scanning) {
         status.innerHTML = `<span style="color:var(--blue);">Scanning ${data.scanned}/${data.total} (${data.progress}%)</span>`;
       } else {
-        status.innerHTML = `${data.results.length} candidates · <span style="color:var(--t1);">${predFmt.ago(data.lastScanAgo)}</span>`;
+        const btcLine = data.results.length && data.results[0].btc7dReturn != null
+          ? ` · BTC 7d: <span style="color:${data.results[0].btc7dReturn >= 0 ? 'var(--green)' : 'var(--loss)'};">${data.results[0].btc7dReturn >= 0 ? '+' : ''}${data.results[0].btc7dReturn}%</span>`
+          : '';
+        status.innerHTML = `${data.results.length} candidates · <span style="color:var(--t1);">${predFmt.ago(data.lastScanAgo)}</span>${btcLine}`;
       }
       const tbl = document.getElementById('moonTable');
       if (!data.results.length) {
         tbl.innerHTML = `<div style="text-align:center;padding:30px;color:var(--t2);font-size:12px;">${data.scanning ? 'Scanning... results appear as they come in.' : 'No coins match current filters. Try lowering Min score or Min vol.'}</div>`;
         return;
       }
-      const rows = data.results.slice(0, 100).map((r, i) => {
+      // Sort
+      const sorted = data.results.slice().sort((a, b) => {
+        const av = a[moonSortBy], bv = b[moonSortBy];
+        const numA = (av == null) ? -Infinity : av;
+        const numB = (bv == null) ? -Infinity : bv;
+        return moonSortDir === 'desc' ? numB - numA : numA - numB;
+      });
+
+      const arrow = field => moonSortBy === field ? (moonSortDir === 'desc' ? ' ▼' : ' ▲') : '';
+      const sortStyle = field => moonSortBy === field ? 'color:var(--blue);' : '';
+      const th = (label, field, title) =>
+        `<th style="cursor:pointer;${sortStyle(field)}" onclick="setMoonSort('${field}')" title="${title || ''}">${label}${arrow(field)}</th>`;
+
+      const rows = sorted.slice(0, 100).map((r, i) => {
         const scoreColor = r.score >= 75 ? 'var(--green)' : r.score >= 60 ? 'var(--yellow)' : r.score >= 45 ? 'var(--blue)' : 'var(--t1)';
-        const techStack = [
+        const tech = [
           r.macdBullish ? '<span style="color:var(--green);" title="MACD > signal">M↑</span>' : '<span style="color:var(--loss);">M↓</span>',
           r.emaStackBullish ? '<span style="color:var(--green);" title="EMA 9>21>55">E↑</span>' : '<span style="color:var(--t2);">E·</span>',
           r.isRising ? '<span style="color:var(--green);" title="3-day trend up">T↑</span>' : '<span style="color:var(--t2);">T·</span>',
         ].join(' ');
-        const fresh = r.daysFromBottom <= 6 ? '<span style="color:var(--green);">🔥 fresh</span>' : '';
-        return `<tr>
+        const struct = [
+          `<span style="color:${r.higherLows>=4?'var(--green)':r.higherLows>=2?'var(--yellow)':'var(--t2)'};" title="higher lows in last 7d">HL${r.higherLows}</span>`,
+          `<span style="color:${r.greenLast5>=3?'var(--green)':'var(--t2)'};" title="green candles last 5d">G${r.greenLast5}</span>`,
+        ].join(' ');
+        const fresh = r.daysFromBottom <= 6 ? '<span style="color:var(--green);">🔥</span>' : '';
+        const rsColor = r.relativeStrength > 5 ? 'var(--green)' : r.relativeStrength > 0 ? 'var(--yellow)' : 'var(--loss)';
+        const breakdown = r.breakdown
+          ? `Rec ${r.breakdown.recovery} · Str ${r.breakdown.structure} · Tech ${r.breakdown.technical} · Vol ${r.breakdown.volQuality} · BTC ${r.breakdown.btcRel} · Bonus ${r.breakdown.bonus}`
+          : '';
+        return `<tr title="${breakdown}">
           <td style="color:var(--t2);">${i+1}</td>
           <td><b>${r.coin}</b></td>
           <td style="color:${scoreColor};font-weight:700;font-size:13px;">${r.score}</td>
@@ -10196,17 +10236,31 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
           <td style="color:var(--loss);">${r.dropPct}%</td>
           <td style="color:var(--green);">+${r.recoveryPct}%</td>
           <td>${r.daysFromBottom}d ${fresh}</td>
-          <td>${r.volIncrease}x</td>
+          <td style="color:${rsColor};">${r.relativeStrength >= 0 ? '+' : ''}${r.relativeStrength}%</td>
+          <td>${r.upDownVolRatio}x</td>
+          <td>${struct}</td>
           <td>${r.rsi != null ? r.rsi : '—'}</td>
-          <td>${techStack}</td>
-          <td>${r.heuristic != null ? (r.heuristic >= 0 ? '+' : '') + r.heuristic : '—'}</td>
+          <td>${tech}</td>
           <td>$${r.volume24h ? (r.volume24h/1000).toFixed(0)+'k' : '—'}</td>
-          <td><button class="pred-btn primary" style="padding:3px 10px;font-size:10px;" onclick="moonshotsToPredictor('${r.coin}')">Analyze →</button></td>
+          <td><button class="pred-btn primary" style="padding:3px 10px;font-size:10px;" onclick="moonshotsToPredictor('${r.coin}')">→</button></td>
         </tr>`;
       }).join('');
       tbl.innerHTML = `<table class="pred-table">
         <thead><tr>
-          <th>#</th><th>Coin</th><th>Score</th><th>Price</th><th>Drop</th><th>Recovery</th><th>Days</th><th>Vol×</th><th>RSI</th><th>Tech</th><th>Heur</th><th>Vol 24h</th><th></th>
+          <th>#</th>
+          ${th('Coin','coin')}
+          ${th('Score','score','Composite 0-100. Hover row for breakdown.')}
+          ${th('Price','currentPrice')}
+          ${th('Drop','dropPct','Drop from 30d peak')}
+          ${th('Recovery','recoveryPct','Bounce off bottom')}
+          ${th('Days','daysFromBottom','Days since bottom')}
+          ${th('vs BTC 7d','relativeStrength','Coin 7d return − BTC 7d return')}
+          ${th('Up/Dn Vol','upDownVolRatio','Up-day volume / down-day volume (10d)')}
+          <th title="Higher-lows count, green candles count">Struct</th>
+          ${th('RSI','rsi')}
+          <th>Tech</th>
+          ${th('Vol 24h','volume24h')}
+          <th></th>
         </tr></thead><tbody>${rows}</tbody></table>`;
     }
     function moonshotsToPredictor(coin) {
