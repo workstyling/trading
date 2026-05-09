@@ -4148,6 +4148,7 @@
     <div class="tab-nav">
       <button class="tab-btn active" data-tab="trading" onclick="switchTab('trading')">Trading</button>
       <button class="tab-btn" data-tab="predictor" onclick="switchTab('predictor')">Predictor 🧠</button>
+      <button class="tab-btn" data-tab="moonshots" onclick="switchTab('moonshots')">Moonshots 🚀</button>
     </div>
 
     <div id="tab-trading" class="tab-pane active">
@@ -4503,6 +4504,38 @@
         </div>
       </div>
     </div><!-- /tab-predictor -->
+
+    <div id="tab-moonshots" class="tab-pane">
+      <div id="moonshotsPanel" style="display:flex;flex-direction:column;gap:14px;">
+        <div class="pred-card">
+          <div class="pred-card-head">
+            <h3>🚀 Moonshots — coins ready to fly <span style="color:var(--t2);font-size:10px;font-weight:400;">(recovery pattern + technical confirmation, all Coinbase USD pairs)</span></h3>
+            <div class="pred-controls">
+              <label>Min score</label>
+              <input type="number" class="pred-input" id="moonMinScore" value="50" step="5" min="0" max="100" style="width:70px;">
+              <label>Min vol $</label>
+              <input type="number" class="pred-input" id="moonMinVol" value="200000" step="50000" min="0" style="width:100px;">
+              <label style="display:flex;align-items:center;gap:4px;cursor:pointer;">
+                <input type="checkbox" id="moonFreshOnly" style="margin:0;"> Fresh bottom (≤7d)
+              </label>
+              <button class="pred-btn primary" id="moonRefreshBtn" onclick="refreshMoonshots()">Refresh</button>
+              <span id="moonStatus" style="font-size:10px;color:var(--t2);">Idle</span>
+            </div>
+          </div>
+          <div class="pred-card-body" style="font-size:11px;color:var(--t2);line-height:1.5;">
+            <b style="color:var(--t1);">How it works:</b> for every USD pair on Coinbase we combine —
+            <span style="color:var(--green);">recovery score</span> (drop magnitude · bounce off bottom · days since bottom · 5d volume vs prior 10d · last-3-day trend) +
+            <span style="color:var(--blue);">technical score</span> (RSI, MACD bullish, EMA stack 9>21>55, BB position) +
+            <span style="color:var(--yellow);">liquidity bonus/penalty</span>. Result: a single 0-100 score per coin. Higher = more likely to run.
+          </div>
+        </div>
+        <div class="pred-card">
+          <div id="moonTable" style="max-height:700px;overflow-y:auto;">
+            <div style="text-align:center;padding:30px;color:var(--t2);font-size:12px;">Waiting for first scan... auto-runs 120s after server start (~5 min for full scan).</div>
+          </div>
+        </div>
+      </div>
+    </div><!-- /tab-moonshots -->
   </div>
 
   <script>
@@ -9793,6 +9826,9 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
         loadPredictorWatchlist();
         loadPredictorSignals();
       }
+      if (name === 'moonshots') {
+        loadMoonshots();
+      }
     }
     // Restore last tab on load
     document.addEventListener('DOMContentLoaded', () => {
@@ -10108,6 +10144,79 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
       } catch (e) { console.error('signals load:', e); }
     }
 
+    /* ═══════════════════════════ MOONSHOTS ═══════════════════════════ */
+    let moonshotsPolling = null;
+    async function loadMoonshots() {
+      try {
+        const minScore = document.getElementById('moonMinScore').value;
+        const minVol = document.getElementById('moonMinVol').value;
+        const fresh = document.getElementById('moonFreshOnly').checked ? '1' : '0';
+        const r = await fetch(`/api/moonshots/scan?minScore=${minScore}&minVol=${minVol}&fresh=${fresh}`);
+        const data = await r.json();
+        if (!data.success) return;
+        renderMoonshots(data);
+        if (data.scanning && !moonshotsPolling) {
+          moonshotsPolling = setInterval(loadMoonshots, 5000);
+        } else if (!data.scanning && moonshotsPolling) {
+          clearInterval(moonshotsPolling); moonshotsPolling = null;
+        }
+      } catch (e) { console.error('moonshots load:', e); }
+    }
+    function refreshMoonshots() {
+      const btn = document.getElementById('moonRefreshBtn');
+      btn.textContent = 'Starting...';
+      fetch('/api/moonshots/scan?refresh=1')
+        .then(() => setTimeout(() => { btn.textContent = 'Refresh'; loadMoonshots(); }, 1500));
+    }
+    function renderMoonshots(data) {
+      const status = document.getElementById('moonStatus');
+      if (data.scanning) {
+        status.innerHTML = `<span style="color:var(--blue);">Scanning ${data.scanned}/${data.total} (${data.progress}%)</span>`;
+      } else {
+        status.innerHTML = `${data.results.length} candidates · <span style="color:var(--t1);">${predFmt.ago(data.lastScanAgo)}</span>`;
+      }
+      const tbl = document.getElementById('moonTable');
+      if (!data.results.length) {
+        tbl.innerHTML = `<div style="text-align:center;padding:30px;color:var(--t2);font-size:12px;">${data.scanning ? 'Scanning... results appear as they come in.' : 'No coins match current filters. Try lowering Min score or Min vol.'}</div>`;
+        return;
+      }
+      const rows = data.results.slice(0, 100).map((r, i) => {
+        const scoreColor = r.score >= 75 ? 'var(--green)' : r.score >= 60 ? 'var(--yellow)' : r.score >= 45 ? 'var(--blue)' : 'var(--t1)';
+        const techStack = [
+          r.macdBullish ? '<span style="color:var(--green);" title="MACD > signal">M↑</span>' : '<span style="color:var(--loss);">M↓</span>',
+          r.emaStackBullish ? '<span style="color:var(--green);" title="EMA 9>21>55">E↑</span>' : '<span style="color:var(--t2);">E·</span>',
+          r.isRising ? '<span style="color:var(--green);" title="3-day trend up">T↑</span>' : '<span style="color:var(--t2);">T·</span>',
+        ].join(' ');
+        const fresh = r.daysFromBottom <= 6 ? '<span style="color:var(--green);">🔥 fresh</span>' : '';
+        return `<tr>
+          <td style="color:var(--t2);">${i+1}</td>
+          <td><b>${r.coin}</b></td>
+          <td style="color:${scoreColor};font-weight:700;font-size:13px;">${r.score}</td>
+          <td>${predFmt.price(r.currentPrice)}</td>
+          <td style="color:var(--loss);">${r.dropPct}%</td>
+          <td style="color:var(--green);">+${r.recoveryPct}%</td>
+          <td>${r.daysFromBottom}d ${fresh}</td>
+          <td>${r.volIncrease}x</td>
+          <td>${r.rsi != null ? r.rsi : '—'}</td>
+          <td>${techStack}</td>
+          <td>${r.heuristic != null ? (r.heuristic >= 0 ? '+' : '') + r.heuristic : '—'}</td>
+          <td>$${r.volume24h ? (r.volume24h/1000).toFixed(0)+'k' : '—'}</td>
+          <td><button class="pred-btn primary" style="padding:3px 10px;font-size:10px;" onclick="moonshotsToPredictor('${r.coin}')">Analyze →</button></td>
+        </tr>`;
+      }).join('');
+      tbl.innerHTML = `<table class="pred-table">
+        <thead><tr>
+          <th>#</th><th>Coin</th><th>Score</th><th>Price</th><th>Drop</th><th>Recovery</th><th>Days</th><th>Vol×</th><th>RSI</th><th>Tech</th><th>Heur</th><th>Vol 24h</th><th></th>
+        </tr></thead><tbody>${rows}</tbody></table>`;
+    }
+    function moonshotsToPredictor(coin) {
+      switchTab('predictor');
+      setTimeout(() => {
+        const inp = document.getElementById('predCoin');
+        if (inp) { inp.value = coin; predictCoin(); window.scrollTo({top: 200, behavior: 'smooth'}); }
+      }, 200);
+    }
+
     // Refresh scan when timeframe changes; reload all-coins table on filter change
     document.addEventListener('DOMContentLoaded', () => {
       const tfSel = document.getElementById('predTf');
@@ -10116,6 +10225,10 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
       if (dirSel) dirSel.addEventListener('change', loadPredictorAll);
       const minVolInp = document.getElementById('predAllMinVol');
       if (minVolInp) minVolInp.addEventListener('change', loadPredictorAll);
+      ['moonMinScore', 'moonMinVol', 'moonFreshOnly'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('change', loadMoonshots);
+      });
     });
   </script>
   <div class="toast-container" id="toastContainer"></div>

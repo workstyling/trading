@@ -1273,6 +1273,73 @@ app.get('/api/predictor/scan-all', (req, res) => {
   });
 });
 
+// ── Moonshots scanner: recovery pattern + technical confirmation across all Coinbase USD pairs ──
+const moonshotsLib = require('./src/predictor/moonshots');
+const moonshotsState = {
+  scanning: false,
+  progress: 0,
+  scanned: 0,
+  total: 0,
+  lastScanAt: 0,
+  results: [],
+};
+
+async function runMoonshotsScan() {
+  if (moonshotsState.scanning) return;
+  moonshotsState.scanning = true;
+  moonshotsState.progress = 0;
+  moonshotsState.scanned = 0;
+  console.log('[MOONSHOTS] Scan started');
+  try {
+    const cbRes = await fetch('https://api.exchange.coinbase.com/products');
+    const products = await cbRes.json();
+    const pairs = products
+      .filter(p => p.quote_currency === 'USD' && p.status === 'online')
+      .map(p => p.base_currency)
+      .filter(s => !STABLECOINS.has(s));
+    moonshotsState.total = pairs.length;
+
+    const out = await moonshotsLib.scanAll(pairs, cbVolumeCache, (done, total) => {
+      moonshotsState.scanned = done;
+      moonshotsState.progress = Math.round(done / total * 100);
+    });
+    moonshotsState.results = out;
+    moonshotsState.lastScanAt = Date.now();
+    console.log(`[MOONSHOTS] Scan complete: ${out.length} candidates`);
+  } catch (e) {
+    console.error('[MOONSHOTS] error:', e.message);
+  } finally {
+    moonshotsState.scanning = false;
+    moonshotsState.progress = 100;
+  }
+}
+
+// Auto-scan 120s after start (give recovery+volume scanners head start), then every 30 minutes
+setTimeout(() => runMoonshotsScan().catch(e => console.error('[MOONSHOTS] init:', e.message)), 120000);
+setInterval(() => runMoonshotsScan().catch(e => console.error('[MOONSHOTS] periodic:', e.message)), 30 * 60 * 1000);
+
+app.get('/api/moonshots/scan', (req, res) => {
+  if (req.query.refresh === '1' && !moonshotsState.scanning) {
+    runMoonshotsScan().catch(() => {});
+  }
+  const minVol = parseFloat(req.query.minVol) || 0;
+  const minScore = parseFloat(req.query.minScore) || 0;
+  const freshOnly = req.query.fresh === '1';
+  let results = moonshotsState.results;
+  if (minVol > 0) results = results.filter(r => r.volume24h >= minVol);
+  if (minScore > 0) results = results.filter(r => r.score >= minScore);
+  if (freshOnly) results = results.filter(r => r.daysFromBottom <= 7);
+  res.json({
+    success: true,
+    scanning: moonshotsState.scanning,
+    progress: moonshotsState.progress,
+    scanned: moonshotsState.scanned,
+    total: moonshotsState.total,
+    lastScanAgo: moonshotsState.lastScanAt ? Math.round((Date.now() - moonshotsState.lastScanAt) / 1000) : null,
+    results,
+  });
+});
+
 // API: get current scan results + status
 app.get('/api/predictor/scan', (req, res) => {
   if (req.query.refresh === '1' && !predictorState.scanning) {
