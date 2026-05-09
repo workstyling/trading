@@ -3881,6 +3881,206 @@
         min-height: 34px;
       }
     }
+
+    /* ── Tabs ── */
+    .tab-nav {
+      display: flex;
+      gap: 4px;
+      margin: 0 0 14px;
+      padding: 4px;
+      background: var(--s1);
+      border: 1px solid var(--b0);
+      border-radius: var(--r2);
+      width: fit-content;
+    }
+    .tab-btn {
+      padding: 8px 18px;
+      background: transparent;
+      border: none;
+      border-radius: var(--r1);
+      color: var(--t1);
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      font-family: inherit;
+    }
+    .tab-btn:hover { color: var(--t0); background: var(--b0); }
+    .tab-btn.active {
+      background: var(--s3);
+      color: var(--t0);
+      box-shadow: 0 0 0 1px var(--b1);
+    }
+    .tab-pane { display: none; }
+    .tab-pane.active { display: block; }
+
+    /* Predictor styles */
+    #predictorPanel {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .pred-card {
+      border: 1px solid var(--b0);
+      border-radius: var(--r2);
+      background: var(--s1);
+      overflow: hidden;
+    }
+    .pred-card-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 14px;
+      background: var(--s2);
+      border-bottom: 1px solid var(--b0);
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .pred-card-head h3 {
+      margin: 0;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--t0);
+    }
+    .pred-card-body { padding: 12px 14px; }
+    .pred-controls {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .pred-controls label {
+      font-size: 10px;
+      color: var(--t2);
+      letter-spacing: 0.4px;
+      text-transform: uppercase;
+    }
+    .pred-input, .pred-select {
+      background: var(--s2);
+      border: 1px solid var(--b0);
+      border-radius: var(--r1);
+      color: var(--t0);
+      padding: 6px 10px;
+      font-size: 12px;
+      font-family: inherit;
+      outline: none;
+    }
+    .pred-input:focus, .pred-select:focus { border-color: var(--blue); }
+    .pred-btn {
+      padding: 6px 14px;
+      border: 1px solid var(--b1);
+      border-radius: var(--r1);
+      background: transparent;
+      color: var(--t0);
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .pred-btn:hover { background: var(--b0); }
+    .pred-btn.primary { border-color: var(--blue); color: var(--blue); }
+    .pred-btn.primary:hover { background: rgba(10,132,255,0.1); }
+    .pred-btn.green { border-color: var(--green); color: var(--green); }
+    .pred-btn.green:hover { background: rgba(48,209,88,0.1); }
+
+    .pred-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 11px;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .pred-table th, .pred-table td {
+      padding: 7px 10px;
+      text-align: right;
+      border-bottom: 1px solid var(--b0);
+    }
+    .pred-table th {
+      text-align: right;
+      color: var(--t2);
+      font-weight: 600;
+      font-size: 9px;
+      letter-spacing: 0.6px;
+      text-transform: uppercase;
+      background: var(--s2);
+      position: sticky;
+      top: 0;
+    }
+    .pred-table th:first-child, .pred-table td:first-child { text-align: left; }
+    .pred-table tr:hover td { background: var(--b0); }
+
+    .badge-buy {
+      background: rgba(48,209,88,0.15);
+      color: var(--green);
+      border: 1px solid rgba(48,209,88,0.3);
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+    .badge-sell {
+      background: rgba(255,69,58,0.15);
+      color: var(--loss);
+      border: 1px solid rgba(255,69,58,0.3);
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+    .badge-hold {
+      background: var(--b0);
+      color: var(--t1);
+      border: 1px solid var(--b1);
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+
+    .pred-bar {
+      display: inline-block;
+      width: 60px;
+      height: 6px;
+      background: var(--s3);
+      border-radius: 3px;
+      overflow: hidden;
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+    .pred-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--blue), var(--green));
+      transition: width 0.3s;
+    }
+
+    .pred-detail-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 10px;
+      margin-top: 12px;
+    }
+    .pred-stat {
+      background: var(--s2);
+      border: 1px solid var(--b0);
+      border-radius: var(--r1);
+      padding: 8px 10px;
+    }
+    .pred-stat-label {
+      font-size: 9px;
+      color: var(--t2);
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+    }
+    .pred-stat-value {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--t0);
+      font-family: 'JetBrains Mono', monospace;
+      margin-top: 2px;
+    }
   </style>
 </head>
 
@@ -3944,6 +4144,13 @@
     <input type="hidden" id="openrouterKey"
       value="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">
     <input type="hidden" id="geminiKey" value="">
+
+    <div class="tab-nav">
+      <button class="tab-btn active" data-tab="trading" onclick="switchTab('trading')">Trading</button>
+      <button class="tab-btn" data-tab="predictor" onclick="switchTab('predictor')">Predictor 🧠</button>
+    </div>
+
+    <div id="tab-trading" class="tab-pane active">
     <div class="main-row">
       <div class="main-left">
         <div id="balancePanel">
@@ -4199,6 +4406,80 @@
         <div id="chat"></div>
       </div>
     </div>
+    </div><!-- /tab-trading -->
+
+    <div id="tab-predictor" class="tab-pane">
+      <div id="predictorPanel">
+        <!-- Header / Controls -->
+        <div class="pred-card">
+          <div class="pred-card-head">
+            <h3>🧠 Crypto Predictor — ML signals on Coinbase</h3>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <span id="predScanStatus" style="font-size:10px;color:var(--t2);">Idle</span>
+              <button class="pred-btn primary" id="predRefreshBtn" onclick="refreshPredictorScan()">Refresh</button>
+            </div>
+          </div>
+          <div class="pred-card-body">
+            <div class="pred-controls">
+              <label>Timeframe</label>
+              <select class="pred-select" id="predTf">
+                <option value="15m">15m</option>
+                <option value="1h" selected>1h</option>
+                <option value="6h">6h</option>
+                <option value="1d">1d</option>
+              </select>
+              <label style="margin-left:14px;">Confidence ≥</label>
+              <input type="number" class="pred-input" id="predThreshold" value="0.6" step="0.05" min="0.5" max="0.95" style="width:70px;">
+              <label style="margin-left:14px;">ATR mult</label>
+              <input type="number" class="pred-input" id="predAtrMult" value="1.5" step="0.1" min="0.5" max="5" style="width:70px;">
+              <label style="margin-left:14px;">Watchlist</label>
+              <input type="text" class="pred-input" id="predWatchlist" placeholder="BTC,ETH,SOL,..." style="width:340px;">
+              <button class="pred-btn" onclick="savePredictorWatchlist()">Save</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Single-coin analyzer -->
+        <div class="pred-card">
+          <div class="pred-card-head">
+            <h3>Single-coin analysis</h3>
+            <div class="pred-controls">
+              <input type="text" class="pred-input" id="predCoin" value="BTC" maxlength="10" style="width:90px;text-transform:uppercase;">
+              <button class="pred-btn primary" onclick="predictCoin()">Predict</button>
+              <button class="pred-btn green" onclick="trainCoin()">Train</button>
+              <button class="pred-btn" onclick="backtestCoin()">Backtest</button>
+            </div>
+          </div>
+          <div class="pred-card-body">
+            <div id="predSingleResult" style="font-size:12px;color:var(--t2);">
+              Pick a coin and click Predict — model will train automatically on first run.
+            </div>
+          </div>
+        </div>
+
+        <!-- Watchlist scan results -->
+        <div class="pred-card">
+          <div class="pred-card-head">
+            <h3>Watchlist scan</h3>
+            <span id="predScanProgress" style="font-size:10px;color:var(--t2);"></span>
+          </div>
+          <div id="predScanTable" style="max-height:550px;overflow-y:auto;">
+            <div style="text-align:center;padding:30px;color:var(--t2);font-size:12px;">Waiting for first scan... auto-runs 60s after server start.</div>
+          </div>
+        </div>
+
+        <!-- Signal history -->
+        <div class="pred-card">
+          <div class="pred-card-head">
+            <h3>Signal history</h3>
+            <button class="pred-btn" onclick="loadPredictorSignals()">Reload</button>
+          </div>
+          <div id="predSignalsTable" style="max-height:300px;overflow-y:auto;">
+            <div style="text-align:center;padding:30px;color:var(--t2);font-size:12px;">No signals yet.</div>
+          </div>
+        </div>
+      </div>
+    </div><!-- /tab-predictor -->
   </div>
 
   <script>
@@ -9477,6 +9758,279 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
 
     // Disabled: Research panel replaces loadCoinsPanel to avoid 429 rate limits
     // setTimeout(loadCoinsPanel, 2000);
+
+    /* ═══════════════════════════ TABS ═══════════════════════════ */
+    function switchTab(name) {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+      document.querySelectorAll('.tab-pane').forEach(p => p.classList.toggle('active', p.id === 'tab-' + name));
+      try { safeStorage.setItem('activeTab', name); } catch {}
+      if (name === 'predictor') {
+        loadPredictorScan();
+        loadPredictorWatchlist();
+        loadPredictorSignals();
+      }
+    }
+    // Restore last tab on load
+    document.addEventListener('DOMContentLoaded', () => {
+      try {
+        const last = safeStorage.getItem('activeTab');
+        if (last === 'predictor') switchTab('predictor');
+      } catch {}
+    });
+
+    /* ═══════════════════════════ PREDICTOR ═══════════════════════════ */
+    let predictorPolling = null;
+    const predFmt = {
+      price: v => v == null ? '—' : v < 1 ? v.toFixed(6) : v < 100 ? v.toFixed(4) : v.toFixed(2),
+      pct: v => v == null ? '—' : (v >= 0 ? '+' : '') + v.toFixed(2) + '%',
+      time: ts => ts ? new Date(ts).toLocaleString() : '—',
+      ago: secs => {
+        if (secs == null) return 'never';
+        if (secs < 60) return secs + 's ago';
+        if (secs < 3600) return Math.floor(secs / 60) + 'm ago';
+        return Math.floor(secs / 3600) + 'h ago';
+      }
+    };
+
+    function dirBadge(dir) {
+      if (dir === 'BUY') return '<span class="badge-buy">BUY</span>';
+      if (dir === 'SELL') return '<span class="badge-sell">SELL</span>';
+      return '<span class="badge-hold">HOLD</span>';
+    }
+
+    async function loadPredictorScan() {
+      try {
+        const tf = document.getElementById('predTf').value;
+        const r = await fetch(`/api/predictor/scan?tf=${tf}`);
+        const data = await r.json();
+        if (!data.success) return;
+        renderPredictorScan(data);
+        // Continue polling while scanning
+        if (data.scanning && !predictorPolling) {
+          predictorPolling = setInterval(loadPredictorScan, 3000);
+        } else if (!data.scanning && predictorPolling) {
+          clearInterval(predictorPolling); predictorPolling = null;
+        }
+      } catch (e) { console.error('Predictor scan load error:', e); }
+    }
+
+    function refreshPredictorScan() {
+      const tf = document.getElementById('predTf').value;
+      const btn = document.getElementById('predRefreshBtn');
+      btn.textContent = 'Starting...';
+      fetch(`/api/predictor/scan?tf=${tf}&refresh=1`)
+        .then(() => setTimeout(() => { btn.textContent = 'Refresh'; loadPredictorScan(); }, 1500));
+    }
+
+    function renderPredictorScan(data) {
+      const status = document.getElementById('predScanStatus');
+      const progress = document.getElementById('predScanProgress');
+      if (data.scanning) {
+        status.innerHTML = `<span style="color:var(--blue);">Scanning ${data.scanProgress}%</span>`;
+        progress.textContent = `${data.scanProgress}%`;
+      } else {
+        status.innerHTML = `Last scan: <span style="color:var(--t1);">${predFmt.ago(data.lastScanAgo)}</span>`;
+        progress.textContent = `${data.results.length} coins · ${predFmt.ago(data.lastScanAgo)}`;
+      }
+
+      const tbl = document.getElementById('predScanTable');
+      if (!data.results || !data.results.length) {
+        tbl.innerHTML = '<div style="text-align:center;padding:30px;color:var(--t2);font-size:12px;">No results yet.</div>';
+        return;
+      }
+      const minConf = parseFloat(document.getElementById('predThreshold').value) || 0;
+      const rows = data.results.map(r => {
+        const s = r.signal;
+        const ind = r.indicators;
+        const conf = s.confidence;
+        const dim = conf < (minConf * 0.5) ? 'opacity:0.45;' : '';
+        return `<tr style="${dim}">
+          <td><b>${r.symbol}</b> <span style="color:var(--t2);font-size:9px;">${r.tf}</span></td>
+          <td>${dirBadge(s.direction)}</td>
+          <td><span class="pred-bar"><span class="pred-bar-fill" style="width:${(s.probability*100).toFixed(0)}%;"></span></span>${(s.probability*100).toFixed(1)}%</td>
+          <td style="color:${conf>0.5?'var(--green)':conf>0.3?'var(--yellow)':'var(--t2)'}">${(conf*100).toFixed(0)}%</td>
+          <td>${predFmt.price(s.price)}</td>
+          <td>${s.stop != null ? predFmt.price(s.stop) : '—'}</td>
+          <td>${s.tp != null ? predFmt.price(s.tp) : '—'}</td>
+          <td>${s.riskReward != null ? '1:' + s.riskReward : '—'}</td>
+          <td>${ind?.rsi14 != null ? ind.rsi14.toFixed(1) : '—'}</td>
+          <td>${s.heuristic >= 0 ? '+' : ''}${s.heuristic}</td>
+          <td>${r.hasModel ? '✓' : '⏳'}</td>
+        </tr>`;
+      }).join('');
+      tbl.innerHTML = `<table class="pred-table">
+        <thead><tr>
+          <th>Coin</th><th>Signal</th><th>P(up)</th><th>Conf</th><th>Price</th><th>Stop</th><th>TP</th><th>RR</th><th>RSI</th><th>Heur</th><th>NN</th>
+        </tr></thead><tbody>${rows}</tbody></table>`;
+    }
+
+    async function predictCoin() {
+      const symbol = document.getElementById('predCoin').value.trim().toUpperCase();
+      const tf = document.getElementById('predTf').value;
+      const out = document.getElementById('predSingleResult');
+      out.innerHTML = `<div style="color:var(--blue);">Loading ${symbol} ${tf}...</div>`;
+      try {
+        const r = await fetch(`/api/predictor/predict?symbol=${symbol}&tf=${tf}`);
+        const data = await r.json();
+        if (!data.success || data.result.error) {
+          out.innerHTML = `<div style="color:var(--loss);">Error: ${data.error || data.result.error}</div>`;
+          return;
+        }
+        renderSingleResult(data.result);
+      } catch (e) {
+        out.innerHTML = `<div style="color:var(--loss);">Fetch error: ${e.message}</div>`;
+      }
+    }
+
+    function renderSingleResult(r) {
+      const s = r.signal, ind = r.indicators;
+      const out = document.getElementById('predSingleResult');
+      out.innerHTML = `
+        <div style="display:flex;gap:20px;align-items:center;flex-wrap:wrap;">
+          <div style="font-size:24px;font-weight:700;">${r.symbol} <span style="color:var(--t2);font-size:14px;">${r.tf}</span></div>
+          <div style="font-size:18px;">${dirBadge(s.direction)}</div>
+          <div style="color:var(--t2);font-size:11px;">${predFmt.time(r.timestamp)} · ${r.candleCount} candles · ${r.hasModel ? 'NN ready' : 'NN training...'}</div>
+        </div>
+        <div class="pred-detail-grid">
+          <div class="pred-stat"><div class="pred-stat-label">P(up)</div><div class="pred-stat-value">${(s.probability*100).toFixed(1)}%</div></div>
+          <div class="pred-stat"><div class="pred-stat-label">Confidence</div><div class="pred-stat-value">${(s.confidence*100).toFixed(0)}%</div></div>
+          <div class="pred-stat"><div class="pred-stat-label">Price</div><div class="pred-stat-value">${predFmt.price(s.price)}</div></div>
+          <div class="pred-stat"><div class="pred-stat-label">Stop</div><div class="pred-stat-value">${s.stop != null ? predFmt.price(s.stop) : '—'}</div></div>
+          <div class="pred-stat"><div class="pred-stat-label">Take Profit</div><div class="pred-stat-value">${s.tp != null ? predFmt.price(s.tp) : '—'}</div></div>
+          <div class="pred-stat"><div class="pred-stat-label">Risk/Reward</div><div class="pred-stat-value">${s.riskReward != null ? '1:' + s.riskReward : '—'}</div></div>
+          <div class="pred-stat"><div class="pred-stat-label">RSI 14</div><div class="pred-stat-value">${ind.rsi14?.toFixed(1) ?? '—'}</div></div>
+          <div class="pred-stat"><div class="pred-stat-label">MACD hist</div><div class="pred-stat-value">${ind.macdHist?.toFixed(4) ?? '—'}</div></div>
+          <div class="pred-stat"><div class="pred-stat-label">ATR 14</div><div class="pred-stat-value">${predFmt.price(ind.atr14)}</div></div>
+          <div class="pred-stat"><div class="pred-stat-label">EMA 9 / 21 / 55</div><div class="pred-stat-value" style="font-size:11px;">${predFmt.price(ind.ema9)} / ${predFmt.price(ind.ema21)} / ${predFmt.price(ind.ema55)}</div></div>
+          <div class="pred-stat"><div class="pred-stat-label">Heuristic</div><div class="pred-stat-value">${s.heuristic >= 0 ? '+' : ''}${s.heuristic}</div></div>
+          <div class="pred-stat"><div class="pred-stat-label">NN prob</div><div class="pred-stat-value">${s.nnProb != null ? (s.nnProb*100).toFixed(1)+'%' : 'no model'}</div></div>
+        </div>
+      `;
+    }
+
+    async function trainCoin() {
+      const symbol = document.getElementById('predCoin').value.trim().toUpperCase();
+      const tf = document.getElementById('predTf').value;
+      const out = document.getElementById('predSingleResult');
+      out.innerHTML = `<div style="color:var(--blue);">Training ${symbol} ${tf}... (~10-30s)</div>`;
+      try {
+        const r = await fetch('/api/predictor/train', {
+          method: 'POST', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ symbol, tf, candles: 500, iterations: 200 })
+        });
+        const data = await r.json();
+        if (!data.success) { out.innerHTML = `<div style="color:var(--loss);">Error: ${data.error}</div>`; return; }
+        out.innerHTML = `<div style="color:var(--green);">Trained! Loss: ${data.result.loss.toFixed(3)}, samples: ${data.result.samples}, iter: ${data.result.iterations}</div>`;
+        setTimeout(predictCoin, 500);
+      } catch (e) {
+        out.innerHTML = `<div style="color:var(--loss);">Fetch error: ${e.message}</div>`;
+      }
+    }
+
+    async function backtestCoin() {
+      const symbol = document.getElementById('predCoin').value.trim().toUpperCase();
+      const tf = document.getElementById('predTf').value;
+      const threshold = parseFloat(document.getElementById('predThreshold').value) || 0.6;
+      const atrMult = parseFloat(document.getElementById('predAtrMult').value) || 1.5;
+      const out = document.getElementById('predSingleResult');
+      out.innerHTML = `<div style="color:var(--blue);">Backtesting ${symbol} ${tf}... (~20-40s)</div>`;
+      try {
+        const r = await fetch('/api/predictor/backtest', {
+          method: 'POST', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ symbol, tf, candles: 500, threshold, atrMult, iterations: 150 })
+        });
+        const data = await r.json();
+        if (!data.success || data.result.error) {
+          out.innerHTML = `<div style="color:var(--loss);">Error: ${data.error || data.result.error}</div>`;
+          return;
+        }
+        const x = data.result;
+        const colorRet = x.totalReturn >= 0 ? 'var(--green)' : 'var(--loss)';
+        out.innerHTML = `
+          <div style="font-size:14px;font-weight:600;margin-bottom:8px;">📊 Backtest ${symbol} ${tf} <span style="color:var(--t2);font-size:11px;font-weight:400;">— train ${x.trainSamples} samples → test ${x.testCandles} candles</span></div>
+          <div class="pred-detail-grid">
+            <div class="pred-stat"><div class="pred-stat-label">Total return</div><div class="pred-stat-value" style="color:${colorRet};">${x.totalReturn >= 0 ? '+' : ''}${x.totalReturn}%</div></div>
+            <div class="pred-stat"><div class="pred-stat-label">Trades</div><div class="pred-stat-value">${x.totalTrades}</div></div>
+            <div class="pred-stat"><div class="pred-stat-label">Win rate</div><div class="pred-stat-value">${x.winRate}%</div></div>
+            <div class="pred-stat"><div class="pred-stat-label">Profit factor</div><div class="pred-stat-value">${x.profitFactor}</div></div>
+            <div class="pred-stat"><div class="pred-stat-label">Max DD</div><div class="pred-stat-value" style="color:var(--loss);">−${x.maxDrawdown}%</div></div>
+            <div class="pred-stat"><div class="pred-stat-label">Sharpe (per-trade)</div><div class="pred-stat-value">${x.sharpe}</div></div>
+            <div class="pred-stat"><div class="pred-stat-label">Avg win / loss</div><div class="pred-stat-value">+${x.avgWin}% / ${x.avgLoss}%</div></div>
+            <div class="pred-stat"><div class="pred-stat-label">Train loss</div><div class="pred-stat-value">${x.finalLoss}</div></div>
+          </div>
+          <div style="margin-top:14px;font-size:11px;color:var(--t2);">Last 30 trades:</div>
+          <table class="pred-table" style="margin-top:6px;">
+            <thead><tr><th>#</th><th>Dir</th><th>Entry</th><th>Exit</th><th>Reason</th><th>P&L</th><th>Conf</th></tr></thead>
+            <tbody>${x.trades.map((t,i) => `
+              <tr>
+                <td>${i+1}</td><td>${dirBadge(t.direction)}</td>
+                <td>${predFmt.price(t.entry)}</td><td>${predFmt.price(t.exit)}</td>
+                <td>${t.exitReason}</td>
+                <td style="color:${t.pnlPct>=0?'var(--green)':'var(--loss)'};">${t.pnlPct>=0?'+':''}${t.pnlPct}%</td>
+                <td>${(t.confidence*100).toFixed(0)}%</td>
+              </tr>`).join('')}
+            </tbody></table>
+        `;
+      } catch (e) {
+        out.innerHTML = `<div style="color:var(--loss);">Fetch error: ${e.message}</div>`;
+      }
+    }
+
+    async function loadPredictorWatchlist() {
+      try {
+        const r = await fetch('/api/predictor/watchlist');
+        const data = await r.json();
+        if (data.success) document.getElementById('predWatchlist').value = data.watchlist.join(',');
+      } catch {}
+    }
+
+    async function savePredictorWatchlist() {
+      const raw = document.getElementById('predWatchlist').value;
+      const list = raw.split(/[\s,]+/).map(s => s.toUpperCase().trim()).filter(Boolean);
+      try {
+        const r = await fetch('/api/predictor/watchlist', {
+          method: 'POST', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ watchlist: list })
+        });
+        const data = await r.json();
+        if (data.success) {
+          showCustomAlert(`Watchlist saved: ${list.length} coins`);
+          refreshPredictorScan();
+        }
+      } catch (e) { showCustomAlert('Save failed: ' + e.message); }
+    }
+
+    async function loadPredictorSignals() {
+      try {
+        const r = await fetch('/api/predictor/signals?limit=50');
+        const data = await r.json();
+        const tbl = document.getElementById('predSignalsTable');
+        if (!data.success || !data.signals.length) {
+          tbl.innerHTML = '<div style="text-align:center;padding:30px;color:var(--t2);font-size:12px;">No signals yet.</div>';
+          return;
+        }
+        const rows = data.signals.map(s => `<tr>
+          <td>${new Date(s.savedAt).toLocaleString()}</td>
+          <td><b>${s.symbol}</b> <span style="color:var(--t2);font-size:9px;">${s.tf}</span></td>
+          <td>${dirBadge(s.direction)}</td>
+          <td>${(s.probability*100).toFixed(1)}%</td>
+          <td>${(s.confidence*100).toFixed(0)}%</td>
+          <td>${predFmt.price(s.price)}</td>
+          <td>${predFmt.price(s.stop)}</td>
+          <td>${predFmt.price(s.tp)}</td>
+          <td>1:${s.riskReward ?? '—'}</td>
+        </tr>`).join('');
+        tbl.innerHTML = `<table class="pred-table">
+          <thead><tr><th>Time</th><th>Coin</th><th>Dir</th><th>P(up)</th><th>Conf</th><th>Price</th><th>Stop</th><th>TP</th><th>RR</th></tr></thead>
+          <tbody>${rows}</tbody></table>`;
+      } catch (e) { console.error('signals load:', e); }
+    }
+
+    // Refresh scan when timeframe changes
+    document.addEventListener('DOMContentLoaded', () => {
+      const tfSel = document.getElementById('predTf');
+      if (tfSel) tfSel.addEventListener('change', () => refreshPredictorScan());
+    });
   </script>
   <div class="toast-container" id="toastContainer"></div>
   <script>

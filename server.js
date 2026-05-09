@@ -3,6 +3,7 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const { RESTClient } = require('./cb/dist/rest/index.js');
+const predictor = require('./src/predictor');
 
 // Prevent server from crashing on unhandled errors
 process.on('uncaughtException', (err) => {
@@ -1092,6 +1093,164 @@ app.get('/api/cryptorank/top-movers', async (req, res) => {
   } catch (error) {
     console.error('CryptoRank top-movers error:', error);
     res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ========== PREDICTOR API ==========
+
+// Default watchlist for the Predictor scan
+const PREDICTOR_WATCHLIST_FILE = path.join(__dirname, 'data', 'predictor', 'watchlist.json');
+const DEFAULT_WATCHLIST = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'ADA', 'AVAX', 'LINK', 'MATIC', 'DOT', 'NEAR', 'SUI', 'APT', 'INJ', 'ARB'];
+
+function loadWatchlist() {
+  try {
+    if (fs.existsSync(PREDICTOR_WATCHLIST_FILE)) {
+      return JSON.parse(fs.readFileSync(PREDICTOR_WATCHLIST_FILE, 'utf8'));
+    }
+  } catch {}
+  return DEFAULT_WATCHLIST;
+}
+function saveWatchlist(list) {
+  try { fs.writeFileSync(PREDICTOR_WATCHLIST_FILE, JSON.stringify(list, null, 2)); } catch {}
+}
+
+// In-memory state for the background scan
+const predictorState = {
+  scanning: false,
+  scanProgress: 0,
+  lastScanAt: 0,
+  results: [],
+  tf: '1h',
+  trainQueue: new Set(),
+};
+
+async function runPredictorScan(tf = predictorState.tf) {
+  if (predictorState.scanning) return;
+  predictorState.scanning = true;
+  predictorState.scanProgress = 0;
+  predictorState.tf = tf;
+  const list = loadWatchlist();
+  console.log(`[PREDICTOR] Scan started for ${list.length} coins on ${tf}`);
+  const out = [];
+  for (let i = 0; i < list.length; i++) {
+    const symbol = list[i];
+    try {
+      // Train model if missing — only first time per symbol/tf
+      const k = `${symbol}_${tf}`;
+      const cached = predictor.getCacheState().find(s => s.key === k);
+      if (!cached || !cached.hasModel) {
+        if (!predictorState.trainQueue.has(k)) {
+          predictorState.trainQueue.add(k);
+          predictor.trainSymbol(symbol, tf, { candleCount: 500, iterations: 150 })
+            .then(r => console.log(`[PREDICTOR] Trained ${k}: loss=${r.loss.toFixed(3)}`))
+            .catch(e => console.error(`[PREDICTOR] Train ${k} failed:`, e.message))
+            .finally(() => predictorState.trainQueue.delete(k));
+        }
+      }
+      const r = await predictor.predictSymbol(symbol, tf, { candleCount: 250 });
+      if (!r.error) out.push(r);
+    } catch (e) {
+      console.error(`[PREDICTOR] ${symbol} ${tf}:`, e.message);
+    }
+    predictorState.scanProgress = Math.round((i + 1) / list.length * 100);
+  }
+  out.sort((a, b) => {
+    const dirRank = d => d === 'BUY' ? 0 : d === 'SELL' ? 1 : 2;
+    const ra = dirRank(a.signal.direction), rb = dirRank(b.signal.direction);
+    if (ra !== rb) return ra - rb;
+    return b.signal.confidence - a.signal.confidence;
+  });
+  predictorState.results = out;
+  predictorState.lastScanAt = Date.now();
+  predictorState.scanProgress = 100;
+  predictorState.scanning = false;
+  console.log(`[PREDICTOR] Scan complete: ${out.length} results`);
+}
+
+// Auto-scan 60s after start, then every 10 minutes
+setTimeout(() => runPredictorScan().catch(e => console.error('[PREDICTOR] init scan:', e.message)), 60000);
+setInterval(() => runPredictorScan().catch(e => console.error('[PREDICTOR] periodic scan:', e.message)), 10 * 60 * 1000);
+
+// API: get current scan results + status
+app.get('/api/predictor/scan', (req, res) => {
+  if (req.query.refresh === '1' && !predictorState.scanning) {
+    runPredictorScan(req.query.tf || predictorState.tf).catch(() => {});
+  }
+  res.json({
+    success: true,
+    scanning: predictorState.scanning,
+    scanProgress: predictorState.scanProgress,
+    lastScanAgo: predictorState.lastScanAt ? Math.round((Date.now() - predictorState.lastScanAt) / 1000) : null,
+    tf: predictorState.tf,
+    watchlist: loadWatchlist(),
+    results: predictorState.results,
+    cache: predictor.getCacheState(),
+  });
+});
+
+// API: predict a single symbol on demand
+app.get('/api/predictor/predict', async (req, res) => {
+  try {
+    const symbol = (req.query.symbol || 'BTC').toUpperCase();
+    const tf = req.query.tf || '1h';
+    const candleCount = parseInt(req.query.candles, 10) || 250;
+    const r = await predictor.predictSymbol(symbol, tf, { candleCount });
+    res.json({ success: true, result: r });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// API: train (or retrain) a single symbol
+app.post('/api/predictor/train', async (req, res) => {
+  try {
+    const symbol = (req.body.symbol || 'BTC').toUpperCase();
+    const tf = req.body.tf || '1h';
+    const candleCount = parseInt(req.body.candles, 10) || 500;
+    const iterations = parseInt(req.body.iterations, 10) || 200;
+    const r = await predictor.trainSymbol(symbol, tf, { candleCount, iterations });
+    res.json({ success: true, result: r });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// API: backtest a symbol
+app.post('/api/predictor/backtest', async (req, res) => {
+  try {
+    const symbol = (req.body.symbol || 'BTC').toUpperCase();
+    const tf = req.body.tf || '1h';
+    const candleCount = parseInt(req.body.candles, 10) || 500;
+    const r = await predictor.backtestSymbol(symbol, tf, {
+      candleCount,
+      confidenceThreshold: parseFloat(req.body.threshold) || 0.6,
+      atrMultiplier: parseFloat(req.body.atrMult) || 1.5,
+      iterations: parseInt(req.body.iterations, 10) || 150,
+    });
+    res.json({ success: true, result: r });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// API: signal history
+app.get('/api/predictor/signals', (req, res) => {
+  const all = predictor.storage.loadSignals();
+  const limit = parseInt(req.query.limit, 10) || 50;
+  res.json({ success: true, signals: all.slice(0, limit) });
+});
+
+// API: watchlist management
+app.get('/api/predictor/watchlist', (req, res) => {
+  res.json({ success: true, watchlist: loadWatchlist() });
+});
+app.post('/api/predictor/watchlist', (req, res) => {
+  try {
+    const list = (req.body.watchlist || []).map(s => String(s).toUpperCase().trim()).filter(Boolean);
+    saveWatchlist(list);
+    res.json({ success: true, watchlist: list });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
   }
 });
 

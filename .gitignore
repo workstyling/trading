@@ -5,3 +5,5 @@ cb/serviceAccountKey.json
 .claude/settings.local.json
 server.log
 *.png
+data/
+volume-cache.json
