@@ -1423,6 +1423,70 @@ app.post('/api/predictor/watchlist', (req, res) => {
   }
 });
 
+// API: 30-day trading volume — paginates the Coinbase fills endpoint until we hit
+// 30 days back, then sums quote-side USD value across all sides.
+let volume30dCache = { data: null, ts: 0 };
+const VOLUME_30D_TTL = 5 * 60 * 1000; // 5 minutes
+
+app.get('/get-volume-30d', async (req, res) => {
+  try {
+    const now = Date.now();
+    if (volume30dCache.data && (now - volume30dCache.ts) < VOLUME_30D_TTL) {
+      return res.json({ success: true, ...volume30dCache.data, cached: true });
+    }
+    const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    let cursor = undefined;
+    let totalUsd = 0;
+    let totalFees = 0;
+    let buyUsd = 0, sellUsd = 0;
+    let buyCount = 0, sellCount = 0;
+    let pages = 0;
+    let oldestSeen = null;
+
+    while (pages < 50) { // hard safety cap
+      const params = { limit: 250, start_sequence_timestamp: cutoff.toISOString() };
+      if (cursor) params.cursor = cursor;
+      const result = await client.listFills(params);
+      const data = typeof result === 'string' ? JSON.parse(result) : result;
+      const fills = data.fills || [];
+      for (const f of fills) {
+        const ts = new Date(f.trade_time);
+        if (ts < cutoff) continue;
+        const size = parseFloat(f.size || 0);
+        const price = parseFloat(f.price || 0);
+        const fee = parseFloat(f.commission || 0);
+        const usd = size * price;
+        totalUsd += usd;
+        totalFees += fee;
+        if (f.side === 'BUY') { buyUsd += usd; buyCount++; }
+        else if (f.side === 'SELL') { sellUsd += usd; sellCount++; }
+        if (!oldestSeen || ts < oldestSeen) oldestSeen = ts;
+      }
+      pages++;
+      if (!data.cursor || fills.length === 0) break;
+      cursor = data.cursor;
+      // Stop early if we've already reached older than cutoff
+      if (oldestSeen && oldestSeen < cutoff) break;
+    }
+
+    const out = {
+      totalUsd: Math.round(totalUsd * 100) / 100,
+      totalFees: Math.round(totalFees * 100) / 100,
+      buyUsd: Math.round(buyUsd * 100) / 100,
+      sellUsd: Math.round(sellUsd * 100) / 100,
+      buyCount, sellCount,
+      totalFills: buyCount + sellCount,
+      pages,
+    };
+    volume30dCache = { data: out, ts: now };
+    res.json({ success: true, ...out });
+  } catch (e) {
+    console.error('Error computing 30d volume:', e.message);
+    if (volume30dCache.data) return res.json({ success: true, ...volume30dCache.data, stale: true });
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
 // API: Get order status (for Trading Bot)
 app.get('/get-order-status/:orderId', async (req, res) => {
   try {

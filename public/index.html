@@ -4082,6 +4082,31 @@
       margin-top: 2px;
     }
 
+    .vol30-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-left: 14px;
+      padding: 5px 12px;
+      background: var(--s2);
+      border: 1px solid var(--b0);
+      border-radius: 999px;
+      font-family: 'JetBrains Mono', monospace;
+      cursor: help;
+    }
+    .vol30-lbl {
+      font-size: 9px;
+      color: var(--t2);
+      letter-spacing: 0.6px;
+      text-transform: uppercase;
+      font-weight: 600;
+    }
+    .vol30-val {
+      font-size: 13px;
+      color: var(--t0);
+      font-weight: 600;
+    }
+
     .moon-spinner {
       display: inline-block;
       width: 42px;
@@ -4170,6 +4195,10 @@
           <div class="balance-row">
             <span class="balance-label">USD Balance:</span>
             <span class="balance-value" id="usdBalance">$0.00</span>
+            <span class="vol30-pill" id="vol30Pill" title="Loading...">
+              <span class="vol30-lbl">30D Vol</span>
+              <span class="vol30-val" id="vol30Val">—</span>
+            </span>
             <div id="tradingSettings" class="settings-panel"
               style="margin:0;border:none;background:none;padding:0;margin-left:12px;">
               <span class="settings-label">Sell Markup:</span>
@@ -4701,6 +4730,30 @@
         console.error('Cannot load balance:', e.message);
       }
     }
+
+    function fmtVol(usd) {
+      if (usd == null) return '—';
+      if (usd >= 1e6) return '$' + (usd / 1e6).toFixed(2) + 'M';
+      if (usd >= 1e3) return '$' + (usd / 1e3).toFixed(1) + 'k';
+      return '$' + usd.toFixed(0);
+    }
+    async function loadVolume30d() {
+      const valEl = document.getElementById('vol30Val');
+      const pillEl = document.getElementById('vol30Pill');
+      if (!valEl) return;
+      try {
+        const res = await fetch('/get-volume-30d');
+        const data = await res.json();
+        if (!data.success) return;
+        valEl.textContent = fmtVol(data.totalUsd);
+        const tip = `Total fills (30d): ${data.totalFills}\nBuy: ${fmtVol(data.buyUsd)} (${data.buyCount}) · Sell: ${fmtVol(data.sellUsd)} (${data.sellCount})\nFees paid: ${fmtVol(data.totalFees)}`;
+        pillEl.title = tip;
+      } catch (e) {
+        console.error('Cannot load 30d volume:', e.message);
+      }
+    }
+    setTimeout(loadVolume30d, 800);
+    setInterval(loadVolume30d, 5 * 60 * 1000); // refresh every 5 min
 
     async function updateBuyPanelPrices() {
       try {
