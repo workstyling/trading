@@ -4732,10 +4732,13 @@
     }
 
     function fmtVol(usd) {
-      if (usd == null) return '—';
-      if (usd >= 1e6) return '$' + (usd / 1e6).toFixed(2) + 'M';
-      if (usd >= 1e3) return '$' + (usd / 1e3).toFixed(1) + 'k';
-      return '$' + usd.toFixed(0);
+      if (usd == null || isNaN(usd)) return '—';
+      const n = Math.abs(usd);
+      const sign = usd < 0 ? '-' : '';
+      if (n >= 1e9) return sign + '$' + (n / 1e9).toFixed(n >= 10e9 ? 0 : 1) + 'B';
+      if (n >= 1e6) return sign + '$' + (n / 1e6).toFixed(n >= 10e6 ? 0 : 1) + 'M';
+      if (n >= 1e3) return sign + '$' + (n / 1e3).toFixed(0) + 'K';
+      return sign + '$' + n.toFixed(0);
     }
     async function loadVolume30d() {
       const valEl = document.getElementById('vol30Val');
@@ -9995,7 +9998,7 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
         <td>${r.riskReward != null ? '1:' + r.riskReward : '—'}</td>
         <td>${r.rsi != null ? r.rsi.toFixed(1) : '—'}</td>
         <td>${r.heuristic >= 0 ? '+' : ''}${r.heuristic}</td>
-        <td>$${r.volume24h ? (r.volume24h/1000).toFixed(0)+'k' : '—'}</td>
+        <td>${fmtVol(r.volume24h)}</td>
         <td><button class="pred-btn" style="padding:3px 8px;font-size:10px;" onclick="document.getElementById('predCoin').value='${r.symbol}';predictCoin();window.scrollTo({top:0,behavior:'smooth'});">→</button></td>
       </tr>`).join('');
       tbl.innerHTML = `<table class="pred-table">
@@ -10399,7 +10402,7 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
           <td>${struct}</td>
           <td>${r.rsi != null ? r.rsi : '—'}</td>
           <td>${tech}</td>
-          <td>$${r.volume24h ? (r.volume24h/1000).toFixed(0)+'k' : '—'}</td>
+          <td>${fmtVol(r.volume24h)}</td>
           <td><button class="pred-btn primary" style="padding:3px 10px;font-size:10px;" onclick="moonshotsToPredictor('${r.coin}')">→</button></td>
         </tr>`;
       }).join('');
