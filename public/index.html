@@ -10456,6 +10456,21 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
         const breakdown = r.breakdown
           ? `Rec ${r.breakdown.recovery} · Str ${r.breakdown.structure} · Tech ${r.breakdown.technical} · Vol ${r.breakdown.volQuality} · BTC ${r.breakdown.btcRel} · Bonus ${r.breakdown.bonus}`
           : '';
+        // Chase indicator: how many ATR units above the bottom we already are.
+        let chaseCell = '—';
+        if (r.chaseAtr != null) {
+          const c = r.chaseAtr;
+          const color = c < 1.5 ? 'var(--green)' : c < 3 ? 'var(--yellow)' : 'var(--loss)';
+          const tag = c < 1.5 ? 'fresh' : c < 3 ? 'mid' : 'chased';
+          chaseCell = `<span style="color:${color};" title="${c.toFixed(2)} ATR above bottom — ${tag}">${c.toFixed(1)}σ</span>`;
+        }
+        // SL/TP suggestion based on bottom price + ATR-derived risk
+        const sltp = (r.slPrice != null && r.tpPrice != null)
+          ? `<div style="font-family:'JetBrains Mono',monospace;font-size:10px;line-height:1.3;">
+              <span style="color:var(--loss);">SL ${predFmt.price(r.slPrice)}</span><br>
+              <span style="color:var(--green);">TP ${predFmt.price(r.tpPrice)}</span>
+            </div>`
+          : '—';
         return `<tr title="${breakdown}">
           <td style="color:var(--t2);">${i+1}</td>
           <td><b>${r.coin}</b></td>
@@ -10464,11 +10479,13 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
           <td style="color:var(--loss);">${r.dropPct}%</td>
           <td style="color:var(--green);">+${r.recoveryPct}%</td>
           <td>${freshCell}</td>
+          <td>${chaseCell}</td>
           <td style="color:${rsColor};">${r.relativeStrength >= 0 ? '+' : ''}${r.relativeStrength}%</td>
           <td>${r.upDownVolRatio}x</td>
           <td>${struct}</td>
           <td>${r.rsi != null ? r.rsi : '—'}</td>
           <td>${tech}</td>
+          <td>${sltp}</td>
           <td>${fmtVol(r.volume24h)}</td>
           <td><button class="pred-btn primary" style="padding:3px 10px;font-size:10px;" onclick="moonshotsToPredictor('${r.coin}')">→</button></td>
         </tr>`;
@@ -10489,11 +10506,13 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
           ${th('Drop','dropPct', isQuick ? 'Drop from 72h peak' : 'Drop from 30d peak')}
           ${th('Recovery','recoveryPct','Bounce off bottom')}
           ${freshHeader}
+          ${th('Chase','chaseAtr','ATR-units above bottom. <1.5σ = fresh entry, >3σ = chased (late)')}
           ${rsHeader}
           ${volRatioHeader}
           <th title="Higher-lows count, green candles count">Struct</th>
           ${th('RSI','rsi')}
           <th>Tech</th>
+          <th title="Suggested stop-loss (below bottom) and take-profit at 2:1">SL / TP</th>
           ${th('Vol 24h','volume24h')}
           <th></th>
         </tr></thead><tbody>${rows}</tbody></table>`;

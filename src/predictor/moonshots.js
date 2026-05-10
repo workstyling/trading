@@ -253,6 +253,13 @@ function analyzeQuick(hourlyRaw) {
   };
 }
 
+// How many ATR-units away from the bottom the current price sits.
+// <1 = entry still right at base · 2-3 = mid-recovery · >4 = chased.
+function chaseAtrUnits(currentPrice, bottomPrice, atr) {
+  if (!atr || atr <= 0) return null;
+  return (currentPrice - bottomPrice) / atr;
+}
+
 // ── Composite scoring ──
 function compositeScore(d, tech, volUsd, btcReturn7d) {
   // Recovery component (0..25)
@@ -267,30 +274,30 @@ function compositeScore(d, tech, volUsd, btcReturn7d) {
   // Structure component (0..20)
   let structComp = 0;
   if (d) {
-    structComp += Math.min(d.higherLows * 2.5, 10);     // 4+ higher lows = full 10
-    structComp += d.greenLast5 * 1.5;                    // up to 7.5 for 5 green candles
-    structComp += Math.min(d.lowerWickPct * 30, 5);      // 17% avg wick = full 5
+    structComp += Math.min(d.higherLows * 2.5, 10);
+    structComp += d.greenLast5 * 1.5;
+    structComp += Math.min(d.lowerWickPct * 30, 5);
   }
 
-  // Technical component (0..20) — hourly state
+  // Technical component (0..20)
   let techComp = 0;
   if (tech) {
-    techComp += Math.max(0, tech.heuristic) * 0.25;   // 0..~20
+    techComp += Math.max(0, tech.heuristic) * 0.25;
     const r = tech.snapshot.rsi14;
-    if (r >= 35 && r <= 60) techComp += 5;            // sweet spot: recovering from oversold
-    else if (r > 75) techComp -= 5;                    // overbought = late
+    if (r >= 35 && r <= 60) techComp += 5;
+    else if (r > 75) techComp -= 5;
     if (tech.snapshot.macd > tech.snapshot.macdSignal) techComp += 3;
     if (tech.snapshot.ema9 > tech.snapshot.ema21 && tech.snapshot.ema21 > tech.snapshot.ema55) techComp += 3;
   }
 
-  // Volume quality (0..15) — up-day volume should dominate down-day volume
+  // Volume quality (0..15)
   let volQualComp = 0;
   if (d) {
     volQualComp = Math.min(Math.max(0, (d.upDownVolRatio - 1) * 7), 12);
     if (d.volIncrease > 1.5) volQualComp += 3;
   }
 
-  // BTC-relative outperformance (0..15) — coin running while BTC is flat or down
+  // BTC-relative outperformance (0..15)
   let btcRelComp = 0;
   if (d && btcReturn7d != null) {
     const coin7d = compute7dReturn(d.closes);
@@ -298,15 +305,31 @@ function compositeScore(d, tech, volUsd, btcReturn7d) {
     if (outperf > 0) btcRelComp = Math.min(outperf * 0.5, 15);
   }
 
-  // Liquidity bonus / trap penalty
+  // Bonus / penalty pile
   let bonus = 0;
   if (volUsd < 50000) bonus -= 25;
   else if (volUsd < 200000) bonus -= 10;
   else if (volUsd > 5000000) bonus += 5;
-  // Trap filter: very overbought + already big recovery = late entry
   if (tech && tech.snapshot.rsi14 > 75 && d && d.recoveryPct > 50) bonus -= 8;
-  // Penalty if hourly tech is missing
   if (!tech) bonus -= 5;
+
+  // Late-entry penalty: recovery above 30% means we are past the freshest
+  // part of the move. Scales linearly to a -25 floor for runaway moves.
+  if (d && d.recoveryPct > 30) {
+    bonus -= Math.min((d.recoveryPct - 30) * 0.3, 25);
+  }
+  // Chase penalty: if the price is already a few ATRs above the bottom, the
+  // entry is no longer at the base — risk/reward is worse.
+  if (tech && d) {
+    const ch = chaseAtrUnits(d.currentPrice, d.bottomPrice, tech.snapshot.atr14);
+    if (ch != null) {
+      if (ch < 1.5) bonus += 3;        // tight to the base
+      else if (ch > 4) bonus -= 6;     // chased
+      else if (ch > 3) bonus -= 3;
+    }
+  }
+  // "Not yet recovering": big drop but recovery <3% and trend not rising — still falling knife.
+  if (d && d.recoveryPct < 3 && !d.isRising) bonus -= 6;
 
   const total = recComp + structComp + techComp + volQualComp + btcRelComp + bonus;
   return {
@@ -345,6 +368,14 @@ async function scanOneSwing(coin, volumeCache, btcContext) {
   const coin7d = compute7dReturn(d.closes);
   const { score, breakdown } = compositeScore(d, tech, volUsd, btc7d);
 
+  // Actionable trade levels: stop just below the recent bottom (give it a 1.5% buffer
+  // to avoid wick-out), take-profit at 2:1 vs the stop using the entry price.
+  const atrVal = tech ? tech.snapshot.atr14 : null;
+  const chaseAtr = atrVal ? chaseAtrUnits(d.currentPrice, d.bottomPrice, atrVal) : null;
+  const slPrice = d.bottomPrice * 0.985;
+  const risk = d.currentPrice - slPrice;
+  const tpPrice = risk > 0 ? d.currentPrice + risk * 2 : null;
+
   return {
     coin,
     mode: 'swing',
@@ -374,8 +405,11 @@ async function scanOneSwing(coin, volumeCache, btcContext) {
     bbPos: tech && (tech.snapshot.bbUpper - tech.snapshot.bbLower) > 0
       ? Math.round((tech.snapshot.close - tech.snapshot.bbLower) / (tech.snapshot.bbUpper - tech.snapshot.bbLower) * 100) / 100
       : null,
-    atr: tech ? tech.snapshot.atr14 : null,
+    atr: atrVal,
     heuristic: tech ? tech.heuristic : null,
+    chaseAtr: chaseAtr != null ? Math.round(chaseAtr * 100) / 100 : null,
+    slPrice: Math.round(slPrice * 1e8) / 1e8,
+    tpPrice: tpPrice != null ? Math.round(tpPrice * 1e8) / 1e8 : null,
   };
 }
 
@@ -433,6 +467,19 @@ async function scanOneQuick(coin, volumeCache, btcContext) {
   else if (volUsd > 5000000) bonus += 5;
   if (tech && tech.snapshot.rsi14 > 78) bonus -= 8;
   if (!tech) bonus -= 5;
+  // Late-entry: recovery >15% in 72h means setup is mid/late
+  if (q.recoveryPct > 15) bonus -= Math.min((q.recoveryPct - 15) * 0.5, 20);
+  // Chase penalty by ATR units
+  if (tech) {
+    const ch = chaseAtrUnits(q.currentPrice, q.bottomPrice, tech.snapshot.atr14);
+    if (ch != null) {
+      if (ch < 1.2) bonus += 3;
+      else if (ch > 3.5) bonus -= 6;
+      else if (ch > 2.5) bonus -= 3;
+    }
+  }
+  // Falling-knife guard
+  if (q.recoveryPct < 1.5 && !q.isRising) bonus -= 6;
 
   const total = recComp + structComp + techComp + volQualComp + btcRelComp + bonus;
   const score = Math.max(0, Math.min(100, total));
@@ -444,6 +491,12 @@ async function scanOneQuick(coin, volumeCache, btcContext) {
     btcRel: Math.round(btcRelComp * 10) / 10,
     bonus: Math.round(bonus * 10) / 10,
   };
+
+  const atrVal = tech ? tech.snapshot.atr14 : null;
+  const chaseAtr = atrVal ? chaseAtrUnits(q.currentPrice, q.bottomPrice, atrVal) : null;
+  const slPrice = q.bottomPrice * 0.99; // tighter buffer in quick mode
+  const risk = q.currentPrice - slPrice;
+  const tpPrice = risk > 0 ? q.currentPrice + risk * 2 : null;
 
   return {
     coin,
@@ -457,7 +510,7 @@ async function scanOneQuick(coin, volumeCache, btcContext) {
     recoveryPct: Math.round(q.recoveryPct * 100) / 100,
     fromPeakPct: Math.round(q.fromPeakPct * 100) / 100,
     hoursFromBottom: q.hoursFromBottom,
-    daysFromBottom: null, // not applicable in quick mode
+    daysFromBottom: null,
     isRising: q.isRising,
     volIncrease: Math.round(q.volIncrease * 100) / 100,
     volume24h: Math.round(volUsd),
@@ -475,8 +528,11 @@ async function scanOneQuick(coin, volumeCache, btcContext) {
     bbPos: tech && (tech.snapshot.bbUpper - tech.snapshot.bbLower) > 0
       ? Math.round((tech.snapshot.close - tech.snapshot.bbLower) / (tech.snapshot.bbUpper - tech.snapshot.bbLower) * 100) / 100
       : null,
-    atr: tech ? tech.snapshot.atr14 : null,
+    atr: atrVal,
     heuristic: tech ? tech.heuristic : null,
+    chaseAtr: chaseAtr != null ? Math.round(chaseAtr * 100) / 100 : null,
+    slPrice: Math.round(slPrice * 1e8) / 1e8,
+    tpPrice: tpPrice != null ? Math.round(tpPrice * 1e8) / 1e8 : null,
   };
 }
 
