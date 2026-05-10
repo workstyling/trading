@@ -7651,7 +7651,11 @@ Requirements:
             const limitPriceVal = o.limit_price || o.order_configuration?.limit_limit_gtc?.limit_price || '';
             if (isOpen && isLimitOrder && hasLimitPrice) {
               const posId = `pos_${o.order_id.slice(0, 8)}`;
-              posCell = `<span id="${posId}" class="order-pos" data-pair="${pair}" data-limit="${limitPriceVal}" data-side="${side}">...</span>`;
+              const cacheKey = `${pair}|${limitPriceVal}|${side}`;
+              const cached = window.__orderPosCache && window.__orderPosCache[cacheKey];
+              const initialText = cached ? cached.text : '<span style="color:#555;">…</span>';
+              const initialCls = cached ? cached.cls : 'order-pos';
+              posCell = `<span id="${posId}" class="${initialCls}" data-pair="${pair}" data-limit="${limitPriceVal}" data-side="${side}">${initialText}</span>`;
             }
           }
 
@@ -7868,6 +7872,10 @@ Requirements:
       // Only update if content changed (reduces flickering)
       if (container.innerHTML !== h) {
         container.innerHTML = h;
+        // After re-render: paint last-known positions from cache, then refresh in background
+        try { rehydratePositionsFromCache(); } catch {}
+        // Trigger an immediate refresh so positions stay current after render
+        setTimeout(() => { try { updateOrderPositions(); } catch {} }, 50);
         // Add click handlers for order selectors
         container.querySelectorAll('.order-selector').forEach(sel => {
           sel.addEventListener('click', () => {
@@ -8200,79 +8208,92 @@ Requirements:
       updateAllValueCells();
     }
 
-    // Update order book positions
+    // Cache positions by `${pair}|${limitPrice}|${side}` so re-renders show last known
+    // position immediately instead of flashing "..." for several seconds.
+    if (!window.__orderPosCache) window.__orderPosCache = {};
+
+    function applyPosToElement(el, position, maxLen) {
+      let text, cls;
+      if (position > 0 && position <= maxLen) {
+        text = '#' + position;
+        cls = 'order-pos pos-good';
+      } else if (position > 50) {
+        text = '>50';
+        cls = 'order-pos pos-deep';
+      } else {
+        text = '-';
+        cls = 'order-pos';
+      }
+      el.textContent = text;
+      el.className = cls;
+      const key = `${el.dataset.pair}|${el.dataset.limit}|${el.dataset.side}`;
+      window.__orderPosCache[key] = { text, cls, ts: Date.now() };
+    }
+
+    // Update order book positions — fetches all pairs in parallel; preserves cached
+    // values on re-renders + on transient API failures.
     async function updateOrderPositions() {
       const posElements = document.querySelectorAll('.order-pos[data-pair]');
+      if (!posElements.length) return;
       const pairGroups = {};
-
-      // Group by pair to minimize API calls
       posElements.forEach(el => {
         const pair = el.dataset.pair;
         if (!pairGroups[pair]) pairGroups[pair] = [];
         pairGroups[pair].push(el);
       });
 
-      for (const pair of Object.keys(pairGroups)) {
+      // Fire all pair requests in parallel — each pair takes 100-400ms and there can be
+      // a dozen unique pairs in the orders list. Sequential await was the main reason
+      // positions appeared to "drop out" during a re-render.
+      const pairs = Object.keys(pairGroups);
+      await Promise.all(pairs.map(async (pair) => {
+        let book = null;
         try {
           const res = await fetch(`https://api.exchange.coinbase.com/products/${pair}/book?level=2`);
-          const book = await res.json();
-          const asks = book.asks || []; // [[price, size, num_orders], ...]
-          const bids = book.bids || []; // [[price, size, num_orders], ...] sorted high to low
-
-          pairGroups[pair].forEach(el => {
-            const limitPrice = parseFloat(el.dataset.limit);
-            const side = el.dataset.side;
-            let position = 0;
-
-            if (side === 'SELL') {
-              // For SELL: count asks below our price (they get filled first)
-              for (let i = 0; i < asks.length; i++) {
-                const askPrice = parseFloat(asks[i][0]);
-                if (askPrice < limitPrice) {
-                  position++;
-                } else if (Math.abs(askPrice - limitPrice) < 0.0001) {
-                  position++;
-                  break;
-                } else {
-                  break;
-                }
-              }
-            } else if (side === 'BUY') {
-              // For BUY: count bids above our price (they get filled first)
-              for (let i = 0; i < bids.length; i++) {
-                const bidPrice = parseFloat(bids[i][0]);
-                if (bidPrice > limitPrice) {
-                  position++;
-                } else if (Math.abs(bidPrice - limitPrice) < 0.0001) {
-                  position++;
-                  break;
-                } else {
-                  break;
-                }
-              }
+          if (res.ok) book = await res.json();
+        } catch {}
+        if (!book) return; // keep cached values; do not clear DOM
+        const asks = book.asks || [];
+        const bids = book.bids || [];
+        pairGroups[pair].forEach(el => {
+          const limitPrice = parseFloat(el.dataset.limit);
+          const side = el.dataset.side;
+          let position = 0;
+          if (side === 'SELL') {
+            for (let i = 0; i < asks.length; i++) {
+              const askPrice = parseFloat(asks[i][0]);
+              if (askPrice < limitPrice) position++;
+              else if (Math.abs(askPrice - limitPrice) < 0.0001) { position++; break; }
+              else break;
             }
-
-            const maxLen = side === 'SELL' ? asks.length : bids.length;
-            if (position > 0 && position <= maxLen) {
-              el.textContent = '#' + position;
-              el.className = 'order-pos pos-good';
-            } else if (position > 50) {
-              el.textContent = '>50';
-              el.className = 'order-pos pos-deep';
-            } else {
-              el.textContent = '-';
-              el.className = 'order-pos';
+            applyPosToElement(el, position, asks.length);
+          } else if (side === 'BUY') {
+            for (let i = 0; i < bids.length; i++) {
+              const bidPrice = parseFloat(bids[i][0]);
+              if (bidPrice > limitPrice) position++;
+              else if (Math.abs(bidPrice - limitPrice) < 0.0001) { position++; break; }
+              else break;
             }
-          });
-        } catch (e) {
-          console.warn('Error fetching order book:', e);
-        }
-      }
+            applyPosToElement(el, position, bids.length);
+          }
+        });
+      }));
     }
 
-    // Update selected prices every 3 seconds
+    // Repopulate "…" placeholders from cache immediately after a re-render so
+    // the user sees the last known position instead of waiting for the next 3s tick.
+    function rehydratePositionsFromCache() {
+      document.querySelectorAll('.order-pos[data-pair]').forEach(el => {
+        if (el.textContent && el.textContent !== '…' && el.textContent !== '...') return;
+        const key = `${el.dataset.pair}|${el.dataset.limit}|${el.dataset.side}`;
+        const c = window.__orderPosCache[key];
+        if (c) { el.textContent = c.text; el.className = c.cls; }
+      });
+    }
+
+    // Update selected prices every 5s; positions every 3s + immediately on load
     setInterval(updateSelectedPrices, 5000);
-    setInterval(updateOrderPositions, 5000);
+    setInterval(updateOrderPositions, 3000);
     setTimeout(updateOrderPositions, 500);
     setTimeout(updateSelectedPrices, 100); // Run immediately on load
 
