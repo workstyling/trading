@@ -1274,22 +1274,20 @@ app.get('/api/predictor/scan-all', (req, res) => {
 });
 
 // ── Moonshots scanner: recovery pattern + technical confirmation across all Coinbase USD pairs ──
+// Two modes: 'swing' (30d daily candles, original) and 'quick' (72h hourly candles, short-term).
 const moonshotsLib = require('./src/predictor/moonshots');
 const moonshotsState = {
-  scanning: false,
-  progress: 0,
-  scanned: 0,
-  total: 0,
-  lastScanAt: 0,
-  results: [],
+  swing: { scanning: false, progress: 0, scanned: 0, total: 0, lastScanAt: 0, results: [] },
+  quick: { scanning: false, progress: 0, scanned: 0, total: 0, lastScanAt: 0, results: [] },
 };
 
-async function runMoonshotsScan() {
-  if (moonshotsState.scanning) return;
-  moonshotsState.scanning = true;
-  moonshotsState.progress = 0;
-  moonshotsState.scanned = 0;
-  console.log('[MOONSHOTS] Scan started');
+async function runMoonshotsScan(mode = 'swing') {
+  const st = moonshotsState[mode];
+  if (!st || st.scanning) return;
+  st.scanning = true;
+  st.progress = 0;
+  st.scanned = 0;
+  console.log(`[MOONSHOTS:${mode}] Scan started`);
   try {
     const cbRes = await fetch('https://api.exchange.coinbase.com/products');
     const products = await cbRes.json();
@@ -1297,45 +1295,54 @@ async function runMoonshotsScan() {
       .filter(p => p.quote_currency === 'USD' && p.status === 'online')
       .map(p => p.base_currency)
       .filter(s => !STABLECOINS.has(s));
-    moonshotsState.total = pairs.length;
+    st.total = pairs.length;
 
     const out = await moonshotsLib.scanAll(pairs, cbVolumeCache, (done, total) => {
-      moonshotsState.scanned = done;
-      moonshotsState.progress = Math.round(done / total * 100);
-    });
-    moonshotsState.results = out;
-    moonshotsState.lastScanAt = Date.now();
-    console.log(`[MOONSHOTS] Scan complete: ${out.length} candidates`);
+      st.scanned = done;
+      st.progress = Math.round(done / total * 100);
+    }, mode);
+    st.results = out;
+    st.lastScanAt = Date.now();
+    console.log(`[MOONSHOTS:${mode}] Scan complete: ${out.length} candidates`);
   } catch (e) {
-    console.error('[MOONSHOTS] error:', e.message);
+    console.error(`[MOONSHOTS:${mode}] error:`, e.message);
   } finally {
-    moonshotsState.scanning = false;
-    moonshotsState.progress = 100;
+    st.scanning = false;
+    st.progress = 100;
   }
 }
 
-// Auto-scan 120s after start (give recovery+volume scanners head start), then every 30 minutes
-setTimeout(() => runMoonshotsScan().catch(e => console.error('[MOONSHOTS] init:', e.message)), 120000);
-setInterval(() => runMoonshotsScan().catch(e => console.error('[MOONSHOTS] periodic:', e.message)), 30 * 60 * 1000);
+// Auto-scan: swing 120s after start every 30min, quick 90s after start every 10min
+setTimeout(() => runMoonshotsScan('swing').catch(e => console.error('[MOONSHOTS:swing] init:', e.message)), 120000);
+setInterval(() => runMoonshotsScan('swing').catch(e => console.error('[MOONSHOTS:swing] periodic:', e.message)), 30 * 60 * 1000);
+setTimeout(() => runMoonshotsScan('quick').catch(e => console.error('[MOONSHOTS:quick] init:', e.message)), 90000);
+setInterval(() => runMoonshotsScan('quick').catch(e => console.error('[MOONSHOTS:quick] periodic:', e.message)), 10 * 60 * 1000);
 
 app.get('/api/moonshots/scan', (req, res) => {
-  if (req.query.refresh === '1' && !moonshotsState.scanning) {
-    runMoonshotsScan().catch(() => {});
+  const mode = (req.query.mode === 'quick') ? 'quick' : 'swing';
+  const st = moonshotsState[mode];
+  if (req.query.refresh === '1' && !st.scanning) {
+    runMoonshotsScan(mode).catch(() => {});
   }
   const minVol = parseFloat(req.query.minVol) || 0;
   const minScore = parseFloat(req.query.minScore) || 0;
   const freshOnly = req.query.fresh === '1';
-  let results = moonshotsState.results;
+  let results = st.results;
   if (minVol > 0) results = results.filter(r => r.volume24h >= minVol);
   if (minScore > 0) results = results.filter(r => r.score >= minScore);
-  if (freshOnly) results = results.filter(r => r.daysFromBottom <= 7);
+  if (freshOnly) {
+    results = mode === 'quick'
+      ? results.filter(r => r.hoursFromBottom != null && r.hoursFromBottom <= 6)
+      : results.filter(r => r.daysFromBottom != null && r.daysFromBottom <= 7);
+  }
   res.json({
     success: true,
-    scanning: moonshotsState.scanning,
-    progress: moonshotsState.progress,
-    scanned: moonshotsState.scanned,
-    total: moonshotsState.total,
-    lastScanAgo: moonshotsState.lastScanAt ? Math.round((Date.now() - moonshotsState.lastScanAt) / 1000) : null,
+    mode,
+    scanning: st.scanning,
+    progress: st.progress,
+    scanned: st.scanned,
+    total: st.total,
+    lastScanAgo: st.lastScanAt ? Math.round((Date.now() - st.lastScanAt) / 1000) : null,
     results,
   });
 });

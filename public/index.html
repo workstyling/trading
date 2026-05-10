@@ -4107,6 +4107,35 @@
       font-weight: 600;
     }
 
+    .moon-mode-toggle {
+      display: inline-flex;
+      gap: 2px;
+      padding: 2px;
+      background: var(--s2);
+      border: 1px solid var(--b0);
+      border-radius: var(--r1);
+      margin-right: 6px;
+    }
+    .moon-mode-btn {
+      padding: 4px 10px;
+      background: transparent;
+      border: none;
+      border-radius: 6px;
+      color: var(--t1);
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.4px;
+      cursor: pointer;
+      font-family: inherit;
+      transition: all 0.15s;
+    }
+    .moon-mode-btn:hover { color: var(--t0); }
+    .moon-mode-btn.active {
+      background: var(--blue);
+      color: white;
+    }
+    .moon-mode-btn[data-mode="quick"].active { background: var(--green); color: #000; }
+
     .moon-spinner {
       display: inline-block;
       width: 42px;
@@ -4550,24 +4579,28 @@
       <div id="moonshotsPanel" style="display:flex;flex-direction:column;gap:14px;">
         <div class="pred-card">
           <div class="pred-card-head">
-            <h3>🚀 Moonshots — coins ready to fly <span style="color:var(--t2);font-size:10px;font-weight:400;">(recovery pattern + technical confirmation, all Coinbase USD pairs)</span></h3>
+            <h3>🚀 Moonshots — coins ready to fly</h3>
             <div class="pred-controls">
+              <div class="moon-mode-toggle">
+                <button class="moon-mode-btn active" data-mode="swing" onclick="setMoonMode('swing')">Swing · 30d</button>
+                <button class="moon-mode-btn" data-mode="quick" onclick="setMoonMode('quick')">Quick · 72h</button>
+              </div>
               <label>Min score</label>
               <input type="number" class="pred-input" id="moonMinScore" value="50" step="5" min="0" max="100" style="width:70px;">
               <label>Min vol $</label>
               <input type="number" class="pred-input" id="moonMinVol" value="200000" step="50000" min="0" style="width:100px;">
               <label style="display:flex;align-items:center;gap:4px;cursor:pointer;">
-                <input type="checkbox" id="moonFreshOnly" style="margin:0;"> Fresh bottom (≤7d)
+                <input type="checkbox" id="moonFreshOnly" style="margin:0;"> <span id="moonFreshLabel">Fresh bottom (≤7d)</span>
               </label>
               <button class="pred-btn primary" id="moonRefreshBtn" onclick="refreshMoonshots()">Refresh</button>
               <span id="moonStatus" style="font-size:10px;color:var(--t2);">Idle</span>
             </div>
           </div>
           <div class="pred-card-body" style="font-size:11px;color:var(--t2);line-height:1.5;">
-            <b style="color:var(--t1);">How it works:</b> for every USD pair on Coinbase we combine —
-            <span style="color:var(--green);">recovery score</span> (drop magnitude · bounce off bottom · days since bottom · 5d volume vs prior 10d · last-3-day trend) +
-            <span style="color:var(--blue);">technical score</span> (RSI, MACD bullish, EMA stack 9>21>55, BB position) +
-            <span style="color:var(--yellow);">liquidity bonus/penalty</span>. Result: a single 0-100 score per coin. Higher = more likely to run.
+            <b style="color:var(--t1);">Two modes:</b>
+            <b style="color:var(--blue);">Swing</b> — 30-day daily candles, bigger drops, days-from-bottom freshness, 7-day BTC strength (хорошо для удержания дни-недели).
+            <b style="color:var(--green);">Quick</b> — 72-hour hourly candles, smaller drops but hot setups, hours-from-bottom freshness, 24-hour BTC strength (хорошо для короткой сделки на часы-сутки).
+            Both combine recovery + structure (higher-lows, lower-wicks, up/down volume) + technical (RSI/MACD/EMA) into a 0-100 score.
           </div>
         </div>
         <div class="pred-card">
@@ -10240,9 +10273,9 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
     let moonLastData = null;
     let moonUserRequestedRefresh = false; // tracks "blank-the-table" preloader mode
 
-    // Persisted filter + sort state — survives reloads
+    // Persisted filter + sort + mode state — survives reloads
     const moonPrefs = (() => {
-      const def = { minScore: 50, minVol: 200000, fresh: false, sortBy: 'score', sortDir: 'desc' };
+      const def = { mode: 'swing', minScore: 50, minVol: 200000, fresh: false, sortBy: 'score', sortDir: 'desc' };
       try {
         const raw = safeStorage.getItem('moonshotsPrefs');
         if (raw) return Object.assign({}, def, JSON.parse(raw));
@@ -10257,9 +10290,14 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
       const ms = document.getElementById('moonMinScore');
       const mv = document.getElementById('moonMinVol');
       const fr = document.getElementById('moonFreshOnly');
+      const flabel = document.getElementById('moonFreshLabel');
       if (ms) ms.value = moonPrefs.minScore;
       if (mv) mv.value = moonPrefs.minVol;
       if (fr) fr.checked = !!moonPrefs.fresh;
+      if (flabel) flabel.textContent = moonPrefs.mode === 'quick' ? 'Fresh bottom (≤6h)' : 'Fresh bottom (≤7d)';
+      document.querySelectorAll('.moon-mode-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.mode === moonPrefs.mode);
+      });
     }
     function readMoonPrefsFromInputs() {
       const ms = document.getElementById('moonMinScore');
@@ -10271,10 +10309,22 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
       saveMoonPrefs();
     }
 
+    function setMoonMode(mode) {
+      if (moonPrefs.mode === mode) return;
+      moonPrefs.mode = mode;
+      saveMoonPrefs();
+      applyMoonPrefsToInputs();
+      // Wipe previous table — different shape between modes
+      moonLastData = null;
+      const tbl = document.getElementById('moonTable');
+      if (tbl) tbl.innerHTML = renderMoonPreloader(0, 0, 0);
+      loadMoonshots();
+    }
+
     async function loadMoonshots() {
       try {
         readMoonPrefsFromInputs();
-        const r = await fetch(`/api/moonshots/scan?minScore=${moonPrefs.minScore}&minVol=${moonPrefs.minVol}&fresh=${moonPrefs.fresh ? 1 : 0}`);
+        const r = await fetch(`/api/moonshots/scan?mode=${moonPrefs.mode}&minScore=${moonPrefs.minScore}&minVol=${moonPrefs.minVol}&fresh=${moonPrefs.fresh ? 1 : 0}`);
         const data = await r.json();
         if (!data.success) return;
         moonLastData = data;
@@ -10283,7 +10333,7 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
           moonshotsPolling = setInterval(loadMoonshots, 3000);
         } else if (!data.scanning && moonshotsPolling) {
           clearInterval(moonshotsPolling); moonshotsPolling = null;
-          moonUserRequestedRefresh = false; // scan finished, show table again next render
+          moonUserRequestedRefresh = false;
         }
       } catch (e) { console.error('moonshots load:', e); }
     }
@@ -10292,10 +10342,9 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
       btn.disabled = true;
       btn.textContent = 'Starting...';
       moonUserRequestedRefresh = true;
-      // Immediately show preloader before the network call lands
       const tbl = document.getElementById('moonTable');
       if (tbl) tbl.innerHTML = renderMoonPreloader(0, 0, 0);
-      fetch('/api/moonshots/scan?refresh=1')
+      fetch(`/api/moonshots/scan?refresh=1&mode=${moonPrefs.mode}`)
         .then(() => setTimeout(() => {
           btn.textContent = 'Refresh';
           btn.disabled = false;
@@ -10334,12 +10383,20 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
 
     function renderMoonshots(data) {
       const status = document.getElementById('moonStatus');
+      const isQuick = data.mode === 'quick';
       if (data.scanning) {
-        status.innerHTML = `<span style="color:var(--blue);">Scanning ${data.scanned}/${data.total} (${data.progress}%)</span>`;
+        status.innerHTML = `<span style="color:${isQuick ? 'var(--green)' : 'var(--blue)'};">Scanning ${data.scanned}/${data.total} (${data.progress}%)</span>`;
       } else {
-        const btcLine = data.results.length && data.results[0].btc7dReturn != null
-          ? ` · BTC 7d: <span style="color:${data.results[0].btc7dReturn >= 0 ? 'var(--green)' : 'var(--loss)'};">${data.results[0].btc7dReturn >= 0 ? '+' : ''}${data.results[0].btc7dReturn}%</span>`
-          : '';
+        let btcLine = '';
+        if (data.results.length) {
+          if (isQuick && data.results[0].btc24hReturn != null) {
+            const v = data.results[0].btc24hReturn;
+            btcLine = ` · BTC 24h: <span style="color:${v >= 0 ? 'var(--green)' : 'var(--loss)'};">${v >= 0 ? '+' : ''}${v}%</span>`;
+          } else if (!isQuick && data.results[0].btc7dReturn != null) {
+            const v = data.results[0].btc7dReturn;
+            btcLine = ` · BTC 7d: <span style="color:${v >= 0 ? 'var(--green)' : 'var(--loss)'};">${v >= 0 ? '+' : ''}${v}%</span>`;
+          }
+        }
         status.innerHTML = `${data.results.length} candidates · <span style="color:var(--t1);">${predFmt.ago(data.lastScanAgo)}</span>${btcLine}`;
       }
       const tbl = document.getElementById('moonTable');
@@ -10378,13 +10435,23 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
         const tech = [
           r.macdBullish ? '<span style="color:var(--green);" title="MACD > signal">M↑</span>' : '<span style="color:var(--loss);">M↓</span>',
           r.emaStackBullish ? '<span style="color:var(--green);" title="EMA 9>21>55">E↑</span>' : '<span style="color:var(--t2);">E·</span>',
-          r.isRising ? '<span style="color:var(--green);" title="3-day trend up">T↑</span>' : '<span style="color:var(--t2);">T·</span>',
+          r.isRising ? '<span style="color:var(--green);" title="trend up">T↑</span>' : '<span style="color:var(--t2);">T·</span>',
         ].join(' ');
         const struct = [
-          `<span style="color:${r.higherLows>=4?'var(--green)':r.higherLows>=2?'var(--yellow)':'var(--t2)'};" title="higher lows in last 7d">HL${r.higherLows}</span>`,
-          `<span style="color:${r.greenLast5>=3?'var(--green)':'var(--t2)'};" title="green candles last 5d">G${r.greenLast5}</span>`,
+          `<span style="color:${r.higherLows>=4?'var(--green)':r.higherLows>=2?'var(--yellow)':'var(--t2)'};" title="higher lows in window">HL${r.higherLows}</span>`,
+          `<span style="color:${r.greenLast5>=3?'var(--green)':'var(--t2)'};" title="green candles">G${r.greenLast5}</span>`,
         ].join(' ');
-        const fresh = r.daysFromBottom <= 6 ? '<span style="color:var(--green);">🔥</span>' : '';
+        // Freshness label: swing → days, quick → hours
+        let freshCell, freshIcon = '';
+        if (isQuick) {
+          const h = r.hoursFromBottom;
+          freshIcon = h <= 3 ? '<span style="color:var(--green);">🔥</span>' : h <= 6 ? '<span style="color:var(--yellow);">🔥</span>' : '';
+          freshCell = `${h}h ${freshIcon}`;
+        } else {
+          const d = r.daysFromBottom;
+          freshIcon = d <= 6 ? '<span style="color:var(--green);">🔥</span>' : '';
+          freshCell = `${d}d ${freshIcon}`;
+        }
         const rsColor = r.relativeStrength > 5 ? 'var(--green)' : r.relativeStrength > 0 ? 'var(--yellow)' : 'var(--loss)';
         const breakdown = r.breakdown
           ? `Rec ${r.breakdown.recovery} · Str ${r.breakdown.structure} · Tech ${r.breakdown.technical} · Vol ${r.breakdown.volQuality} · BTC ${r.breakdown.btcRel} · Bonus ${r.breakdown.bonus}`
@@ -10396,7 +10463,7 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
           <td>${predFmt.price(r.currentPrice)}</td>
           <td style="color:var(--loss);">${r.dropPct}%</td>
           <td style="color:var(--green);">+${r.recoveryPct}%</td>
-          <td>${r.daysFromBottom}d ${fresh}</td>
+          <td>${freshCell}</td>
           <td style="color:${rsColor};">${r.relativeStrength >= 0 ? '+' : ''}${r.relativeStrength}%</td>
           <td>${r.upDownVolRatio}x</td>
           <td>${struct}</td>
@@ -10406,17 +10473,24 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
           <td><button class="pred-btn primary" style="padding:3px 10px;font-size:10px;" onclick="moonshotsToPredictor('${r.coin}')">→</button></td>
         </tr>`;
       }).join('');
+      const freshHeader = isQuick ? th('Hours','hoursFromBottom','Hours since bottom (smaller = fresher)') : th('Days','daysFromBottom','Days since bottom');
+      const rsHeader = isQuick
+        ? th('vs BTC 24h','relativeStrength','Coin 24h return − BTC 24h return')
+        : th('vs BTC 7d','relativeStrength','Coin 7d return − BTC 7d return');
+      const volRatioHeader = isQuick
+        ? th('Up/Dn Vol','upDownVolRatio','Up-hour volume / down-hour volume (24h)')
+        : th('Up/Dn Vol','upDownVolRatio','Up-day volume / down-day volume (10d)');
       tbl.innerHTML = `<table class="pred-table">
         <thead><tr>
           <th>#</th>
           ${th('Coin','coin')}
           ${th('Score','score','Composite 0-100. Hover row for breakdown.')}
           ${th('Price','currentPrice')}
-          ${th('Drop','dropPct','Drop from 30d peak')}
+          ${th('Drop','dropPct', isQuick ? 'Drop from 72h peak' : 'Drop from 30d peak')}
           ${th('Recovery','recoveryPct','Bounce off bottom')}
-          ${th('Days','daysFromBottom','Days since bottom')}
-          ${th('vs BTC 7d','relativeStrength','Coin 7d return − BTC 7d return')}
-          ${th('Up/Dn Vol','upDownVolRatio','Up-day volume / down-day volume (10d)')}
+          ${freshHeader}
+          ${rsHeader}
+          ${volRatioHeader}
           <th title="Higher-lows count, green candles count">Struct</th>
           ${th('RSI','rsi')}
           <th>Tech</th>
