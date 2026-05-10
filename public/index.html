@@ -4081,6 +4081,18 @@
       font-family: 'JetBrains Mono', monospace;
       margin-top: 2px;
     }
+
+    .moon-spinner {
+      display: inline-block;
+      width: 42px;
+      height: 42px;
+      border: 3px solid rgba(255,255,255,0.08);
+      border-top-color: var(--blue);
+      border-right-color: var(--green);
+      border-radius: 50%;
+      animation: moonSpin 0.85s linear infinite;
+    }
+    @keyframes moonSpin { to { transform: rotate(360deg); } }
   </style>
 </head>
 
@@ -9848,6 +9860,7 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
         loadPredictorSignals();
       }
       if (name === 'moonshots') {
+        applyMoonPrefsToInputs();
         loadMoonshots();
       }
     }
@@ -9856,6 +9869,7 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
       try {
         const last = safeStorage.getItem('activeTab');
         if (last === 'predictor') switchTab('predictor');
+        else if (last === 'moonshots') switchTab('moonshots');
       } catch {}
     });
 
@@ -10167,42 +10181,99 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
 
     /* ═══════════════════════════ MOONSHOTS ═══════════════════════════ */
     let moonshotsPolling = null;
-    let moonSortBy = 'score';
-    let moonSortDir = 'desc';
     let moonLastData = null;
+    let moonUserRequestedRefresh = false; // tracks "blank-the-table" preloader mode
+
+    // Persisted filter + sort state — survives reloads
+    const moonPrefs = (() => {
+      const def = { minScore: 50, minVol: 200000, fresh: false, sortBy: 'score', sortDir: 'desc' };
+      try {
+        const raw = safeStorage.getItem('moonshotsPrefs');
+        if (raw) return Object.assign({}, def, JSON.parse(raw));
+      } catch {}
+      return def;
+    })();
+    function saveMoonPrefs() {
+      try { safeStorage.setItem('moonshotsPrefs', JSON.stringify(moonPrefs)); } catch {}
+    }
+
+    function applyMoonPrefsToInputs() {
+      const ms = document.getElementById('moonMinScore');
+      const mv = document.getElementById('moonMinVol');
+      const fr = document.getElementById('moonFreshOnly');
+      if (ms) ms.value = moonPrefs.minScore;
+      if (mv) mv.value = moonPrefs.minVol;
+      if (fr) fr.checked = !!moonPrefs.fresh;
+    }
+    function readMoonPrefsFromInputs() {
+      const ms = document.getElementById('moonMinScore');
+      const mv = document.getElementById('moonMinVol');
+      const fr = document.getElementById('moonFreshOnly');
+      if (ms) moonPrefs.minScore = parseFloat(ms.value) || 0;
+      if (mv) moonPrefs.minVol = parseFloat(mv.value) || 0;
+      if (fr) moonPrefs.fresh = fr.checked;
+      saveMoonPrefs();
+    }
 
     async function loadMoonshots() {
       try {
-        const minScore = document.getElementById('moonMinScore').value;
-        const minVol = document.getElementById('moonMinVol').value;
-        const fresh = document.getElementById('moonFreshOnly').checked ? '1' : '0';
-        const r = await fetch(`/api/moonshots/scan?minScore=${minScore}&minVol=${minVol}&fresh=${fresh}`);
+        readMoonPrefsFromInputs();
+        const r = await fetch(`/api/moonshots/scan?minScore=${moonPrefs.minScore}&minVol=${moonPrefs.minVol}&fresh=${moonPrefs.fresh ? 1 : 0}`);
         const data = await r.json();
         if (!data.success) return;
         moonLastData = data;
         renderMoonshots(data);
         if (data.scanning && !moonshotsPolling) {
-          moonshotsPolling = setInterval(loadMoonshots, 5000);
+          moonshotsPolling = setInterval(loadMoonshots, 3000);
         } else if (!data.scanning && moonshotsPolling) {
           clearInterval(moonshotsPolling); moonshotsPolling = null;
+          moonUserRequestedRefresh = false; // scan finished, show table again next render
         }
       } catch (e) { console.error('moonshots load:', e); }
     }
     function refreshMoonshots() {
       const btn = document.getElementById('moonRefreshBtn');
+      btn.disabled = true;
       btn.textContent = 'Starting...';
+      moonUserRequestedRefresh = true;
+      // Immediately show preloader before the network call lands
+      const tbl = document.getElementById('moonTable');
+      if (tbl) tbl.innerHTML = renderMoonPreloader(0, 0, 0);
       fetch('/api/moonshots/scan?refresh=1')
-        .then(() => setTimeout(() => { btn.textContent = 'Refresh'; loadMoonshots(); }, 1500));
+        .then(() => setTimeout(() => {
+          btn.textContent = 'Refresh';
+          btn.disabled = false;
+          loadMoonshots();
+        }, 1200));
     }
 
     function setMoonSort(field) {
-      if (moonSortBy === field) {
-        moonSortDir = moonSortDir === 'desc' ? 'asc' : 'desc';
+      if (moonPrefs.sortBy === field) {
+        moonPrefs.sortDir = moonPrefs.sortDir === 'desc' ? 'asc' : 'desc';
       } else {
-        moonSortBy = field;
-        moonSortDir = 'desc';
+        moonPrefs.sortBy = field;
+        moonPrefs.sortDir = 'desc';
       }
+      saveMoonPrefs();
       if (moonLastData) renderMoonshots(moonLastData);
+    }
+
+    function renderMoonPreloader(scanned, total, progress) {
+      const pct = progress || 0;
+      const counter = total ? `${scanned} / ${total} coins` : 'starting up...';
+      return `
+        <div style="padding:60px 30px;text-align:center;">
+          <div class="moon-spinner"></div>
+          <div style="margin-top:18px;color:var(--t0);font-size:14px;font-weight:600;letter-spacing:0.3px;">Scanning Coinbase market</div>
+          <div style="margin-top:6px;color:var(--t2);font-size:11px;">${counter}</div>
+          <div style="margin:18px auto 0;max-width:340px;height:6px;background:var(--s3);border-radius:3px;overflow:hidden;">
+            <div style="height:100%;width:${pct}%;background:linear-gradient(90deg,var(--blue),var(--green));transition:width 0.4s ease;"></div>
+          </div>
+          <div style="margin-top:8px;color:var(--t2);font-size:10px;">${pct}%</div>
+          <div style="margin-top:24px;color:var(--t2);font-size:10px;line-height:1.6;max-width:500px;margin-left:auto;margin-right:auto;">
+            Fetching daily &amp; hourly candles for every USD pair, computing recovery pattern + structure (higher lows, wicks, up/down volume), 1-hour technical state (RSI, MACD, EMA stack), and BTC-relative strength.
+          </div>
+        </div>`;
     }
 
     function renderMoonshots(data) {
@@ -10216,20 +10287,33 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
         status.innerHTML = `${data.results.length} candidates · <span style="color:var(--t1);">${predFmt.ago(data.lastScanAgo)}</span>${btcLine}`;
       }
       const tbl = document.getElementById('moonTable');
+
+      // If user explicitly clicked Refresh, hide the table during scan and show
+      // the preloader with progress bar — even if we still have stale results in memory.
+      if (data.scanning && moonUserRequestedRefresh) {
+        tbl.innerHTML = renderMoonPreloader(data.scanned, data.total, data.progress);
+        return;
+      }
+      // First-ever scan with no prior data — also show preloader (table is empty anyway)
+      if (data.scanning && !data.results.length) {
+        tbl.innerHTML = renderMoonPreloader(data.scanned, data.total, data.progress);
+        return;
+      }
+
       if (!data.results.length) {
-        tbl.innerHTML = `<div style="text-align:center;padding:30px;color:var(--t2);font-size:12px;">${data.scanning ? 'Scanning... results appear as they come in.' : 'No coins match current filters. Try lowering Min score or Min vol.'}</div>`;
+        tbl.innerHTML = `<div style="text-align:center;padding:30px;color:var(--t2);font-size:12px;">No coins match current filters. Try lowering Min score or Min vol.</div>`;
         return;
       }
       // Sort
       const sorted = data.results.slice().sort((a, b) => {
-        const av = a[moonSortBy], bv = b[moonSortBy];
+        const av = a[moonPrefs.sortBy], bv = b[moonPrefs.sortBy];
         const numA = (av == null) ? -Infinity : av;
         const numB = (bv == null) ? -Infinity : bv;
-        return moonSortDir === 'desc' ? numB - numA : numA - numB;
+        return moonPrefs.sortDir === 'desc' ? numB - numA : numA - numB;
       });
 
-      const arrow = field => moonSortBy === field ? (moonSortDir === 'desc' ? ' ▼' : ' ▲') : '';
-      const sortStyle = field => moonSortBy === field ? 'color:var(--blue);' : '';
+      const arrow = field => moonPrefs.sortBy === field ? (moonPrefs.sortDir === 'desc' ? ' ▼' : ' ▲') : '';
+      const sortStyle = field => moonPrefs.sortBy === field ? 'color:var(--blue);' : '';
       const th = (label, field, title) =>
         `<th style="cursor:pointer;${sortStyle(field)}" onclick="setMoonSort('${field}')" title="${title || ''}">${label}${arrow(field)}</th>`;
 
