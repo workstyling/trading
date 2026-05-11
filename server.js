@@ -1167,9 +1167,7 @@ async function runPredictorScan(tf = predictorState.tf) {
   console.log(`[PREDICTOR] Scan complete: ${out.length} results`);
 }
 
-// Auto-scan 60s after start, then every 10 minutes
-setTimeout(() => runPredictorScan().catch(e => console.error('[PREDICTOR] init scan:', e.message)), 60000);
-setInterval(() => runPredictorScan().catch(e => console.error('[PREDICTOR] periodic scan:', e.message)), 10 * 60 * 1000);
+// NOTE: predictor watchlist scan runs only on explicit refresh trigger (no auto-scan).
 
 // ── Full-market scan: every online USD pair on Coinbase, heuristic-only (no NN training) ──
 const predictorAllState = {
@@ -1246,9 +1244,7 @@ async function runPredictorAllScan(tf = '1h') {
   }
 }
 
-// Auto-scan all coins 90s after start, then every 30 minutes
-setTimeout(() => runPredictorAllScan().catch(e => console.error('[PREDICTOR-ALL] init:', e.message)), 90000);
-setInterval(() => runPredictorAllScan().catch(e => console.error('[PREDICTOR-ALL] periodic:', e.message)), 30 * 60 * 1000);
+// NOTE: predictor "scan all coins" runs only on explicit refresh trigger (no auto-scan).
 
 app.get('/api/predictor/scan-all', (req, res) => {
   if (req.query.refresh === '1' && !predictorAllState.scanning) {
@@ -1315,17 +1311,9 @@ async function runMoonshotsScan(mode = 'swing') {
   }
 }
 
-// Auto-scan cadence per mode.
-const MOONSHOTS_AUTO = {
-  swing: { initialDelay: 120000, interval: 30 * 60 * 1000 },
-  quick: { initialDelay:  90000, interval: 10 * 60 * 1000 },
-  intra: { initialDelay:  75000, interval:  6 * 60 * 1000 },
-  scalp: { initialDelay:  60000, interval:  4 * 60 * 1000 },
-};
-MOONSHOTS_MODES.forEach(m => {
-  setTimeout(() => runMoonshotsScan(m).catch(e => console.error(`[MOONSHOTS:${m}] init:`, e.message)), MOONSHOTS_AUTO[m].initialDelay);
-  setInterval(() => runMoonshotsScan(m).catch(e => console.error(`[MOONSHOTS:${m}] periodic:`, e.message)), MOONSHOTS_AUTO[m].interval);
-});
+// NOTE: no automatic moonshots scans. Scans run only when the user clicks Refresh
+// (which hits /api/moonshots/scan-all). The server starts with empty caches
+// and waits for an explicit trigger.
 
 // Fire all scans concurrently — single "Refresh" button on the UI hits this.
 app.get('/api/moonshots/scan-all', (req, res) => {

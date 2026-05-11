@@ -4152,29 +4152,36 @@
     .moon-freshness {
       display: inline-flex;
       align-items: center;
-      gap: 6px;
-      padding: 4px 10px;
-      border-radius: 999px;
+      gap: 8px;
+      padding: 0 4px;
       font-family: 'JetBrains Mono', monospace;
-      font-size: 11px;
-      font-weight: 600;
-      letter-spacing: 0.3px;
-      border: 1px solid var(--b1);
-      background: var(--s2);
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.2px;
+      background: none;
+      border: none;
     }
     .moon-freshness .mf-dot {
-      width: 7px; height: 7px; border-radius: 50%;
+      width: 9px; height: 9px; border-radius: 50%;
       display: inline-block;
     }
-    .moon-freshness.fresh { color: var(--green); border-color: rgba(48,209,88,0.35); background: rgba(48,209,88,0.08); }
-    .moon-freshness.fresh .mf-dot { background: var(--green); box-shadow: 0 0 6px var(--green); animation: mfPulse 1.6s ease-in-out infinite; }
-    .moon-freshness.mid   { color: var(--yellow); border-color: rgba(255,214,10,0.35); background: rgba(255,214,10,0.08); }
+    .moon-freshness .mf-label {
+      font-size: 9px;
+      color: var(--t2);
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      font-weight: 600;
+      margin-right: 2px;
+    }
+    .moon-freshness.fresh { color: var(--green); }
+    .moon-freshness.fresh .mf-dot { background: var(--green); box-shadow: 0 0 8px var(--green); animation: mfPulse 1.6s ease-in-out infinite; }
+    .moon-freshness.mid   { color: var(--yellow); }
     .moon-freshness.mid   .mf-dot { background: var(--yellow); }
-    .moon-freshness.stale { color: var(--loss); border-color: rgba(255,69,58,0.35); background: rgba(255,69,58,0.08); }
+    .moon-freshness.stale { color: var(--loss); }
     .moon-freshness.stale .mf-dot { background: var(--loss); }
-    .moon-freshness.scanning { color: var(--blue); border-color: rgba(10,132,255,0.4); background: rgba(10,132,255,0.08); }
-    .moon-freshness.scanning .mf-dot { background: var(--blue); animation: mfPulse 0.9s ease-in-out infinite; }
-    @keyframes mfPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+    .moon-freshness.scanning { color: var(--blue); }
+    .moon-freshness.scanning .mf-dot { background: var(--blue); box-shadow: 0 0 8px var(--blue); animation: mfPulse 0.9s ease-in-out infinite; }
+    @keyframes mfPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
 
     .moon-spinner {
       display: inline-block;
@@ -10357,16 +10364,15 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
       return 'stale';
     }
 
-    // Live tick of the freshness pill — no network call, just updates DOM text every second
-    // so the user sees "Scanned 12s ago", "13s ago", ... without waiting for the next refresh.
+    // Live tick of the freshness indicator — no network call, just updates DOM text every second
+    // so the user sees "12s ago", "13s ago", ... without waiting for the next refresh.
     setInterval(() => {
       const pill = document.getElementById('moonFreshPill');
       if (!pill || !moonLastScanAtAbs || !moonLastData || moonLastData.scanning) return;
       const secs = Math.max(0, Math.round((Date.now() - moonLastScanAtAbs) / 1000));
       const cls = moonFreshnessClass(moonLastData.mode, secs);
       pill.className = 'moon-freshness ' + cls;
-      // Preserve the dot, replace only the text node after it
-      pill.innerHTML = `<span class="mf-dot"></span>Scanned ${moonFreshnessLabel(secs)}`;
+      pill.innerHTML = `<span class="mf-dot"></span><span class="mf-label">Last scan</span>${moonFreshnessLabel(secs)}`;
     }, 1000);
 
     // Persisted filter + sort + mode state — survives reloads
@@ -10496,16 +10502,16 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
         moonLastScanAtAbs = Date.now() - data.lastScanAgo * 1000;
       }
 
-      // Build the freshness pill — large, color-coded, ticks every second locally.
+      // Big, prominent freshness indicator — colored dot + bold time, no button styling.
       let freshHtml;
       if (data.scanning) {
-        freshHtml = `<span class="moon-freshness scanning"><span class="mf-dot"></span>Scanning ${data.scanned}/${data.total} · ${data.progress}%</span>`;
+        freshHtml = `<span class="moon-freshness scanning"><span class="mf-dot"></span><span class="mf-label">Scanning</span>${data.scanned}/${data.total} · ${data.progress}%</span>`;
       } else if (moonLastScanAtAbs != null) {
         const secs = Math.max(0, Math.round((Date.now() - moonLastScanAtAbs) / 1000));
         const cls = moonFreshnessClass(data.mode, secs);
-        freshHtml = `<span class="moon-freshness ${cls}" id="moonFreshPill"><span class="mf-dot"></span>Scanned ${moonFreshnessLabel(secs)}</span>`;
+        freshHtml = `<span class="moon-freshness ${cls}" id="moonFreshPill"><span class="mf-dot"></span><span class="mf-label">Last scan</span>${moonFreshnessLabel(secs)}</span>`;
       } else {
-        freshHtml = `<span class="moon-freshness stale"><span class="mf-dot"></span>No scan yet</span>`;
+        freshHtml = `<span class="moon-freshness stale"><span class="mf-dot"></span><span class="mf-label">Last scan</span>never · click Refresh</span>`;
       }
 
       let btcLine = '';
