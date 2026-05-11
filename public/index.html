@@ -4149,6 +4149,18 @@
     .moon-mode-btn[data-mode="intra"].active { background: var(--purple); color: #fff; }
     .moon-mode-btn[data-mode="scalp"].active { background: var(--yellow); color: #000; }
 
+    /* Freshness pill — fixed min-width and right alignment so mode switching
+       (text lengths "never · click Refresh" / "39s ago" / "Scanning 66/390 · 17%")
+       doesn't shift surrounding controls. font-variant-numeric keeps digit cells
+       the same width as they tick up. */
+    #moonStatus {
+      min-width: 280px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      font-variant-numeric: tabular-nums;
+    }
     .moon-freshness {
       display: inline-flex;
       align-items: center;
@@ -4160,6 +4172,7 @@
       letter-spacing: 0.2px;
       background: none;
       border: none;
+      font-variant-numeric: tabular-nums;
     }
     .moon-freshness .mf-dot {
       width: 9px; height: 9px; border-radius: 50%;
@@ -4650,8 +4663,8 @@
               <input type="number" class="pred-input" id="moonMinScore" value="50" step="5" min="0" max="100" style="width:70px;">
               <label>Min vol $</label>
               <input type="number" class="pred-input" id="moonMinVol" value="200000" step="50000" min="0" style="width:100px;">
-              <label style="display:flex;align-items:center;gap:4px;cursor:pointer;">
-                <input type="checkbox" id="moonFreshOnly" style="margin:0;"> <span id="moonFreshLabel">Fresh bottom (≤7d)</span>
+              <label style="display:flex;align-items:center;gap:4px;cursor:pointer;min-width:155px;">
+                <input type="checkbox" id="moonFreshOnly" style="margin:0;"> <span id="moonFreshLabel" style="display:inline-block;">Fresh bottom (≤7d)</span>
               </label>
               <button class="pred-btn primary" id="moonRefreshAllBtn" onclick="refreshMoonshotsAll()" title="Rescan all 4 modes in parallel">Refresh</button>
               <span id="moonStatus" style="font-size:10px;color:var(--t2);">Idle</span>

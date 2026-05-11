@@ -108,11 +108,17 @@ function analyzeDaily(dailyRaw) {
   }
   const upDownVolRatio = downVol > 0 ? upVol / downVol : (upVol > 0 ? 3 : 1);
 
+  // ── Stronger trend & accumulation signals ──
+  const slopeLast7 = linregSlopePct(closes, 7);
+  const obvAccum = obvSlope(closes.slice(-Math.min(15, closes.length)), volumes.slice(-Math.min(15, volumes.length)));
+  const vShape = vShapeQuality(lows, minIdx, 4);
+
   return {
     currentPrice, peakPrice: maxPrice, bottomPrice: minPrice,
     dropPct, recoveryPct, fromPeakPct, daysFromBottom,
     isRising, volIncrease,
     higherLows, greenLast5, lowerWickPct, upDownVolRatio,
+    slopeLast7, obvAccum, vShape,
     closes,
   };
 }
@@ -245,12 +251,17 @@ function analyzeScalp(min15Raw) {
   }
   const upDownVolRatio = downVol > 0 ? upVol / downVol : (upVol > 0 ? 3 : 1);
 
+  const slopeLast4 = linregSlopePct(closes, 4);
+  const obvAccum = obvSlope(closes.slice(-12), volumes.slice(-12));
+  const vShape = vShapeQuality(lows, minIdx, 2);
+
   return {
     currentPrice, peakPrice: maxPrice, bottomPrice: minPrice,
     dropPct, recoveryPct, fromPeakPct,
     minutesFromBottom, candlesFromBottom,
     isRising, volIncrease,
     higherLows, greenLast5: greenLast, lowerWickPct, upDownVolRatio,
+    slopeLast4, obvAccum, vShape,
     closes,
   };
 }
@@ -338,12 +349,17 @@ function analyzeIntra(hourlyRaw) {
   }
   const upDownVolRatio = downVol > 0 ? upVol / downVol : (upVol > 0 ? 3 : 1);
 
+  const slopeLast6 = linregSlopePct(closes, 6);
+  const obvAccum = obvSlope(closes.slice(-12), volumes.slice(-12));
+  const vShape = vShapeQuality(lows, minIdx, 3);
+
   return {
     currentPrice, peakPrice: maxPrice, bottomPrice: minPrice,
     dropPct, recoveryPct, fromPeakPct,
     hoursFromBottom,
     isRising, volIncrease,
     higherLows, greenLast5: greenLast, lowerWickPct, upDownVolRatio,
+    slopeLast6, obvAccum, vShape,
     closes,
   };
 }
@@ -434,12 +450,17 @@ function analyzeQuick(hourlyRaw) {
   }
   const upDownVolRatio = downVol > 0 ? upVol / downVol : (upVol > 0 ? 3 : 1);
 
+  const slopeLast12 = linregSlopePct(closes, 12);
+  const obvAccum = obvSlope(closes.slice(-24), volumes.slice(-24));
+  const vShape = vShapeQuality(lows, minIdx, 4);
+
   return {
     currentPrice, peakPrice: maxPrice, bottomPrice: minPrice,
     dropPct, recoveryPct, fromPeakPct,
     hoursFromBottom,
     isRising, volIncrease,
     higherLows, greenLast5: greenLast, lowerWickPct, upDownVolRatio,
+    slopeLast12, obvAccum, vShape,
     closes,
   };
 }
@@ -449,6 +470,60 @@ function analyzeQuick(hourlyRaw) {
 function chaseAtrUnits(currentPrice, bottomPrice, atr) {
   if (!atr || atr <= 0) return null;
   return (currentPrice - bottomPrice) / atr;
+}
+
+// Linear regression slope on the last N closes, expressed as % of mean price per candle.
+// Positive slope = uptrend, magnitude tells you how steep. More robust than "last close > prior".
+function linregSlopePct(closes, n) {
+  const len = Math.min(n, closes.length);
+  if (len < 4) return 0;
+  const tail = closes.slice(-len);
+  const mean = tail.reduce((a, b) => a + b, 0) / len;
+  if (mean === 0) return 0;
+  const xMean = (len - 1) / 2;
+  let num = 0, den = 0;
+  for (let i = 0; i < len; i++) {
+    num += (i - xMean) * (tail[i] - mean);
+    den += (i - xMean) ** 2;
+  }
+  if (den === 0) return 0;
+  return (num / den) / mean * 100;
+}
+
+// On-Balance Volume — running sum of volumes signed by close-vs-prev-close direction.
+// Returns OBV slope (% change between halves of the series) — positive = accumulation,
+// negative = distribution. Useful when price is flat but volume tells you smart money is buying.
+function obvSlope(closes, volumes) {
+  if (closes.length < 6 || volumes.length < 6) return 0;
+  const obv = new Array(closes.length).fill(0);
+  for (let i = 1; i < closes.length; i++) {
+    if (closes[i] > closes[i - 1]) obv[i] = obv[i - 1] + volumes[i];
+    else if (closes[i] < closes[i - 1]) obv[i] = obv[i - 1] - volumes[i];
+    else obv[i] = obv[i - 1];
+  }
+  // Compare last third average to first third average
+  const third = Math.floor(closes.length / 3);
+  const firstAvg = obv.slice(0, third).reduce((a, b) => a + b, 0) / third;
+  const lastAvg = obv.slice(-third).reduce((a, b) => a + b, 0) / third;
+  const range = Math.max(1, Math.abs(firstAvg) + Math.abs(lastAvg));
+  return ((lastAvg - firstAvg) / range) * 100;
+}
+
+// V-shape quality: is the bottom a clear local low, or just noise?
+// Returns 0..1 — fraction of surrounding candles whose low is above the bottom.
+// 1.0 = perfect V, 0.5 = noisy/sideways, 0 = bottom isn't really a low.
+function vShapeQuality(lows, bottomIdx, windowEachSide = 5) {
+  const n = lows.length;
+  const bottomLow = lows[bottomIdx];
+  let above = 0, total = 0;
+  const start = Math.max(0, bottomIdx - windowEachSide);
+  const end = Math.min(n - 1, bottomIdx + windowEachSide);
+  for (let i = start; i <= end; i++) {
+    if (i === bottomIdx) continue;
+    total++;
+    if (lows[i] > bottomLow) above++;
+  }
+  return total > 0 ? above / total : 0;
 }
 
 // ── Composite scoring ──
@@ -504,23 +579,41 @@ function compositeScore(d, tech, volUsd, btcReturn7d) {
   if (tech && tech.snapshot.rsi14 > 75 && d && d.recoveryPct > 50) bonus -= 8;
   if (!tech) bonus -= 5;
 
-  // Late-entry penalty: recovery above 30% means we are past the freshest
-  // part of the move. Scales linearly to a -25 floor for runaway moves.
+  // Late-entry penalty
   if (d && d.recoveryPct > 30) {
     bonus -= Math.min((d.recoveryPct - 30) * 0.3, 25);
   }
-  // Chase penalty: if the price is already a few ATRs above the bottom, the
-  // entry is no longer at the base — risk/reward is worse.
+  // Chase penalty
   if (tech && d) {
     const ch = chaseAtrUnits(d.currentPrice, d.bottomPrice, tech.snapshot.atr14);
     if (ch != null) {
-      if (ch < 1.5) bonus += 3;        // tight to the base
-      else if (ch > 4) bonus -= 6;     // chased
+      if (ch < 1.5) bonus += 3;
+      else if (ch > 4) bonus -= 6;
       else if (ch > 3) bonus -= 3;
     }
   }
-  // "Not yet recovering": big drop but recovery <3% and trend not rising — still falling knife.
   if (d && d.recoveryPct < 3 && !d.isRising) bonus -= 6;
+
+  // ── New confluence signals ──
+  // Linear-regression slope confirms trend strength (more reliable than last3 check)
+  if (d && d.slopeLast7 != null) {
+    if (d.slopeLast7 > 1.5) bonus += 5;        // strong uptrend in last week
+    else if (d.slopeLast7 > 0.5) bonus += 2;
+    else if (d.slopeLast7 < -1) bonus -= 4;    // still trending down
+  }
+  // OBV accumulation: volume confirms direction. Positive while price flat = smart money buying.
+  if (d && d.obvAccum != null) {
+    if (d.obvAccum > 25) bonus += 4;          // strong accumulation
+    else if (d.obvAccum > 10) bonus += 2;
+    else if (d.obvAccum < -15) bonus -= 4;    // distribution — exit pressure
+  }
+  // V-shape quality: clear local low = real reversal, noisy = false signal
+  if (d && d.vShape != null) {
+    if (d.vShape >= 0.85) bonus += 3;         // very clean V
+    else if (d.vShape < 0.4) bonus -= 4;      // bottom isn't actually a low
+  }
+  // Hard RSI cap — overbought entries fail too often
+  if (tech && tech.snapshot.rsi14 > 80) bonus -= 12;
 
   const total = recComp + structComp + techComp + volQualComp + btcRelComp + bonus;
   return {
@@ -586,6 +679,9 @@ async function scanOneSwing(coin, volumeCache, btcContext) {
     greenLast5: d.greenLast5,
     lowerWickPct: Math.round(d.lowerWickPct * 1000) / 10,
     upDownVolRatio: Math.round(d.upDownVolRatio * 100) / 100,
+    slope: d.slopeLast7 != null ? Math.round(d.slopeLast7 * 100) / 100 : null,
+    obvAccum: d.obvAccum != null ? Math.round(d.obvAccum * 10) / 10 : null,
+    vShape: d.vShape != null ? Math.round(d.vShape * 100) / 100 : null,
     coin7dReturn: Math.round(coin7d * 100) / 100,
     btc7dReturn: Math.round(btc7d * 100) / 100,
     relativeStrength: Math.round((coin7d - btc7d) * 100) / 100,
@@ -658,9 +754,7 @@ async function scanOneQuick(coin, volumeCache, btcContext) {
   else if (volUsd > 5000000) bonus += 5;
   if (tech && tech.snapshot.rsi14 > 78) bonus -= 8;
   if (!tech) bonus -= 5;
-  // Late-entry: recovery >15% in 72h means setup is mid/late
   if (q.recoveryPct > 15) bonus -= Math.min((q.recoveryPct - 15) * 0.5, 20);
-  // Chase penalty by ATR units
   if (tech) {
     const ch = chaseAtrUnits(q.currentPrice, q.bottomPrice, tech.snapshot.atr14);
     if (ch != null) {
@@ -669,8 +763,21 @@ async function scanOneQuick(coin, volumeCache, btcContext) {
       else if (ch > 2.5) bonus -= 3;
     }
   }
-  // Falling-knife guard
   if (q.recoveryPct < 1.5 && !q.isRising) bonus -= 6;
+  // New confluence signals
+  if (q.slopeLast12 != null) {
+    if (q.slopeLast12 > 0.5) bonus += 4;
+    else if (q.slopeLast12 < -0.5) bonus -= 4;
+  }
+  if (q.obvAccum != null) {
+    if (q.obvAccum > 20) bonus += 3;
+    else if (q.obvAccum < -15) bonus -= 4;
+  }
+  if (q.vShape != null) {
+    if (q.vShape >= 0.85) bonus += 3;
+    else if (q.vShape < 0.4) bonus -= 3;
+  }
+  if (tech && tech.snapshot.rsi14 > 82) bonus -= 10;
 
   const total = recComp + structComp + techComp + volQualComp + btcRelComp + bonus;
   const score = Math.max(0, Math.min(100, total));
@@ -709,6 +816,9 @@ async function scanOneQuick(coin, volumeCache, btcContext) {
     greenLast5: q.greenLast5,
     lowerWickPct: Math.round(q.lowerWickPct * 1000) / 10,
     upDownVolRatio: Math.round(q.upDownVolRatio * 100) / 100,
+    slope: q.slopeLast12 != null ? Math.round(q.slopeLast12 * 100) / 100 : null,
+    obvAccum: q.obvAccum != null ? Math.round(q.obvAccum * 10) / 10 : null,
+    vShape: q.vShape != null ? Math.round(q.vShape * 100) / 100 : null,
     coin24hReturn: Math.round(coin24h * 100) / 100,
     btc24hReturn: Math.round(btc24h * 100) / 100,
     relativeStrength: Math.round((coin24h - btc24h) * 100) / 100,
@@ -782,9 +892,7 @@ async function scanOneScalp(coin, volumeCache, btcContext) {
   else if (volUsd > 5000000) bonus += 5;
   if (tech && tech.snapshot.rsi14 > 78) bonus -= 8;
   if (!tech) bonus -= 5;
-  // Late-entry: recovery > 5% in 12h is already half done
   if (s.recoveryPct > 5) bonus -= Math.min((s.recoveryPct - 5) * 1.2, 15);
-  // Chase penalty (tighter — scalp ATR is on 15min so values are smaller)
   if (tech) {
     const ch = chaseAtrUnits(s.currentPrice, s.bottomPrice, tech.snapshot.atr14);
     if (ch != null) {
@@ -794,6 +902,20 @@ async function scanOneScalp(coin, volumeCache, btcContext) {
     }
   }
   if (s.recoveryPct < 0.8 && !s.isRising) bonus -= 6;
+  // New confluence signals
+  if (s.slopeLast4 != null) {
+    if (s.slopeLast4 > 0.4) bonus += 4;
+    else if (s.slopeLast4 < -0.4) bonus -= 4;
+  }
+  if (s.obvAccum != null) {
+    if (s.obvAccum > 20) bonus += 3;
+    else if (s.obvAccum < -15) bonus -= 4;
+  }
+  if (s.vShape != null) {
+    if (s.vShape >= 0.85) bonus += 3;
+    else if (s.vShape < 0.4) bonus -= 3;
+  }
+  if (tech && tech.snapshot.rsi14 > 83) bonus -= 10;
 
   const total = recComp + structComp + techComp + volQualComp + btcRelComp + bonus;
   const score = Math.max(0, Math.min(100, total));
@@ -833,6 +955,9 @@ async function scanOneScalp(coin, volumeCache, btcContext) {
     greenLast5: s.greenLast5,
     lowerWickPct: Math.round(s.lowerWickPct * 1000) / 10,
     upDownVolRatio: Math.round(s.upDownVolRatio * 100) / 100,
+    slope: s.slopeLast4 != null ? Math.round(s.slopeLast4 * 100) / 100 : null,
+    obvAccum: s.obvAccum != null ? Math.round(s.obvAccum * 10) / 10 : null,
+    vShape: s.vShape != null ? Math.round(s.vShape * 100) / 100 : null,
     coin6hReturn: Math.round(coin6h * 100) / 100,
     btc6hReturn: Math.round(btc6h * 100) / 100,
     relativeStrength: Math.round((coin6h - btc6h) * 100) / 100,
@@ -902,7 +1027,6 @@ async function scanOneIntra(coin, volumeCache, btcContext) {
   else if (volUsd > 5000000) bonus += 5;
   if (tech && tech.snapshot.rsi14 > 78) bonus -= 8;
   if (!tech) bonus -= 5;
-  // Late-entry: recovery > 10% in 24h is past the prime entry
   if (ix.recoveryPct > 10) bonus -= Math.min((ix.recoveryPct - 10) * 0.7, 18);
   if (tech) {
     const ch = chaseAtrUnits(ix.currentPrice, ix.bottomPrice, tech.snapshot.atr14);
@@ -913,6 +1037,20 @@ async function scanOneIntra(coin, volumeCache, btcContext) {
     }
   }
   if (ix.recoveryPct < 1.2 && !ix.isRising) bonus -= 6;
+  // New confluence signals
+  if (ix.slopeLast6 != null) {
+    if (ix.slopeLast6 > 0.6) bonus += 4;
+    else if (ix.slopeLast6 < -0.6) bonus -= 4;
+  }
+  if (ix.obvAccum != null) {
+    if (ix.obvAccum > 20) bonus += 3;
+    else if (ix.obvAccum < -15) bonus -= 4;
+  }
+  if (ix.vShape != null) {
+    if (ix.vShape >= 0.85) bonus += 3;
+    else if (ix.vShape < 0.4) bonus -= 3;
+  }
+  if (tech && tech.snapshot.rsi14 > 82) bonus -= 10;
 
   const total = recComp + structComp + techComp + volQualComp + btcRelComp + bonus;
   const score = Math.max(0, Math.min(100, total));
@@ -952,6 +1090,9 @@ async function scanOneIntra(coin, volumeCache, btcContext) {
     greenLast5: ix.greenLast5,
     lowerWickPct: Math.round(ix.lowerWickPct * 1000) / 10,
     upDownVolRatio: Math.round(ix.upDownVolRatio * 100) / 100,
+    slope: ix.slopeLast6 != null ? Math.round(ix.slopeLast6 * 100) / 100 : null,
+    obvAccum: ix.obvAccum != null ? Math.round(ix.obvAccum * 10) / 10 : null,
+    vShape: ix.vShape != null ? Math.round(ix.vShape * 100) / 100 : null,
     coin12hReturn: Math.round(coin12h * 100) / 100,
     btc12hReturn: Math.round(btc12h * 100) / 100,
     relativeStrength: Math.round((coin12h - btc12h) * 100) / 100,
