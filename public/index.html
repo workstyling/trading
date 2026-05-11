@@ -4149,6 +4149,33 @@
     .moon-mode-btn[data-mode="intra"].active { background: var(--purple); color: #fff; }
     .moon-mode-btn[data-mode="scalp"].active { background: var(--yellow); color: #000; }
 
+    .moon-freshness {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+      border: 1px solid var(--b1);
+      background: var(--s2);
+    }
+    .moon-freshness .mf-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      display: inline-block;
+    }
+    .moon-freshness.fresh { color: var(--green); border-color: rgba(48,209,88,0.35); background: rgba(48,209,88,0.08); }
+    .moon-freshness.fresh .mf-dot { background: var(--green); box-shadow: 0 0 6px var(--green); animation: mfPulse 1.6s ease-in-out infinite; }
+    .moon-freshness.mid   { color: var(--yellow); border-color: rgba(255,214,10,0.35); background: rgba(255,214,10,0.08); }
+    .moon-freshness.mid   .mf-dot { background: var(--yellow); }
+    .moon-freshness.stale { color: var(--loss); border-color: rgba(255,69,58,0.35); background: rgba(255,69,58,0.08); }
+    .moon-freshness.stale .mf-dot { background: var(--loss); }
+    .moon-freshness.scanning { color: var(--blue); border-color: rgba(10,132,255,0.4); background: rgba(10,132,255,0.08); }
+    .moon-freshness.scanning .mf-dot { background: var(--blue); animation: mfPulse 0.9s ease-in-out infinite; }
+    @keyframes mfPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
     .moon-spinner {
       display: inline-block;
       width: 42px;
@@ -10302,6 +10329,45 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
     let moonshotsPolling = null;
     let moonLastData = null;
     let moonUserRequestedRefresh = false; // tracks "blank-the-table" preloader mode
+    let moonLastScanAtAbs = null; // absolute timestamp of the most recent scan completion
+
+    // Mode-specific staleness thresholds (in seconds) used to color the freshness pill.
+    const moonFreshnessLimits = {
+      swing: { fresh: 600,  mid: 1800 },  // ≤10m fresh, ≤30m mid, else stale
+      quick: { fresh: 300,  mid: 900  },  // ≤5m fresh,  ≤15m mid, else stale
+      intra: { fresh: 180,  mid: 600  },  // ≤3m fresh,  ≤10m mid, else stale
+      scalp: { fresh: 120,  mid: 360  },  // ≤2m fresh,  ≤6m  mid, else stale
+    };
+
+    function moonFreshnessLabel(seconds) {
+      if (seconds == null) return 'never';
+      if (seconds < 60) return `${seconds}s ago`;
+      const m = Math.floor(seconds / 60);
+      const s = seconds % 60;
+      if (m < 60) return s > 0 ? `${m}m ${s}s ago` : `${m}m ago`;
+      const h = Math.floor(m / 60);
+      return `${h}h ${m % 60}m ago`;
+    }
+
+    function moonFreshnessClass(mode, seconds) {
+      const lim = moonFreshnessLimits[mode] || moonFreshnessLimits.swing;
+      if (seconds == null) return 'stale';
+      if (seconds <= lim.fresh) return 'fresh';
+      if (seconds <= lim.mid) return 'mid';
+      return 'stale';
+    }
+
+    // Live tick of the freshness pill — no network call, just updates DOM text every second
+    // so the user sees "Scanned 12s ago", "13s ago", ... without waiting for the next refresh.
+    setInterval(() => {
+      const pill = document.getElementById('moonFreshPill');
+      if (!pill || !moonLastScanAtAbs || !moonLastData || moonLastData.scanning) return;
+      const secs = Math.max(0, Math.round((Date.now() - moonLastScanAtAbs) / 1000));
+      const cls = moonFreshnessClass(moonLastData.mode, secs);
+      pill.className = 'moon-freshness ' + cls;
+      // Preserve the dot, replace only the text node after it
+      pill.innerHTML = `<span class="mf-dot"></span>Scanned ${moonFreshnessLabel(secs)}`;
+    }, 1000);
 
     // Persisted filter + sort + mode state — survives reloads
     const moonPrefs = (() => {
@@ -10421,24 +10487,43 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
       const isScalp = data.mode === 'scalp';
       const isIntra = data.mode === 'intra';
       const modeColor = isScalp ? 'var(--yellow)' : isIntra ? 'var(--purple)' : isQuick ? 'var(--green)' : 'var(--blue)';
+
+      // Anchor "ago" calculations to an absolute timestamp so the pill keeps ticking
+      // between server fetches.
       if (data.scanning) {
-        status.innerHTML = `<span style="color:${modeColor};">Scanning ${data.scanned}/${data.total} (${data.progress}%)</span>`;
-      } else {
-        let btcLine = '';
-        if (data.results.length) {
-          const r0 = data.results[0];
-          if (isScalp && r0.btc6hReturn != null) {
-            btcLine = ` · BTC 6h: <span style="color:${r0.btc6hReturn >= 0 ? 'var(--green)' : 'var(--loss)'};">${r0.btc6hReturn >= 0 ? '+' : ''}${r0.btc6hReturn}%</span>`;
-          } else if (isIntra && r0.btc12hReturn != null) {
-            btcLine = ` · BTC 12h: <span style="color:${r0.btc12hReturn >= 0 ? 'var(--green)' : 'var(--loss)'};">${r0.btc12hReturn >= 0 ? '+' : ''}${r0.btc12hReturn}%</span>`;
-          } else if (isQuick && r0.btc24hReturn != null) {
-            btcLine = ` · BTC 24h: <span style="color:${r0.btc24hReturn >= 0 ? 'var(--green)' : 'var(--loss)'};">${r0.btc24hReturn >= 0 ? '+' : ''}${r0.btc24hReturn}%</span>`;
-          } else if (!isQuick && !isIntra && r0.btc7dReturn != null) {
-            btcLine = ` · BTC 7d: <span style="color:${r0.btc7dReturn >= 0 ? 'var(--green)' : 'var(--loss)'};">${r0.btc7dReturn >= 0 ? '+' : ''}${r0.btc7dReturn}%</span>`;
-          }
-        }
-        status.innerHTML = `${data.results.length} candidates · <span style="color:var(--t1);">${predFmt.ago(data.lastScanAgo)}</span>${btcLine}`;
+        moonLastScanAtAbs = null;
+      } else if (data.lastScanAgo != null) {
+        moonLastScanAtAbs = Date.now() - data.lastScanAgo * 1000;
       }
+
+      // Build the freshness pill — large, color-coded, ticks every second locally.
+      let freshHtml;
+      if (data.scanning) {
+        freshHtml = `<span class="moon-freshness scanning"><span class="mf-dot"></span>Scanning ${data.scanned}/${data.total} · ${data.progress}%</span>`;
+      } else if (moonLastScanAtAbs != null) {
+        const secs = Math.max(0, Math.round((Date.now() - moonLastScanAtAbs) / 1000));
+        const cls = moonFreshnessClass(data.mode, secs);
+        freshHtml = `<span class="moon-freshness ${cls}" id="moonFreshPill"><span class="mf-dot"></span>Scanned ${moonFreshnessLabel(secs)}</span>`;
+      } else {
+        freshHtml = `<span class="moon-freshness stale"><span class="mf-dot"></span>No scan yet</span>`;
+      }
+
+      let btcLine = '';
+      if (data.results.length) {
+        const r0 = data.results[0];
+        if (isScalp && r0.btc6hReturn != null) {
+          btcLine = ` · BTC 6h: <span style="color:${r0.btc6hReturn >= 0 ? 'var(--green)' : 'var(--loss)'};">${r0.btc6hReturn >= 0 ? '+' : ''}${r0.btc6hReturn}%</span>`;
+        } else if (isIntra && r0.btc12hReturn != null) {
+          btcLine = ` · BTC 12h: <span style="color:${r0.btc12hReturn >= 0 ? 'var(--green)' : 'var(--loss)'};">${r0.btc12hReturn >= 0 ? '+' : ''}${r0.btc12hReturn}%</span>`;
+        } else if (isQuick && r0.btc24hReturn != null) {
+          btcLine = ` · BTC 24h: <span style="color:${r0.btc24hReturn >= 0 ? 'var(--green)' : 'var(--loss)'};">${r0.btc24hReturn >= 0 ? '+' : ''}${r0.btc24hReturn}%</span>`;
+        } else if (!isQuick && !isIntra && r0.btc7dReturn != null) {
+          btcLine = ` · BTC 7d: <span style="color:${r0.btc7dReturn >= 0 ? 'var(--green)' : 'var(--loss)'};">${r0.btc7dReturn >= 0 ? '+' : ''}${r0.btc7dReturn}%</span>`;
+        }
+      }
+
+      const countLine = data.scanning ? '' : `${data.results.length} candidates · `;
+      status.innerHTML = `${freshHtml} <span style="color:var(--t2);">${countLine}</span>${btcLine}`;
       const tbl = document.getElementById('moonTable');
 
       // If user explicitly clicked Refresh, hide the table during scan and show
