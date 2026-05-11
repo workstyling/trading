@@ -1279,8 +1279,10 @@ const moonshotsLib = require('./src/predictor/moonshots');
 const moonshotsState = {
   swing: { scanning: false, progress: 0, scanned: 0, total: 0, lastScanAt: 0, results: [] },
   quick: { scanning: false, progress: 0, scanned: 0, total: 0, lastScanAt: 0, results: [] },
+  intra: { scanning: false, progress: 0, scanned: 0, total: 0, lastScanAt: 0, results: [] },
   scalp: { scanning: false, progress: 0, scanned: 0, total: 0, lastScanAt: 0, results: [] },
 };
+const MOONSHOTS_MODES = ['swing', 'quick', 'intra', 'scalp'];
 
 async function runMoonshotsScan(mode = 'swing') {
   const st = moonshotsState[mode];
@@ -1313,35 +1315,39 @@ async function runMoonshotsScan(mode = 'swing') {
   }
 }
 
-// Auto-scan cadence: swing every 30min, quick every 10min, scalp every 4min.
-setTimeout(() => runMoonshotsScan('swing').catch(e => console.error('[MOONSHOTS:swing] init:', e.message)), 120000);
-setInterval(() => runMoonshotsScan('swing').catch(e => console.error('[MOONSHOTS:swing] periodic:', e.message)), 30 * 60 * 1000);
-setTimeout(() => runMoonshotsScan('quick').catch(e => console.error('[MOONSHOTS:quick] init:', e.message)), 90000);
-setInterval(() => runMoonshotsScan('quick').catch(e => console.error('[MOONSHOTS:quick] periodic:', e.message)), 10 * 60 * 1000);
-setTimeout(() => runMoonshotsScan('scalp').catch(e => console.error('[MOONSHOTS:scalp] init:', e.message)), 60000);
-setInterval(() => runMoonshotsScan('scalp').catch(e => console.error('[MOONSHOTS:scalp] periodic:', e.message)), 4 * 60 * 1000);
+// Auto-scan cadence per mode.
+const MOONSHOTS_AUTO = {
+  swing: { initialDelay: 120000, interval: 30 * 60 * 1000 },
+  quick: { initialDelay:  90000, interval: 10 * 60 * 1000 },
+  intra: { initialDelay:  75000, interval:  6 * 60 * 1000 },
+  scalp: { initialDelay:  60000, interval:  4 * 60 * 1000 },
+};
+MOONSHOTS_MODES.forEach(m => {
+  setTimeout(() => runMoonshotsScan(m).catch(e => console.error(`[MOONSHOTS:${m}] init:`, e.message)), MOONSHOTS_AUTO[m].initialDelay);
+  setInterval(() => runMoonshotsScan(m).catch(e => console.error(`[MOONSHOTS:${m}] periodic:`, e.message)), MOONSHOTS_AUTO[m].interval);
+});
 
-// Fire all three scans concurrently — useful for a single "Refresh All" button click.
+// Fire all scans concurrently — single "Refresh" button on the UI hits this.
 app.get('/api/moonshots/scan-all', (req, res) => {
-  ['swing', 'quick', 'scalp'].forEach(m => {
+  MOONSHOTS_MODES.forEach(m => {
     if (!moonshotsState[m].scanning) {
       runMoonshotsScan(m).catch(e => console.error(`[MOONSHOTS:${m}] scan-all:`, e.message));
     }
   });
+  const status = {};
+  MOONSHOTS_MODES.forEach(m => {
+    status[m] = { scanning: moonshotsState[m].scanning, progress: moonshotsState[m].progress };
+  });
   res.json({
     success: true,
-    triggered: ['swing', 'quick', 'scalp'].filter(m => moonshotsState[m].scanning),
-    status: {
-      swing: { scanning: moonshotsState.swing.scanning, progress: moonshotsState.swing.progress },
-      quick: { scanning: moonshotsState.quick.scanning, progress: moonshotsState.quick.progress },
-      scalp: { scanning: moonshotsState.scalp.scanning, progress: moonshotsState.scalp.progress },
-    },
+    triggered: MOONSHOTS_MODES.filter(m => moonshotsState[m].scanning),
+    status,
   });
 });
 
 app.get('/api/moonshots/scan', (req, res) => {
   const requested = req.query.mode;
-  const mode = (requested === 'quick' || requested === 'scalp') ? requested : 'swing';
+  const mode = MOONSHOTS_MODES.includes(requested) ? requested : 'swing';
   const st = moonshotsState[mode];
   if (req.query.refresh === '1' && !st.scanning) {
     runMoonshotsScan(mode).catch(() => {});
@@ -1355,6 +1361,8 @@ app.get('/api/moonshots/scan', (req, res) => {
   if (freshOnly) {
     if (mode === 'scalp') {
       results = results.filter(r => r.minutesFromBottom != null && r.minutesFromBottom <= 30);
+    } else if (mode === 'intra') {
+      results = results.filter(r => r.hoursFromBottom != null && r.hoursFromBottom <= 2);
     } else if (mode === 'quick') {
       results = results.filter(r => r.hoursFromBottom != null && r.hoursFromBottom <= 6);
     } else {

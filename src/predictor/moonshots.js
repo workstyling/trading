@@ -270,6 +270,99 @@ function compute6hReturn(closes) {
   return start > 0 ? ((end - start) / start) * 100 : 0;
 }
 
+// ── Intra-mode analysis on hourly candles (last 24h = 1 day) ──
+// Between Scalp and Quick — finds dips that happened within the last day and
+// are turning, suitable for 1-3 hour holds.
+function analyzeIntra(hourlyRaw) {
+  const sorted = hourlyRaw.slice(0, 24).reverse();
+  if (sorted.length < 12) return null;
+
+  const opens   = sorted.map(c => parseFloat(c[3]));
+  const closes  = sorted.map(c => parseFloat(c[4]));
+  const lows    = sorted.map(c => parseFloat(c[1]));
+  const highs   = sorted.map(c => parseFloat(c[2]));
+  const volumes = sorted.map(c => parseFloat(c[5]));
+
+  let maxPrice = 0, maxIdx = 0;
+  closes.forEach((p, i) => { if (p > maxPrice) { maxPrice = p; maxIdx = i; } });
+  let minPrice = Infinity, minIdx = 0;
+  for (let j = maxIdx; j < closes.length; j++) {
+    if (closes[j] < minPrice) { minPrice = closes[j]; minIdx = j; }
+  }
+  const currentPrice = closes[closes.length - 1];
+  const dropPct = maxPrice > 0 ? ((minPrice - maxPrice) / maxPrice) * 100 : 0;
+  const recoveryPct = minPrice > 0 ? ((currentPrice - minPrice) / minPrice) * 100 : 0;
+  const fromPeakPct = maxPrice > 0 ? ((currentPrice - maxPrice) / maxPrice) * 100 : 0;
+  const hoursFromBottom = closes.length - 1 - minIdx;
+
+  const last3 = closes.slice(-3);
+  const isRising = last3.length >= 3 && last3[2] > last3[0];
+
+  // Volume surge: last 3h vs prior 6h
+  const recentVol = volumes.slice(-3).reduce((a, b) => a + b, 0) / 3;
+  const prevVol = volumes.slice(-9, -3).reduce((a, b) => a + b, 0) / 6;
+  const volIncrease = prevVol > 0 ? recentVol / prevVol : 1;
+
+  // Higher-lows in last 6 hours
+  const last6Lows = lows.slice(-6);
+  let higherLows = 0;
+  for (let i = 1; i < last6Lows.length; i++) {
+    if (last6Lows[i] >= last6Lows[i - 1]) higherLows++;
+  }
+  // Green candles in last 4 hours
+  const last4Closes = closes.slice(-4);
+  const last4Opens = opens.slice(-4);
+  let greenLast = 0;
+  for (let i = 0; i < last4Closes.length; i++) {
+    if (last4Closes[i] > last4Opens[i]) greenLast++;
+  }
+
+  const indices = Array.from({ length: sorted.length }, (_, i) => i)
+    .sort((a, b) => lows[a] - lows[b]).slice(0, 4);
+  let lowerWickPct = 0;
+  for (const i of indices) {
+    const range = highs[i] - lows[i];
+    if (range > 0) {
+      const bodyLow = Math.min(opens[i], closes[i]);
+      lowerWickPct += (bodyLow - lows[i]) / range;
+    }
+  }
+  lowerWickPct = lowerWickPct / Math.max(1, indices.length);
+
+  // Up/down volume over last 12 hours
+  let upVol = 0, downVol = 0;
+  const window12 = Math.min(12, sorted.length);
+  for (let i = sorted.length - window12; i < sorted.length; i++) {
+    if (closes[i] > opens[i]) upVol += volumes[i];
+    else if (closes[i] < opens[i]) downVol += volumes[i];
+  }
+  const upDownVolRatio = downVol > 0 ? upVol / downVol : (upVol > 0 ? 3 : 1);
+
+  return {
+    currentPrice, peakPrice: maxPrice, bottomPrice: minPrice,
+    dropPct, recoveryPct, fromPeakPct,
+    hoursFromBottom,
+    isRising, volIncrease,
+    higherLows, greenLast5: greenLast, lowerWickPct, upDownVolRatio,
+    closes,
+  };
+}
+
+// 12h return for Intra BTC-relative reference
+function computeBtcReturn12h(btcHourly) {
+  if (!btcHourly || btcHourly.length < 12) return 0;
+  const sorted = btcHourly.slice(0, 12).reverse();
+  const start = parseFloat(sorted[0][4]);
+  const end = parseFloat(sorted[sorted.length - 1][4]);
+  return start > 0 ? ((end - start) / start) * 100 : 0;
+}
+function compute12hReturn(closes) {
+  if (closes.length < 12) return 0;
+  const start = closes[closes.length - 12];
+  const end = closes[closes.length - 1];
+  return start > 0 ? ((end - start) / start) * 100 : 0;
+}
+
 // ── Quick-mode analysis on hourly candles (last 72h = 3 days) ──
 // Same shape as analyzeDaily but counts in hours, with tighter filters.
 function analyzeQuick(hourlyRaw) {
@@ -758,8 +851,128 @@ async function scanOneScalp(coin, volumeCache, btcContext) {
   };
 }
 
+async function scanOneIntra(coin, volumeCache, btcContext) {
+  const hourly = await fetchCoinbaseCandles(coin, 3600);
+  if (!hourly) return null;
+  const ix = analyzeIntra(hourly);
+  if (!ix) return null;
+
+  // Intra filters: meaningful drop in last day, bottom within 6h, some recovery
+  if (!(ix.dropPct < -4 && ix.recoveryPct > 0.8 && ix.hoursFromBottom > 0 && ix.hoursFromBottom <= 6)) {
+    return null;
+  }
+  if (ix.recoveryPct > 25) return null;
+
+  const tech = analyzeTechnical(hourly);
+  const volUsd = volumeCache?.get(coin) || 0;
+  const btc12h = btcContext?.btcReturn12h ?? 0;
+  const coin12h = compute12hReturn(ix.closes);
+
+  // Scoring tuned between Scalp and Quick
+  let recComp = 0;
+  recComp += Math.min(Math.abs(ix.dropPct) * 0.6, 12);
+  recComp += Math.min(ix.recoveryPct * 0.9, 8);
+  recComp += ix.hoursFromBottom <= 1 ? 8 : ix.hoursFromBottom <= 3 ? 5 : 2;
+
+  let structComp = 0;
+  structComp += Math.min(ix.higherLows * 1.5, 8);
+  structComp += ix.greenLast5 * 1.4;
+  structComp += Math.min(ix.lowerWickPct * 25, 4);
+
+  let techComp = 0;
+  if (tech) {
+    techComp += Math.max(0, tech.heuristic) * 0.22;
+    const r = tech.snapshot.rsi14;
+    if (r >= 30 && r <= 55) techComp += 6;
+    else if (r > 75) techComp -= 6;
+    if (tech.snapshot.macd > tech.snapshot.macdSignal) techComp += 3;
+    if (tech.snapshot.ema9 > tech.snapshot.ema21) techComp += 2;
+  }
+
+  let volQualComp = Math.min(Math.max(0, (ix.upDownVolRatio - 1) * 6.5), 12);
+  if (ix.volIncrease > 1.6) volQualComp += 3;
+
+  let btcRelComp = 0;
+  const outperf = coin12h - btc12h;
+  if (outperf > 0) btcRelComp = Math.min(outperf * 0.9, 15);
+
+  let bonus = 0;
+  if (volUsd < 50000) bonus -= 25;
+  else if (volUsd < 200000) bonus -= 10;
+  else if (volUsd > 5000000) bonus += 5;
+  if (tech && tech.snapshot.rsi14 > 78) bonus -= 8;
+  if (!tech) bonus -= 5;
+  // Late-entry: recovery > 10% in 24h is past the prime entry
+  if (ix.recoveryPct > 10) bonus -= Math.min((ix.recoveryPct - 10) * 0.7, 18);
+  if (tech) {
+    const ch = chaseAtrUnits(ix.currentPrice, ix.bottomPrice, tech.snapshot.atr14);
+    if (ch != null) {
+      if (ch < 1.3) bonus += 3;
+      else if (ch > 3) bonus -= 5;
+      else if (ch > 2) bonus -= 2;
+    }
+  }
+  if (ix.recoveryPct < 1.2 && !ix.isRising) bonus -= 6;
+
+  const total = recComp + structComp + techComp + volQualComp + btcRelComp + bonus;
+  const score = Math.max(0, Math.min(100, total));
+  const breakdown = {
+    recovery: Math.round(recComp * 10) / 10,
+    structure: Math.round(structComp * 10) / 10,
+    technical: Math.round(techComp * 10) / 10,
+    volQuality: Math.round(volQualComp * 10) / 10,
+    btcRel: Math.round(btcRelComp * 10) / 10,
+    bonus: Math.round(bonus * 10) / 10,
+  };
+
+  const atrVal = tech ? tech.snapshot.atr14 : null;
+  const chaseAtr = atrVal ? chaseAtrUnits(ix.currentPrice, ix.bottomPrice, atrVal) : null;
+  const slPrice = ix.bottomPrice * 0.99;
+  const risk = ix.currentPrice - slPrice;
+  const tpPrice = risk > 0 ? ix.currentPrice + risk * 2 : null;
+
+  return {
+    coin,
+    mode: 'intra',
+    score: Math.round(score * 10) / 10,
+    breakdown,
+    currentPrice: ix.currentPrice,
+    peakPrice: ix.peakPrice,
+    bottomPrice: ix.bottomPrice,
+    dropPct: Math.round(ix.dropPct * 100) / 100,
+    recoveryPct: Math.round(ix.recoveryPct * 100) / 100,
+    fromPeakPct: Math.round(ix.fromPeakPct * 100) / 100,
+    hoursFromBottom: ix.hoursFromBottom,
+    minutesFromBottom: null,
+    daysFromBottom: null,
+    isRising: ix.isRising,
+    volIncrease: Math.round(ix.volIncrease * 100) / 100,
+    volume24h: Math.round(volUsd),
+    higherLows: ix.higherLows,
+    greenLast5: ix.greenLast5,
+    lowerWickPct: Math.round(ix.lowerWickPct * 1000) / 10,
+    upDownVolRatio: Math.round(ix.upDownVolRatio * 100) / 100,
+    coin12hReturn: Math.round(coin12h * 100) / 100,
+    btc12hReturn: Math.round(btc12h * 100) / 100,
+    relativeStrength: Math.round((coin12h - btc12h) * 100) / 100,
+    rsi: tech ? Math.round(tech.snapshot.rsi14 * 10) / 10 : null,
+    macdHist: tech ? tech.snapshot.macdHist : null,
+    macdBullish: tech ? (tech.snapshot.macd > tech.snapshot.macdSignal) : null,
+    emaStackBullish: tech ? (tech.snapshot.ema9 > tech.snapshot.ema21 && tech.snapshot.ema21 > tech.snapshot.ema55) : null,
+    bbPos: tech && (tech.snapshot.bbUpper - tech.snapshot.bbLower) > 0
+      ? Math.round((tech.snapshot.close - tech.snapshot.bbLower) / (tech.snapshot.bbUpper - tech.snapshot.bbLower) * 100) / 100
+      : null,
+    atr: atrVal,
+    heuristic: tech ? tech.heuristic : null,
+    chaseAtr: chaseAtr != null ? Math.round(chaseAtr * 100) / 100 : null,
+    slPrice: Math.round(slPrice * 1e8) / 1e8,
+    tpPrice: tpPrice != null ? Math.round(tpPrice * 1e8) / 1e8 : null,
+  };
+}
+
 async function scanOne(coin, volumeCache, btcContext, mode = 'swing') {
   if (mode === 'scalp') return scanOneScalp(coin, volumeCache, btcContext);
+  if (mode === 'intra') return scanOneIntra(coin, volumeCache, btcContext);
   if (mode === 'quick') return scanOneQuick(coin, volumeCache, btcContext);
   return scanOneSwing(coin, volumeCache, btcContext);
 }
@@ -769,6 +982,9 @@ async function scanAll(pairs, volumeCache, onProgress, mode = 'swing') {
   if (mode === 'scalp') {
     const btc15 = await fetchCoinbaseCandles('BTC', 900);
     btcContext = { btcReturn6h: computeBtcReturn6h(btc15) };
+  } else if (mode === 'intra') {
+    const btcHourly = await fetchCoinbaseCandles('BTC', 3600);
+    btcContext = { btcReturn12h: computeBtcReturn12h(btcHourly) };
   } else if (mode === 'quick') {
     const btcHourly = await fetchCoinbaseCandles('BTC', 3600);
     btcContext = { btcReturn24h: computeBtcReturn24h(btcHourly) };
@@ -779,7 +995,7 @@ async function scanAll(pairs, volumeCache, onProgress, mode = 'swing') {
 
   const out = [];
   const BATCH = mode === 'swing' ? 2 : 3;
-  const DELAY = mode === 'scalp' ? 600 : mode === 'quick' ? 700 : 900;
+  const DELAY = mode === 'scalp' ? 600 : mode === 'intra' ? 650 : mode === 'quick' ? 700 : 900;
   for (let i = 0; i < pairs.length; i += BATCH) {
     const batch = pairs.slice(i, i + BATCH);
     const results = await Promise.all(batch.map(c => scanOne(c, volumeCache, btcContext, mode).catch(() => null)));

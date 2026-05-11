@@ -4146,6 +4146,7 @@
     .moon-mode-btn:hover { color: var(--t0); }
     .moon-mode-btn.active { background: var(--blue); color: white; }
     .moon-mode-btn[data-mode="quick"].active { background: var(--green); color: #000; }
+    .moon-mode-btn[data-mode="intra"].active { background: var(--purple); color: #fff; }
     .moon-mode-btn[data-mode="scalp"].active { background: var(--yellow); color: #000; }
 
     .moon-spinner {
@@ -4596,15 +4597,19 @@
               <div class="moon-mode-toggle">
                 <button class="moon-mode-btn active" data-mode="swing" onclick="setMoonMode('swing')">
                   <span class="mm-title">Swing</span>
-                  <span class="mm-sub">30d · hold days-weeks</span>
+                  <span class="mm-sub">30d · days-weeks</span>
                 </button>
                 <button class="moon-mode-btn" data-mode="quick" onclick="setMoonMode('quick')">
                   <span class="mm-title">Quick</span>
-                  <span class="mm-sub">72h · hold hours-1day</span>
+                  <span class="mm-sub">72h · hours-1day</span>
+                </button>
+                <button class="moon-mode-btn" data-mode="intra" onclick="setMoonMode('intra')">
+                  <span class="mm-title">Intra</span>
+                  <span class="mm-sub">24h · 1-3h</span>
                 </button>
                 <button class="moon-mode-btn" data-mode="scalp" onclick="setMoonMode('scalp')">
                   <span class="mm-title">Scalp</span>
-                  <span class="mm-sub">12h · hold 20m-1h</span>
+                  <span class="mm-sub">12h · 20m-1h</span>
                 </button>
               </div>
               <label>Min score</label>
@@ -4614,18 +4619,18 @@
               <label style="display:flex;align-items:center;gap:4px;cursor:pointer;">
                 <input type="checkbox" id="moonFreshOnly" style="margin:0;"> <span id="moonFreshLabel">Fresh bottom (≤7d)</span>
               </label>
-              <button class="pred-btn primary" id="moonRefreshBtn" onclick="refreshMoonshots()">Refresh</button>
-              <button class="pred-btn green" id="moonRefreshAllBtn" onclick="refreshMoonshotsAll()" title="Rescan Swing + Quick + Scalp at once">Refresh ALL</button>
+              <button class="pred-btn primary" id="moonRefreshAllBtn" onclick="refreshMoonshotsAll()" title="Rescan all 4 modes in parallel">Refresh</button>
               <span id="moonStatus" style="font-size:10px;color:var(--t2);">Idle</span>
             </div>
           </div>
           <div class="pred-card-body" style="font-size:11px;color:var(--t2);line-height:1.5;">
-            <b style="color:var(--t1);">Three modes:</b>
-            <b style="color:var(--blue);">Swing</b> — 30-day daily candles, bigger drops, days-from-bottom freshness (hold days-weeks).
-            <b style="color:var(--green);">Quick</b> — 72-hour hourly candles, fresh setups (hold hours-1day).
-            <b style="color:var(--yellow);">Scalp</b> — 12-hour 15-min candles, very fresh micro-dips (hold 20m-1h).
+            <b style="color:var(--t1);">Four modes — pick by intended hold time:</b>
+            <b style="color:var(--blue);">Swing</b> 30d → days-weeks ·
+            <b style="color:var(--green);">Quick</b> 72h → hours-1day ·
+            <b style="color:var(--purple);">Intra</b> 24h → 1-3h ·
+            <b style="color:var(--yellow);">Scalp</b> 12h → 20m-1h.
             All combine recovery + structure (higher-lows, lower-wicks, up/down volume) + technical (RSI/MACD/EMA) + BTC-relative strength into a 0-100 score.
-            Click <b>Refresh ALL</b> to rescan all three modes in parallel.
+            <b>Refresh</b> rescans all four modes in parallel — switch between them with the tabs above.
           </div>
         </div>
         <div class="pred-card">
@@ -10320,6 +10325,7 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
       if (mv) mv.value = moonPrefs.minVol;
       if (fr) fr.checked = !!moonPrefs.fresh;
       const freshTxt = moonPrefs.mode === 'scalp' ? 'Fresh bottom (≤30m)'
+        : moonPrefs.mode === 'intra' ? 'Fresh bottom (≤2h)'
         : moonPrefs.mode === 'quick' ? 'Fresh bottom (≤6h)'
         : 'Fresh bottom (≤7d)';
       if (flabel) flabel.textContent = freshTxt;
@@ -10365,30 +10371,16 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
         }
       } catch (e) { console.error('moonshots load:', e); }
     }
-    function refreshMoonshots() {
-      const btn = document.getElementById('moonRefreshBtn');
-      btn.disabled = true;
-      btn.textContent = 'Starting...';
-      moonUserRequestedRefresh = true;
-      const tbl = document.getElementById('moonTable');
-      if (tbl) tbl.innerHTML = renderMoonPreloader(0, 0, 0);
-      fetch(`/api/moonshots/scan?refresh=1&mode=${moonPrefs.mode}`)
-        .then(() => setTimeout(() => {
-          btn.textContent = 'Refresh';
-          btn.disabled = false;
-          loadMoonshots();
-        }, 1200));
-    }
     function refreshMoonshotsAll() {
       const btn = document.getElementById('moonRefreshAllBtn');
       btn.disabled = true;
-      btn.textContent = 'Starting all 3...';
+      btn.textContent = 'Scanning all...';
       moonUserRequestedRefresh = true;
       const tbl = document.getElementById('moonTable');
       if (tbl) tbl.innerHTML = renderMoonPreloader(0, 0, 0);
       fetch('/api/moonshots/scan-all')
         .then(() => setTimeout(() => {
-          btn.textContent = 'Refresh ALL';
+          btn.textContent = 'Refresh';
           btn.disabled = false;
           loadMoonshots();
         }, 1500));
@@ -10427,7 +10419,8 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
       const status = document.getElementById('moonStatus');
       const isQuick = data.mode === 'quick';
       const isScalp = data.mode === 'scalp';
-      const modeColor = isScalp ? 'var(--yellow)' : isQuick ? 'var(--green)' : 'var(--blue)';
+      const isIntra = data.mode === 'intra';
+      const modeColor = isScalp ? 'var(--yellow)' : isIntra ? 'var(--purple)' : isQuick ? 'var(--green)' : 'var(--blue)';
       if (data.scanning) {
         status.innerHTML = `<span style="color:${modeColor};">Scanning ${data.scanned}/${data.total} (${data.progress}%)</span>`;
       } else {
@@ -10436,9 +10429,11 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
           const r0 = data.results[0];
           if (isScalp && r0.btc6hReturn != null) {
             btcLine = ` · BTC 6h: <span style="color:${r0.btc6hReturn >= 0 ? 'var(--green)' : 'var(--loss)'};">${r0.btc6hReturn >= 0 ? '+' : ''}${r0.btc6hReturn}%</span>`;
+          } else if (isIntra && r0.btc12hReturn != null) {
+            btcLine = ` · BTC 12h: <span style="color:${r0.btc12hReturn >= 0 ? 'var(--green)' : 'var(--loss)'};">${r0.btc12hReturn >= 0 ? '+' : ''}${r0.btc12hReturn}%</span>`;
           } else if (isQuick && r0.btc24hReturn != null) {
             btcLine = ` · BTC 24h: <span style="color:${r0.btc24hReturn >= 0 ? 'var(--green)' : 'var(--loss)'};">${r0.btc24hReturn >= 0 ? '+' : ''}${r0.btc24hReturn}%</span>`;
-          } else if (!isQuick && r0.btc7dReturn != null) {
+          } else if (!isQuick && !isIntra && r0.btc7dReturn != null) {
             btcLine = ` · BTC 7d: <span style="color:${r0.btc7dReturn >= 0 ? 'var(--green)' : 'var(--loss)'};">${r0.btc7dReturn >= 0 ? '+' : ''}${r0.btc7dReturn}%</span>`;
           }
         }
@@ -10486,12 +10481,16 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
           `<span style="color:${r.higherLows>=4?'var(--green)':r.higherLows>=2?'var(--yellow)':'var(--t2)'};" title="higher lows in window">HL${r.higherLows}</span>`,
           `<span style="color:${r.greenLast5>=3?'var(--green)':'var(--t2)'};" title="green candles">G${r.greenLast5}</span>`,
         ].join(' ');
-        // Freshness label varies per mode: scalp → minutes, quick → hours, swing → days
+        // Freshness label per mode: scalp → minutes, intra/quick → hours, swing → days
         let freshCell, freshIcon = '';
         if (data.mode === 'scalp') {
           const m = r.minutesFromBottom;
           freshIcon = m <= 15 ? '<span style="color:var(--green);">🔥</span>' : m <= 45 ? '<span style="color:var(--yellow);">🔥</span>' : '';
           freshCell = `${m}m ${freshIcon}`;
+        } else if (isIntra) {
+          const h = r.hoursFromBottom;
+          freshIcon = h <= 1 ? '<span style="color:var(--green);">🔥</span>' : h <= 3 ? '<span style="color:var(--yellow);">🔥</span>' : '';
+          freshCell = `${h}h ${freshIcon}`;
         } else if (isQuick) {
           const h = r.hoursFromBottom;
           freshIcon = h <= 3 ? '<span style="color:var(--green);">🔥</span>' : h <= 6 ? '<span style="color:var(--yellow);">🔥</span>' : '';
@@ -10540,12 +10539,14 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
         </tr>`;
       }).join('');
       const freshHeader = isScalp ? th('Mins','minutesFromBottom','Minutes since bottom (smaller = fresher)')
-        : isQuick ? th('Hours','hoursFromBottom','Hours since bottom (smaller = fresher)')
+        : (isIntra || isQuick) ? th('Hours','hoursFromBottom','Hours since bottom (smaller = fresher)')
         : th('Days','daysFromBottom','Days since bottom');
       const rsHeader = isScalp ? th('vs BTC 6h','relativeStrength','Coin 6h return − BTC 6h return')
+        : isIntra ? th('vs BTC 12h','relativeStrength','Coin 12h return − BTC 12h return')
         : isQuick ? th('vs BTC 24h','relativeStrength','Coin 24h return − BTC 24h return')
         : th('vs BTC 7d','relativeStrength','Coin 7d return − BTC 7d return');
       const volRatioHeader = isScalp ? th('Up/Dn Vol','upDownVolRatio','Up-candle volume / down-candle volume (3h)')
+        : isIntra ? th('Up/Dn Vol','upDownVolRatio','Up-hour volume / down-hour volume (12h)')
         : isQuick ? th('Up/Dn Vol','upDownVolRatio','Up-hour volume / down-hour volume (24h)')
         : th('Up/Dn Vol','upDownVolRatio','Up-day volume / down-day volume (10d)');
       tbl.innerHTML = `<table class="pred-table">
@@ -10554,7 +10555,7 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
           ${th('Coin','coin')}
           ${th('Score','score','Composite 0-100. Hover row for breakdown.')}
           ${th('Price','currentPrice')}
-          ${th('Drop','dropPct', isScalp ? 'Drop from 12h peak' : isQuick ? 'Drop from 72h peak' : 'Drop from 30d peak')}
+          ${th('Drop','dropPct', isScalp ? 'Drop from 12h peak' : isIntra ? 'Drop from 24h peak' : isQuick ? 'Drop from 72h peak' : 'Drop from 30d peak')}
           ${th('Recovery','recoveryPct','Bounce off bottom')}
           ${freshHeader}
           ${th('Chase','chaseAtr','ATR-units above bottom. <1.5σ = fresh entry, >3σ = chased (late)')}
