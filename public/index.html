@@ -4273,7 +4273,6 @@
 
     <div class="tab-nav">
       <button class="tab-btn active" data-tab="trading" onclick="switchTab('trading')">Trading</button>
-      <button class="tab-btn" data-tab="predictor" onclick="switchTab('predictor')">Predictor 🧠</button>
       <button class="tab-btn" data-tab="moonshots" onclick="switchTab('moonshots')">Moonshots 🚀</button>
     </div>
 
@@ -4538,102 +4537,6 @@
       </div>
     </div>
     </div><!-- /tab-trading -->
-
-    <div id="tab-predictor" class="tab-pane">
-      <div id="predictorPanel">
-        <!-- Header / Controls -->
-        <div class="pred-card">
-          <div class="pred-card-head">
-            <h3>🧠 Crypto Predictor — ML signals on Coinbase</h3>
-            <div style="display:flex;gap:8px;align-items:center;">
-              <span id="predScanStatus" style="font-size:10px;color:var(--t2);">Idle</span>
-              <button class="pred-btn primary" id="predRefreshBtn" onclick="refreshPredictorScan()">Refresh</button>
-            </div>
-          </div>
-          <div class="pred-card-body">
-            <div class="pred-controls">
-              <label>Timeframe</label>
-              <select class="pred-select" id="predTf">
-                <option value="15m">15m</option>
-                <option value="1h" selected>1h</option>
-                <option value="6h">6h</option>
-                <option value="1d">1d</option>
-              </select>
-              <label style="margin-left:14px;">Confidence ≥</label>
-              <input type="number" class="pred-input" id="predThreshold" value="0.6" step="0.05" min="0.5" max="0.95" style="width:70px;">
-              <label style="margin-left:14px;">ATR mult</label>
-              <input type="number" class="pred-input" id="predAtrMult" value="1.5" step="0.1" min="0.5" max="5" style="width:70px;">
-              <label style="margin-left:14px;">Watchlist</label>
-              <input type="text" class="pred-input" id="predWatchlist" placeholder="BTC,ETH,SOL,..." style="width:340px;">
-              <button class="pred-btn" onclick="savePredictorWatchlist()">Save</button>
-            </div>
-          </div>
-        </div>
-
-        <!-- Single-coin analyzer -->
-        <div class="pred-card">
-          <div class="pred-card-head">
-            <h3>Single-coin analysis</h3>
-            <div class="pred-controls">
-              <input type="text" class="pred-input" id="predCoin" value="BTC" maxlength="10" style="width:90px;text-transform:uppercase;">
-              <button class="pred-btn primary" onclick="predictCoin()">Predict</button>
-              <button class="pred-btn green" onclick="trainCoin()">Train</button>
-              <button class="pred-btn" onclick="backtestCoin()">Backtest</button>
-            </div>
-          </div>
-          <div class="pred-card-body">
-            <div id="predSingleResult" style="font-size:12px;color:var(--t2);">
-              Pick a coin and click Predict — model will train automatically on first run.
-            </div>
-          </div>
-        </div>
-
-        <!-- ALL Coinbase coins scan -->
-        <div class="pred-card">
-          <div class="pred-card-head">
-            <h3>🌐 Scan ALL Coinbase coins <span style="color:var(--t2);font-size:10px;font-weight:400;">(heuristic-only, ~3-5 min)</span></h3>
-            <div class="pred-controls">
-              <label>Filter</label>
-              <select class="pred-select" id="predAllDir">
-                <option value="">All</option>
-                <option value="BUY" selected>BUY only</option>
-                <option value="SELL">SELL only</option>
-                <option value="HOLD">HOLD only</option>
-              </select>
-              <label>Min vol $</label>
-              <input type="number" class="pred-input" id="predAllMinVol" value="100000" step="50000" min="0" style="width:100px;">
-              <button class="pred-btn primary" id="predAllRefreshBtn" onclick="refreshPredictorAll()">Refresh</button>
-              <span id="predAllStatus" style="font-size:10px;color:var(--t2);">Idle</span>
-            </div>
-          </div>
-          <div id="predAllTable" style="max-height:600px;overflow-y:auto;">
-            <div style="text-align:center;padding:30px;color:var(--t2);font-size:12px;">Waiting for first scan... auto-runs 90s after server start.</div>
-          </div>
-        </div>
-
-        <!-- Watchlist scan results -->
-        <div class="pred-card">
-          <div class="pred-card-head">
-            <h3>Watchlist scan <span style="color:var(--t2);font-size:10px;font-weight:400;">(NN-trained, 15 coins)</span></h3>
-            <span id="predScanProgress" style="font-size:10px;color:var(--t2);"></span>
-          </div>
-          <div id="predScanTable" style="max-height:550px;overflow-y:auto;">
-            <div style="text-align:center;padding:30px;color:var(--t2);font-size:12px;">Waiting for first scan... auto-runs 60s after server start.</div>
-          </div>
-        </div>
-
-        <!-- Signal history -->
-        <div class="pred-card">
-          <div class="pred-card-head">
-            <h3>Signal history</h3>
-            <button class="pred-btn" onclick="loadPredictorSignals()">Reload</button>
-          </div>
-          <div id="predSignalsTable" style="max-height:300px;overflow-y:auto;">
-            <div style="text-align:center;padding:30px;color:var(--t2);font-size:12px;">No signals yet.</div>
-          </div>
-        </div>
-      </div>
-    </div><!-- /tab-predictor -->
 
     <div id="tab-moonshots" class="tab-pane">
       <div id="moonshotsPanel" style="display:flex;flex-direction:column;gap:14px;">
@@ -10038,16 +9941,9 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
       document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
       document.querySelectorAll('.tab-pane').forEach(p => p.classList.toggle('active', p.id === 'tab-' + name));
       try { safeStorage.setItem('activeTab', name); } catch {}
-      if (name === 'predictor') {
-        loadPredictorScan();
-        loadPredictorAll();
-        loadPredictorWatchlist();
-        loadPredictorSignals();
-      }
       if (name === 'moonshots') {
         applyMoonPrefsToInputs();
         loadMoonshots();
-        // Pull positions from server, then update ASKs and render
         fetchServerPositions().then(() => { renderPaperPositions(); updatePaperAsks(); });
       }
     }
@@ -10055,8 +9951,7 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
     document.addEventListener('DOMContentLoaded', () => {
       try {
         const last = safeStorage.getItem('activeTab');
-        if (last === 'predictor') switchTab('predictor');
-        else if (last === 'moonshots') switchTab('moonshots');
+        if (last === 'moonshots') switchTab('moonshots');
         // Pre-fetch paper positions from server so the panel is ready when user
         // navigates to Moonshots — works across devices since data lives on server.
         try { fetchServerPositions().then(renderPaperPositions); } catch {}
@@ -10857,7 +10752,6 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
           <td>${fmtVol(r.volume24h)}</td>
           <td style="white-space:nowrap;">
             <button class="pred-btn green" style="padding:3px 8px;font-size:10px;" onclick="buyMoonCoin('${r.coin}')" title="Paper-buy at best bid">Buy</button>
-            <button class="pred-btn primary" style="padding:3px 8px;font-size:10px;margin-left:4px;" onclick="moonshotsToPredictor('${r.coin}')" title="Open in Predictor">→</button>
           </td>
         </tr>`;
       }).join('');
