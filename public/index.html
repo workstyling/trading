@@ -10377,6 +10377,19 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
       return 'stale';
     }
 
+    // Reload moonshots state when window comes back to focus — browsers throttle
+    // setInterval in background tabs, so on restore the polling may be far behind.
+    // This guarantees the latest scan progress is reflected immediately.
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState !== 'visible') return;
+      const activeTab = document.querySelector('.tab-btn.active')?.dataset.tab;
+      if (activeTab === 'moonshots') loadMoonshots();
+    });
+    window.addEventListener('focus', () => {
+      const activeTab = document.querySelector('.tab-btn.active')?.dataset.tab;
+      if (activeTab === 'moonshots') loadMoonshots();
+    });
+
     // Live tick of the freshness indicator — no network call, just updates DOM text every second
     // so the user sees "12s ago", "13s ago", ... without waiting for the next refresh.
     setInterval(() => {
@@ -10452,7 +10465,7 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
           moonshotsPolling = setInterval(loadMoonshots, 3000);
         } else if (!data.scanning && moonshotsPolling) {
           clearInterval(moonshotsPolling); moonshotsPolling = null;
-          moonUserRequestedRefresh = false;
+          // (preloader visibility is driven solely by data.scanning now)
         }
       } catch (e) { console.error('moonshots load:', e); }
     }
@@ -10460,7 +10473,7 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
       const btn = document.getElementById('moonRefreshAllBtn');
       btn.disabled = true;
       btn.textContent = 'Scanning all...';
-      moonUserRequestedRefresh = true;
+      // (preloader shows based on data.scanning, no flag needed)
       const tbl = document.getElementById('moonTable');
       if (tbl) tbl.innerHTML = renderMoonPreloader(0, 0, 0);
       fetch('/api/moonshots/scan-all')
@@ -10545,14 +10558,12 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
       status.innerHTML = `${freshHtml} <span style="color:var(--t2);">${countLine}</span>${btcLine}`;
       const tbl = document.getElementById('moonTable');
 
-      // If user explicitly clicked Refresh, hide the table during scan and show
-      // the preloader with progress bar — even if we still have stale results in memory.
-      if (data.scanning && moonUserRequestedRefresh) {
-        tbl.innerHTML = renderMoonPreloader(data.scanned, data.total, data.progress);
-        return;
-      }
-      // First-ever scan with no prior data — also show preloader (table is empty anyway)
-      if (data.scanning && !data.results.length) {
+      // Always show the preloader while a scan is in progress for the current mode.
+      // Since auto-scans are disabled, scanning=true always means the user has triggered
+      // a refresh — and we never want to flash stale results while new data is being fetched.
+      // This also fixes the case where minimizing+restoring the window briefly showed the
+      // old table during an active scan.
+      if (data.scanning) {
         tbl.innerHTML = renderMoonPreloader(data.scanned, data.total, data.progress);
         return;
       }

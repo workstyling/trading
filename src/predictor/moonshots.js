@@ -112,13 +112,14 @@ function analyzeDaily(dailyRaw) {
   const slopeLast7 = linregSlopePct(closes, 7);
   const obvAccum = obvSlope(closes.slice(-Math.min(15, closes.length)), volumes.slice(-Math.min(15, volumes.length)));
   const vShape = vShapeQuality(lows, minIdx, 4);
+  const maxSpike = maxSingleCandleMovePct(opens, closes, 5);
 
   return {
     currentPrice, peakPrice: maxPrice, bottomPrice: minPrice,
     dropPct, recoveryPct, fromPeakPct, daysFromBottom,
     isRising, volIncrease,
     higherLows, greenLast5, lowerWickPct, upDownVolRatio,
-    slopeLast7, obvAccum, vShape,
+    slopeLast7, obvAccum, vShape, maxSpike,
     closes,
   };
 }
@@ -144,7 +145,8 @@ function analyzeTechnical(hourlyRaw) {
 
   const snap = snapshotAt(ind, i);
   const heur = heuristicScore(snap);
-  return { snapshot: snap, heuristic: heur };
+  const squeeze = detectSqueeze(ind.bbWidth, 20);
+  return { snapshot: snap, heuristic: heur, squeeze };
 }
 
 // ── BTC reference: 30-day return for relative-strength comparison ──
@@ -254,6 +256,7 @@ function analyzeScalp(min15Raw) {
   const slopeLast4 = linregSlopePct(closes, 4);
   const obvAccum = obvSlope(closes.slice(-12), volumes.slice(-12));
   const vShape = vShapeQuality(lows, minIdx, 2);
+  const maxSpike = maxSingleCandleMovePct(opens, closes, 4);
 
   return {
     currentPrice, peakPrice: maxPrice, bottomPrice: minPrice,
@@ -261,7 +264,7 @@ function analyzeScalp(min15Raw) {
     minutesFromBottom, candlesFromBottom,
     isRising, volIncrease,
     higherLows, greenLast5: greenLast, lowerWickPct, upDownVolRatio,
-    slopeLast4, obvAccum, vShape,
+    slopeLast4, obvAccum, vShape, maxSpike,
     closes,
   };
 }
@@ -352,6 +355,7 @@ function analyzeIntra(hourlyRaw) {
   const slopeLast6 = linregSlopePct(closes, 6);
   const obvAccum = obvSlope(closes.slice(-12), volumes.slice(-12));
   const vShape = vShapeQuality(lows, minIdx, 3);
+  const maxSpike = maxSingleCandleMovePct(opens, closes, 4);
 
   return {
     currentPrice, peakPrice: maxPrice, bottomPrice: minPrice,
@@ -359,7 +363,7 @@ function analyzeIntra(hourlyRaw) {
     hoursFromBottom,
     isRising, volIncrease,
     higherLows, greenLast5: greenLast, lowerWickPct, upDownVolRatio,
-    slopeLast6, obvAccum, vShape,
+    slopeLast6, obvAccum, vShape, maxSpike,
     closes,
   };
 }
@@ -453,6 +457,7 @@ function analyzeQuick(hourlyRaw) {
   const slopeLast12 = linregSlopePct(closes, 12);
   const obvAccum = obvSlope(closes.slice(-24), volumes.slice(-24));
   const vShape = vShapeQuality(lows, minIdx, 4);
+  const maxSpike = maxSingleCandleMovePct(opens, closes, 6);
 
   return {
     currentPrice, peakPrice: maxPrice, bottomPrice: minPrice,
@@ -460,7 +465,7 @@ function analyzeQuick(hourlyRaw) {
     hoursFromBottom,
     isRising, volIncrease,
     higherLows, greenLast5: greenLast, lowerWickPct, upDownVolRatio,
-    slopeLast12, obvAccum, vShape,
+    slopeLast12, obvAccum, vShape, maxSpike,
     closes,
   };
 }
@@ -507,6 +512,35 @@ function obvSlope(closes, volumes) {
   const lastAvg = obv.slice(-third).reduce((a, b) => a + b, 0) / third;
   const range = Math.max(1, Math.abs(firstAvg) + Math.abs(lastAvg));
   return ((lastAvg - firstAvg) / range) * 100;
+}
+
+// Bollinger Squeeze detector: returns true if current BB width is in the bottom 25%
+// of width values across the lookback and is now expanding (most recent > prior).
+// Coiled-spring setup that often precedes explosive moves.
+function detectSqueeze(bbWidths, lookback = 20) {
+  const tail = bbWidths.slice(-lookback).filter(v => !isNaN(v) && v != null);
+  if (tail.length < 5) return false;
+  const current = tail[tail.length - 1];
+  const prev = tail[tail.length - 2];
+  // Rank current vs the recent distribution
+  const sorted = tail.slice().sort((a, b) => a - b);
+  const percentile = sorted.indexOf(current) / sorted.length;
+  return percentile < 0.25 && current > prev * 0.95; // tight + starting to widen
+}
+
+// Largest single-candle move (%) in the last N candles. Big single-bar pumps tend to
+// mean-revert — exit pressure on the next candle is high, so a high-quality "moonshot"
+// shouldn't have one of these in its recent history.
+function maxSingleCandleMovePct(opens, closes, n) {
+  const len = Math.min(n, closes.length);
+  let max = 0;
+  for (let i = closes.length - len; i < closes.length; i++) {
+    if (opens[i] > 0) {
+      const move = Math.abs((closes[i] - opens[i]) / opens[i]) * 100;
+      if (move > max) max = move;
+    }
+  }
+  return max;
 }
 
 // V-shape quality: is the bottom a clear local low, or just noise?
@@ -614,6 +648,13 @@ function compositeScore(d, tech, volUsd, btcReturn7d) {
   }
   // Hard RSI cap — overbought entries fail too often
   if (tech && tech.snapshot.rsi14 > 80) bonus -= 12;
+  // Bollinger Squeeze: tight bands now expanding = coiled spring setup
+  if (tech && tech.squeeze) bonus += 4;
+  // Single-candle pump guard: a >12% one-bar move usually mean-reverts
+  if (d && d.maxSpike != null) {
+    if (d.maxSpike > 25) bonus -= 6;
+    else if (d.maxSpike > 12) bonus -= 3;
+  }
 
   const total = recComp + structComp + techComp + volQualComp + btcRelComp + bonus;
   return {
@@ -682,6 +723,8 @@ async function scanOneSwing(coin, volumeCache, btcContext) {
     slope: d.slopeLast7 != null ? Math.round(d.slopeLast7 * 100) / 100 : null,
     obvAccum: d.obvAccum != null ? Math.round(d.obvAccum * 10) / 10 : null,
     vShape: d.vShape != null ? Math.round(d.vShape * 100) / 100 : null,
+    maxSpike: d.maxSpike != null ? Math.round(d.maxSpike * 10) / 10 : null,
+    squeeze: tech ? !!tech.squeeze : null,
     coin7dReturn: Math.round(coin7d * 100) / 100,
     btc7dReturn: Math.round(btc7d * 100) / 100,
     relativeStrength: Math.round((coin7d - btc7d) * 100) / 100,
@@ -778,6 +821,11 @@ async function scanOneQuick(coin, volumeCache, btcContext) {
     else if (q.vShape < 0.4) bonus -= 3;
   }
   if (tech && tech.snapshot.rsi14 > 82) bonus -= 10;
+  if (tech && tech.squeeze) bonus += 4;
+  if (q.maxSpike != null) {
+    if (q.maxSpike > 15) bonus -= 5;
+    else if (q.maxSpike > 8) bonus -= 2;
+  }
 
   const total = recComp + structComp + techComp + volQualComp + btcRelComp + bonus;
   const score = Math.max(0, Math.min(100, total));
@@ -819,6 +867,8 @@ async function scanOneQuick(coin, volumeCache, btcContext) {
     slope: q.slopeLast12 != null ? Math.round(q.slopeLast12 * 100) / 100 : null,
     obvAccum: q.obvAccum != null ? Math.round(q.obvAccum * 10) / 10 : null,
     vShape: q.vShape != null ? Math.round(q.vShape * 100) / 100 : null,
+    maxSpike: q.maxSpike != null ? Math.round(q.maxSpike * 10) / 10 : null,
+    squeeze: tech ? !!tech.squeeze : null,
     coin24hReturn: Math.round(coin24h * 100) / 100,
     btc24hReturn: Math.round(btc24h * 100) / 100,
     relativeStrength: Math.round((coin24h - btc24h) * 100) / 100,
@@ -916,6 +966,11 @@ async function scanOneScalp(coin, volumeCache, btcContext) {
     else if (s.vShape < 0.4) bonus -= 3;
   }
   if (tech && tech.snapshot.rsi14 > 83) bonus -= 10;
+  if (tech && tech.squeeze) bonus += 4;
+  if (s.maxSpike != null) {
+    if (s.maxSpike > 8) bonus -= 4;
+    else if (s.maxSpike > 4) bonus -= 2;
+  }
 
   const total = recComp + structComp + techComp + volQualComp + btcRelComp + bonus;
   const score = Math.max(0, Math.min(100, total));
@@ -958,6 +1013,8 @@ async function scanOneScalp(coin, volumeCache, btcContext) {
     slope: s.slopeLast4 != null ? Math.round(s.slopeLast4 * 100) / 100 : null,
     obvAccum: s.obvAccum != null ? Math.round(s.obvAccum * 10) / 10 : null,
     vShape: s.vShape != null ? Math.round(s.vShape * 100) / 100 : null,
+    maxSpike: s.maxSpike != null ? Math.round(s.maxSpike * 10) / 10 : null,
+    squeeze: tech ? !!tech.squeeze : null,
     coin6hReturn: Math.round(coin6h * 100) / 100,
     btc6hReturn: Math.round(btc6h * 100) / 100,
     relativeStrength: Math.round((coin6h - btc6h) * 100) / 100,
@@ -1051,6 +1108,11 @@ async function scanOneIntra(coin, volumeCache, btcContext) {
     else if (ix.vShape < 0.4) bonus -= 3;
   }
   if (tech && tech.snapshot.rsi14 > 82) bonus -= 10;
+  if (tech && tech.squeeze) bonus += 4;
+  if (ix.maxSpike != null) {
+    if (ix.maxSpike > 12) bonus -= 5;
+    else if (ix.maxSpike > 6) bonus -= 2;
+  }
 
   const total = recComp + structComp + techComp + volQualComp + btcRelComp + bonus;
   const score = Math.max(0, Math.min(100, total));
@@ -1093,6 +1155,8 @@ async function scanOneIntra(coin, volumeCache, btcContext) {
     slope: ix.slopeLast6 != null ? Math.round(ix.slopeLast6 * 100) / 100 : null,
     obvAccum: ix.obvAccum != null ? Math.round(ix.obvAccum * 10) / 10 : null,
     vShape: ix.vShape != null ? Math.round(ix.vShape * 100) / 100 : null,
+    maxSpike: ix.maxSpike != null ? Math.round(ix.maxSpike * 10) / 10 : null,
+    squeeze: tech ? !!tech.squeeze : null,
     coin12hReturn: Math.round(coin12h * 100) / 100,
     btc12hReturn: Math.round(btc12h * 100) / 100,
     relativeStrength: Math.round((coin12h - btc12h) * 100) / 100,
