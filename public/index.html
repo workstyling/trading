@@ -4680,9 +4680,28 @@
             <b>Refresh</b> rescans all four modes in parallel — switch between them with the tabs above.
           </div>
         </div>
+        <!-- Paper positions — test buys with live PnL -->
+        <div class="pred-card" id="moonPaperCard" style="display:none;">
+          <div class="pred-card-head">
+            <h3>📒 Paper Positions <span style="color:var(--t2);font-size:10px;font-weight:400;">(live PnL · saved across reloads)</span></h3>
+            <div class="pred-controls">
+              <span id="moonPaperTotal" style="font-size:11px;color:var(--t2);"></span>
+              <button class="pred-btn" onclick="clearAllPaperPositions()" style="border-color:var(--loss);color:var(--loss);">Close all</button>
+            </div>
+          </div>
+          <div id="moonPositionsList" style="max-height:340px;overflow-y:auto;"></div>
+        </div>
+
         <div class="pred-card">
+          <div class="pred-card-head" style="gap:10px;">
+            <h3>Scan results</h3>
+            <div class="pred-controls">
+              <label>Test buy $</label>
+              <input type="number" class="pred-input" id="moonBuySize" value="100" min="1" step="10" style="width:80px;">
+            </div>
+          </div>
           <div id="moonTable" style="max-height:700px;overflow-y:auto;">
-            <div style="text-align:center;padding:30px;color:var(--t2);font-size:12px;">Waiting for first scan... auto-runs 120s after server start (~5 min for full scan).</div>
+            <div style="text-align:center;padding:30px;color:var(--t2);font-size:12px;">Click Refresh to start the first scan.</div>
           </div>
         </div>
       </div>
@@ -10028,6 +10047,8 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
       if (name === 'moonshots') {
         applyMoonPrefsToInputs();
         loadMoonshots();
+        renderPaperPositions();
+        updatePaperAsks();
       }
     }
     // Restore last tab on load
@@ -10036,6 +10057,9 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
         const last = safeStorage.getItem('activeTab');
         if (last === 'predictor') switchTab('predictor');
         else if (last === 'moonshots') switchTab('moonshots');
+        // Render paper positions immediately regardless of active tab so the
+        // panel is ready when user navigates over.
+        try { renderPaperPositions(); } catch {}
       } catch {}
     });
 
@@ -10345,6 +10369,182 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
       } catch (e) { console.error('signals load:', e); }
     }
 
+    /* ═══════════════════════════ MOONSHOTS — PAPER POSITIONS ═══════════════════════════ */
+    // Test buys with live PnL. Buy at best bid, mark-to-market at best ask, both legs
+    // pay the limit fee % configured in the Trading tab. Persists in localStorage.
+    const PAPER_KEY = 'moonPaperPositions_v1';
+
+    function loadPaperPositions() {
+      try {
+        const raw = safeStorage.getItem(PAPER_KEY);
+        if (raw) return JSON.parse(raw);
+      } catch {}
+      return {};
+    }
+    function savePaperPositions(p) {
+      try { safeStorage.setItem(PAPER_KEY, JSON.stringify(p)); } catch {}
+    }
+    function getFeePct() {
+      // Use the Limit Fee from the Trading tab — that's what fills against best bid/ask.
+      const el = document.getElementById('tradeFee');
+      const v = parseFloat(el?.value);
+      return isFinite(v) && v >= 0 ? v : 0.075;
+    }
+
+    async function buyMoonCoin(coin) {
+      const sizeUsd = parseFloat(document.getElementById('moonBuySize')?.value) || 100;
+      try {
+        const r = await fetch(`https://api.exchange.coinbase.com/products/${coin}-USD/ticker`);
+        const t = await r.json();
+        const bid = parseFloat(t.bid);
+        const ask = parseFloat(t.ask);
+        if (!bid || bid <= 0) { showCustomAlert(`No bid price for ${coin}`); return; }
+        const positions = loadPaperPositions();
+        if (positions[coin]) {
+          showCustomAlert(`${coin} already in paper portfolio — close it first.`);
+          return;
+        }
+        positions[coin] = {
+          coin,
+          buyPrice: bid,        // entry assumed at best bid
+          lastAsk: ask,
+          buySizeUsd: sizeUsd,
+          buyAt: Date.now(),
+          feePct: getFeePct(),
+        };
+        savePaperPositions(positions);
+        renderPaperPositions();
+        showCustomAlert(`Paper-bought ${coin} at $${bid} (size $${sizeUsd})`);
+      } catch (e) {
+        showCustomAlert(`Buy failed: ${e.message}`);
+      }
+    }
+
+    function closeMoonPosition(coin) {
+      const positions = loadPaperPositions();
+      delete positions[coin];
+      savePaperPositions(positions);
+      renderPaperPositions();
+    }
+    function clearAllPaperPositions() {
+      if (Object.keys(loadPaperPositions()).length === 0) return;
+      if (!confirm('Close all paper positions?')) return;
+      savePaperPositions({});
+      renderPaperPositions();
+    }
+
+    function fmtTimeHeld(ms) {
+      const s = Math.floor(ms / 1000);
+      if (s < 60) return `${s}s`;
+      const m = Math.floor(s / 60);
+      if (m < 60) return `${m}m ${s % 60}s`;
+      const h = Math.floor(m / 60);
+      if (h < 24) return `${h}h ${m % 60}m`;
+      const d = Math.floor(h / 24);
+      return `${d}d ${h % 24}h`;
+    }
+
+    function pnlForPosition(p) {
+      // Buy cost: paid (size + fee on size) for `units` of coin
+      // PnL: at exit value `units * ask * (1 - fee/100)` minus buy cost
+      const feeFrac = (p.feePct || 0) / 100;
+      const units = p.buySizeUsd / p.buyPrice;
+      const buyCost = p.buySizeUsd * (1 + feeFrac);
+      const exitValue = units * (p.lastAsk || p.buyPrice) * (1 - feeFrac);
+      const pnlUsd = exitValue - buyCost;
+      const pnlPct = buyCost > 0 ? (pnlUsd / buyCost) * 100 : 0;
+      return { units, buyCost, exitValue, pnlUsd, pnlPct };
+    }
+
+    async function updatePaperAsks() {
+      const positions = loadPaperPositions();
+      const coins = Object.keys(positions);
+      if (coins.length === 0) return;
+      // Fetch tickers in parallel (one per coin — small set so this is fine)
+      await Promise.all(coins.map(async (c) => {
+        try {
+          const r = await fetch(`https://api.exchange.coinbase.com/products/${c}-USD/ticker`);
+          if (!r.ok) return;
+          const t = await r.json();
+          const ask = parseFloat(t.ask);
+          if (ask > 0) positions[c].lastAsk = ask;
+        } catch {}
+      }));
+      savePaperPositions(positions);
+      renderPaperPositions();
+    }
+
+    function renderPaperPositions() {
+      const positions = loadPaperPositions();
+      const coins = Object.keys(positions);
+      const card = document.getElementById('moonPaperCard');
+      const list = document.getElementById('moonPositionsList');
+      const totalEl = document.getElementById('moonPaperTotal');
+      if (!card || !list) return;
+      if (coins.length === 0) {
+        card.style.display = 'none';
+        return;
+      }
+      card.style.display = 'block';
+
+      let totalUsd = 0, totalPnl = 0;
+      const rows = coins.sort((a, b) => positions[b].buyAt - positions[a].buyAt).map(c => {
+        const p = positions[c];
+        const { pnlUsd, pnlPct, buyCost, exitValue } = pnlForPosition(p);
+        totalUsd += buyCost;
+        totalPnl += pnlUsd;
+        const heldMs = Date.now() - p.buyAt;
+        const color = pnlPct >= 0 ? 'var(--green)' : 'var(--loss)';
+        return `<tr>
+          <td><b>${c}</b></td>
+          <td>${predFmt.price(p.buyPrice)}</td>
+          <td>${p.lastAsk != null ? predFmt.price(p.lastAsk) : '—'}</td>
+          <td>$${p.buySizeUsd.toFixed(2)}</td>
+          <td style="color:${color};">${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%</td>
+          <td style="color:${color};">${pnlUsd >= 0 ? '+' : ''}$${pnlUsd.toFixed(2)}</td>
+          <td style="color:var(--t1);font-family:'JetBrains Mono',monospace;" id="held_${c}">${fmtTimeHeld(heldMs)}</td>
+          <td style="color:var(--t2);font-size:10px;">${p.feePct}%</td>
+          <td>
+            <button class="pred-btn" style="padding:3px 10px;font-size:10px;border-color:var(--loss);color:var(--loss);" onclick="closeMoonPosition('${c}')">Close</button>
+          </td>
+        </tr>`;
+      }).join('');
+
+      const totalColor = totalPnl >= 0 ? 'var(--green)' : 'var(--loss)';
+      totalEl.innerHTML = `${coins.length} positions · invested $${totalUsd.toFixed(2)} · <b style="color:${totalColor};">${totalPnl >= 0 ? '+' : ''}$${totalPnl.toFixed(2)}</b>`;
+
+      list.innerHTML = `<table class="pred-table">
+        <thead><tr>
+          <th>Coin</th>
+          <th>Buy (bid)</th>
+          <th>Now (ask)</th>
+          <th>Size</th>
+          <th>PnL %</th>
+          <th>PnL $</th>
+          <th>Held</th>
+          <th>Fee</th>
+          <th></th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+    }
+
+    // Tick: update only the "held" column every second locally (no network)
+    setInterval(() => {
+      const positions = loadPaperPositions();
+      Object.keys(positions).forEach(c => {
+        const el = document.getElementById(`held_${c}`);
+        if (el) el.textContent = fmtTimeHeld(Date.now() - positions[c].buyAt);
+      });
+    }, 1000);
+
+    // Refresh asks + PnL every 5 seconds when on the Moonshots tab and we have positions
+    setInterval(() => {
+      const tab = document.querySelector('.tab-btn.active')?.dataset.tab;
+      if (tab !== 'moonshots') return;
+      updatePaperAsks();
+    }, 5000);
+
     /* ═══════════════════════════ MOONSHOTS ═══════════════════════════ */
     let moonshotsPolling = null;
     let moonLastData = null;
@@ -10650,7 +10850,10 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
           <td>${tech}</td>
           <td>${sltp}</td>
           <td>${fmtVol(r.volume24h)}</td>
-          <td><button class="pred-btn primary" style="padding:3px 10px;font-size:10px;" onclick="moonshotsToPredictor('${r.coin}')">→</button></td>
+          <td style="white-space:nowrap;">
+            <button class="pred-btn green" style="padding:3px 8px;font-size:10px;" onclick="buyMoonCoin('${r.coin}')" title="Paper-buy at best bid">Buy</button>
+            <button class="pred-btn primary" style="padding:3px 8px;font-size:10px;margin-left:4px;" onclick="moonshotsToPredictor('${r.coin}')" title="Open in Predictor">→</button>
+          </td>
         </tr>`;
       }).join('');
       const freshHeader = isScalp ? th('Mins','minutesFromBottom','Minutes since bottom (smaller = fresher)')
