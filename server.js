@@ -1333,6 +1333,42 @@ app.get('/api/moonshots/scan-all', (req, res) => {
   });
 });
 
+// Combined freshness across all 4 modes — used by the UI so the Last-Scan
+// indicator stays consistent when you switch between modes.
+function buildGlobalScanStatus() {
+  const anyScanning = MOONSHOTS_MODES.some(m => moonshotsState[m].scanning);
+  // "Earliest of last-scan times" = how stale is the freshest snapshot the
+  // user is looking at. We use the MINIMUM lastScanAt across modes that have
+  // any data, so a single mode falling behind doesn't show as fresh.
+  let earliest = null;
+  MOONSHOTS_MODES.forEach(m => {
+    const t = moonshotsState[m].lastScanAt;
+    if (t > 0 && (earliest == null || t < earliest)) earliest = t;
+  });
+  // Totals across modes for the in-progress indicator
+  let totalScanned = 0, totalTotal = 0;
+  MOONSHOTS_MODES.forEach(m => {
+    totalScanned += moonshotsState[m].scanned;
+    totalTotal += moonshotsState[m].total;
+  });
+  return {
+    anyScanning,
+    earliestScanAt: earliest,
+    earliestScanAgo: earliest ? Math.round((Date.now() - earliest) / 1000) : null,
+    scanned: totalScanned,
+    total: totalTotal,
+    progress: totalTotal ? Math.round(totalScanned / totalTotal * 100) : 0,
+    perMode: Object.fromEntries(MOONSHOTS_MODES.map(m => [
+      m,
+      {
+        scanning: moonshotsState[m].scanning,
+        progress: moonshotsState[m].progress,
+        lastScanAgo: moonshotsState[m].lastScanAt ? Math.round((Date.now() - moonshotsState[m].lastScanAt) / 1000) : null,
+      },
+    ])),
+  };
+}
+
 app.get('/api/moonshots/scan', (req, res) => {
   const requested = req.query.mode;
   const mode = MOONSHOTS_MODES.includes(requested) ? requested : 'swing';
@@ -1366,6 +1402,7 @@ app.get('/api/moonshots/scan', (req, res) => {
     total: st.total,
     lastScanAgo: st.lastScanAt ? Math.round((Date.now() - st.lastScanAt) / 1000) : null,
     results,
+    global: buildGlobalScanStatus(),
   });
 });
 

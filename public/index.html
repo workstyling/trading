@@ -10594,9 +10594,10 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
     // so the user sees "12s ago", "13s ago", ... without waiting for the next refresh.
     setInterval(() => {
       const pill = document.getElementById('moonFreshPill');
-      if (!pill || !moonLastScanAtAbs || !moonLastData || moonLastData.scanning) return;
+      if (!pill || !moonLastScanAtAbs || !moonLastData || moonLastData.global?.anyScanning) return;
       const secs = Math.max(0, Math.round((Date.now() - moonLastScanAtAbs) / 1000));
-      const cls = moonFreshnessClass(moonLastData.mode, secs);
+      // Match the slow-mode thresholds so the color doesn't drift over time
+      const cls = moonFreshnessClass('swing', secs);
       pill.className = 'moon-freshness ' + cls;
       pill.innerHTML = `<span class="mf-dot"></span><span class="mf-label">Last scan</span>${moonFreshnessLabel(secs)}`;
     }, 1000);
@@ -10720,21 +10721,25 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
       const isIntra = data.mode === 'intra';
       const modeColor = isScalp ? 'var(--yellow)' : isIntra ? 'var(--purple)' : isQuick ? 'var(--green)' : 'var(--blue)';
 
-      // Anchor "ago" calculations to an absolute timestamp so the pill keeps ticking
-      // between server fetches.
-      if (data.scanning) {
+      // Use the GLOBAL (across all 4 modes) freshness so switching tabs doesn't
+      // change the displayed "Last scan" time. The freshest data the user sees
+      // is only as fresh as the OLDEST per-mode scan — that's what the user
+      // actually cares about ("are all my views current?").
+      const g = data.global || {};
+      if (g.anyScanning) {
         moonLastScanAtAbs = null;
-      } else if (data.lastScanAgo != null) {
-        moonLastScanAtAbs = Date.now() - data.lastScanAgo * 1000;
+      } else if (g.earliestScanAgo != null) {
+        moonLastScanAtAbs = Date.now() - g.earliestScanAgo * 1000;
       }
 
-      // Big, prominent freshness indicator — colored dot + bold time, no button styling.
       let freshHtml;
-      if (data.scanning) {
-        freshHtml = `<span class="moon-freshness scanning"><span class="mf-dot"></span><span class="mf-label">Scanning</span>${data.scanned}/${data.total} · ${data.progress}%</span>`;
+      if (g.anyScanning) {
+        freshHtml = `<span class="moon-freshness scanning"><span class="mf-dot"></span><span class="mf-label">Scanning</span>${g.scanned}/${g.total} · ${g.progress}%</span>`;
       } else if (moonLastScanAtAbs != null) {
         const secs = Math.max(0, Math.round((Date.now() - moonLastScanAtAbs) / 1000));
-        const cls = moonFreshnessClass(data.mode, secs);
+        // Use the slowest mode's threshold (swing) since the global timestamp
+        // reflects the slowest-to-refresh mode.
+        const cls = moonFreshnessClass('swing', secs);
         freshHtml = `<span class="moon-freshness ${cls}" id="moonFreshPill"><span class="mf-dot"></span><span class="mf-label">Last scan</span>${moonFreshnessLabel(secs)}</span>`;
       } else {
         freshHtml = `<span class="moon-freshness stale"><span class="mf-dot"></span><span class="mf-label">Last scan</span>never · click Refresh</span>`;
