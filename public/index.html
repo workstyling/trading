@@ -10047,8 +10047,8 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
       if (name === 'moonshots') {
         applyMoonPrefsToInputs();
         loadMoonshots();
-        renderPaperPositions();
-        updatePaperAsks();
+        // Pull positions from server, then update ASKs and render
+        fetchServerPositions().then(() => { renderPaperPositions(); updatePaperAsks(); });
       }
     }
     // Restore last tab on load
@@ -10057,9 +10057,9 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
         const last = safeStorage.getItem('activeTab');
         if (last === 'predictor') switchTab('predictor');
         else if (last === 'moonshots') switchTab('moonshots');
-        // Render paper positions immediately regardless of active tab so the
-        // panel is ready when user navigates over.
-        try { renderPaperPositions(); } catch {}
+        // Pre-fetch paper positions from server so the panel is ready when user
+        // navigates to Moonshots — works across devices since data lives on server.
+        try { fetchServerPositions().then(renderPaperPositions); } catch {}
       } catch {}
     });
 
@@ -10370,22 +10370,22 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
     }
 
     /* ═══════════════════════════ MOONSHOTS — PAPER POSITIONS ═══════════════════════════ */
-    // Test buys with live PnL. Buy at best bid, mark-to-market at best ask, both legs
-    // pay the limit fee % configured in the Trading tab. Persists in localStorage.
-    const PAPER_KEY = 'moonPaperPositions_v1';
+    // Paper positions live on the SERVER (data/moonshots/paper-positions.json) so they
+    // sync across all devices (mobile, desktop, etc). The client keeps a small cache for
+    // rendering and live PnL math. Live ASK prices are fetched directly from Coinbase
+    // by each client (no need to roundtrip through our server).
+    let paperPositionsCache = {};   // { coin: { buyPrice, buySizeUsd, feePct, buyAt } }
+    let paperAsks = {};             // { coin: lastAsk } — client-side only
 
-    function loadPaperPositions() {
+    async function fetchServerPositions() {
       try {
-        const raw = safeStorage.getItem(PAPER_KEY);
-        if (raw) return JSON.parse(raw);
-      } catch {}
-      return {};
+        const r = await fetch('/api/moonshots/positions');
+        const d = await r.json();
+        if (d.success) paperPositionsCache = d.positions || {};
+      } catch (e) { console.error('positions fetch:', e); }
     }
-    function savePaperPositions(p) {
-      try { safeStorage.setItem(PAPER_KEY, JSON.stringify(p)); } catch {}
-    }
+
     function getFeePct() {
-      // Use the Limit Fee from the Trading tab — that's what fills against best bid/ask.
       const el = document.getElementById('tradeFee');
       const v = parseFloat(el?.value);
       return isFinite(v) && v >= 0 ? v : 0.075;
@@ -10399,20 +10399,16 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
         const bid = parseFloat(t.bid);
         const ask = parseFloat(t.ask);
         if (!bid || bid <= 0) { showCustomAlert(`No bid price for ${coin}`); return; }
-        const positions = loadPaperPositions();
-        if (positions[coin]) {
-          showCustomAlert(`${coin} already in paper portfolio — close it first.`);
-          return;
-        }
-        positions[coin] = {
-          coin,
-          buyPrice: bid,        // entry assumed at best bid
-          lastAsk: ask,
-          buySizeUsd: sizeUsd,
-          buyAt: Date.now(),
-          feePct: getFeePct(),
-        };
-        savePaperPositions(positions);
+
+        const res = await fetch('/api/moonshots/positions', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ coin, buyPrice: bid, buySizeUsd: sizeUsd, feePct: getFeePct() }),
+        });
+        const d = await res.json();
+        if (!d.success) { showCustomAlert(d.error || 'Buy failed'); return; }
+        paperPositionsCache[coin] = d.position;
+        paperAsks[coin] = ask;
         renderPaperPositions();
         showCustomAlert(`Paper-bought ${coin} at $${bid} (size $${sizeUsd})`);
       } catch (e) {
@@ -10420,17 +10416,23 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
       }
     }
 
-    function closeMoonPosition(coin) {
-      const positions = loadPaperPositions();
-      delete positions[coin];
-      savePaperPositions(positions);
-      renderPaperPositions();
+    async function closeMoonPosition(coin) {
+      try {
+        await fetch(`/api/moonshots/positions/${encodeURIComponent(coin)}`, { method: 'DELETE' });
+        delete paperPositionsCache[coin];
+        delete paperAsks[coin];
+        renderPaperPositions();
+      } catch (e) { showCustomAlert('Close failed: ' + e.message); }
     }
-    function clearAllPaperPositions() {
-      if (Object.keys(loadPaperPositions()).length === 0) return;
+    async function clearAllPaperPositions() {
+      if (Object.keys(paperPositionsCache).length === 0) return;
       if (!confirm('Close all paper positions?')) return;
-      savePaperPositions({});
-      renderPaperPositions();
+      try {
+        await fetch('/api/moonshots/positions', { method: 'DELETE' });
+        paperPositionsCache = {};
+        paperAsks = {};
+        renderPaperPositions();
+      } catch (e) { showCustomAlert('Close-all failed: ' + e.message); }
     }
 
     function fmtTimeHeld(ms) {
@@ -10444,38 +10446,36 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
       return `${d}d ${h % 24}h`;
     }
 
-    function pnlForPosition(p) {
-      // Buy cost: paid (size + fee on size) for `units` of coin
-      // PnL: at exit value `units * ask * (1 - fee/100)` minus buy cost
+    function pnlForPosition(p, ask) {
       const feeFrac = (p.feePct || 0) / 100;
       const units = p.buySizeUsd / p.buyPrice;
       const buyCost = p.buySizeUsd * (1 + feeFrac);
-      const exitValue = units * (p.lastAsk || p.buyPrice) * (1 - feeFrac);
+      const exitValue = units * (ask || p.buyPrice) * (1 - feeFrac);
       const pnlUsd = exitValue - buyCost;
       const pnlPct = buyCost > 0 ? (pnlUsd / buyCost) * 100 : 0;
       return { units, buyCost, exitValue, pnlUsd, pnlPct };
     }
 
     async function updatePaperAsks() {
-      const positions = loadPaperPositions();
-      const coins = Object.keys(positions);
-      if (coins.length === 0) return;
-      // Fetch tickers in parallel (one per coin — small set so this is fine)
+      // Refresh the server-side positions cache first in case another device added/removed
+      await fetchServerPositions();
+      const coins = Object.keys(paperPositionsCache);
+      if (coins.length === 0) { renderPaperPositions(); return; }
+      // Fetch live ASK prices from Coinbase in parallel
       await Promise.all(coins.map(async (c) => {
         try {
           const r = await fetch(`https://api.exchange.coinbase.com/products/${c}-USD/ticker`);
           if (!r.ok) return;
           const t = await r.json();
           const ask = parseFloat(t.ask);
-          if (ask > 0) positions[c].lastAsk = ask;
+          if (ask > 0) paperAsks[c] = ask;
         } catch {}
       }));
-      savePaperPositions(positions);
       renderPaperPositions();
     }
 
     function renderPaperPositions() {
-      const positions = loadPaperPositions();
+      const positions = paperPositionsCache;
       const coins = Object.keys(positions);
       const card = document.getElementById('moonPaperCard');
       const list = document.getElementById('moonPositionsList');
@@ -10490,7 +10490,8 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
       let totalUsd = 0, totalPnl = 0;
       const rows = coins.sort((a, b) => positions[b].buyAt - positions[a].buyAt).map(c => {
         const p = positions[c];
-        const { pnlUsd, pnlPct, buyCost, exitValue } = pnlForPosition(p);
+        const ask = paperAsks[c];
+        const { pnlUsd, pnlPct, buyCost } = pnlForPosition(p, ask);
         totalUsd += buyCost;
         totalPnl += pnlUsd;
         const heldMs = Date.now() - p.buyAt;
@@ -10498,7 +10499,7 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
         return `<tr>
           <td><b>${c}</b></td>
           <td>${predFmt.price(p.buyPrice)}</td>
-          <td>${p.lastAsk != null ? predFmt.price(p.lastAsk) : '—'}</td>
+          <td>${ask != null ? predFmt.price(ask) : '<span style="color:var(--t2);">…</span>'}</td>
           <td>$${p.buySizeUsd.toFixed(2)}</td>
           <td style="color:${color};">${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%</td>
           <td style="color:${color};">${pnlUsd >= 0 ? '+' : ''}$${pnlUsd.toFixed(2)}</td>
@@ -10531,10 +10532,9 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
 
     // Tick: update only the "held" column every second locally (no network)
     setInterval(() => {
-      const positions = loadPaperPositions();
-      Object.keys(positions).forEach(c => {
+      Object.keys(paperPositionsCache).forEach(c => {
         const el = document.getElementById(`held_${c}`);
-        if (el) el.textContent = fmtTimeHeld(Date.now() - positions[c].buyAt);
+        if (el) el.textContent = fmtTimeHeld(Date.now() - paperPositionsCache[c].buyAt);
       });
     }, 1000);
 

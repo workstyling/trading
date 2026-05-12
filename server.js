@@ -1270,15 +1270,113 @@ app.get('/api/predictor/scan-all', (req, res) => {
 });
 
 // ── Moonshots scanner: recovery pattern + technical confirmation across all Coinbase USD pairs ──
-// Two modes: 'swing' (30d daily candles, original) and 'quick' (72h hourly candles, short-term).
 const moonshotsLib = require('./src/predictor/moonshots');
+const MOONSHOTS_MODES = ['swing', 'quick', 'intra', 'scalp'];
 const moonshotsState = {
   swing: { scanning: false, progress: 0, scanned: 0, total: 0, lastScanAt: 0, results: [] },
   quick: { scanning: false, progress: 0, scanned: 0, total: 0, lastScanAt: 0, results: [] },
   intra: { scanning: false, progress: 0, scanned: 0, total: 0, lastScanAt: 0, results: [] },
   scalp: { scanning: false, progress: 0, scanned: 0, total: 0, lastScanAt: 0, results: [] },
 };
-const MOONSHOTS_MODES = ['swing', 'quick', 'intra', 'scalp'];
+
+// ── Persistent storage for scan results so survives server restart ──
+const MOONSHOTS_DATA_DIR = path.join(__dirname, 'data', 'moonshots');
+function ensureMoonshotsDir() {
+  if (!fs.existsSync(MOONSHOTS_DATA_DIR)) fs.mkdirSync(MOONSHOTS_DATA_DIR, { recursive: true });
+}
+ensureMoonshotsDir();
+
+function moonScanFile(mode) {
+  return path.join(MOONSHOTS_DATA_DIR, `scan-${mode}.json`);
+}
+
+function loadMoonScanFromDisk(mode) {
+  try {
+    const f = moonScanFile(mode);
+    if (!fs.existsSync(f)) return null;
+    return JSON.parse(fs.readFileSync(f, 'utf8'));
+  } catch (e) {
+    console.error(`[MOONSHOTS:${mode}] load error:`, e.message);
+    return null;
+  }
+}
+function saveMoonScanToDisk(mode, payload) {
+  try {
+    fs.writeFileSync(moonScanFile(mode), JSON.stringify(payload));
+  } catch (e) {
+    console.error(`[MOONSHOTS:${mode}] save error:`, e.message);
+  }
+}
+
+// Load any previously saved scans on startup so devices see the same data
+MOONSHOTS_MODES.forEach(m => {
+  const saved = loadMoonScanFromDisk(m);
+  if (saved && Array.isArray(saved.results)) {
+    moonshotsState[m].results = saved.results;
+    moonshotsState[m].lastScanAt = saved.lastScanAt || 0;
+    console.log(`[MOONSHOTS:${m}] loaded ${saved.results.length} cached results from disk`);
+  }
+});
+
+// ── Paper positions storage — shared across all devices via the server ──
+const PAPER_POSITIONS_FILE = path.join(MOONSHOTS_DATA_DIR, 'paper-positions.json');
+function loadPaperPositions() {
+  try {
+    if (fs.existsSync(PAPER_POSITIONS_FILE)) return JSON.parse(fs.readFileSync(PAPER_POSITIONS_FILE, 'utf8'));
+  } catch (e) {
+    console.error('[PAPER] load error:', e.message);
+  }
+  return {};
+}
+function savePaperPositions(positions) {
+  try {
+    fs.writeFileSync(PAPER_POSITIONS_FILE, JSON.stringify(positions, null, 2));
+  } catch (e) {
+    console.error('[PAPER] save error:', e.message);
+  }
+}
+
+app.get('/api/moonshots/positions', (req, res) => {
+  res.json({ success: true, positions: loadPaperPositions() });
+});
+
+app.post('/api/moonshots/positions', (req, res) => {
+  try {
+    const { coin, buyPrice, buySizeUsd, feePct } = req.body;
+    if (!coin || !buyPrice || !buySizeUsd) {
+      return res.status(400).json({ success: false, error: 'Missing required fields: coin, buyPrice, buySizeUsd' });
+    }
+    const positions = loadPaperPositions();
+    if (positions[coin]) {
+      return res.json({ success: false, error: `${coin} already in portfolio`, position: positions[coin] });
+    }
+    positions[coin] = {
+      coin,
+      buyPrice: parseFloat(buyPrice),
+      buySizeUsd: parseFloat(buySizeUsd),
+      feePct: parseFloat(feePct) || 0.075,
+      buyAt: Date.now(),
+    };
+    savePaperPositions(positions);
+    res.json({ success: true, position: positions[coin] });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+app.delete('/api/moonshots/positions/:coin', (req, res) => {
+  const positions = loadPaperPositions();
+  const coin = req.params.coin;
+  if (!positions[coin]) return res.json({ success: false, error: 'Not found' });
+  delete positions[coin];
+  savePaperPositions(positions);
+  res.json({ success: true });
+});
+
+app.delete('/api/moonshots/positions', (req, res) => {
+  savePaperPositions({});
+  res.json({ success: true });
+});
 
 async function runMoonshotsScan(mode = 'swing') {
   const st = moonshotsState[mode];
@@ -1302,7 +1400,9 @@ async function runMoonshotsScan(mode = 'swing') {
     }, mode);
     st.results = out;
     st.lastScanAt = Date.now();
-    console.log(`[MOONSHOTS:${mode}] Scan complete: ${out.length} candidates`);
+    // Persist to disk so all devices see the same data after a server restart
+    saveMoonScanToDisk(mode, { results: out, lastScanAt: st.lastScanAt });
+    console.log(`[MOONSHOTS:${mode}] Scan complete: ${out.length} candidates (saved to disk)`);
   } catch (e) {
     console.error(`[MOONSHOTS:${mode}] error:`, e.message);
   } finally {
