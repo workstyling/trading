@@ -369,11 +369,10 @@
       </div>
     </div>
     <div class="trade-amount">
-      <span style="font-size:11px;color:var(--t2);">$</span>
-      <button class="amt-btn" onclick="adjustAmt(-5)">−</button>
-      <input type="number" class="amt-input" id="amtInput" value="" step="1" min="1" placeholder="...">
-      <button class="amt-btn" onclick="adjustAmt(5)">+</button>
-      <span style="font-size:11px;color:var(--t2);">USD</span>
+      <button class="amt-btn" onclick="adjustAmt(-1)">−</button>
+      <input type="number" class="amt-input" id="amtInput" value="99" step="1" min="1" max="100">
+      <button class="amt-btn" onclick="adjustAmt(1)">+</button>
+      <span style="font-size:11px;color:var(--t2);">% &nbsp;<span id="amtUsd" style="color:#4ade80;">$0.00</span></span>
     </div>
     <div class="trade-actions">
       <button class="trade-btn btn-buy" id="btnBuy" onclick="executeBuy()">BUY</button>
@@ -513,12 +512,13 @@
     }
 
     // ── Load balance ──
+    let usdBalance = 0;
     async function loadBalance() {
       const r = await api('/get-balance');
       if (r.success) {
-        document.getElementById('headerBalance').textContent = '$' + parseFloat(r.balance).toFixed(2);
-        const amt = document.getElementById('amtInput');
-        if (amt && r.balance > 0) amt.value = (r.balance * 0.99).toFixed(2);
+        usdBalance = parseFloat(r.balance) || 0;
+        document.getElementById('headerBalance').textContent = '$' + usdBalance.toFixed(2);
+        updateUsd();
       }
     }
 
@@ -560,7 +560,11 @@
       priceWs.onclose = () => { setTimeout(connectPriceWs, 3000); };
     }
 
-    function updateUsd() { /* direct USD input, no conversion needed */ }
+    function updateUsd() {
+      const pct = Math.min(100, Math.max(0, parseFloat(document.getElementById('amtInput').value) || 0));
+      const usd = usdBalance * pct / 100;
+      document.getElementById('amtUsd').textContent = '$' + usd.toFixed(2);
+    }
 
     // Load saved coin
     const savedCoin = localStorage.getItem('mobileTradeCoin');
@@ -588,7 +592,7 @@
 
     function adjustAmt(delta) {
       const inp = document.getElementById('amtInput');
-      inp.value = Math.max(1, (parseInt(inp.value) || 0) + delta);
+      inp.value = Math.min(100, Math.max(1, (parseInt(inp.value) || 99) + delta));
       updateUsd();
     }
 
@@ -612,7 +616,8 @@
 
     // ── Get USD amount ──
     function getUsdAmount() {
-      return (parseFloat(document.getElementById('amtInput').value) || 0).toFixed(2);
+      const pct = Math.min(100, Math.max(0, parseFloat(document.getElementById('amtInput').value) || 0));
+      return (usdBalance * pct / 100).toFixed(2);
     }
 
     // ── Execute trades ──
