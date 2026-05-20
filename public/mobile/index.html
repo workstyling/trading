@@ -332,6 +332,56 @@
       display: none;
     }
     .refresh-indicator.visible { display: block; }
+
+    /* ── Top Gainers Panel ── */
+    #topGainersPanel {
+      border: 1px solid rgba(74,222,128,0.2);
+      border-radius: var(--r2);
+      background: var(--s1);
+      padding: 12px 14px;
+      margin-bottom: 12px;
+    }
+    .tg-header {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 10px;
+    }
+    .tg-title { font-size: 13px; font-weight: 600; color: #4ade80; letter-spacing: .04em; }
+    .tg-meta {
+      font-size: 11px; color: var(--t2);
+      display: inline-flex; align-items: center; gap: 8px;
+    }
+    .tg-countdown { color: #facc15; font-variant-numeric: tabular-nums; }
+    .tg-refresh-btn {
+      background: transparent;
+      border: 1px solid rgba(74,222,128,0.3);
+      color: #4ade80;
+      border-radius: 8px;
+      width: 28px; height: 28px;
+      font-size: 15px; line-height: 1; padding: 0;
+      cursor: pointer;
+      display: inline-flex; align-items: center; justify-content: center;
+    }
+    .tg-refresh-btn:active { background: rgba(74,222,128,0.18); }
+    .tg-refresh-btn.spinning { animation: tgSpin 0.6s linear; }
+    @keyframes tgSpin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
+    .tg-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .tg-table th {
+      color: var(--t2); font-weight: 500; padding: 4px 4px;
+      text-align: left; border-bottom: 1px solid var(--b0); font-size: 10px;
+      text-transform: uppercase; letter-spacing: .04em;
+    }
+    .tg-table th:not(:first-child) { text-align: right; }
+    .tg-table td {
+      padding: 8px 4px; border-bottom: 1px solid rgba(255,255,255,0.03);
+      cursor: pointer;
+    }
+    .tg-table td:not(:first-child) { text-align: right; }
+    .tg-table tr:active td { background: rgba(255,255,255,0.06); }
+    .tg-coin { color: var(--blue); font-weight: 700; font-size: 13px; }
+    .tg-price { color: var(--t2); font-size: 10px; font-family: 'JetBrains Mono', monospace; }
+    .tg-pct { color: #4ade80; font-weight: 600; font-family: 'JetBrains Mono', monospace; }
+    .tg-pct.neg { color: var(--loss); }
+    .tg-vol { color: var(--t2); font-family: 'JetBrains Mono', monospace; }
   </style>
 </head>
 <body>
@@ -348,6 +398,7 @@
   <div class="tabs">
     <button class="tab active" data-tab="trade">Trade</button>
     <button class="tab" data-tab="orders">Orders</button>
+    <button class="tab" data-tab="gainers">🔥 Gainers</button>
     <button class="tab" data-tab="profit">Profit</button>
     <button class="tab" data-tab="holdings">Holdings</button>
   </div>
@@ -407,6 +458,20 @@
       <input type="text" class="order-search" id="orderSearchM" placeholder="Search..." autocomplete="off">
     </div>
     <div id="ordersList" class="loading"><div class="spinner"></div>Loading orders...</div>
+  </div>
+
+  <!-- Top Gainers Panel -->
+  <div class="panel" id="panelGainers" data-tab="gainers">
+    <div id="topGainersPanel">
+      <div class="tg-header">
+        <span class="tg-title">🔥 Top Gainers (Coinbase)</span>
+        <span class="tg-meta">
+          <button class="tg-refresh-btn" id="tgRefreshBtn" onclick="refreshTopGainers()" title="Refresh now">⟳</button>
+          next: <span class="tg-countdown" id="tgCountdown">—</span>
+        </span>
+      </div>
+      <div id="tgBody"><div style="color:var(--t2);font-size:12px;text-align:center;padding:14px;">Loading...</div></div>
+    </div>
   </div>
 
   <!-- Profit Panel -->
@@ -1034,10 +1099,98 @@
       loadHoldings();
     }
 
+    // ── Top Gainers ──
+    const TG_INTERVAL = 60;
+    let tgNextIn = 0;
+    let tgTimer = null;
+
+    function fmtTgVol(v) {
+      if (v >= 1e9) return (v / 1e9).toFixed(1) + 'B';
+      if (v >= 1e6) return (v / 1e6).toFixed(1) + 'M';
+      if (v >= 1e3) return (v / 1e3).toFixed(0) + 'K';
+      return v.toFixed(0);
+    }
+
+    function renderTopGainers(gainers) {
+      const body = document.getElementById('tgBody');
+      if (!body) return;
+      if (!gainers || !gainers.length) {
+        body.innerHTML = '<div style="color:var(--t2);font-size:12px;text-align:center;padding:14px;">No data</div>';
+        return;
+      }
+      const rows = gainers.slice(0, 10).map((g) => {
+        const pctCls = g.pct >= 0 ? 'tg-pct' : 'tg-pct neg';
+        const sign = g.pct >= 0 ? '+' : '';
+        const price = g.price < 0.001 ? g.price.toFixed(6) : g.price < 1 ? g.price.toFixed(4) : g.price < 100 ? g.price.toFixed(3) : g.price.toFixed(2);
+        const sc = g.score ?? 50;
+        const rsi = g.rsi ?? 50;
+        let sigLabel, sigColor;
+        if (sc >= 68) { sigLabel = '▲ Buy'; sigColor = '#4ade80'; }
+        else if (sc >= 50) { sigLabel = '◎ Watch'; sigColor = '#facc15'; }
+        else if (sc >= 35) { sigLabel = '◌ Weak'; sigColor = '#f97316'; }
+        else { sigLabel = '▼ Skip'; sigColor = '#f87171'; }
+        const sigTitle = `Score: ${sc}/100 · RSI: ${rsi}`;
+        return `<tr onclick="selectCoinFromGainers('${g.coin}')">
+          <td><span class="tg-coin">${g.coin}</span><br><span class="tg-price">$${price}</span></td>
+          <td class="${pctCls}">${sign}${g.pct.toFixed(1)}%</td>
+          <td class="tg-vol">$${fmtTgVol(g.volUsd)}</td>
+          <td title="${sigTitle}" style="color:${sigColor};font-weight:600;font-size:11px;white-space:nowrap;">${sigLabel}<br><span style="color:var(--t2);font-weight:400;font-size:10px;">RSI ${rsi}</span></td>
+        </tr>`;
+      }).join('');
+      body.innerHTML = `<table class="tg-table">
+        <thead><tr><th>COIN</th><th>24H%</th><th>VOL</th><th>SIGNAL</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+    }
+
+    async function loadTopGainers() {
+      try {
+        const r = await fetch('/api/top-gainers');
+        const d = await r.json();
+        if (d.success) renderTopGainers(d.gainers);
+      } catch {}
+    }
+
+    function startTgCountdown() {
+      clearInterval(tgTimer);
+      tgNextIn = TG_INTERVAL;
+      tgTimer = setInterval(() => {
+        tgNextIn--;
+        const el = document.getElementById('tgCountdown');
+        if (el) el.textContent = tgNextIn + 's';
+        if (tgNextIn <= 0) {
+          tgNextIn = TG_INTERVAL;
+          loadTopGainers();
+        }
+      }, 1000);
+    }
+
+    function refreshTopGainers() {
+      const btn = document.getElementById('tgRefreshBtn');
+      if (btn) {
+        btn.classList.remove('spinning');
+        void btn.offsetWidth;
+        btn.classList.add('spinning');
+      }
+      loadTopGainers();
+      tgNextIn = TG_INTERVAL;
+      const el = document.getElementById('tgCountdown');
+      if (el) el.textContent = tgNextIn + 's';
+    }
+
+    function selectCoinFromGainers(coin) {
+      selectCoin(coin);
+      // Switch to Trade tab
+      const tradeTab = document.querySelector('.tab[data-tab="trade"]');
+      if (tradeTab) tradeTab.click();
+    }
+
     // Init
     loadSettings();
     refreshAll();
     connectPriceWs();
+    loadTopGainers();
+    startTgCountdown();
     setInterval(() => { loadBalance(); syncSelectedFromServer().finally(() => loadOrders().then(updateMonitor)); }, 10000);
     setInterval(loadHoldings, 30000);
     setInterval(updateMonitor, 5000);

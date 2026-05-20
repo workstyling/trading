@@ -1822,8 +1822,25 @@
       margin-bottom: 8px;
     }
     .tg-title { font-size: 12px; font-weight: 600; color: #4ade80; letter-spacing: .04em; }
-    .tg-meta { font-size: 10px; color: var(--t2); }
+    .tg-meta { font-size: 10px; color: var(--t2); display: inline-flex; align-items: center; gap: 6px; }
     .tg-countdown { color: #facc15; font-variant-numeric: tabular-nums; }
+    .tg-refresh-btn {
+      background: transparent;
+      border: 1px solid rgba(74,222,128,0.3);
+      color: #4ade80;
+      border-radius: var(--r1);
+      width: 22px; height: 22px;
+      font-size: 13px;
+      line-height: 1;
+      cursor: pointer;
+      padding: 0;
+      display: inline-flex; align-items: center; justify-content: center;
+      transition: all 0.15s;
+    }
+    .tg-refresh-btn:hover { background: rgba(74,222,128,0.12); }
+    .tg-refresh-btn:active { transform: rotate(180deg); }
+    .tg-refresh-btn.spinning { animation: tgSpin 0.6s linear; }
+    @keyframes tgSpin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
     .tg-table { width: 100%; border-collapse: collapse; font-size: 11px; }
     .tg-table th { color: var(--t2); font-weight: 500; padding: 2px 4px; text-align: left; border-bottom: 1px solid var(--b0); }
     .tg-table th:not(:first-child) { text-align: right; }
@@ -4466,7 +4483,10 @@
         <div id="topGainersPanel">
           <div class="tg-header">
             <span class="tg-title">🔥 Top Gainers (Coinbase)</span>
-            <span class="tg-meta">next: <span class="tg-countdown" id="tgCountdown">—</span></span>
+            <span class="tg-meta">
+              <button class="tg-refresh-btn" id="tgRefreshBtn" onclick="refreshTopGainers()" title="Refresh now">⟳</button>
+              next: <span class="tg-countdown" id="tgCountdown">—</span>
+            </span>
           </div>
           <div id="tgBody"><div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">Loading...</div></div>
         </div>
@@ -8709,6 +8729,19 @@ Requirements:
           loadTopGainers();
         }
       }, 1000);
+    }
+
+    function refreshTopGainers() {
+      const btn = document.getElementById('tgRefreshBtn');
+      if (btn) {
+        btn.classList.remove('spinning');
+        void btn.offsetWidth;
+        btn.classList.add('spinning');
+      }
+      loadTopGainers();
+      tgNextIn = TG_INTERVAL;
+      const el = document.getElementById('tgCountdown');
+      if (el) el.textContent = tgNextIn + 's';
     }
 
     loadTopGainers();
