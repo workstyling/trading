@@ -371,7 +371,7 @@
     <div class="trade-amount">
       <span style="font-size:11px;color:var(--t2);">$</span>
       <button class="amt-btn" onclick="adjustAmt(-5)">−</button>
-      <input type="number" class="amt-input" id="amtInput" value="100" step="1" min="1">
+      <input type="number" class="amt-input" id="amtInput" value="" step="1" min="1" placeholder="...">
       <button class="amt-btn" onclick="adjustAmt(5)">+</button>
       <span style="font-size:11px;color:var(--t2);">USD</span>
     </div>
@@ -517,6 +517,8 @@
       const r = await api('/get-balance');
       if (r.success) {
         document.getElementById('headerBalance').textContent = '$' + parseFloat(r.balance).toFixed(2);
+        const amt = document.getElementById('amtInput');
+        if (amt && r.balance > 0) amt.value = (r.balance * 0.99).toFixed(2);
       }
     }
 
