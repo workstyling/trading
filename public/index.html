@@ -8669,14 +8669,13 @@ Requirements:
         const sign = g.pct >= 0 ? '+' : '';
         const price = g.price < 0.001 ? g.price.toFixed(6) : g.price < 1 ? g.price.toFixed(4) : g.price < 100 ? g.price.toFixed(3) : g.price.toFixed(2);
         return `<tr onclick="document.getElementById('buyCoin').value='${g.coin}';connectWs && connectWs()">
-          <td><span class="tg-coin">${g.coin}</span></td>
-          <td class="tg-price">$${price}</td>
+          <td><span class="tg-coin">${g.coin}</span><br><span style="color:var(--t2);font-size:10px;">$${price}</span></td>
           <td class="${pctCls}">${sign}${g.pct.toFixed(1)}%</td>
           <td class="tg-vol">$${fmtTgVol(g.volUsd)}</td>
         </tr>`;
       }).join('');
       body.innerHTML = `<table class="tg-table">
-        <thead><tr><th>COIN</th><th>PRICE</th><th>24H%</th><th>VOL</th></tr></thead>
+        <thead><tr><th>COIN</th><th>24H%</th><th>VOL 24H</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>`;
     }
