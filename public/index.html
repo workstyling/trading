@@ -1807,6 +1807,35 @@
       font-family: 'JetBrains Mono', monospace;
     }
 
+    /* Top Gainers Panel */
+    #topGainersPanel {
+      border: 1px solid rgba(74,222,128,0.2);
+      border-radius: var(--r2);
+      background: var(--s1);
+      padding: 12px 14px;
+      margin-bottom: 12px;
+    }
+    .tg-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .tg-title { font-size: 12px; font-weight: 600; color: #4ade80; letter-spacing: .04em; }
+    .tg-meta { font-size: 10px; color: var(--t2); }
+    .tg-countdown { color: #facc15; font-variant-numeric: tabular-nums; }
+    .tg-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    .tg-table th { color: var(--t2); font-weight: 500; padding: 2px 4px; text-align: left; border-bottom: 1px solid var(--b0); }
+    .tg-table th:not(:first-child) { text-align: right; }
+    .tg-table td { padding: 3px 4px; border-bottom: 1px solid rgba(255,255,255,0.03); cursor: pointer; }
+    .tg-table td:not(:first-child) { text-align: right; }
+    .tg-table tr:hover td { background: rgba(255,255,255,0.04); }
+    .tg-coin { color: var(--blue); font-weight: 600; }
+    .tg-pct { color: #4ade80; font-weight: 600; }
+    .tg-pct.neg { color: var(--loss); }
+    .tg-vol { color: var(--t2); }
+    .tg-price { color: var(--t1); }
+
     /* Profit Panel */
     #profitPanel {
       border: 1px solid var(--b0);
@@ -4433,6 +4462,13 @@
                 onclick="clearOrderSearch()">Clear</button></div>
           </div>
           <div class="orders-scroll"></div>
+        </div>
+        <div id="topGainersPanel">
+          <div class="tg-header">
+            <span class="tg-title">🔥 Top Gainers (Coinbase)</span>
+            <span class="tg-meta">next: <span class="tg-countdown" id="tgCountdown">—</span></span>
+          </div>
+          <div id="tgBody"><div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">Loading...</div></div>
         </div>
         <div id="profitPanel">
           <div class="profit-header">
@@ -8611,6 +8647,64 @@ Requirements:
     // Load orders on page load and refresh every 10 seconds
     loadLatestOrders();
     setInterval(loadLatestOrders, 10000);
+
+    // ── Top Gainers ───────────────────────────────────
+    const TG_INTERVAL = 60; // seconds
+    let tgNextIn = 0;
+    let tgTimer = null;
+
+    function fmtTgVol(v) {
+      if (v >= 1e9) return (v / 1e9).toFixed(1) + 'B';
+      if (v >= 1e6) return (v / 1e6).toFixed(1) + 'M';
+      if (v >= 1e3) return (v / 1e3).toFixed(0) + 'K';
+      return v.toFixed(0);
+    }
+
+    function renderTopGainers(gainers) {
+      const body = document.getElementById('tgBody');
+      if (!body) return;
+      if (!gainers || !gainers.length) { body.innerHTML = '<div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">No data</div>'; return; }
+      const rows = gainers.slice(0, 10).map((g, i) => {
+        const pctCls = g.pct >= 0 ? 'tg-pct' : 'tg-pct neg';
+        const sign = g.pct >= 0 ? '+' : '';
+        const price = g.price < 0.001 ? g.price.toFixed(6) : g.price < 1 ? g.price.toFixed(4) : g.price < 100 ? g.price.toFixed(3) : g.price.toFixed(2);
+        return `<tr onclick="document.getElementById('buyCoin').value='${g.coin}';connectWs && connectWs()">
+          <td><span class="tg-coin">${g.coin}</span></td>
+          <td class="tg-price">$${price}</td>
+          <td class="${pctCls}">${sign}${g.pct.toFixed(1)}%</td>
+          <td class="tg-vol">$${fmtTgVol(g.volUsd)}</td>
+        </tr>`;
+      }).join('');
+      body.innerHTML = `<table class="tg-table">
+        <thead><tr><th>COIN</th><th>PRICE</th><th>24H%</th><th>VOL</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+    }
+
+    async function loadTopGainers() {
+      try {
+        const r = await fetch('/api/top-gainers');
+        const d = await r.json();
+        if (d.success) renderTopGainers(d.gainers);
+      } catch {}
+    }
+
+    function startTgCountdown() {
+      clearInterval(tgTimer);
+      tgNextIn = TG_INTERVAL;
+      tgTimer = setInterval(() => {
+        tgNextIn--;
+        const el = document.getElementById('tgCountdown');
+        if (el) el.textContent = tgNextIn + 's';
+        if (tgNextIn <= 0) {
+          tgNextIn = TG_INTERVAL;
+          loadTopGainers();
+        }
+      }, 1000);
+    }
+
+    loadTopGainers();
+    startTgCountdown();
 
     // ── Holdings ──────────────────────────────────────
     async function loadHoldings() {

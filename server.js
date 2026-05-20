@@ -1096,6 +1096,62 @@ app.get('/api/cryptorank/top-movers', async (req, res) => {
   }
 });
 
+// ========== TOP GAINERS (Coinbase) ==========
+
+let topGainersCache = { data: [], fetchedAt: 0 };
+const TOP_GAINERS_TTL = 60_000; // refresh every 60s
+
+async function fetchTopGainers() {
+  const CB = 'https://api.exchange.coinbase.com';
+  // 1. Get all online USD products
+  const prodRes = await fetch(`${CB}/products?type=SPOT`);
+  const products = await prodRes.json();
+  const usdPairs = products.filter(p =>
+    p.quote_currency === 'USD' && p.status === 'online' && !p.trading_disabled
+  ).map(p => p.id);
+
+  // 2. Fetch stats in parallel batches of 40
+  const BATCH = 40;
+  const results = [];
+  for (let i = 0; i < usdPairs.length; i += BATCH) {
+    const batch = usdPairs.slice(i, i + BATCH);
+    const stats = await Promise.all(batch.map(async id => {
+      try {
+        const r = await fetch(`${CB}/products/${id}/stats`);
+        const s = await r.json();
+        const open = parseFloat(s.open);
+        const last = parseFloat(s.last);
+        const vol = parseFloat(s.volume);
+        const volUsd = vol * last;
+        if (!open || open === 0) return null;
+        const pct = (last - open) / open * 100;
+        return { coin: id.replace('-USD', ''), price: last, pct, volUsd };
+      } catch { return null; }
+    }));
+    results.push(...stats.filter(Boolean));
+    if (i + BATCH < usdPairs.length) await new Promise(r => setTimeout(r, 100));
+  }
+
+  // 3. Sort by % gain descending, return top 20
+  results.sort((a, b) => b.pct - a.pct);
+  return results.slice(0, 20);
+}
+
+app.get('/api/top-gainers', async (req, res) => {
+  try {
+    const now = Date.now();
+    if (now - topGainersCache.fetchedAt < TOP_GAINERS_TTL && topGainersCache.data.length) {
+      return res.json({ success: true, gainers: topGainersCache.data, fetchedAt: topGainersCache.fetchedAt, cached: true });
+    }
+    const gainers = await fetchTopGainers();
+    topGainersCache = { data: gainers, fetchedAt: Date.now() };
+    res.json({ success: true, gainers, fetchedAt: topGainersCache.fetchedAt, cached: false });
+  } catch (e) {
+    console.error('[top-gainers]', e.message);
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
 // ========== PREDICTOR API ==========
 
 // Default watchlist for the Predictor scan
