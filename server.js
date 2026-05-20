@@ -1099,18 +1099,56 @@ app.get('/api/cryptorank/top-movers', async (req, res) => {
 // ========== TOP GAINERS (Coinbase) ==========
 
 let topGainersCache = { data: [], fetchedAt: 0 };
-const TOP_GAINERS_TTL = 60_000; // refresh every 60s
+const TOP_GAINERS_TTL = 60_000;
+
+function calcRSI(closes, period = 14) {
+  if (closes.length < period + 1) return 50;
+  let gains = 0, losses = 0;
+  for (let i = 1; i <= period; i++) {
+    const d = closes[i] - closes[i - 1];
+    if (d > 0) gains += d; else losses -= d;
+  }
+  let ag = gains / period, al = losses / period;
+  for (let i = period + 1; i < closes.length; i++) {
+    const d = closes[i] - closes[i - 1];
+    ag = (ag * (period - 1) + Math.max(0, d)) / period;
+    al = (al * (period - 1) + Math.max(0, -d)) / period;
+  }
+  if (al === 0) return 100;
+  return Math.round(100 - 100 / (1 + ag / al));
+}
+
+function calcBuyScore(pct, volUsd, rsi) {
+  let s = 50;
+  // RSI: lower = better entry
+  if (rsi < 30) s += 25;
+  else if (rsi < 45) s += 15;
+  else if (rsi < 60) s += 5;
+  else if (rsi < 75) s -= 12;
+  else s -= 28;
+  // Pct: big pump = risky
+  if (pct > 50) s -= 28;
+  else if (pct > 30) s -= 18;
+  else if (pct > 20) s -= 8;
+  else if (pct > 7) s += 10;
+  else if (pct > 3) s += 5;
+  // Volume confirms move
+  if (volUsd > 10_000_000) s += 15;
+  else if (volUsd > 1_000_000) s += 8;
+  else if (volUsd > 200_000) s += 3;
+  else s -= 12;
+  return Math.max(0, Math.min(100, Math.round(s)));
+}
 
 async function fetchTopGainers() {
   const CB = 'https://api.exchange.coinbase.com';
-  // 1. Get all online USD products
   const prodRes = await fetch(`${CB}/products?type=SPOT`);
   const products = await prodRes.json();
   const usdPairs = products.filter(p =>
     p.quote_currency === 'USD' && p.status === 'online' && !p.trading_disabled
   ).map(p => p.id);
 
-  // 2. Fetch stats in parallel batches of 40
+  // Fetch stats in parallel batches of 40
   const BATCH = 40;
   const results = [];
   for (let i = 0; i < usdPairs.length; i += BATCH) {
@@ -1119,22 +1157,34 @@ async function fetchTopGainers() {
       try {
         const r = await fetch(`${CB}/products/${id}/stats`);
         const s = await r.json();
-        const open = parseFloat(s.open);
-        const last = parseFloat(s.last);
-        const vol = parseFloat(s.volume);
-        const volUsd = vol * last;
-        if (!open || open === 0) return null;
-        const pct = (last - open) / open * 100;
-        return { coin: id.replace('-USD', ''), price: last, pct, volUsd };
+        const open = parseFloat(s.open), last = parseFloat(s.last);
+        const volUsd = parseFloat(s.volume) * last;
+        if (!open) return null;
+        return { coin: id.replace('-USD', ''), price: last, pct: (last - open) / open * 100, volUsd };
       } catch { return null; }
     }));
     results.push(...stats.filter(Boolean));
     if (i + BATCH < usdPairs.length) await new Promise(r => setTimeout(r, 100));
   }
-
-  // 3. Sort by % gain descending, return top 20
   results.sort((a, b) => b.pct - a.pct);
-  return results.slice(0, 20);
+  const top20 = results.slice(0, 20);
+
+  // Fetch 1h candles for top 20 to compute RSI
+  await Promise.all(top20.map(async g => {
+    try {
+      const r = await fetch(`${CB}/products/${g.coin}-USD/candles?granularity=3600`);
+      const candles = await r.json();
+      if (!Array.isArray(candles) || candles.length < 15) { g.rsi = 50; }
+      else {
+        // candles: [time, low, high, open, close, volume] — newest first
+        const closes = candles.slice(0, 30).reverse().map(c => c[4]);
+        g.rsi = calcRSI(closes);
+      }
+    } catch { g.rsi = 50; }
+    g.score = calcBuyScore(g.pct, g.volUsd, g.rsi);
+  }));
+
+  return top20;
 }
 
 app.get('/api/top-gainers', async (req, res) => {

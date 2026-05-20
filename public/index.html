@@ -8668,14 +8668,23 @@ Requirements:
         const pctCls = g.pct >= 0 ? 'tg-pct' : 'tg-pct neg';
         const sign = g.pct >= 0 ? '+' : '';
         const price = g.price < 0.001 ? g.price.toFixed(6) : g.price < 1 ? g.price.toFixed(4) : g.price < 100 ? g.price.toFixed(3) : g.price.toFixed(2);
+        const sc = g.score ?? 50;
+        const rsi = g.rsi ?? 50;
+        let sigLabel, sigColor, sigTitle;
+        if (sc >= 68) { sigLabel = '▲ Buy'; sigColor = '#4ade80'; }
+        else if (sc >= 50) { sigLabel = '◎ Watch'; sigColor = '#facc15'; }
+        else if (sc >= 35) { sigLabel = '◌ Weak'; sigColor = '#f97316'; }
+        else { sigLabel = '▼ Skip'; sigColor = '#f87171'; }
+        sigTitle = `Score: ${sc}/100 · RSI: ${rsi}`;
         return `<tr onclick="validateAndSelectCoin('${g.coin}')">
           <td><span class="tg-coin">${g.coin}</span><br><span style="color:var(--t2);font-size:10px;">$${price}</span></td>
           <td class="${pctCls}">${sign}${g.pct.toFixed(1)}%</td>
           <td class="tg-vol">$${fmtTgVol(g.volUsd)}</td>
+          <td title="${sigTitle}" style="color:${sigColor};font-weight:600;font-size:10px;white-space:nowrap;">${sigLabel}<br><span style="color:var(--t2);font-weight:400;">RSI ${rsi}</span></td>
         </tr>`;
       }).join('');
       body.innerHTML = `<table class="tg-table">
-        <thead><tr><th>COIN</th><th>24H%</th><th>VOL 24H</th></tr></thead>
+        <thead><tr><th>COIN</th><th>24H%</th><th>VOL</th><th>SIGNAL</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>`;
     }
