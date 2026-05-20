@@ -4316,7 +4316,7 @@
               </div>
               <div class="buy-input-group">
                 <button class="buy-input-btn minus" onclick="adjustBuySize(-1)">−</button>
-                <input type="number" class="buy-size-input" id="buySize" step="1" min="1" value="100">
+                <input type="number" class="buy-size-input" id="buySize" step="1" min="1" value="99">
                 <button class="buy-input-btn plus" onclick="adjustBuySize(1)">+</button>
               </div>
               <span class="buy-pct-label">%</span>
@@ -4902,7 +4902,7 @@
     // Update USD amount when percentage changes
     // Load saved buy size
     const savedBuySize = localStorage.getItem('buySize');
-    if (savedBuySize) document.getElementById('buySize').value = savedBuySize;
+    if (savedBuySize && savedBuySize !== '100') document.getElementById('buySize').value = savedBuySize;
 
     document.getElementById('buySize').addEventListener('input', () => {
       localStorage.setItem('buySize', document.getElementById('buySize').value);
