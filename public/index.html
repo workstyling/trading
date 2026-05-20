@@ -4600,7 +4600,7 @@
             <h3>Scan results</h3>
             <div class="pred-controls">
               <label>Test buy $</label>
-              <input type="number" class="pred-input" id="moonBuySize" value="100" min="1" step="10" style="width:80px;">
+              <input type="number" class="pred-input" id="moonBuySize" value="" min="1" step="10" style="width:80px;" placeholder="loading...">
             </div>
           </div>
           <div id="moonTable" style="max-height:700px;overflow-y:auto;">
@@ -4755,6 +4755,8 @@
           balanceEl.style.opacity = '0.5';
           setTimeout(() => balanceEl.style.opacity = '1', 100);
           updateBuyUsdAmount();
+          const moonBuyEl = document.getElementById('moonBuySize');
+          if (moonBuyEl && data.balance > 0) moonBuyEl.value = (data.balance * 0.99).toFixed(2);
         } else {
           console.error('Balance error:', data.error);
         }
