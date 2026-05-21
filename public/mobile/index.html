@@ -1208,7 +1208,7 @@
     }
 
     // ── Top Recoveries (30d losers reversing) ──
-    const TR_INTERVAL = 120;
+    const TR_INTERVAL = 60;
     let trNextIn = 0;
     let trTimer = null;
 
@@ -1229,17 +1229,18 @@
         else if (sc >= 58) { sigLabel = '▲ Buy';    sigColor = '#4ade80'; }
         else if (sc >= 45) { sigLabel = '◎ Watch';  sigColor = '#facc15'; }
         else               { sigLabel = '◌ Weak';   sigColor = '#f97316'; }
-        const sigTitle = `Score: ${sc}/100 · RSI: ${rsi} · Vol: $${fmtTgVol(g.volUsd)}`;
+        const sigTitle = `Score: ${sc}/100 · RSI: ${rsi}`;
         const sign24 = g.pct24h >= 0 ? '+' : '';
         return `<tr onclick="selectCoinFromGainers('${g.coin}')">
           <td><span class="tg-coin">${g.coin}</span><br><span class="tg-price">$${price}</span></td>
           <td class="tg-pct neg">${g.pct30d.toFixed(1)}%</td>
           <td class="tg-pct">${sign24}${g.pct24h.toFixed(1)}%</td>
+          <td class="tg-vol">$${fmtTgVol(g.volUsd)}</td>
           <td title="${sigTitle}" style="color:${sigColor};font-weight:600;font-size:11px;white-space:nowrap;">${sigLabel}<br><span style="color:var(--t2);font-weight:400;font-size:10px;">RSI ${rsi}</span></td>
         </tr>`;
       }).join('');
       body.innerHTML = `<table class="tg-table">
-        <thead><tr><th>COIN</th><th>30D%</th><th>24H%</th><th>SIGNAL</th></tr></thead>
+        <thead><tr><th>COIN</th><th>30D%</th><th>24H%</th><th>VOL</th><th>SIGNAL</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>`;
     }

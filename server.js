@@ -1205,7 +1205,7 @@ app.get('/api/top-gainers', async (req, res) => {
 // ========== TOP RECOVERIES (30d losers showing reversal) ==========
 
 let topRecoveriesCache = { data: [], fetchedAt: 0 };
-const TOP_RECOVERIES_TTL = 120_000;
+const TOP_RECOVERIES_TTL = 60_000;
 
 function calcReversalScore(pct24h, pct30d, volUsd, rsi) {
   let s = 50;
