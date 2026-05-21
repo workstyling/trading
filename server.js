@@ -440,7 +440,7 @@ app.get('/get-balance', async (req, res) => {
 // API: Create limit buy order
 app.post('/create-buy-order', async (req, res) => {
   try {
-    const { productId, quoteSize, limitPrice } = req.body;
+    const { productId, quoteSize, limitPrice, orderType, stopPrice } = req.body;
     const clientOrderId = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
 
     // Calculate base_size (crypto amount) from USD and price
@@ -469,19 +469,38 @@ app.post('/create-buy-order', async (req, res) => {
     const baseSize = (usdAmount / price).toFixed(baseDecimals);
     const priceStr = price.toFixed(quoteDecimals);
 
-    const orderData = {
-      client_order_id: clientOrderId,
-      product_id: productId,
-      side: 'BUY',
-      order_configuration: {
-        limit_limit_gtc: {
-          base_size: baseSize,
-          limit_price: priceStr
+    let orderData;
+    if (orderType === 'stop_limit') {
+      const stopVal = parseFloat(stopPrice || limitPrice);
+      const stopPriceStr = stopVal.toFixed(quoteDecimals);
+      orderData = {
+        client_order_id: clientOrderId,
+        product_id: productId,
+        side: 'BUY',
+        order_configuration: {
+          stop_limit_stop_limit_gtc: {
+            base_size: baseSize,
+            limit_price: priceStr,
+            stop_price: stopPriceStr,
+            stop_direction: 'STOP_DIRECTION_STOP_UP'
+          }
         }
-      }
-    };
-
-    console.log('Creating limit buy order:', orderData);
+      };
+      console.log('Creating stop-limit buy order:', orderData);
+    } else {
+      orderData = {
+        client_order_id: clientOrderId,
+        product_id: productId,
+        side: 'BUY',
+        order_configuration: {
+          limit_limit_gtc: {
+            base_size: baseSize,
+            limit_price: priceStr
+          }
+        }
+      };
+      console.log('Creating limit buy order:', orderData);
+    }
     const response = await client.createOrder(orderData);
     console.log('Buy order response:', JSON.stringify(response, null, 2));
 

@@ -4583,6 +4583,471 @@
       animation: moonSpin 0.85s linear infinite;
     }
     @keyframes moonSpin { to { transform: rotate(360deg); } }
+
+    /* Active Trackers Panel */
+    .active-trackers-panel {
+      background: var(--s1);
+      border: 1px solid var(--b0);
+      border-radius: var(--r2);
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .at-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .at-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--t0);
+      font-family: 'Inter', sans-serif;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .at-add-controls {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .at-coin-input {
+      width: 100px !important;
+      padding: 4px 8px !important;
+      height: 24px !important;
+      font-size: 11px !important;
+      border-radius: var(--r1) !important;
+      background: var(--s2) !important;
+      border: 1px solid var(--b1) !important;
+      color: var(--t0) !important;
+      outline: none !important;
+      font-family: 'JetBrains Mono', monospace !important;
+    }
+
+    .at-add-btn {
+      padding: 0 10px;
+      height: 24px;
+      border: 1px solid rgba(10, 132, 255, 0.45);
+      border-radius: var(--r1);
+      background: rgba(10, 132, 255, 0.08);
+      color: var(--blue);
+      font-weight: 600;
+      font-size: 11px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .at-add-btn:hover {
+      background: var(--blue);
+      color: #fff;
+    }
+
+    .at-usd-label {
+      font-size: 10px;
+      color: var(--t2);
+      margin-left: 4px;
+    }
+
+    .at-usd-input {
+      width: 60px !important;
+      padding: 4px 6px !important;
+      height: 24px !important;
+      font-size: 11px !important;
+      border-radius: var(--r1) !important;
+      background: var(--s2) !important;
+      border: 1px solid var(--b1) !important;
+      color: var(--t0) !important;
+      font-family: 'JetBrains Mono', monospace !important;
+      outline: none !important;
+      text-align: center;
+    }
+
+    .active-trackers-container {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      max-height: 500px;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+
+    .no-trackers-placeholder {
+      color: var(--t2);
+      font-size: 11px;
+      text-align: center;
+      padding: 20px 10px;
+      border: 1px dashed var(--b1);
+      border-radius: var(--r1);
+      background: rgba(255, 255, 255, 0.01);
+    }
+
+    /* Multi Tracker Card */
+    .multi-tracker-card {
+      background: var(--s2);
+      border: 1px solid var(--b1);
+      border-radius: var(--r1);
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      position: relative;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .multi-tracker-card:hover {
+      border-color: rgba(255, 214, 10, 0.2);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+    }
+
+    .mt-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .mt-coin-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .mt-coin-name {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--t0);
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .mt-pulse {
+      width: 8px;
+      height: 8px;
+      background-color: var(--t2);
+      border-radius: 50%;
+      display: inline-block;
+    }
+
+    .mt-pulse.active {
+      background-color: var(--green);
+      box-shadow: 0 0 8px var(--green);
+      animation: mtIndicatorPulse 1.5s infinite;
+    }
+
+    @keyframes mtIndicatorPulse {
+      0% {
+        transform: scale(0.95);
+        box-shadow: 0 0 0 0 rgba(48, 209, 88, 0.7);
+      }
+      70% {
+        transform: scale(1);
+        box-shadow: 0 0 0 6px rgba(48, 209, 88, 0);
+      }
+      100% {
+        transform: scale(0.95);
+        box-shadow: 0 0 0 0 rgba(48, 209, 88, 0);
+      }
+    }
+
+    .mt-header-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .mt-toggle-btn {
+      padding: 2px 8px;
+      height: 20px;
+      border: 1px solid var(--b1);
+      border-radius: var(--r1);
+      background: var(--s3);
+      color: var(--t1);
+      font-size: 10px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .mt-toggle-btn.running {
+      border-color: rgba(255, 69, 58, 0.45);
+      background: rgba(255, 69, 58, 0.08);
+      color: var(--loss);
+    }
+
+    .mt-toggle-btn.running:hover {
+      background: var(--loss);
+      color: #fff;
+    }
+
+    .mt-toggle-btn.stopped {
+      border-color: rgba(48, 209, 88, 0.45);
+      background: rgba(48, 209, 88, 0.08);
+      color: var(--green);
+    }
+
+    .mt-toggle-btn.stopped:hover {
+      background: var(--green);
+      color: #fff;
+    }
+
+    .mt-remove-btn {
+      width: 20px;
+      height: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: none;
+      background: transparent;
+      color: var(--t2);
+      font-size: 16px;
+      cursor: pointer;
+      transition: color 0.2s;
+    }
+
+    .mt-remove-btn:hover {
+      color: var(--loss);
+    }
+
+    .mt-status-bar {
+      display: flex;
+      justify-content: space-between;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: var(--t2);
+      border-bottom: 1px solid var(--b0);
+      padding-bottom: 4px;
+    }
+
+    .mt-prices-row {
+      display: flex;
+      justify-content: space-between;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: var(--t1);
+    }
+
+    .mt-price-val {
+      font-weight: 600;
+      color: var(--t0);
+    }
+
+    .mt-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+    }
+
+    .mt-card {
+      background: var(--s3);
+      border: 1px solid var(--b0);
+      border-radius: var(--r1);
+      padding: 4px 6px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1px;
+      min-width: 0;
+    }
+
+    .mt-card-lbl {
+      font-size: 8px;
+      color: var(--t2);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .mt-card-val {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--t1);
+      width: 100%;
+      text-align: center;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .mt-card-val.rising {
+      color: var(--green);
+    }
+
+    .mt-card-val.falling {
+      color: var(--loss);
+    }
+
+    .mt-controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      background: var(--s3);
+      padding: 6px 8px;
+      border-radius: var(--r1);
+      border: 1px solid var(--b0);
+    }
+
+    .mt-ctrl-group {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      flex: 1;
+      min-width: 100px;
+    }
+
+    .mt-lbl {
+      font-size: 8px;
+      color: var(--t2);
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .mt-lbl strong {
+      color: var(--yellow);
+    }
+
+    .mt-mode-btns {
+      display: flex;
+      gap: 2px;
+    }
+
+    .mt-mode-btn {
+      flex: 1;
+      height: 20px;
+      border: 1px solid var(--b1);
+      border-radius: var(--r1);
+      background: var(--s2);
+      color: var(--t2);
+      font-size: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .mt-mode-btn.active {
+      background: rgba(10, 132, 255, 0.1);
+      border-color: var(--blue);
+      color: var(--blue);
+    }
+
+    .mt-offset-input-wrap {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .mt-offset-range {
+      width: 100%;
+      height: 4px;
+      accent-color: var(--yellow);
+    }
+
+    .mt-usd-input-wrap {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .mt-card-usd-input {
+      width: 50px !important;
+      padding: 2px 4px !important;
+      height: 18px !important;
+      font-size: 10px !important;
+      border-radius: 4px !important;
+      background: var(--s2) !important;
+      border: 1px solid var(--b1) !important;
+      text-align: center;
+      font-family: 'JetBrains Mono', monospace;
+      color: var(--t0);
+    }
+
+    .mt-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(255, 214, 10, 0.04);
+      border: 1px solid rgba(255, 214, 10, 0.1);
+      border-radius: var(--r1);
+      padding: 6px 8px;
+    }
+
+    .mt-rec-price {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--yellow);
+    }
+
+    .mt-rec-diff {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 9px;
+      font-weight: 600;
+      margin-left: 4px;
+    }
+
+    .mt-rec-diff.plus {
+      color: var(--loss);
+    }
+
+    .mt-rec-diff.minus {
+      color: var(--green);
+    }
+
+    .mt-buy-btn {
+      padding: 0 12px;
+      height: 24px;
+      border: 1px solid rgba(48, 209, 88, 0.45);
+      border-radius: var(--r1);
+      background: rgba(48, 209, 88, 0.08);
+      color: var(--green);
+      font-weight: 700;
+      font-size: 11px;
+      cursor: pointer;
+      transition: all 0.2s;
+      box-shadow: 0 0 8px rgba(48, 209, 88, 0.1);
+    }
+
+    .mt-buy-btn:hover {
+      background: var(--green);
+      color: #fff;
+      box-shadow: 0 0 16px rgba(48, 209, 88, 0.3);
+    }
+
+    .mt-buy-btn:active {
+      transform: scale(0.97);
+    }
+
+    /* Small table track button */
+    .tg-track-btn {
+      padding: 2px 5px;
+      font-size: 10px;
+      background: rgba(255, 214, 10, 0.08);
+      border: 1px solid rgba(255, 214, 10, 0.3);
+      color: var(--yellow);
+      border-radius: 4px;
+      cursor: pointer;
+      margin-left: 6px;
+      transition: all 0.15s ease-in-out;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+      vertical-align: middle;
+    }
+
+    .tg-track-btn:hover {
+      background: var(--yellow);
+      color: #000;
+      box-shadow: 0 0 8px rgba(255, 214, 10, 0.3);
+    }
   </style>
 </head>
 
@@ -4771,6 +5236,23 @@
             </div>
           </div>
         </div>
+
+        <!-- Active Trackers Panel -->
+        <div id="activeTrackersPanel" class="active-trackers-panel">
+          <div class="at-header">
+            <span class="at-title">⚡ Real-Time Coin Trackers (1s)</span>
+            <div class="at-add-controls">
+              <input type="text" id="addTrackerCoinInput" placeholder="Symbol (e.g. SOL, ETH)" class="at-coin-input" onkeydown="if(event.key === 'Enter') addManualCoinTracker()">
+              <button onclick="addManualCoinTracker()" class="at-add-btn">+ Add</button>
+              <span class="at-usd-label">Default $:</span>
+              <input type="number" id="defaultTrackerUsdAmount" value="100" class="at-usd-input" oninput="MultiTracker.defaultUsdAmount = parseFloat(this.value) || 100">
+            </div>
+          </div>
+          <div id="activeTrackersContainer" class="active-trackers-container">
+            <div class="no-trackers-placeholder">No active trackers. Click ⚡ next to a coin name below or enter a symbol to start one.</div>
+          </div>
+        </div>
+
         <div id="selectedOrders">
           <h3>Selected Orders by Coin <button onclick="saveSelectedToServer();showCustomAlert('Synced to server!')" style="margin-left:10px;padding:2px 10px;border:1px solid var(--blue);border-radius:5px;background:transparent;color:var(--blue);font-size:10px;cursor:pointer;">Sync</button></h3>
           <div class="selected-scroll"></div>
@@ -5560,6 +6042,7 @@
     updateBuyPanelPrices();
     setInterval(updateBuyPanelPrices, 5000);
     setInterval(loadUsdBalance, 30000);
+    MultiTracker.init();
 
     // Keyboard shortcuts: Ctrl+Plus, Ctrl+Minus, Ctrl+Enter
     document.addEventListener('keydown', (e) => {
@@ -5846,6 +6329,500 @@
         const decPlaces = lastCalculatedSuggestedPrice < 1 ? 6 : (lastCalculatedSuggestedPrice < 100 ? 4 : 2);
         document.getElementById('limitPriceInput').value = lastCalculatedSuggestedPrice.toFixed(decPlaces);
         showCustomAlert('Suggested price applied!');
+      }
+    }
+
+    // ========== MULTI-COIN REAL-TIME TRACKER (1s) ==========
+    const MultiTracker = {
+      trackers: {}, // Schema: { COIN: { running: bool, mode: 'dip'|'chase', offset: float, usdAmount: float, priceInterval: id, candleInterval: id, bid: float, ask: float, rsi: float, vol: float, slope1m: float, slope5m: float, status: string, suggestedPrice: float } }
+      defaultUsdAmount: 100,
+
+      init() {
+        const defaultUsdInput = document.getElementById('defaultTrackerUsdAmount');
+        if (defaultUsdInput) {
+          this.defaultUsdAmount = parseFloat(defaultUsdInput.value) || 100;
+        }
+      },
+
+      add(coin) {
+        if (!coin) return;
+        coin = coin.toUpperCase().trim();
+        if (this.trackers[coin]) {
+          showCustomAlert(`${coin} tracker already exists!`);
+          this.start(coin); // Start it if stopped
+          this.scrollToPanel();
+          return;
+        }
+
+        // Initialize state for this coin
+        this.trackers[coin] = {
+          running: false,
+          mode: 'dip',
+          offset: 0.15,
+          usdAmount: this.defaultUsdAmount,
+          priceInterval: null,
+          candleInterval: null,
+          bid: 0,
+          ask: 0,
+          rsi: 50,
+          vol: 0,
+          slope1m: 0,
+          slope5m: 0,
+          status: 'Initializing...',
+          suggestedPrice: 0
+        };
+
+        // Render card
+        this.renderContainer();
+        this.start(coin);
+        this.scrollToPanel();
+        showCustomAlert(`Started tracker for ${coin}`);
+      },
+
+      scrollToPanel() {
+        const panel = document.getElementById('activeTrackersPanel');
+        if (panel) {
+          panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      },
+
+      remove(coin) {
+        this.stop(coin);
+        delete this.trackers[coin];
+        this.renderContainer();
+        showCustomAlert(`Removed tracker for ${coin}`);
+      },
+
+      toggle(coin) {
+        if (!this.trackers[coin]) return;
+        if (this.trackers[coin].running) {
+          this.stop(coin);
+        } else {
+          this.start(coin);
+        }
+      },
+
+      start(coin) {
+        const t = this.trackers[coin];
+        if (!t || t.running) return;
+
+        t.running = true;
+        
+        // Initial execution
+        this.tickPrice(coin);
+        this.tickCandles(coin);
+
+        // Price check loop every 1 second (fast ticks, handles bids/asks & recommendation)
+        t.priceInterval = setInterval(() => this.tickPrice(coin), 1000);
+
+        // Candle indicator calculation loop every 5 seconds (to avoid API rate limits)
+        t.candleInterval = setInterval(() => this.tickCandles(coin), 5000);
+
+        this.updateCardUI(coin);
+      },
+
+      stop(coin) {
+        const t = this.trackers[coin];
+        if (!t || !t.running) return;
+
+        t.running = false;
+        if (t.priceInterval) {
+          clearInterval(t.priceInterval);
+          t.priceInterval = null;
+        }
+        if (t.candleInterval) {
+          clearInterval(t.candleInterval);
+          t.candleInterval = null;
+        }
+
+        this.updateCardUI(coin);
+      },
+
+      setMode(coin, mode) {
+        if (!this.trackers[coin]) return;
+        this.trackers[coin].mode = mode;
+        
+        const card = document.getElementById(`mt-card-${coin}`);
+        if (card) {
+          const dipBtn = card.querySelector('.mt-mode-btn.dip');
+          const chaseBtn = card.querySelector('.mt-mode-btn.chase');
+          if (dipBtn) dipBtn.classList.toggle('active', mode === 'dip');
+          if (chaseBtn) chaseBtn.classList.toggle('active', mode === 'chase');
+        }
+        
+        this.calculatePrice(coin);
+      },
+
+      updateOffset(coin, value) {
+        if (!this.trackers[coin]) return;
+        this.trackers[coin].offset = parseFloat(value);
+        
+        const card = document.getElementById(`mt-card-${coin}`);
+        if (card) {
+          const valEl = card.querySelector('.mt-offset-val');
+          if (valEl) valEl.textContent = this.trackers[coin].offset.toFixed(2) + '%';
+        }
+        
+        this.calculatePrice(coin);
+      },
+
+      updateUsdAmount(coin, value) {
+        if (!this.trackers[coin]) return;
+        this.trackers[coin].usdAmount = parseFloat(value) || 0;
+      },
+
+      async tickPrice(coin) {
+        const t = this.trackers[coin];
+        if (!t || !t.running) return;
+
+        try {
+          const res = await fetch(`https://api.exchange.coinbase.com/products/${coin}-USD/ticker`);
+          if (!res.ok) throw new Error('Ticker fetch failed');
+          const data = await res.json();
+          
+          t.bid = parseFloat(data.bid);
+          t.ask = parseFloat(data.ask);
+          
+          this.calculatePrice(coin);
+          this.updateCardPricesUI(coin);
+        } catch (err) {
+          console.warn(`[MultiTracker] Price tick error for ${coin}:`, err.message);
+        }
+      },
+
+      async tickCandles(coin) {
+        const t = this.trackers[coin];
+        if (!t || !t.running) return;
+
+        try {
+          const [res1m, res5m] = await Promise.all([
+            fetch(`https://api.exchange.coinbase.com/products/${coin}-USD/candles?granularity=60`),
+            fetch(`https://api.exchange.coinbase.com/products/${coin}-USD/candles?granularity=300`)
+          ]);
+
+          if (!res1m.ok || !res5m.ok) throw new Error('Candles request failed');
+
+          const data1m = await res1m.json();
+          const data5m = await res5m.json();
+
+          if (!data1m || data1m.length < 5 || !data5m || data5m.length < 15) {
+            t.status = 'Insufficient history';
+            this.updateCardStatusUI(coin);
+            return;
+          }
+
+          // newest first, so index 0 is current candle
+          const closes1m = data1m.slice(0, 6).reverse().map(c => parseFloat(c[4]));
+          const closes5m = data5m.slice(0, 16).reverse().map(c => parseFloat(c[4]));
+
+          // 1. Calculate 1m slope
+          const closeCurrent1m = closes1m[closes1m.length - 1];
+          const closePrev1m = closes1m[closes1m.length - 5];
+          t.slope1m = ((closeCurrent1m - closePrev1m) / closePrev1m) * 100;
+
+          // 2. Calculate 5m slope
+          const closeCurrent5m = closes5m[closes5m.length - 1];
+          const closePrev5m = closes5m[closes5m.length - 5];
+          t.slope5m = ((closeCurrent5m - closePrev5m) / closePrev5m) * 100;
+
+          // 3. Calculate 5m RSI (14 period)
+          t.rsi = calculateTrackerRSI(closes5m, 14);
+
+          // 4. Volatility
+          const highs1m = data1m.slice(0, 10).map(c => parseFloat(c[2]));
+          const lows1m = data1m.slice(0, 10).map(c => parseFloat(c[1]));
+          t.vol = ((Math.max(...highs1m) - Math.min(...lows1m)) / Math.min(...lows1m)) * 100;
+
+          // Status text
+          if (t.slope1m > 0.05 && t.slope5m > 0.05) {
+            t.status = 'Strong Growth 🚀';
+          } else if (t.slope1m > 0.05) {
+            t.status = '1m Growth / Pullback 📈';
+          } else if (t.slope1m < -0.05 && t.slope5m < -0.05) {
+            t.status = 'Heavy Drop 📉';
+          } else if (t.slope1m < -0.05) {
+            t.status = '1m Drop / Retracement 📉';
+          } else {
+            t.status = 'Sideways trend';
+          }
+
+          this.updateCardMetricsUI(coin);
+          this.updateCardStatusUI(coin);
+        } catch (err) {
+          console.warn(`[MultiTracker] Candles tick error for ${coin}:`, err.message);
+        }
+      },
+
+      calculatePrice(coin) {
+        const t = this.trackers[coin];
+        if (!t || !t.bid || !t.ask) return;
+
+        let suggested = 0;
+        let diffPct = 0;
+
+        if (t.mode === 'dip') {
+          suggested = t.bid * (1 - t.offset / 100);
+          diffPct = -t.offset;
+        } else {
+          suggested = t.ask * (1 + t.offset / 100);
+          diffPct = t.offset;
+        }
+
+        t.suggestedPrice = suggested;
+
+        const decPlaces = suggested < 1 ? 6 : (suggested < 100 ? 4 : 2);
+        const formattedPrice = suggested.toFixed(decPlaces);
+
+        const card = document.getElementById(`mt-card-${coin}`);
+        if (card) {
+          const recPriceEl = card.querySelector('.mt-rec-price');
+          if (recPriceEl) recPriceEl.textContent = '$' + formattedPrice;
+
+          const diffEl = card.querySelector('.mt-rec-diff');
+          if (diffEl) {
+            const sign = diffPct > 0 ? '+' : '';
+            diffEl.textContent = `(${sign}${diffPct.toFixed(2)}%)`;
+            diffEl.className = 'mt-rec-diff ' + (diffPct > 0 ? 'plus' : 'minus');
+          }
+        }
+      },
+
+      updateCardUI(coin) {
+        const t = this.trackers[coin];
+        if (!t) return;
+        const card = document.getElementById(`mt-card-${coin}`);
+        if (!card) return;
+        const btn = document.getElementById(`mt-toggle-${coin}`);
+        if (btn) {
+          btn.textContent = t.running ? 'Stop' : 'Start';
+          btn.className = 'mt-toggle-btn ' + (t.running ? 'running' : 'stopped');
+        }
+        const pulse = document.getElementById(`mt-pulse-${coin}`);
+        if (pulse) {
+          pulse.className = 'mt-pulse ' + (t.running ? 'active' : '');
+        }
+        card.classList.toggle('stopped', !t.running);
+      },
+
+      updateCardPricesUI(coin) {
+        const t = this.trackers[coin];
+        if (!t) return;
+        const bidEl = document.getElementById(`mt-bid-${coin}`);
+        const askEl = document.getElementById(`mt-ask-${coin}`);
+        const dec = t.bid < 1 ? 6 : (t.bid < 100 ? 4 : 2);
+        if (bidEl) bidEl.textContent = t.bid ? '$' + t.bid.toFixed(dec) : '—';
+        if (askEl) askEl.textContent = t.ask ? '$' + t.ask.toFixed(dec) : '—';
+      },
+
+      updateCardMetricsUI(coin) {
+        const t = this.trackers[coin];
+        if (!t) return;
+
+        const trend1mEl = document.getElementById(`mt-trend1m-${coin}`);
+        if (trend1mEl) {
+          const sign = t.slope1m > 0 ? '+' : '';
+          trend1mEl.textContent = sign + t.slope1m.toFixed(2) + '%';
+          trend1mEl.className = 'mt-card-val ' + (t.slope1m > 0.05 ? 'rising' : (t.slope1m < -0.05 ? 'falling' : 'neutral'));
+        }
+
+        const trend5mEl = document.getElementById(`mt-trend5m-${coin}`);
+        if (trend5mEl) {
+          const sign = t.slope5m > 0 ? '+' : '';
+          trend5mEl.textContent = sign + t.slope5m.toFixed(2) + '%';
+          trend5mEl.className = 'mt-card-val ' + (t.slope5m > 0.05 ? 'rising' : (t.slope5m < -0.05 ? 'falling' : 'neutral'));
+        }
+
+        const rsiEl = document.getElementById(`mt-rsi-${coin}`);
+        if (rsiEl) {
+          rsiEl.textContent = t.rsi ? t.rsi.toFixed(1) : '—';
+          rsiEl.className = 'mt-card-val ' + (t.rsi > 70 ? 'falling' : (t.rsi < 30 ? 'rising' : 'neutral'));
+        }
+
+        const volEl = document.getElementById(`mt-vol-${coin}`);
+        if (volEl) {
+          volEl.textContent = t.vol ? t.vol.toFixed(2) + '%' : '—';
+          volEl.className = 'mt-card-val ' + (t.vol > 0.5 ? 'rising' : 'neutral');
+        }
+      },
+
+      updateCardStatusUI(coin) {
+        const t = this.trackers[coin];
+        if (!t) return;
+        const statusEl = document.getElementById(`mt-status-${coin}`);
+        if (statusEl) {
+          statusEl.textContent = t.status || 'Sideways trend';
+        }
+      },
+
+      async executeBuy(coin) {
+        const t = this.trackers[coin];
+        if (!t || !t.suggestedPrice || t.suggestedPrice <= 0) {
+          showCustomAlert('Waiting for live price data...', true);
+          return;
+        }
+
+        const usd = t.usdAmount;
+        if (!usd || usd < 1) {
+          showCustomAlert('USD Amount must be at least $1.00', true);
+          return;
+        }
+
+        const limitPrice = t.suggestedPrice;
+        const productId = `${coin}-USD`;
+        const cryptoSize = (usd / limitPrice).toFixed(6);
+
+        // Determine if it's stop_limit (above market) or limit (below market) based on mode
+        const isStopLimit = (t.mode === 'chase');
+        const orderType = isStopLimit ? 'stop_limit' : 'limit';
+        const stopPrice = isStopLimit ? limitPrice : undefined;
+
+        const modalTitle = isStopLimit ? `Confirm Stop-Limit Buy (${coin})` : `Confirm Limit Buy (${coin})`;
+        const modalMsg = isStopLimit 
+          ? `Buy <strong>${cryptoSize} ${coin}</strong> when price reaches <strong>$${limitPrice.toLocaleString()}</strong> (Stop-Limit)?<br>Size: $${usd.toFixed(2)}`
+          : `Buy <strong>${cryptoSize} ${coin}</strong> at <strong>$${limitPrice.toLocaleString()}</strong> (Limit Buy)?<br>Size: $${usd.toFixed(2)}`;
+
+        // Show confirmation modal
+        showConfirmModal(
+          modalTitle,
+          modalMsg,
+          async () => {
+            try {
+              const res = await fetch('/create-buy-order', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ productId, quoteSize: usd, limitPrice, orderType, stopPrice })
+              });
+              const data = await res.json();
+
+              if (data.success && data.order?.success !== false) {
+                const orderText = isStopLimit ? `Stop-Limit Buy placed at $${limitPrice}` : `Buy Order Placed: ${cryptoSize} ${coin} @ $${limitPrice}`;
+                showCustomAlert(orderText);
+                const newOrderId = data.order_id;
+                if (newOrderId && !selectedOrders.includes(newOrderId)) {
+                  selectedOrders.push(newOrderId);
+                  safeStorage.setItem(SELECTED_ORDERS_KEY, JSON.stringify(selectedOrders)); saveSelectedToServer();
+                }
+                loadUsdBalance();
+                setTimeout(loadLatestOrders, 1000);
+              } else {
+                const errorMsg = data.error || data.order?.error_response?.message || 'Buy order failed';
+                showCustomAlert(errorMsg, true);
+              }
+            } catch (err) {
+              showCustomAlert(`Error placing order: ${err.message}`, true);
+            }
+          }
+        );
+      },
+
+      renderContainer() {
+        const container = document.getElementById('activeTrackersContainer');
+        if (!container) return;
+
+        const coins = Object.keys(this.trackers);
+        if (coins.length === 0) {
+          container.innerHTML = `<div class="no-trackers-placeholder">No active trackers. Click ⚡ next to a coin name below or enter a symbol to start one.</div>`;
+          return;
+        }
+
+        // Render card frames (HTML structure)
+        container.innerHTML = coins.map(coin => this.getCardHTML(coin)).join('');
+
+        // Bind events and restore values
+        coins.forEach(coin => {
+          this.updateCardUI(coin);
+          this.updateCardPricesUI(coin);
+          this.updateCardMetricsUI(coin);
+          this.updateCardStatusUI(coin);
+          this.calculatePrice(coin);
+        });
+      },
+
+      getCardHTML(coin) {
+        const t = this.trackers[coin];
+        return `
+          <div class="multi-tracker-card" id="mt-card-${coin}">
+            <div class="mt-card-header">
+              <div class="mt-coin-badge">
+                <span class="mt-pulse" id="mt-pulse-${coin}"></span>
+                <span class="mt-coin-name">${coin}</span>
+              </div>
+              <div class="mt-header-actions">
+                <button class="mt-toggle-btn" id="mt-toggle-${coin}" onclick="MultiTracker.toggle('${coin}')">Start</button>
+                <button class="mt-remove-btn" onclick="MultiTracker.remove('${coin}')" title="Remove tracker">×</button>
+              </div>
+            </div>
+            
+            <div class="mt-status-bar">
+              <span id="mt-status-${coin}">${t.status}</span>
+            </div>
+            
+            <div class="mt-prices-row">
+              <span>Bid: <span class="mt-price-val" id="mt-bid-${coin}">—</span></span>
+              <span>Ask: <span class="mt-price-val" id="mt-ask-${coin}">—</span></span>
+            </div>
+            
+            <div class="mt-grid">
+              <div class="mt-card">
+                <span class="mt-card-lbl">1m Trend</span>
+                <span class="mt-card-val" id="mt-trend1m-${coin}">—</span>
+              </div>
+              <div class="mt-card">
+                <span class="mt-card-lbl">5m Trend</span>
+                <span class="mt-card-val" id="mt-trend5m-${coin}">—</span>
+              </div>
+              <div class="mt-card">
+                <span class="mt-card-lbl">RSI (5m)</span>
+                <span class="mt-card-val" id="mt-rsi-${coin}">—</span>
+              </div>
+              <div class="mt-card">
+                <span class="mt-card-lbl">Vol (1m)</span>
+                <span class="mt-card-val" id="mt-vol-${coin}">—</span>
+              </div>
+            </div>
+            
+            <div class="mt-controls">
+              <div class="mt-ctrl-group">
+                <span class="mt-lbl">Mode</span>
+                <div class="mt-mode-btns">
+                  <button class="mt-mode-btn dip active" onclick="MultiTracker.setMode('${coin}', 'dip')">Pullback</button>
+                  <button class="mt-mode-btn chase" onclick="MultiTracker.setMode('${coin}', 'chase')">Breakout</button>
+                </div>
+              </div>
+              
+              <div class="mt-ctrl-group">
+                <span class="mt-lbl">Offset: <strong class="mt-offset-val">${t.offset.toFixed(2)}%</strong></span>
+                <div class="mt-offset-input-wrap">
+                  <input type="range" class="mt-offset-range" min="0.05" max="1.50" step="0.05" value="${t.offset}" oninput="MultiTracker.updateOffset('${coin}', this.value)">
+                </div>
+              </div>
+              
+              <div class="mt-ctrl-group" style="flex: 0 0 65px; min-width: 65px;">
+                <span class="mt-lbl">Amount ($)</span>
+                <div class="mt-usd-input-wrap">
+                  <input type="number" class="mt-card-usd-input" value="${t.usdAmount}" min="1" step="1" oninput="MultiTracker.updateUsdAmount('${coin}', this.value)">
+                </div>
+              </div>
+            </div>
+            
+            <div class="mt-footer">
+              <div>
+                <span style="font-size:9px;color:var(--t2);">Target Price:</span><br>
+                <span class="mt-rec-price">—</span>
+                <span class="mt-rec-diff">(--)</span>
+              </div>
+              <button class="mt-buy-btn" onclick="MultiTracker.executeBuy('${coin}')">⚡ BUY ${coin}</button>
+            </div>
+          </div>
+        `;
+      }
+    };
+
+    function addManualCoinTracker() {
+      const input = document.getElementById('addTrackerCoinInput');
+      if (input && input.value) {
+        MultiTracker.add(input.value);
+        input.value = '';
       }
     }
 
@@ -9330,7 +10307,7 @@ Requirements:
         else { sigLabel = '▼ Skip'; sigColor = '#f87171'; }
         sigTitle = `Score: ${sc}/100 · RSI: ${rsi}`;
         return `<tr onclick="validateAndSelectCoin('${g.coin}')">
-          <td><span class="tg-coin">${g.coin}</span><br><span style="color:var(--t2);font-size:10px;">$${price}</span></td>
+          <td><span class="tg-coin">${g.coin}</span> <button class="tg-track-btn" onclick="event.stopPropagation(); MultiTracker.add('${g.coin}')" title="Track ${g.coin} in real-time">⚡</button><br><span style="color:var(--t2);font-size:10px;">$${price}</span></td>
           <td class="${pctCls}">${sign}${g.pct.toFixed(1)}%</td>
           <td class="tg-vol">$${fmtTgVol(g.volUsd)}</td>
           <td title="${sigTitle}" style="color:${sigColor};font-weight:600;font-size:10px;white-space:nowrap;">${sigLabel}<br><span style="color:var(--t2);font-weight:400;">RSI ${rsi}</span></td>
@@ -9409,7 +10386,7 @@ Requirements:
         const sigTitle = `Score: ${sc}/100 · RSI: ${rsi}`;
         const sign24 = g.pct24h >= 0 ? '+' : '';
         return `<tr onclick="validateAndSelectCoin('${g.coin}')">
-          <td><span class="tg-coin">${g.coin}</span><br><span style="color:var(--t2);font-size:10px;">$${price}</span></td>
+          <td><span class="tg-coin">${g.coin}</span> <button class="tg-track-btn" onclick="event.stopPropagation(); MultiTracker.add('${g.coin}')" title="Track ${g.coin} in real-time">⚡</button><br><span style="color:var(--t2);font-size:10px;">$${price}</span></td>
           <td class="tg-pct neg">${g.pct30d.toFixed(1)}%</td>
           <td class="tg-pct">${sign24}${g.pct24h.toFixed(1)}%</td>
           <td class="tg-vol">$${fmtTgVol(g.volUsd)}</td>
