@@ -581,6 +581,11 @@
         tab.classList.add('active');
         const panel = document.getElementById('panel' + capitalize(tab.dataset.tab));
         if (panel) panel.classList.add('active');
+
+        if (tab.dataset.tab === 'gainers') {
+          refreshTopGainers();
+          refreshTopRecoveries();
+        }
       });
     });
     function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
