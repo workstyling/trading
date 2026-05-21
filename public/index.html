@@ -4375,6 +4375,26 @@
           <h3>Selected Orders by Coin <button onclick="saveSelectedToServer();showCustomAlert('Synced to server!')" style="margin-left:10px;padding:2px 10px;border:1px solid var(--blue);border-radius:5px;background:transparent;color:var(--blue);font-size:10px;cursor:pointer;">Sync</button></h3>
           <div class="selected-scroll"></div>
         </div>
+        <div id="topGainersPanel">
+          <div class="tg-header">
+            <span class="tg-title">🔥 Top Gainers (Coinbase)</span>
+            <span class="tg-meta">
+              <button class="tg-refresh-btn" id="tgRefreshBtn" onclick="refreshTopGainers()" title="Refresh now"><span class="spin-icon">⟳</span> Refresh</button>
+              next: <span class="tg-countdown" id="tgCountdown">—</span>
+            </span>
+          </div>
+          <div id="tgBody"><div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">Loading...</div></div>
+        </div>
+        <div id="topRecoveriesPanel">
+          <div class="tg-header">
+            <span class="tg-title">💎 Recoveries (30d losers reversing)</span>
+            <span class="tg-meta">
+              <button class="tg-refresh-btn" id="trRefreshBtn" onclick="refreshTopRecoveries()" title="Refresh now"><span class="spin-icon">⟳</span> Refresh</button>
+              next: <span class="tg-countdown" id="trCountdown">—</span>
+            </span>
+          </div>
+          <div id="trBody"><div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">Loading...</div></div>
+        </div>
         <!-- ⚡ TRADING BOT -->
         <div id="botPanel">
           <div class="bp-head">
@@ -4429,26 +4449,6 @@
                 onclick="clearOrderSearch()">Clear</button></div>
           </div>
           <div class="orders-scroll"></div>
-        </div>
-        <div id="topGainersPanel">
-          <div class="tg-header">
-            <span class="tg-title">🔥 Top Gainers (Coinbase)</span>
-            <span class="tg-meta">
-              <button class="tg-refresh-btn" id="tgRefreshBtn" onclick="refreshTopGainers()" title="Refresh now"><span class="spin-icon">⟳</span> Refresh</button>
-              next: <span class="tg-countdown" id="tgCountdown">—</span>
-            </span>
-          </div>
-          <div id="tgBody"><div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">Loading...</div></div>
-        </div>
-        <div id="topRecoveriesPanel">
-          <div class="tg-header">
-            <span class="tg-title">💎 Recoveries (30d losers reversing)</span>
-            <span class="tg-meta">
-              <button class="tg-refresh-btn" id="trRefreshBtn" onclick="refreshTopRecoveries()" title="Refresh now"><span class="spin-icon">⟳</span> Refresh</button>
-              next: <span class="tg-countdown" id="trCountdown">—</span>
-            </span>
-          </div>
-          <div id="trBody"><div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">Loading...</div></div>
         </div>
         <div id="profitPanel">
           <div class="profit-header">
