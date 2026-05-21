@@ -1829,17 +1829,21 @@
       border: 1px solid rgba(74,222,128,0.3);
       color: #4ade80;
       border-radius: var(--r1);
-      width: 22px; height: 22px;
-      font-size: 13px;
-      line-height: 1;
+      height: 22px;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .03em;
       cursor: pointer;
-      padding: 0;
+      padding: 0 8px;
       display: inline-flex; align-items: center; justify-content: center;
+      gap: 4px;
       transition: all 0.15s;
     }
     .tg-refresh-btn:hover { background: rgba(74,222,128,0.12); }
-    .tg-refresh-btn:active { transform: rotate(180deg); }
-    .tg-refresh-btn.spinning { animation: tgSpin 0.6s linear; }
+    .tg-refresh-btn:active { transform: scale(0.95); }
+    .tg-refresh-btn.spinning .spin-icon { animation: tgSpin 0.6s linear; }
+    .spin-icon { display: inline-block; font-size: 12px; line-height: 1; }
     @keyframes tgSpin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
     .tg-table { width: 100%; border-collapse: collapse; font-size: 11px; }
     .tg-table th { color: var(--t2); font-weight: 500; padding: 2px 4px; text-align: left; border-bottom: 1px solid var(--b0); }
@@ -4409,7 +4413,7 @@
           <div class="tg-header">
             <span class="tg-title">🔥 Top Gainers (Coinbase)</span>
             <span class="tg-meta">
-              <button class="tg-refresh-btn" id="tgRefreshBtn" onclick="refreshTopGainers()" title="Refresh now">⟳</button>
+              <button class="tg-refresh-btn" id="tgRefreshBtn" onclick="refreshTopGainers()" title="Refresh now"><span class="spin-icon">⟳</span> Refresh</button>
               next: <span class="tg-countdown" id="tgCountdown">—</span>
             </span>
           </div>
@@ -4419,7 +4423,7 @@
           <div class="tg-header">
             <span class="tg-title">💎 Recoveries (30d losers reversing)</span>
             <span class="tg-meta">
-              <button class="tg-refresh-btn" id="trRefreshBtn" onclick="refreshTopRecoveries()" title="Refresh now">⟳</button>
+              <button class="tg-refresh-btn" id="trRefreshBtn" onclick="refreshTopRecoveries()" title="Refresh now"><span class="spin-icon">⟳</span> Refresh</button>
               next: <span class="tg-countdown" id="trCountdown">—</span>
             </span>
           </div>
