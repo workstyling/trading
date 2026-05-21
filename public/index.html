@@ -6042,7 +6042,6 @@
     updateBuyPanelPrices();
     setInterval(updateBuyPanelPrices, 5000);
     setInterval(loadUsdBalance, 30000);
-    MultiTracker.init();
 
     // Keyboard shortcuts: Ctrl+Plus, Ctrl+Minus, Ctrl+Enter
     document.addEventListener('keydown', (e) => {
@@ -6817,6 +6816,9 @@
         `;
       }
     };
+
+    // Initialize MultiTracker after its declaration
+    MultiTracker.init();
 
     function addManualCoinTracker() {
       const input = document.getElementById('addTrackerCoinInput');
