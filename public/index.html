@@ -1691,11 +1691,345 @@
       transform: scale(0.97);
     }
 
-    .buy-limit-btn:disabled {
-      opacity: 0.35;
-      cursor: not-allowed;
-      transform: none;
-      box-shadow: none;
+    .tracker-toggle-btn {
+      padding: 0 10px;
+      height: 26px;
+      border: 1px solid rgba(255, 214, 10, 0.45);
+      border-radius: var(--r1);
+      background: rgba(255, 214, 10, 0.08);
+      color: #ffd60a;
+      font-weight: 600;
+      font-size: 11px;
+      cursor: pointer;
+      transition: all 0.2s;
+      margin-left: 6px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .tracker-toggle-btn:hover {
+      background: #ffd60a;
+      color: #000;
+      box-shadow: 0 0 16px rgba(255, 214, 10, 0.25);
+    }
+
+    .tracker-toggle-btn:active {
+      transform: scale(0.97);
+    }
+
+    .tracker-toggle-btn.active {
+      background: #ffd60a;
+      color: #000;
+      box-shadow: 0 0 16px rgba(255, 214, 10, 0.4);
+      animation: pulseActive 2s infinite;
+    }
+
+    @keyframes pulseActive {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(0.97); opacity: 0.9; }
+    }
+
+    /* Collapsible Tracker Panel */
+    .tracker-panel {
+      width: 100%;
+      box-sizing: border-box;
+      overflow: hidden;
+      transition: max-height 0.3s ease-out, opacity 0.3s ease-out;
+    }
+
+    .tracker-divider {
+      height: 1px;
+      border-top: 1px dashed var(--b1);
+      margin: 10px 0 8px 0;
+    }
+
+    .tracker-content {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 2px 2px 6px 2px;
+    }
+
+    .tracker-status-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+    }
+
+    .tracker-indicator-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .tracker-pulse {
+      width: 8px;
+      height: 8px;
+      background-color: #ffd60a;
+      border-radius: 50%;
+      display: inline-block;
+      box-shadow: 0 0 8px #ffd60a;
+      animation: indicatorPulse 1.5s infinite;
+    }
+
+    @keyframes indicatorPulse {
+      0% {
+        transform: scale(0.95);
+        box-shadow: 0 0 0 0 rgba(255, 214, 10, 0.7);
+      }
+      70% {
+        transform: scale(1);
+        box-shadow: 0 0 0 6px rgba(255, 214, 10, 0);
+      }
+      100% {
+        transform: scale(0.95);
+        box-shadow: 0 0 0 0 rgba(255, 214, 10, 0);
+      }
+    }
+
+    .tracker-title {
+      font-family: 'Inter', sans-serif;
+      color: var(--t0);
+      font-size: 12px;
+    }
+
+    .tracker-status-text {
+      color: var(--t2);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+    }
+
+    .tracker-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+    }
+
+    .tracker-card {
+      background: var(--s3);
+      border: 1px solid var(--b1);
+      border-radius: var(--r1);
+      padding: 6px 8px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      min-width: 0;
+    }
+
+    .tracker-card-lbl {
+      font-size: 9px;
+      color: var(--t3);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      text-align: center;
+    }
+
+    .tracker-card-val {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--t1);
+      text-align: center;
+      width: 100%;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .tracker-card-val.rising {
+      color: var(--green);
+      text-shadow: 0 0 8px rgba(48, 209, 88, 0.15);
+    }
+
+    .tracker-card-val.falling {
+      color: var(--loss);
+      text-shadow: 0 0 8px rgba(255, 69, 58, 0.15);
+    }
+
+    .tracker-card-val.neutral {
+      color: var(--t2);
+    }
+
+    .tracker-controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      background: var(--s3);
+      border: 1px solid var(--b1);
+      border-radius: var(--r1);
+      padding: 8px 10px;
+      align-items: center;
+    }
+
+    .tracker-control-group {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      flex: 1;
+      min-width: 130px;
+    }
+
+    .tracker-control-group.tracker-sync-group {
+      flex: 0 0 auto;
+      min-width: 0;
+      align-self: center;
+      margin-top: 10px;
+    }
+
+    .tracker-lbl {
+      font-size: 10px;
+      color: var(--t2);
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .tracker-lbl strong {
+      color: #ffd60a;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .tracker-mode-btns {
+      display: flex;
+      gap: 4px;
+    }
+
+    .tracker-mode-btn {
+      flex: 1;
+      height: 24px;
+      border: 1px solid var(--b1);
+      border-radius: var(--r1);
+      background: var(--s2);
+      color: var(--t2);
+      font-size: 9px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+
+    .tracker-mode-btn:hover {
+      border-color: var(--t2);
+      color: var(--t1);
+    }
+
+    .tracker-mode-btn.active {
+      background: rgba(10, 132, 255, 0.1);
+      border-color: var(--blue);
+      color: var(--blue);
+    }
+
+    .tracker-slider-container {
+      display: flex;
+      align-items: center;
+      height: 24px;
+    }
+
+    /* Slider styling */
+    .tracker-slider-container input[type=range] {
+      width: 100%;
+      -webkit-appearance: none;
+      background: var(--s2);
+      height: 4px;
+      border-radius: 2px;
+      outline: none;
+    }
+
+    .tracker-slider-container input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #ffd60a;
+      cursor: pointer;
+      transition: transform 0.1s;
+    }
+
+    .tracker-slider-container input[type=range]::-webkit-slider-thumb:hover {
+      transform: scale(1.2);
+    }
+
+    .tracker-checkbox-label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: var(--t2);
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .tracker-checkbox-label input {
+      cursor: pointer;
+      accent-color: #ffd60a;
+    }
+
+    .tracker-rec-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(255, 214, 10, 0.04);
+      border: 1px solid rgba(255, 214, 10, 0.12);
+      border-radius: var(--r1);
+      padding: 6px 10px;
+    }
+
+    .tracker-recommendation {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .rec-label {
+      font-size: 11px;
+      color: var(--t2);
+    }
+
+    .rec-price {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 14px;
+      font-weight: 700;
+      color: #ffd60a;
+    }
+
+    .rec-diff {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      font-weight: 600;
+    }
+
+    .rec-diff.plus {
+      color: var(--loss);
+    }
+
+    .rec-diff.minus {
+      color: var(--green);
+    }
+
+    .tracker-apply-btn {
+      padding: 0 10px;
+      height: 24px;
+      border: 1px solid rgba(255, 214, 10, 0.5);
+      border-radius: var(--r1);
+      background: rgba(255, 214, 10, 0.1);
+      color: #ffd60a;
+      font-weight: 600;
+      font-size: 10px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .tracker-apply-btn:hover {
+      background: #ffd60a;
+      color: #000;
+    }
+
+    .tracker-apply-btn:active {
+      transform: scale(0.97);
     }
 
     .select-coin-btn {
@@ -4368,6 +4702,72 @@
               <span class="limit-separator">|</span>
               <input type="text" class="limit-price-input" id="limitPriceInput" placeholder="Price" autocomplete="off">
               <button class="buy-limit-btn" id="buyLimitBtn" onclick="executeBuyLimitOrder()">Buy Limit</button>
+              <button class="tracker-toggle-btn" id="trackerToggleBtn" onclick="togglePriceTracker()" title="Auto Price Tracker based on trend">⚡ Track</button>
+            </div>
+            
+            <div id="trackerPanel" class="tracker-panel" style="display: none; max-height: 0px; opacity: 0;">
+              <div class="tracker-divider"></div>
+              <div class="tracker-content">
+                <div class="tracker-status-row">
+                  <div class="tracker-indicator-group">
+                    <span class="tracker-pulse"></span>
+                    <span class="tracker-title">Smart Tracker: <strong id="trackerCoinName">-</strong></span>
+                  </div>
+                  <div id="trackerStatusText" class="tracker-status-text">Initializing metrics...</div>
+                </div>
+                
+                <div class="tracker-grid">
+                  <div class="tracker-card">
+                    <span class="tracker-card-lbl">1m Trend</span>
+                    <span id="trackerTrend1m" class="tracker-card-val">—</span>
+                  </div>
+                  <div class="tracker-card">
+                    <span class="tracker-card-lbl">5m Trend</span>
+                    <span id="trackerTrend5m" class="tracker-card-val">—</span>
+                  </div>
+                  <div class="tracker-card">
+                    <span class="tracker-card-lbl">RSI (5m)</span>
+                    <span id="trackerRsi" class="tracker-card-val">—</span>
+                  </div>
+                  <div class="tracker-card">
+                    <span class="tracker-card-lbl">Volatility (1m)</span>
+                    <span id="trackerVolatility" class="tracker-card-val">—</span>
+                  </div>
+                </div>
+                
+                <div class="tracker-controls">
+                  <div class="tracker-control-group">
+                    <span class="tracker-lbl">Target Mode:</span>
+                    <div class="tracker-mode-btns">
+                      <button id="trackerModeDip" class="tracker-mode-btn active" onclick="setTrackerMode('dip')">Buy Pullback (Lower)</button>
+                      <button id="trackerModeChase" class="tracker-mode-btn" onclick="setTrackerMode('chase')">Buy Breakout (Higher)</button>
+                    </div>
+                  </div>
+                  
+                  <div class="tracker-control-group">
+                    <span class="tracker-lbl">Offset: <strong id="trackerOffsetVal">0.15%</strong></span>
+                    <div class="tracker-slider-container">
+                      <input type="range" id="trackerOffsetRange" min="0.05" max="1.50" step="0.05" value="0.15" oninput="updateTrackerOffset(this.value)">
+                    </div>
+                  </div>
+
+                  <div class="tracker-control-group tracker-sync-group">
+                    <label class="tracker-checkbox-label">
+                      <input type="checkbox" id="trackerAutoSync" checked>
+                      <span>Auto-sync price to input</span>
+                    </label>
+                  </div>
+                </div>
+                
+                <div class="tracker-rec-row">
+                  <div class="tracker-recommendation">
+                    <span class="rec-label">Smart Suggestion:</span>
+                    <span id="trackerRecPrice" class="rec-price">—</span>
+                    <span id="trackerRecDiff" class="rec-diff">(--)</span>
+                  </div>
+                  <button class="tracker-apply-btn" onclick="applySuggestedPrice()">Apply Now</button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -4821,6 +5221,11 @@
           buyPanelPrices.ask = parseFloat(data.asks[0][0]);
           document.getElementById('buyBestAsk').textContent = '$' + formatPrice(buyPanelPrices.ask);
         }
+        
+        // Smart Tracker integration
+        if (typeof trackerRunning !== 'undefined' && trackerRunning) {
+          calculateAndDisplaySuggestedPrice();
+        }
       } catch (e) {
         console.warn('Cannot update buy prices:', e.message);
       }
@@ -4850,6 +5255,13 @@
           // Add pulse effect to BUY button
           const buyBtn = document.getElementById('buyBtn');
           if (buyBtn) buyBtn.classList.add('ready');
+          
+          // Smart Tracker integration
+          if (typeof trackerRunning !== 'undefined' && trackerRunning) {
+            document.getElementById('trackerCoinName').textContent = coin;
+            document.getElementById('trackerStatusText').textContent = 'Switched. Fetching candles...';
+            runTrackerIteration();
+          }
           return true;
         }
       } catch (e) {
@@ -5175,6 +5587,267 @@
     document.getElementById('limitPriceInput').addEventListener('dblclick', () => {
       document.getElementById('limitPriceInput').value = buyPanelPrices.bid.toFixed(buyPanelPrices.bid < 1 ? 6 : (buyPanelPrices.bid < 100 ? 4 : 2));
     });
+
+    // ========== SMART PRICE TRACKER ==========
+    let trackerInterval = null;
+    let trackerMode = 'dip';
+    let trackerOffset = 0.15;
+    let trackerRunning = false;
+    let lastCalculatedSuggestedPrice = 0;
+
+    function togglePriceTracker() {
+      const panel = document.getElementById('trackerPanel');
+      const btn = document.getElementById('trackerToggleBtn');
+      
+      if (trackerRunning) {
+        // Stop tracking
+        trackerRunning = false;
+        clearInterval(trackerInterval);
+        trackerInterval = null;
+        
+        btn.classList.remove('active');
+        btn.innerHTML = '⚡ Track';
+        
+        // Collapse panel
+        panel.style.maxHeight = '0px';
+        panel.style.opacity = '0';
+        setTimeout(() => {
+          panel.style.display = 'none';
+        }, 300);
+      } else {
+        // Start tracking
+        trackerRunning = true;
+        btn.classList.add('active');
+        btn.innerHTML = '⏹ Stop';
+        
+        document.getElementById('trackerCoinName').textContent = selectedBuyCoin;
+        document.getElementById('trackerStatusText').textContent = 'Fetching candles...';
+        
+        // Expand panel
+        panel.style.display = 'block';
+        // Force reflow
+        panel.offsetHeight;
+        panel.style.maxHeight = '500px';
+        panel.style.opacity = '1';
+        
+        // Initial run
+        runTrackerIteration();
+        
+        // Loop every 3 seconds
+        trackerInterval = setInterval(runTrackerIteration, 3000);
+      }
+    }
+
+    function setTrackerMode(mode) {
+      trackerMode = mode;
+      document.getElementById('trackerModeDip').classList.toggle('active', mode === 'dip');
+      document.getElementById('trackerModeChase').classList.toggle('active', mode === 'chase');
+      
+      // Re-run price suggestion recalculation immediately if we have bid/ask
+      if (buyPanelPrices.bid > 0) {
+        calculateAndDisplaySuggestedPrice();
+      }
+    }
+
+    function updateTrackerOffset(val) {
+      trackerOffset = parseFloat(val);
+      document.getElementById('trackerOffsetVal').textContent = trackerOffset.toFixed(2) + '%';
+      
+      // Re-run price suggestion recalculation immediately if we have bid/ask
+      if (buyPanelPrices.bid > 0) {
+        calculateAndDisplaySuggestedPrice();
+      }
+    }
+
+    // Helper to calculate standard RSI
+    function calculateTrackerRSI(candles, period = 14) {
+      if (candles.length <= period) return 50; // default neutral
+      
+      let gains = 0;
+      let losses = 0;
+      
+      // First RSI value calculation
+      for (let i = 1; i <= period; i++) {
+        const diff = candles[i] - candles[i - 1];
+        if (diff > 0) gains += diff;
+        else losses -= diff;
+      }
+      
+      let avgGain = gains / period;
+      let avgLoss = losses / period;
+      
+      // Smoothed RSI calculation for remaining values
+      for (let i = period + 1; i < candles.length; i++) {
+        const diff = candles[i] - candles[i - 1];
+        avgGain = (avgGain * (period - 1) + (diff > 0 ? diff : 0)) / period;
+        avgLoss = (avgLoss * (period - 1) + (diff < 0 ? -diff : 0)) / period;
+      }
+      
+      if (avgLoss === 0) return 100;
+      const rs = avgGain / avgLoss;
+      return 100 - (100 / (1 + rs));
+    }
+
+    async function runTrackerIteration() {
+      if (!trackerRunning) return;
+      
+      const coin = selectedBuyCoin;
+      document.getElementById('trackerCoinName').textContent = coin;
+      
+      try {
+        // Fetch 1m and 5m candles in parallel
+        const [res1m, res5m] = await Promise.all([
+          fetch(`https://api.exchange.coinbase.com/products/${coin}-USD/candles?granularity=60`),
+          fetch(`https://api.exchange.coinbase.com/products/${coin}-USD/candles?granularity=300`)
+        ]);
+        
+        if (!res1m.ok || !res5m.ok) {
+          throw new Error('Candles request failed');
+        }
+        
+        const data1m = await res1m.json();
+        const data5m = await res5m.json();
+        
+        if (!data1m || data1m.length < 5 || !data5m || data5m.length < 15) {
+          document.getElementById('trackerStatusText').textContent = 'Insufficient candle history';
+          return;
+        }
+
+        // data structure: [time, low, high, open, close, volume]
+        // newest first, so index 0 is current candle
+        const closes1m = data1m.slice(0, 6).reverse().map(c => parseFloat(c[4]));
+        const closes5m = data5m.slice(0, 16).reverse().map(c => parseFloat(c[4]));
+        
+        // 1. Calculate 1m slope (last 5 completed candles)
+        const closeCurrent1m = closes1m[closes1m.length - 1];
+        const closePrev1m = closes1m[closes1m.length - 5];
+        const slope1m = ((closeCurrent1m - closePrev1m) / closePrev1m) * 100;
+        
+        // 2. Calculate 5m slope (last 5 completed candles)
+        const closeCurrent5m = closes5m[closes5m.length - 1];
+        const closePrev5m = closes5m[closes5m.length - 5];
+        const slope5m = ((closeCurrent5m - closePrev5m) / closePrev5m) * 100;
+        
+        // 3. Calculate 5m RSI (14 period)
+        const rsi5m = calculateTrackerRSI(closes5m, 14);
+        
+        // 4. Calculate Volatility (1m High-Low spread over last 10 candles)
+        const highs1m = data1m.slice(0, 10).map(c => parseFloat(c[2]));
+        const lows1m = data1m.slice(0, 10).map(c => parseFloat(c[1]));
+        const maxHigh = Math.max(...highs1m);
+        const minLow = Math.min(...lows1m);
+        const vol1m = ((maxHigh - minLow) / minLow) * 100;
+        
+        // Update UI metrics
+        updateTrackerMetricUI('trackerTrend1m', slope1m, '%', 0.05);
+        updateTrackerMetricUI('trackerTrend5m', slope5m, '%', 0.05);
+        
+        const rsiEl = document.getElementById('trackerRsi');
+        if (rsiEl) {
+          rsiEl.textContent = rsi5m.toFixed(1);
+          rsiEl.className = 'tracker-card-val ' + (rsi5m > 70 ? 'falling' : rsi5m < 30 ? 'rising' : 'neutral');
+        }
+        
+        const volEl = document.getElementById('trackerVolatility');
+        if (volEl) {
+          volEl.textContent = vol1m.toFixed(2) + '%';
+          volEl.className = 'tracker-card-val ' + (vol1m > 0.5 ? 'rising' : 'neutral');
+        }
+        
+        // Determine general status text
+        let status = 'Sideways trend';
+        if (slope1m > 0.05 && slope5m > 0.05) {
+          status = 'Strong Growth 🚀';
+        } else if (slope1m > 0.05) {
+          status = '1m Growth / Pullback 📈';
+        } else if (slope1m < -0.05 && slope5m < -0.05) {
+          status = 'Heavy Drop 📉';
+        } else if (slope1m < -0.05) {
+          status = '1m Drop / Retracement 📉';
+        }
+        
+        const statusTextEl = document.getElementById('trackerStatusText');
+        if (statusTextEl) {
+          statusTextEl.textContent = status;
+        }
+        
+        // Recalculate price recommendation
+        calculateAndDisplaySuggestedPrice();
+        
+      } catch (err) {
+        console.warn('Smart Tracker tick error:', err.message);
+        const statusTextEl = document.getElementById('trackerStatusText');
+        if (statusTextEl) {
+          statusTextEl.textContent = 'Update error... retrying';
+        }
+      }
+    }
+    
+    function updateTrackerMetricUI(elementId, value, unit, threshold) {
+      const el = document.getElementById(elementId);
+      if (!el) return;
+      const sign = value > 0 ? '+' : '';
+      el.textContent = sign + value.toFixed(2) + unit;
+      
+      if (value > threshold) {
+        el.className = 'tracker-card-val rising';
+      } else if (value < -threshold) {
+        el.className = 'tracker-card-val falling';
+      } else {
+        el.className = 'tracker-card-val neutral';
+      }
+    }
+    
+    function calculateAndDisplaySuggestedPrice() {
+      // If we don't have price yet, skip
+      if (!buyPanelPrices.bid || !buyPanelPrices.ask) return;
+      
+      const bid = buyPanelPrices.bid;
+      const ask = buyPanelPrices.ask;
+      
+      let suggestion = 0;
+      let diffPct = 0;
+      
+      if (trackerMode === 'dip') {
+        // Buy lower than best bid
+        suggestion = bid * (1 - trackerOffset / 100);
+        diffPct = -trackerOffset;
+      } else {
+        // Buy higher than best ask (breakout chase)
+        suggestion = ask * (1 + trackerOffset / 100);
+        diffPct = trackerOffset;
+      }
+      
+      lastCalculatedSuggestedPrice = suggestion;
+      
+      const decPlaces = suggestion < 1 ? 6 : (suggestion < 100 ? 4 : 2);
+      const formattedPrice = suggestion.toFixed(decPlaces);
+      
+      // Update recommendation price display
+      const recPriceEl = document.getElementById('trackerRecPrice');
+      if (recPriceEl) recPriceEl.textContent = '$' + formattedPrice;
+      
+      const diffEl = document.getElementById('trackerRecDiff');
+      if (diffEl) {
+        const sign = diffPct > 0 ? '+' : '';
+        diffEl.textContent = `(${sign}${diffPct.toFixed(2)}%)`;
+        diffEl.className = 'rec-diff ' + (diffPct > 0 ? 'plus' : 'minus');
+      }
+      
+      // Auto-sync if checkbox is checked
+      const autoSyncCheck = document.getElementById('trackerAutoSync');
+      if (autoSyncCheck && autoSyncCheck.checked) {
+        document.getElementById('limitPriceInput').value = formattedPrice;
+      }
+    }
+    
+    function applySuggestedPrice() {
+      if (lastCalculatedSuggestedPrice > 0) {
+        const decPlaces = lastCalculatedSuggestedPrice < 1 ? 6 : (lastCalculatedSuggestedPrice < 100 ? 4 : 2);
+        document.getElementById('limitPriceInput').value = lastCalculatedSuggestedPrice.toFixed(decPlaces);
+        showCustomAlert('Suggested price applied!');
+      }
+    }
 
     // ========== SELL ORDER ==========
     async function createSellOrder(productId, size, price) {
