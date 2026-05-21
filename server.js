@@ -1202,6 +1202,130 @@ app.get('/api/top-gainers', async (req, res) => {
   }
 });
 
+// ========== TOP RECOVERIES (30d losers showing reversal) ==========
+
+let topRecoveriesCache = { data: [], fetchedAt: 0 };
+const TOP_RECOVERIES_TTL = 120_000;
+
+function calcReversalScore(pct24h, pct30d, volUsd, rsi) {
+  let s = 50;
+  // RSI: coming out of oversold is the sweet spot
+  if (rsi < 30) s += 8;          // still oversold (risky bottom-fishing)
+  else if (rsi < 45) s += 25;    // exiting oversold — best entry
+  else if (rsi < 55) s += 15;    // momentum building
+  else if (rsi < 65) s += 3;
+  else s -= 18;                  // already overbought relative to recent
+  // 30d: must be a loser; deeper = more upside potential
+  if (pct30d < -50) s += 12;     // deep loser — risky but big upside
+  else if (pct30d < -30) s += 20; // sweet spot
+  else if (pct30d < -15) s += 14;
+  else if (pct30d < -5)  s += 4;
+  else s -= 15;                  // not a real loser
+  // 24h: confirms reversal in progress
+  if (pct24h >= 4 && pct24h <= 12) s += 15;
+  else if (pct24h >= 1.5)         s += 10;
+  else if (pct24h >= 0.3)         s += 4;
+  else s -= 12;
+  // Volume confirms accumulation
+  if (volUsd > 5_000_000)      s += 10;
+  else if (volUsd > 1_000_000) s += 6;
+  else if (volUsd > 200_000)   s += 2;
+  else s -= 10;
+  return Math.max(0, Math.min(100, Math.round(s)));
+}
+
+async function fetchTopRecoveries() {
+  const CB = 'https://api.exchange.coinbase.com';
+  const prodRes = await fetch(`${CB}/products?type=SPOT`);
+  const products = await prodRes.json();
+  const usdPairs = products.filter(p =>
+    p.quote_currency === 'USD' && p.status === 'online' && !p.trading_disabled
+  ).map(p => p.id);
+
+  const BATCH = 40;
+
+  // Step 1: 24h stats for all USD pairs
+  const stats24 = [];
+  for (let i = 0; i < usdPairs.length; i += BATCH) {
+    const batch = usdPairs.slice(i, i + BATCH);
+    const res = await Promise.all(batch.map(async id => {
+      try {
+        const r = await fetch(`${CB}/products/${id}/stats`);
+        const s = await r.json();
+        const open = parseFloat(s.open), last = parseFloat(s.last);
+        const volUsd = parseFloat(s.volume) * last;
+        if (!open || !last) return null;
+        return { coin: id.replace('-USD', ''), price: last, pct24h: (last - open) / open * 100, volUsd };
+      } catch { return null; }
+    }));
+    stats24.push(...res.filter(Boolean));
+    if (i + BATCH < usdPairs.length) await new Promise(r => setTimeout(r, 100));
+  }
+
+  // Step 2: keep only candidates that look like reversals (modest 24h gain, decent vol)
+  const candidates = stats24
+    .filter(s => s.pct24h >= 0.3 && s.pct24h <= 15 && s.volUsd > 100_000)
+    .sort((a, b) => b.volUsd - a.volUsd)
+    .slice(0, 80);
+
+  // Step 3: 30d daily candles for candidates
+  const withMonth = [];
+  for (let i = 0; i < candidates.length; i += BATCH) {
+    const batch = candidates.slice(i, i + BATCH);
+    const res = await Promise.all(batch.map(async g => {
+      try {
+        const r = await fetch(`${CB}/products/${g.coin}-USD/candles?granularity=86400`);
+        const candles = await r.json();
+        if (!Array.isArray(candles) || candles.length < 20) return null;
+        // candles: [time, low, high, open, close, volume] newest first
+        const idx = Math.min(candles.length - 1, 29);
+        const close30 = candles[idx][4];
+        const closeNow = candles[0][4];
+        if (!close30) return null;
+        g.pct30d = (closeNow - close30) / close30 * 100;
+        return g;
+      } catch { return null; }
+    }));
+    withMonth.push(...res.filter(Boolean));
+    if (i + BATCH < candidates.length) await new Promise(r => setTimeout(r, 100));
+  }
+
+  // Step 4: filter true 30d losers
+  const losers = withMonth.filter(g => g.pct30d < -10);
+
+  // Step 5: 1h RSI for losers
+  await Promise.all(losers.map(async g => {
+    try {
+      const r = await fetch(`${CB}/products/${g.coin}-USD/candles?granularity=3600`);
+      const candles = await r.json();
+      if (!Array.isArray(candles) || candles.length < 15) { g.rsi = 50; }
+      else {
+        const closes = candles.slice(0, 30).reverse().map(c => c[4]);
+        g.rsi = calcRSI(closes);
+      }
+    } catch { g.rsi = 50; }
+    g.score = calcReversalScore(g.pct24h, g.pct30d, g.volUsd, g.rsi);
+  }));
+
+  losers.sort((a, b) => b.score - a.score);
+  return losers.slice(0, 10);
+}
+
+app.get('/api/top-recoveries', async (req, res) => {
+  try {
+    const now = Date.now();
+    if (now - topRecoveriesCache.fetchedAt < TOP_RECOVERIES_TTL && topRecoveriesCache.data.length) {
+      return res.json({ success: true, recoveries: topRecoveriesCache.data, fetchedAt: topRecoveriesCache.fetchedAt, cached: true });
+    }
+    const recoveries = await fetchTopRecoveries();
+    topRecoveriesCache = { data: recoveries, fetchedAt: Date.now() };
+    res.json({ success: true, recoveries, fetchedAt: topRecoveriesCache.fetchedAt, cached: false });
+  } catch (e) {
+    console.error('[top-recoveries]', e.message);
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
 // ========== PREDICTOR API ==========
 
 // Default watchlist for the Predictor scan

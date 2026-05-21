@@ -1853,6 +1853,18 @@
     .tg-vol { color: var(--t2); }
     .tg-price { color: var(--t1); }
 
+    /* Top Recoveries Panel */
+    #topRecoveriesPanel {
+      border: 1px solid rgba(168,85,247,0.25);
+      border-radius: var(--r2);
+      background: var(--s1);
+      padding: 12px 14px;
+      margin-bottom: 12px;
+    }
+    #topRecoveriesPanel .tg-title { color: #c084fc; }
+    #topRecoveriesPanel .tg-refresh-btn { border-color: rgba(168,85,247,0.35); color: #c084fc; }
+    #topRecoveriesPanel .tg-refresh-btn:hover { background: rgba(168,85,247,0.12); }
+
     /* Profit Panel */
     #profitPanel {
       border: 1px solid var(--b0);
@@ -4489,6 +4501,16 @@
             </span>
           </div>
           <div id="tgBody"><div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">Loading...</div></div>
+        </div>
+        <div id="topRecoveriesPanel">
+          <div class="tg-header">
+            <span class="tg-title">💎 Recoveries (30d losers reversing)</span>
+            <span class="tg-meta">
+              <button class="tg-refresh-btn" id="trRefreshBtn" onclick="refreshTopRecoveries()" title="Refresh now">⟳</button>
+              next: <span class="tg-countdown" id="trCountdown">—</span>
+            </span>
+          </div>
+          <div id="trBody"><div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">Loading...</div></div>
         </div>
         <div id="profitPanel">
           <div class="profit-header">
@@ -8746,6 +8768,81 @@ Requirements:
 
     loadTopGainers();
     startTgCountdown();
+
+    // ── Top Recoveries (30d losers reversing) ────────────
+    const TR_INTERVAL = 120; // server caches 120s
+    let trNextIn = 0;
+    let trTimer = null;
+
+    function renderTopRecoveries(recoveries) {
+      const body = document.getElementById('trBody');
+      if (!body) return;
+      if (!recoveries || !recoveries.length) {
+        body.innerHTML = '<div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">No reversal candidates</div>';
+        return;
+      }
+      const rows = recoveries.slice(0, 10).map(g => {
+        const p = g.price;
+        const price = p < 0.001 ? p.toFixed(6) : p < 1 ? p.toFixed(4) : p < 100 ? p.toFixed(3) : p.toFixed(2);
+        const sc = g.score ?? 50;
+        const rsi = g.rsi ?? 50;
+        let sigLabel, sigColor;
+        if (sc >= 70)      { sigLabel = '★ Strong'; sigColor = '#c084fc'; }
+        else if (sc >= 58) { sigLabel = '▲ Buy';    sigColor = '#4ade80'; }
+        else if (sc >= 45) { sigLabel = '◎ Watch';  sigColor = '#facc15'; }
+        else               { sigLabel = '◌ Weak';   sigColor = '#f97316'; }
+        const sigTitle = `Score: ${sc}/100 · RSI: ${rsi} · Vol: $${fmtTgVol(g.volUsd)}`;
+        const sign24 = g.pct24h >= 0 ? '+' : '';
+        return `<tr onclick="validateAndSelectCoin('${g.coin}')">
+          <td><span class="tg-coin">${g.coin}</span><br><span style="color:var(--t2);font-size:10px;">$${price}</span></td>
+          <td class="tg-pct neg">${g.pct30d.toFixed(1)}%</td>
+          <td class="tg-pct">${sign24}${g.pct24h.toFixed(1)}%</td>
+          <td title="${sigTitle}" style="color:${sigColor};font-weight:600;font-size:10px;white-space:nowrap;">${sigLabel}<br><span style="color:var(--t2);font-weight:400;">RSI ${rsi}</span></td>
+        </tr>`;
+      }).join('');
+      body.innerHTML = `<table class="tg-table">
+        <thead><tr><th>COIN</th><th>30D%</th><th>24H%</th><th>SIGNAL</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+    }
+
+    async function loadTopRecoveries() {
+      try {
+        const r = await fetch('/api/top-recoveries');
+        const d = await r.json();
+        if (d.success) renderTopRecoveries(d.recoveries);
+      } catch {}
+    }
+
+    function startTrCountdown() {
+      clearInterval(trTimer);
+      trNextIn = TR_INTERVAL;
+      trTimer = setInterval(() => {
+        trNextIn--;
+        const el = document.getElementById('trCountdown');
+        if (el) el.textContent = trNextIn + 's';
+        if (trNextIn <= 0) {
+          trNextIn = TR_INTERVAL;
+          loadTopRecoveries();
+        }
+      }, 1000);
+    }
+
+    function refreshTopRecoveries() {
+      const btn = document.getElementById('trRefreshBtn');
+      if (btn) {
+        btn.classList.remove('spinning');
+        void btn.offsetWidth;
+        btn.classList.add('spinning');
+      }
+      loadTopRecoveries();
+      trNextIn = TR_INTERVAL;
+      const el = document.getElementById('trCountdown');
+      if (el) el.textContent = trNextIn + 's';
+    }
+
+    loadTopRecoveries();
+    startTrCountdown();
 
     // ── Holdings ──────────────────────────────────────
     async function loadHoldings() {
