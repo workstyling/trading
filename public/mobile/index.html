@@ -1225,9 +1225,9 @@
         const sc = g.score ?? 50;
         const rsi = g.rsi ?? 50;
         let sigLabel, sigColor;
-        if (sc >= 70)      { sigLabel = '★ Strong'; sigColor = '#c084fc'; }
-        else if (sc >= 58) { sigLabel = '▲ Buy';    sigColor = '#4ade80'; }
-        else if (sc >= 45) { sigLabel = '◎ Watch';  sigColor = '#facc15'; }
+        if (sc >= 80)      { sigLabel = '★ Strong'; sigColor = '#c084fc'; }
+        else if (sc >= 65) { sigLabel = '▲ Buy';    sigColor = '#4ade80'; }
+        else if (sc >= 50) { sigLabel = '◎ Watch';  sigColor = '#facc15'; }
         else               { sigLabel = '◌ Weak';   sigColor = '#f97316'; }
         const sigTitle = `Score: ${sc}/100 · RSI: ${rsi}`;
         const sign24 = g.pct24h >= 0 ? '+' : '';

@@ -1208,29 +1208,35 @@ let topRecoveriesCache = { data: [], fetchedAt: 0 };
 const TOP_RECOVERIES_TTL = 60_000;
 
 function calcReversalScore(pct24h, pct30d, volUsd, rsi) {
-  let s = 50;
-  // RSI: coming out of oversold is the sweet spot
-  if (rsi < 30) s += 8;          // still oversold (risky bottom-fishing)
-  else if (rsi < 45) s += 25;    // exiting oversold — best entry
-  else if (rsi < 55) s += 15;    // momentum building
-  else if (rsi < 65) s += 3;
-  else s -= 18;                  // already overbought relative to recent
-  // 30d: must be a loser; deeper = more upside potential
-  if (pct30d < -50) s += 12;     // deep loser — risky but big upside
-  else if (pct30d < -30) s += 20; // sweet spot
-  else if (pct30d < -15) s += 14;
-  else if (pct30d < -5)  s += 4;
-  else s -= 15;                  // not a real loser
-  // 24h: confirms reversal in progress
-  if (pct24h >= 4 && pct24h <= 12) s += 15;
-  else if (pct24h >= 1.5)         s += 10;
-  else if (pct24h >= 0.3)         s += 4;
-  else s -= 12;
-  // Volume confirms accumulation
-  if (volUsd > 5_000_000)      s += 10;
-  else if (volUsd > 1_000_000) s += 6;
-  else if (volUsd > 200_000)   s += 2;
+  let s = 0;
+  // 24h reversal confirmation — strongest weight (this is THE signal)
+  if (pct24h >= 4 && pct24h <= 10) s += 32;       // sweet spot — confirmed bounce
+  else if (pct24h >= 2  && pct24h <  4)  s += 24; // good early bounce
+  else if (pct24h >= 10 && pct24h <= 15) s += 18; // bouncing but risk of being late
+  else if (pct24h >= 1)                  s += 12;
+  else if (pct24h >= 0.3)                s += 4;
+  else s -= 20;                                    // no confirmation
+  // RSI — entry quality
+  if (rsi >= 40 && rsi <= 55) s += 28;             // exiting oversold — best
+  else if (rsi >= 35 && rsi < 40) s += 22;         // still cheap
+  else if (rsi >= 55 && rsi <= 62) s += 16;        // momentum building, still ok
+  else if (rsi < 35) s += 10;                      // very oversold (catching knife risk)
+  else if (rsi <= 68) s += 4;                      // getting late
+  else s -= 22;                                    // overbought — likely missed it
+  // Volume — liquidity & accumulation
+  if (volUsd > 5_000_000)      s += 18;
+  else if (volUsd > 1_000_000) s += 14;
+  else if (volUsd > 500_000)   s += 9;
+  else if (volUsd > 200_000)   s += 4;
   else s -= 10;
+  // 30d drop — potential upside (smaller weight: drop alone isn't a buy signal)
+  if (pct30d <= -50)      s += 12;
+  else if (pct30d <= -30) s += 14;
+  else if (pct30d <= -15) s += 10;
+  else if (pct30d <= -5)  s += 4;
+  else s -= 8;
+  // Base offset so well-balanced setups land in 70-90 range
+  s += 10;
   return Math.max(0, Math.min(100, Math.round(s)));
 }
 
@@ -1307,7 +1313,12 @@ async function fetchTopRecoveries() {
     g.score = calcReversalScore(g.pct24h, g.pct30d, g.volUsd, g.rsi);
   }));
 
-  losers.sort((a, b) => b.score - a.score);
+  // Best-to-buy ordering: score → 24h momentum → volume
+  losers.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    if (b.pct24h !== a.pct24h) return b.pct24h - a.pct24h;
+    return b.volUsd - a.volUsd;
+  });
   return losers.slice(0, 10);
 }
 
