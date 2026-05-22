@@ -4707,6 +4707,35 @@
       box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
     }
 
+    .multi-tracker-card.selected-card {
+      border-color: var(--yellow) !important;
+      box-shadow: 0 0 15px rgba(255, 214, 10, 0.25) !important;
+    }
+
+    .mt-highlight-card {
+      border: 1px solid var(--b1);
+      transition: all 0.25s ease;
+    }
+
+    .mt-highlight-card.rising {
+      background: rgba(46, 204, 113, 0.08) !important;
+      border-color: rgba(46, 204, 113, 0.3) !important;
+      box-shadow: 0 0 8px rgba(46, 204, 113, 0.15);
+    }
+
+    .mt-highlight-card.falling {
+      background: rgba(231, 76, 60, 0.08) !important;
+      border-color: rgba(231, 76, 60, 0.3) !important;
+      box-shadow: 0 0 8px rgba(231, 76, 60, 0.15);
+    }
+
+    .mt-val-large {
+      font-size: 32px !important;
+      font-weight: 800 !important;
+      letter-spacing: -0.02em;
+      line-height: 1.1;
+    }
+
     .mt-card-header {
       display: flex;
       justify-content: space-between;
@@ -4848,6 +4877,19 @@
     .mt-grid {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+    }
+
+    .mt-changes-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 6px;
+      margin-bottom: 6px;
+    }
+
+    .mt-metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
       gap: 6px;
     }
 
@@ -5750,6 +5792,7 @@
     }
 
     async function validateAndSelectCoin(coin) {
+      if (document.activeElement) document.activeElement.blur();
       const input = document.getElementById('buyCoin');
       coin = coin.toUpperCase().trim();
       if (!coin) return false;
@@ -5779,6 +5822,10 @@
             document.getElementById('trackerCoinName').textContent = coin;
             document.getElementById('trackerStatusText').textContent = 'Switched. Fetching candles...';
             runTrackerIteration();
+          }
+          // Multi Tracker selection integration
+          if (typeof MultiTracker !== 'undefined' && MultiTracker.trackers && MultiTracker.trackers[coin]) {
+            MultiTracker.selectCard(coin);
           }
           return true;
         }
@@ -6090,6 +6137,63 @@
       } else if (e.ctrlKey && (e.key === 'Enter' || e.code === 'Enter' || e.code === 'NumpadEnter')) {
         e.preventDefault();
         executeBuyOrder();
+      } else {
+        // Standard Plus/Minus keys for MultiTracker offset steps adjustment
+        const isPlus = e.key === '+' || e.key === '=' || e.code === 'Equal' || e.code === 'NumpadAdd' || e.keyCode === 187 || e.keyCode === 107;
+        const isMinus = e.key === '-' || e.key === '_' || e.code === 'Minus' || e.code === 'NumpadSubtract' || e.keyCode === 189 || e.keyCode === 109;
+
+        if (isPlus || isMinus) {
+          if (document.activeElement && (
+            (document.activeElement.tagName === 'INPUT' && document.activeElement.type !== 'range') || 
+            document.activeElement.tagName === 'TEXTAREA' || 
+            document.activeElement.isContentEditable
+          )) {
+            const id = document.activeElement.id;
+            if (id === 'addTrackerCoinInput' || id === 'buyCoin' || id === 'coinInput') {
+              document.activeElement.blur();
+            } else {
+              return;
+            }
+          }
+
+          let targetCoin = null;
+          if (typeof MultiTracker !== 'undefined' && MultiTracker.trackers) {
+            // 1. Explicitly selected card
+            if (MultiTracker.selectedCoin && MultiTracker.trackers[MultiTracker.selectedCoin]) {
+              targetCoin = MultiTracker.selectedCoin;
+            }
+            // 2. Or if exactly one tracker is active
+            if (!targetCoin) {
+              const coins = Object.keys(MultiTracker.trackers);
+              if (coins.length === 1) {
+                targetCoin = coins[0];
+              }
+            }
+            // 3. Or if selectedBuyCoin (from table select) is tracked
+            if (!targetCoin && typeof selectedBuyCoin !== 'undefined' && selectedBuyCoin && MultiTracker.trackers[selectedBuyCoin]) {
+              targetCoin = selectedBuyCoin;
+            }
+            // 4. Fallback to the first active tracker if any exist
+            if (!targetCoin) {
+              const coins = Object.keys(MultiTracker.trackers);
+              if (coins.length > 0) {
+                targetCoin = coins[0];
+                MultiTracker.selectCard(targetCoin);
+              }
+            }
+            
+            if (targetCoin) {
+              e.preventDefault();
+              if (isPlus) {
+                // Raise target price -> decrease offsetSteps
+                MultiTracker.adjustSteps(targetCoin, -1);
+              } else {
+                // Lower target price -> increase offsetSteps
+                MultiTracker.adjustSteps(targetCoin, 1);
+              }
+            }
+          }
+        }
       }
     });
 
@@ -6371,12 +6475,26 @@
     const MultiTracker = {
       trackers: {}, // Schema: { COIN: { running: bool, mode: 'auto'|'dip', offsetSteps: int, autoSteps: int, usdAmount: float, priceInterval: id, candleInterval: id, bid: float, ask: float, realPrice: float, priceHistory: array, rsi: float, vol: float, slope1m: float, slope5m: float, status: string, suggestedPrice: float, tickSize: float, priceD: int, maxSteps: int } }
       defaultUsdAmount: 100,
+      selectedCoin: null,
 
       init() {
         const defaultUsdInput = document.getElementById('defaultTrackerUsdAmount');
         if (defaultUsdInput) {
           this.defaultUsdAmount = parseFloat(defaultUsdInput.value) || 100;
         }
+      },
+
+      selectCard(coin) {
+        this.selectedCoin = coin;
+        const cards = document.querySelectorAll('.multi-tracker-card');
+        cards.forEach(card => {
+          const cardCoin = card.id.replace('mt-card-', '');
+          if (cardCoin === coin) {
+            card.classList.add('selected-card');
+          } else {
+            card.classList.remove('selected-card');
+          }
+        });
       },
 
       add(coin) {
@@ -6392,7 +6510,7 @@
         // Initialize state for this coin
         this.trackers[coin] = {
           running: false,
-          offsetSteps: 15,
+          offsetSteps: 1, // default steps offset is 1 (corresponds to -1 step below bid)
           usdAmount: this.defaultUsdAmount,
           priceInterval: null,
           candleInterval: null,
@@ -6415,6 +6533,7 @@
         this.loadProductDetails(coin);
 
         // Render card
+        this.selectedCoin = coin;
         this.renderContainer();
         this.start(coin);
         this.scrollToPanel();
@@ -6450,6 +6569,7 @@
           const slider = card.querySelector('.mt-offset-range');
           if (slider) {
             slider.max = t.maxSteps;
+            slider.value = (t.maxSteps + 1) - t.offsetSteps;
           }
         }
       },
@@ -6464,6 +6584,10 @@
       remove(coin) {
         this.stop(coin);
         delete this.trackers[coin];
+        if (this.selectedCoin === coin) {
+          const remaining = Object.keys(this.trackers);
+          this.selectedCoin = remaining.length > 0 ? remaining[0] : null;
+        }
         this.renderContainer();
         showCustomAlert(`Removed tracker for ${coin}`);
       },
@@ -6525,7 +6649,7 @@
         const card = document.getElementById(`mt-card-${coin}`);
         if (card) {
           const valEl = card.querySelector('.mt-offset-val');
-          const diffPct = (t.offsetSteps * t.tickSize / t.bid) * 100;
+          const diffPct = t.bid ? (t.offsetSteps * t.tickSize / t.bid) * 100 : 0;
           if (valEl) valEl.textContent = `-${t.offsetSteps} steps (-${diffPct.toFixed(2)}%)`;
         }
         
@@ -6606,28 +6730,36 @@
         if (!t || !t.realPrice) return;
         
         const el30s = document.getElementById(`mt-chg30s-${coin}`);
+        const card30s = document.getElementById(`mt-card-chg30s-${coin}`);
         if (el30s) {
           if (price30s) {
             const pct = ((t.realPrice - price30s) / price30s) * 100;
             const sign = pct > 0 ? '+' : '';
             el30s.textContent = sign + pct.toFixed(2) + '%';
-            el30s.className = 'mt-card-val ' + (pct > 0.01 ? 'rising' : (pct < -0.01 ? 'falling' : 'neutral'));
+            const stateClass = pct > 0.01 ? 'rising' : (pct < -0.01 ? 'falling' : 'neutral');
+            el30s.className = 'mt-card-val mt-val-large ' + stateClass;
+            if (card30s) card30s.className = 'mt-card mt-highlight-card ' + stateClass;
           } else {
             el30s.textContent = '—';
-            el30s.className = 'mt-card-val neutral';
+            el30s.className = 'mt-card-val mt-val-large neutral';
+            if (card30s) card30s.className = 'mt-card mt-highlight-card neutral';
           }
         }
         
         const el1m = document.getElementById(`mt-chg1m-${coin}`);
+        const card1m = document.getElementById(`mt-card-chg1m-${coin}`);
         if (el1m) {
           if (price1m) {
             const pct = ((t.realPrice - price1m) / price1m) * 100;
             const sign = pct > 0 ? '+' : '';
             el1m.textContent = sign + pct.toFixed(2) + '%';
-            el1m.className = 'mt-card-val ' + (pct > 0.01 ? 'rising' : (pct < -0.01 ? 'falling' : 'neutral'));
+            const stateClass = pct > 0.01 ? 'rising' : (pct < -0.01 ? 'falling' : 'neutral');
+            el1m.className = 'mt-card-val mt-val-large ' + stateClass;
+            if (card1m) card1m.className = 'mt-card mt-highlight-card ' + stateClass;
           } else {
             el1m.textContent = '—';
-            el1m.className = 'mt-card-val neutral';
+            el1m.className = 'mt-card-val mt-val-large neutral';
+            if (card1m) card1m.className = 'mt-card mt-highlight-card neutral';
           }
         }
       },
@@ -6705,7 +6837,7 @@
         const activeSteps = t.offsetSteps;
         const priceDiff = activeSteps * t.tickSize;
         const suggested = t.bid - priceDiff;
-        const diffPct = -(priceDiff / t.bid) * 100;
+        const diffPct = t.bid ? -(priceDiff / t.bid) * 100 : 0;
 
         t.suggestedPrice = parseFloat(suggested.toFixed(t.priceD));
 
@@ -6893,7 +7025,7 @@
         const offsetLabel = `-${activeSteps} steps (${diffPct.toFixed(2)}%)`;
 
         return `
-          <div class="multi-tracker-card" id="mt-card-${coin}">
+          <div class="multi-tracker-card ${coin === MultiTracker.selectedCoin ? 'selected-card' : ''}" id="mt-card-${coin}" onclick="MultiTracker.selectCard('${coin}')">
             <div class="mt-card-header">
               <div class="mt-coin-badge">
                 <span class="mt-pulse" id="mt-pulse-${coin}"></span>
@@ -6901,8 +7033,8 @@
                 <span class="mt-real-price" id="mt-real-price-${coin}">—</span>
               </div>
               <div class="mt-header-actions">
-                <button class="mt-toggle-btn" id="mt-toggle-${coin}" onclick="MultiTracker.toggle('${coin}')">Start</button>
-                <button class="mt-remove-btn" onclick="MultiTracker.remove('${coin}')" title="Remove tracker">×</button>
+                <button class="mt-toggle-btn" id="mt-toggle-${coin}" onclick="MultiTracker.selectCard('${coin}'); event.stopPropagation(); MultiTracker.toggle('${coin}')">Start</button>
+                <button class="mt-remove-btn" onclick="event.stopPropagation(); MultiTracker.remove('${coin}')" title="Remove tracker">×</button>
               </div>
             </div>
             
@@ -6915,15 +7047,18 @@
               <span>Ask: <span class="mt-price-val" id="mt-ask-${coin}">—</span></span>
             </div>
             
-            <div class="mt-grid">
-              <div class="mt-card">
+            <div class="mt-changes-grid">
+              <div class="mt-card mt-highlight-card" id="mt-card-chg30s-${coin}">
                 <span class="mt-card-lbl">Chg (30s)</span>
-                <span class="mt-card-val" id="mt-chg30s-${coin}">—</span>
+                <span class="mt-card-val mt-val-large" id="mt-chg30s-${coin}">—</span>
               </div>
-              <div class="mt-card">
+              <div class="mt-card mt-highlight-card" id="mt-card-chg1m-${coin}">
                 <span class="mt-card-lbl">Chg (1m)</span>
-                <span class="mt-card-val" id="mt-chg1m-${coin}">—</span>
+                <span class="mt-card-val mt-val-large" id="mt-chg1m-${coin}">—</span>
               </div>
+            </div>
+            
+            <div class="mt-metrics-grid">
               <div class="mt-card">
                 <span class="mt-card-lbl">1m Trend</span>
                 <span class="mt-card-val" id="mt-trend1m-${coin}">—</span>
@@ -6946,16 +7081,16 @@
               <div class="mt-ctrl-group">
                 <span class="mt-lbl">Offset: <strong class="mt-offset-val">${offsetLabel}</strong></span>
                 <div class="mt-offset-input-wrap">
-                  <button class="mt-btn-step" onclick="MultiTracker.adjustSteps('${coin}', 1)">-</button>
-                  <input type="range" class="mt-offset-range" min="1" max="${t.maxSteps || 500}" step="1" value="${(t.maxSteps || 500) + 1 - activeSteps}" oninput="MultiTracker.updateOffsetSteps('${coin}', this.value)">
-                  <button class="mt-btn-step" onclick="MultiTracker.adjustSteps('${coin}', -1)">+</button>
+                  <button class="mt-btn-step" onclick="MultiTracker.selectCard('${coin}'); event.stopPropagation(); MultiTracker.adjustSteps('${coin}', 1)">-</button>
+                  <input type="range" class="mt-offset-range" min="1" max="${t.maxSteps || 500}" step="1" value="${(t.maxSteps || 500) + 1 - activeSteps}" oninput="MultiTracker.selectCard('${coin}'); MultiTracker.updateOffsetSteps('${coin}', this.value)" onclick="MultiTracker.selectCard('${coin}'); event.stopPropagation()">
+                  <button class="mt-btn-step" onclick="MultiTracker.selectCard('${coin}'); event.stopPropagation(); MultiTracker.adjustSteps('${coin}', -1)">+</button>
                 </div>
               </div>
               
               <div class="mt-ctrl-group" style="flex: 0 0 65px; min-width: 65px;">
                 <span class="mt-lbl">Amount ($)</span>
                 <div class="mt-usd-input-wrap">
-                  <input type="number" class="mt-card-usd-input" value="${t.usdAmount}" min="1" step="1" oninput="MultiTracker.updateUsdAmount('${coin}', this.value)">
+                  <input type="number" class="mt-card-usd-input" value="${t.usdAmount}" min="1" step="1" oninput="MultiTracker.selectCard('${coin}'); MultiTracker.updateUsdAmount('${coin}', this.value)" onclick="MultiTracker.selectCard('${coin}'); event.stopPropagation()">
                 </div>
               </div>
             </div>
@@ -6966,7 +7101,7 @@
                 <span class="mt-rec-price">—</span>
                 <span class="mt-rec-diff">(--)</span>
               </div>
-              <button class="mt-buy-btn" onclick="MultiTracker.executeBuy('${coin}')">⚡ BUY ${coin}</button>
+              <button class="mt-buy-btn" onclick="event.stopPropagation(); MultiTracker.executeBuy('${coin}')">⚡ BUY ${coin}</button>
             </div>
           </div>
         `;
@@ -6981,6 +7116,7 @@
       if (input && input.value) {
         MultiTracker.add(input.value);
         input.value = '';
+        input.blur();
       }
     }
 
