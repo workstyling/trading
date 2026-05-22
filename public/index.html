@@ -4726,6 +4726,14 @@
       font-family: 'JetBrains Mono', monospace;
     }
 
+    .mt-real-price {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--yellow);
+      font-family: 'JetBrains Mono', monospace;
+      margin-left: 8px;
+    }
+
     .mt-pulse {
       width: 8px;
       height: 8px;
@@ -4839,7 +4847,7 @@
 
     .mt-grid {
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
+      grid-template-columns: repeat(3, 1fr);
       gap: 6px;
     }
 
@@ -6333,7 +6341,7 @@
 
     // ========== MULTI-COIN REAL-TIME TRACKER (1s) ==========
     const MultiTracker = {
-      trackers: {}, // Schema: { COIN: { running: bool, mode: 'auto'|'dip'|'chase', offset: float, autoMode: 'dip'|'chase', autoOffset: float, usdAmount: float, priceInterval: id, candleInterval: id, bid: float, ask: float, rsi: float, vol: float, slope1m: float, slope5m: float, status: string, suggestedPrice: float } }
+      trackers: {}, // Schema: { COIN: { running: bool, mode: 'auto'|'dip', offsetSteps: int, autoSteps: int, usdAmount: float, priceInterval: id, candleInterval: id, bid: float, ask: float, realPrice: float, priceHistory: array, rsi: float, vol: float, slope1m: float, slope5m: float, status: string, suggestedPrice: float, tickSize: float, priceD: int, maxSteps: int } }
       defaultUsdAmount: 100,
 
       init() {
@@ -6357,27 +6365,67 @@
         this.trackers[coin] = {
           running: false,
           mode: 'auto',
-          offset: 0.15,
-          autoMode: 'dip',
-          autoOffset: 0.15,
+          offsetSteps: 15,
+          autoSteps: 15,
           usdAmount: this.defaultUsdAmount,
           priceInterval: null,
           candleInterval: null,
           bid: 0,
           ask: 0,
+          realPrice: 0,
+          priceHistory: [],
           rsi: 50,
           vol: 0,
           slope1m: 0,
           slope5m: 0,
           status: 'Initializing...',
-          suggestedPrice: 0
+          suggestedPrice: 0,
+          tickSize: 0.01,
+          priceD: 2,
+          maxSteps: 500
         };
+
+        // Asynchronously load Coinbase product details
+        this.loadProductDetails(coin);
 
         // Render card
         this.renderContainer();
         this.start(coin);
         this.scrollToPanel();
         showCustomAlert(`Started tracker for ${coin}`);
+      },
+
+      async loadProductDetails(coin) {
+        try {
+          const res = await fetch(`https://api.exchange.coinbase.com/products/${coin}-USD`);
+          if (res.ok) {
+            const d = await res.json();
+            const t = this.trackers[coin];
+            if (t) {
+              t.tickSize = parseFloat(d.quote_increment || '0.01');
+              t.priceD = (d.quote_increment || '0.01').toString().replace(/^[^.]*\.?/, '').length;
+              this.updateSliderRange(coin);
+              this.calculatePrice(coin);
+            }
+          }
+        } catch (err) {
+          console.warn(`[MultiTracker] Failed to load product info for ${coin}:`, err.message);
+        }
+      },
+
+      updateSliderRange(coin) {
+        const t = this.trackers[coin];
+        if (!t || !t.bid || !t.tickSize) return;
+        const maxStepsFor2Pct = Math.round((t.bid * 0.02) / t.tickSize);
+        t.maxSteps = Math.max(100, Math.min(10000, maxStepsFor2Pct));
+        
+        const card = document.getElementById(`mt-card-${coin}`);
+        if (card) {
+          const slider = card.querySelector('.mt-offset-range');
+          if (slider) {
+            slider.max = t.maxSteps;
+          }
+        }
       },
 
       scrollToPanel() {
@@ -6413,10 +6461,10 @@
         this.tickPrice(coin);
         this.tickCandles(coin);
 
-        // Price check loop every 1 second (fast ticks, handles bids/asks & recommendation)
+        // Price check loop every 1 second
         t.priceInterval = setInterval(() => this.tickPrice(coin), 1000);
 
-        // Candle indicator calculation loop every 5 seconds (to avoid API rate limits)
+        // Candle indicator calculation loop every 5 seconds
         t.candleInterval = setInterval(() => this.tickCandles(coin), 5000);
 
         this.updateCardUI(coin);
@@ -6447,12 +6495,10 @@
         if (card) {
           const autoBtn = card.querySelector('.mt-mode-btn.auto');
           const dipBtn = card.querySelector('.mt-mode-btn.dip');
-          const chaseBtn = card.querySelector('.mt-mode-btn.chase');
           const slider = card.querySelector('.mt-offset-range');
           
           if (autoBtn) autoBtn.classList.toggle('active', mode === 'auto');
           if (dipBtn) dipBtn.classList.toggle('active', mode === 'dip');
-          if (chaseBtn) chaseBtn.classList.toggle('active', mode === 'chase');
           
           if (slider) {
             slider.disabled = (mode === 'auto');
@@ -6460,11 +6506,13 @@
           
           if (mode !== 'auto') {
             const offsetValEl = card.querySelector('.mt-offset-val');
+            const currentSteps = this.trackers[coin].offsetSteps;
+            const diffPct = (currentSteps * this.trackers[coin].tickSize / this.trackers[coin].bid) * 100;
             if (offsetValEl) {
-              offsetValEl.textContent = this.trackers[coin].offset.toFixed(2) + '%';
+              offsetValEl.textContent = `-${currentSteps} steps (-${diffPct.toFixed(2)}%)`;
             }
             if (slider) {
-              slider.value = this.trackers[coin].offset;
+              slider.value = currentSteps;
             }
           }
         }
@@ -6472,14 +6520,16 @@
         this.calculatePrice(coin);
       },
 
-      updateOffset(coin, value) {
-        if (!this.trackers[coin]) return;
-        this.trackers[coin].offset = parseFloat(value);
+      updateOffsetSteps(coin, value) {
+        const t = this.trackers[coin];
+        if (!t) return;
+        t.offsetSteps = parseInt(value) || 1;
         
         const card = document.getElementById(`mt-card-${coin}`);
         if (card) {
           const valEl = card.querySelector('.mt-offset-val');
-          if (valEl) valEl.textContent = this.trackers[coin].offset.toFixed(2) + '%';
+          const diffPct = (t.offsetSteps * t.tickSize / t.bid) * 100;
+          if (valEl) valEl.textContent = `-${t.offsetSteps} steps (-${diffPct.toFixed(2)}%)`;
         }
         
         this.calculatePrice(coin);
@@ -6501,11 +6551,76 @@
           
           t.bid = parseFloat(data.bid);
           t.ask = parseFloat(data.ask);
+          t.realPrice = parseFloat(data.price || data.bid);
+
+          const now = Date.now();
+          if (t.realPrice) {
+            if (!t.priceHistory) t.priceHistory = [];
+            t.priceHistory.push({ time: now, price: t.realPrice });
+            t.priceHistory = t.priceHistory.filter(h => now - h.time <= 70000);
+          }
+
+          if (!t.maxSteps || t.maxSteps === 500) {
+            this.updateSliderRange(coin);
+          }
           
           this.calculatePrice(coin);
           this.updateCardPricesUI(coin);
+
+          const price30s = this.getHistoricPrice(t.priceHistory, 30);
+          const price1m = this.getHistoricPrice(t.priceHistory, 60);
+          this.updateCardRealChangesUI(coin, price30s, price1m);
         } catch (err) {
           console.warn(`[MultiTracker] Price tick error for ${coin}:`, err.message);
+        }
+      },
+
+      getHistoricPrice(history, secondsAgo) {
+        if (!history || history.length === 0) return null;
+        const targetTime = Date.now() - secondsAgo * 1000;
+        let closest = null;
+        let minDiff = Infinity;
+        for (const h of history) {
+          const diff = Math.abs(h.time - targetTime);
+          if (diff < minDiff) {
+            minDiff = diff;
+            closest = h;
+          }
+        }
+        if (closest && minDiff < 3000) {
+          return closest.price;
+        }
+        return null;
+      },
+
+      updateCardRealChangesUI(coin, price30s, price1m) {
+        const t = this.trackers[coin];
+        if (!t || !t.realPrice) return;
+        
+        const el30s = document.getElementById(`mt-chg30s-${coin}`);
+        if (el30s) {
+          if (price30s) {
+            const pct = ((t.realPrice - price30s) / price30s) * 100;
+            const sign = pct > 0 ? '+' : '';
+            el30s.textContent = sign + pct.toFixed(2) + '%';
+            el30s.className = 'mt-card-val ' + (pct > 0.01 ? 'rising' : (pct < -0.01 ? 'falling' : 'neutral'));
+          } else {
+            el30s.textContent = '—';
+            el30s.className = 'mt-card-val neutral';
+          }
+        }
+        
+        const el1m = document.getElementById(`mt-chg1m-${coin}`);
+        if (el1m) {
+          if (price1m) {
+            const pct = ((t.realPrice - price1m) / price1m) * 100;
+            const sign = pct > 0 ? '+' : '';
+            el1m.textContent = sign + pct.toFixed(2) + '%';
+            el1m.className = 'mt-card-val ' + (pct > 0.01 ? 'rising' : (pct < -0.01 ? 'falling' : 'neutral'));
+          } else {
+            el1m.textContent = '—';
+            el1m.className = 'mt-card-val neutral';
+          }
         }
       },
 
@@ -6552,9 +6667,12 @@
           const lows1m = data1m.slice(0, 10).map(c => parseFloat(c[1]));
           t.vol = ((Math.max(...highs1m) - Math.min(...lows1m)) / Math.min(...lows1m)) * 100;
 
-          // Auto mode calculation
-          t.autoMode = (t.rsi > 53 && t.slope1m > 0.05 && t.slope5m > 0.02) ? 'chase' : 'dip';
-          t.autoOffset = t.vol ? Math.max(0.05, Math.min(1.00, t.vol * 0.15)) : 0.15;
+          // Auto mode calculation (determines step-based offset based on volatility)
+          const autoOffsetPct = t.vol ? Math.max(0.05, Math.min(1.00, t.vol * 0.15)) : 0.15;
+          if (t.bid && t.tickSize) {
+            const rawSteps = (autoOffsetPct * t.bid / 100) / t.tickSize;
+            t.autoSteps = Math.min(t.maxSteps || 500, Math.max(1, Math.round(rawSteps)));
+          }
 
           // Status text
           if (t.slope1m > 0.05 && t.slope5m > 0.05) {
@@ -6581,46 +6699,32 @@
         const t = this.trackers[coin];
         if (!t || !t.bid || !t.ask) return;
 
-        let suggested = 0;
-        let diffPct = 0;
+        const activeSteps = t.mode === 'auto' ? (t.autoSteps || 15) : t.offsetSteps;
+        const priceDiff = activeSteps * t.tickSize;
+        const suggested = t.bid - priceDiff;
+        const diffPct = -(priceDiff / t.bid) * 100;
 
-        const activeMode = t.mode === 'auto' ? (t.autoMode || 'dip') : t.mode;
-        const activeOffset = t.mode === 'auto' ? (t.autoOffset || 0.15) : t.offset;
-
-        if (activeMode === 'dip') {
-          suggested = t.bid * (1 - activeOffset / 100);
-          diffPct = -activeOffset;
-        } else {
-          suggested = t.ask * (1 + activeOffset / 100);
-          diffPct = activeOffset;
-        }
-
-        t.suggestedPrice = suggested;
-
-        const decPlaces = suggested < 1 ? 6 : (suggested < 100 ? 4 : 2);
-        const formattedPrice = suggested.toFixed(decPlaces);
+        t.suggestedPrice = parseFloat(suggested.toFixed(t.priceD));
 
         const card = document.getElementById(`mt-card-${coin}`);
         if (card) {
           const recPriceEl = card.querySelector('.mt-rec-price');
-          if (recPriceEl) recPriceEl.textContent = '$' + formattedPrice;
+          if (recPriceEl) recPriceEl.textContent = '$' + t.suggestedPrice.toFixed(t.priceD);
 
           const diffEl = card.querySelector('.mt-rec-diff');
           if (diffEl) {
-            const sign = diffPct > 0 ? '+' : '';
-            diffEl.textContent = `(${sign}${diffPct.toFixed(2)}%)`;
-            diffEl.className = 'mt-rec-diff ' + (diffPct > 0 ? 'plus' : 'minus');
+            diffEl.textContent = `(-${activeSteps} steps | ${diffPct.toFixed(2)}%)`;
+            diffEl.className = 'mt-rec-diff minus';
           }
 
-          if (t.mode === 'auto') {
-            const offsetValEl = card.querySelector('.mt-offset-val');
-            if (offsetValEl) {
-              offsetValEl.textContent = activeOffset.toFixed(2) + '% (Auto)';
-            }
-            const slider = card.querySelector('.mt-offset-range');
-            if (slider) {
-              slider.value = activeOffset;
-            }
+          const offsetValEl = card.querySelector('.mt-offset-val');
+          if (offsetValEl) {
+            const modeText = t.mode === 'auto' ? ' (Auto)' : '';
+            offsetValEl.textContent = `-${activeSteps} steps (${diffPct.toFixed(2)}%)${modeText}`;
+          }
+          const slider = card.querySelector('.mt-offset-range');
+          if (slider) {
+            slider.value = activeSteps;
           }
         }
       },
@@ -6647,9 +6751,14 @@
         if (!t) return;
         const bidEl = document.getElementById(`mt-bid-${coin}`);
         const askEl = document.getElementById(`mt-ask-${coin}`);
-        const dec = t.bid < 1 ? 6 : (t.bid < 100 ? 4 : 2);
+        const dec = t.priceD || 2;
         if (bidEl) bidEl.textContent = t.bid ? '$' + t.bid.toFixed(dec) : '—';
         if (askEl) askEl.textContent = t.ask ? '$' + t.ask.toFixed(dec) : '—';
+
+        const realPriceEl = document.getElementById(`mt-real-price-${coin}`);
+        if (realPriceEl && t.realPrice) {
+          realPriceEl.textContent = '$' + t.realPrice.toFixed(dec);
+        }
       },
 
       updateCardMetricsUI(coin) {
@@ -6709,16 +6818,11 @@
         const productId = `${coin}-USD`;
         const cryptoSize = (usd / limitPrice).toFixed(6);
 
-        // Determine if it's stop_limit (above market) or limit (below market) based on mode
-        const activeMode = t.mode === 'auto' ? (t.autoMode || 'dip') : t.mode;
-        const isStopLimit = (activeMode === 'chase');
-        const orderType = isStopLimit ? 'stop_limit' : 'limit';
-        const stopPrice = isStopLimit ? limitPrice : undefined;
+        // Always Limit order below the bid
+        const orderType = 'limit';
 
-        const modalTitle = isStopLimit ? `Confirm Stop-Limit Buy (${coin})` : `Confirm Limit Buy (${coin})`;
-        const modalMsg = isStopLimit 
-          ? `Buy <strong>${cryptoSize} ${coin}</strong> when price reaches <strong>$${limitPrice.toLocaleString()}</strong> (Stop-Limit)?<br>Size: $${usd.toFixed(2)}`
-          : `Buy <strong>${cryptoSize} ${coin}</strong> at <strong>$${limitPrice.toLocaleString()}</strong> (Limit Buy)?<br>Size: $${usd.toFixed(2)}`;
+        const modalTitle = `Confirm Limit Buy (${coin})`;
+        const modalMsg = `Buy <strong>${cryptoSize} ${coin}</strong> at <strong>$${limitPrice.toLocaleString()}</strong> (Limit Buy)?<br>Size: $${usd.toFixed(2)}`;
 
         // Show confirmation modal
         showConfirmModal(
@@ -6729,12 +6833,12 @@
               const res = await fetch('/create-buy-order', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ productId, quoteSize: usd, limitPrice, orderType, stopPrice })
+                body: JSON.stringify({ productId, quoteSize: usd, limitPrice: String(limitPrice), orderType })
               });
               const data = await res.json();
 
               if (data.success && data.order?.success !== false) {
-                const orderText = isStopLimit ? `Stop-Limit Buy placed at $${limitPrice}` : `Buy Order Placed: ${cryptoSize} ${coin} @ $${limitPrice}`;
+                const orderText = `Buy Order Placed: ${cryptoSize} ${coin} @ $${limitPrice}`;
                 showCustomAlert(orderText);
                 const newOrderId = data.order_id;
                 if (newOrderId && !selectedOrders.includes(newOrderId)) {
@@ -6781,10 +6885,15 @@
         const t = this.trackers[coin];
         const autoActive = t.mode === 'auto' ? 'active' : '';
         const dipActive = t.mode === 'dip' ? 'active' : '';
-        const chaseActive = t.mode === 'chase' ? 'active' : '';
         const sliderDisabled = t.mode === 'auto' ? 'disabled' : '';
-        const currentOffset = t.mode === 'auto' ? (t.autoOffset || 0.15) : t.offset;
-        const offsetLabel = t.mode === 'auto' ? `${currentOffset.toFixed(2)}% (Auto)` : `${t.offset.toFixed(2)}%`;
+        
+        const activeSteps = t.mode === 'auto' ? (t.autoSteps || 15) : t.offsetSteps;
+        const priceDiff = activeSteps * t.tickSize;
+        const diffPct = t.bid ? -(priceDiff / t.bid) * 100 : 0;
+        
+        const offsetLabel = t.mode === 'auto' 
+          ? `-${activeSteps} steps (${diffPct.toFixed(2)}%) (Auto)` 
+          : `-${activeSteps} steps (${diffPct.toFixed(2)}%)`;
 
         return `
           <div class="multi-tracker-card" id="mt-card-${coin}">
@@ -6792,6 +6901,7 @@
               <div class="mt-coin-badge">
                 <span class="mt-pulse" id="mt-pulse-${coin}"></span>
                 <span class="mt-coin-name">${coin}</span>
+                <span class="mt-real-price" id="mt-real-price-${coin}">—</span>
               </div>
               <div class="mt-header-actions">
                 <button class="mt-toggle-btn" id="mt-toggle-${coin}" onclick="MultiTracker.toggle('${coin}')">Start</button>
@@ -6809,6 +6919,14 @@
             </div>
             
             <div class="mt-grid">
+              <div class="mt-card">
+                <span class="mt-card-lbl">Chg (30s)</span>
+                <span class="mt-card-val" id="mt-chg30s-${coin}">—</span>
+              </div>
+              <div class="mt-card">
+                <span class="mt-card-lbl">Chg (1m)</span>
+                <span class="mt-card-val" id="mt-chg1m-${coin}">—</span>
+              </div>
               <div class="mt-card">
                 <span class="mt-card-lbl">1m Trend</span>
                 <span class="mt-card-val" id="mt-trend1m-${coin}">—</span>
@@ -6833,14 +6951,13 @@
                 <div class="mt-mode-btns">
                   <button class="mt-mode-btn auto ${autoActive}" onclick="MultiTracker.setMode('${coin}', 'auto')">Auto</button>
                   <button class="mt-mode-btn dip ${dipActive}" onclick="MultiTracker.setMode('${coin}', 'dip')">Pullback</button>
-                  <button class="mt-mode-btn chase ${chaseActive}" onclick="MultiTracker.setMode('${coin}', 'chase')">Breakout</button>
                 </div>
               </div>
               
               <div class="mt-ctrl-group">
                 <span class="mt-lbl">Offset: <strong class="mt-offset-val">${offsetLabel}</strong></span>
                 <div class="mt-offset-input-wrap">
-                  <input type="range" class="mt-offset-range" min="0.05" max="1.50" step="0.05" value="${currentOffset}" oninput="MultiTracker.updateOffset('${coin}', this.value)" ${sliderDisabled}>
+                  <input type="range" class="mt-offset-range" min="1" max="${t.maxSteps || 500}" step="1" value="${activeSteps}" oninput="MultiTracker.updateOffsetSteps('${coin}', this.value)" ${sliderDisabled}>
                 </div>
               </div>
               
