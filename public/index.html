@@ -6364,9 +6364,7 @@
         // Initialize state for this coin
         this.trackers[coin] = {
           running: false,
-          mode: 'auto',
           offsetSteps: 15,
-          autoSteps: 15,
           usdAmount: this.defaultUsdAmount,
           priceInterval: null,
           candleInterval: null,
@@ -6487,38 +6485,7 @@
         this.updateCardUI(coin);
       },
 
-      setMode(coin, mode) {
-        if (!this.trackers[coin]) return;
-        this.trackers[coin].mode = mode;
-        
-        const card = document.getElementById(`mt-card-${coin}`);
-        if (card) {
-          const autoBtn = card.querySelector('.mt-mode-btn.auto');
-          const dipBtn = card.querySelector('.mt-mode-btn.dip');
-          const slider = card.querySelector('.mt-offset-range');
-          
-          if (autoBtn) autoBtn.classList.toggle('active', mode === 'auto');
-          if (dipBtn) dipBtn.classList.toggle('active', mode === 'dip');
-          
-          if (slider) {
-            slider.disabled = (mode === 'auto');
-          }
-          
-          if (mode !== 'auto') {
-            const offsetValEl = card.querySelector('.mt-offset-val');
-            const currentSteps = this.trackers[coin].offsetSteps;
-            const diffPct = (currentSteps * this.trackers[coin].tickSize / this.trackers[coin].bid) * 100;
-            if (offsetValEl) {
-              offsetValEl.textContent = `-${currentSteps} steps (-${diffPct.toFixed(2)}%)`;
-            }
-            if (slider) {
-              slider.value = currentSteps;
-            }
-          }
-        }
-        
-        this.calculatePrice(coin);
-      },
+
 
       updateOffsetSteps(coin, value) {
         const t = this.trackers[coin];
@@ -6667,12 +6634,7 @@
           const lows1m = data1m.slice(0, 10).map(c => parseFloat(c[1]));
           t.vol = ((Math.max(...highs1m) - Math.min(...lows1m)) / Math.min(...lows1m)) * 100;
 
-          // Auto mode calculation (determines step-based offset based on volatility)
-          const autoOffsetPct = t.vol ? Math.max(0.05, Math.min(1.00, t.vol * 0.15)) : 0.15;
-          if (t.bid && t.tickSize) {
-            const rawSteps = (autoOffsetPct * t.bid / 100) / t.tickSize;
-            t.autoSteps = Math.min(t.maxSteps || 500, Math.max(1, Math.round(rawSteps)));
-          }
+
 
           // Status text
           if (t.slope1m > 0.05 && t.slope5m > 0.05) {
@@ -6699,7 +6661,7 @@
         const t = this.trackers[coin];
         if (!t || !t.bid || !t.ask) return;
 
-        const activeSteps = t.mode === 'auto' ? (t.autoSteps || 15) : t.offsetSteps;
+        const activeSteps = t.offsetSteps;
         const priceDiff = activeSteps * t.tickSize;
         const suggested = t.bid - priceDiff;
         const diffPct = -(priceDiff / t.bid) * 100;
@@ -6719,8 +6681,7 @@
 
           const offsetValEl = card.querySelector('.mt-offset-val');
           if (offsetValEl) {
-            const modeText = t.mode === 'auto' ? ' (Auto)' : '';
-            offsetValEl.textContent = `-${activeSteps} steps (${diffPct.toFixed(2)}%)${modeText}`;
+            offsetValEl.textContent = `-${activeSteps} steps (${diffPct.toFixed(2)}%)`;
           }
           const slider = card.querySelector('.mt-offset-range');
           if (slider) {
@@ -6883,17 +6844,11 @@
 
       getCardHTML(coin) {
         const t = this.trackers[coin];
-        const autoActive = t.mode === 'auto' ? 'active' : '';
-        const dipActive = t.mode === 'dip' ? 'active' : '';
-        const sliderDisabled = t.mode === 'auto' ? 'disabled' : '';
-        
-        const activeSteps = t.mode === 'auto' ? (t.autoSteps || 15) : t.offsetSteps;
+        const activeSteps = t.offsetSteps;
         const priceDiff = activeSteps * t.tickSize;
         const diffPct = t.bid ? -(priceDiff / t.bid) * 100 : 0;
         
-        const offsetLabel = t.mode === 'auto' 
-          ? `-${activeSteps} steps (${diffPct.toFixed(2)}%) (Auto)` 
-          : `-${activeSteps} steps (${diffPct.toFixed(2)}%)`;
+        const offsetLabel = `-${activeSteps} steps (${diffPct.toFixed(2)}%)`;
 
         return `
           <div class="multi-tracker-card" id="mt-card-${coin}">
@@ -6947,17 +6902,9 @@
             
             <div class="mt-controls">
               <div class="mt-ctrl-group">
-                <span class="mt-lbl">Mode</span>
-                <div class="mt-mode-btns">
-                  <button class="mt-mode-btn auto ${autoActive}" onclick="MultiTracker.setMode('${coin}', 'auto')">Auto</button>
-                  <button class="mt-mode-btn dip ${dipActive}" onclick="MultiTracker.setMode('${coin}', 'dip')">Pullback</button>
-                </div>
-              </div>
-              
-              <div class="mt-ctrl-group">
                 <span class="mt-lbl">Offset: <strong class="mt-offset-val">${offsetLabel}</strong></span>
                 <div class="mt-offset-input-wrap">
-                  <input type="range" class="mt-offset-range" min="1" max="${t.maxSteps || 500}" step="1" value="${activeSteps}" oninput="MultiTracker.updateOffsetSteps('${coin}', this.value)" ${sliderDisabled}>
+                  <input type="range" class="mt-offset-range" min="1" max="${t.maxSteps || 500}" step="1" value="${activeSteps}" oninput="MultiTracker.updateOffsetSteps('${coin}', this.value)">
                 </div>
               </div>
               
