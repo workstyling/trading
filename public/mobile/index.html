@@ -1121,13 +1121,34 @@
 
     function updateUsd() {
       const pct = Math.min(100, Math.max(0, parseFloat(document.getElementById('amtInput').value) || 0));
+      localStorage.setItem('buySize', pct);
       const usd = usdBalance * pct / 100;
       document.getElementById('amtUsd').textContent = '$' + usd.toFixed(2);
+
+      // Sync with MultiTracker
+      if (typeof MultiTracker !== 'undefined' && MultiTracker.trackers) {
+        for (const coin in MultiTracker.trackers) {
+          MultiTracker.trackers[coin].usdAmount = parseFloat(usd.toFixed(2));
+          const card = document.getElementById(`mt-card-${coin}`);
+          if (card) {
+            const input = card.querySelector('.mt-card-usd-input');
+            if (input && parseFloat(input.value) !== parseFloat(usd.toFixed(2))) {
+              input.value = usd.toFixed(2);
+            }
+          }
+        }
+      }
     }
 
     // Load saved coin
     const savedCoin = localStorage.getItem('mobileTradeCoin');
     if (savedCoin) document.getElementById('coinInput').value = savedCoin;
+
+    // Load saved buy size
+    const savedBuySize = localStorage.getItem('buySize');
+    if (savedBuySize) {
+      document.getElementById('amtInput').value = savedBuySize;
+    }
 
     function saveCoin() {
       const coin = document.getElementById('coinInput').value.trim().toUpperCase();
@@ -1806,10 +1827,43 @@
         if (defaultUsdInput) {
           this.defaultUsdAmount = parseFloat(defaultUsdInput.value) || 100;
         }
+
+        // Restore tracked coins
+        try {
+          const saved = localStorage.getItem('mt_tracked_coins');
+          if (saved) {
+            const coins = JSON.parse(saved);
+            if (Array.isArray(coins)) {
+              setTimeout(() => {
+                coins.forEach(coin => {
+                  this.add(coin, true);
+                });
+
+                // Restore selected MultiTracker coin highlight
+                const savedSel = localStorage.getItem('selectedMultiTrackerCoin');
+                if (savedSel && this.trackers[savedSel]) {
+                  this.selectCard(savedSel);
+                } else {
+                  const mobileTradeCoin = localStorage.getItem('mobileTradeCoin');
+                  if (mobileTradeCoin && this.trackers[mobileTradeCoin]) {
+                    this.selectCard(mobileTradeCoin);
+                  }
+                }
+              }, 500);
+            }
+          }
+        } catch (e) {
+          console.warn('Failed to restore MultiTracker coins:', e);
+        }
       },
 
       selectCard(coin) {
         this.selectedCoin = coin;
+        if (coin) {
+          localStorage.setItem('selectedMultiTrackerCoin', coin);
+        } else {
+          localStorage.removeItem('selectedMultiTrackerCoin');
+        }
         const cards = document.querySelectorAll('.multi-tracker-card');
         cards.forEach(card => {
           const cardCoin = card.id.replace('mt-card-', '');
@@ -1821,21 +1875,27 @@
         });
       },
 
-      add(coin) {
+      add(coin, quiet = false) {
         if (!coin) return;
         coin = coin.toUpperCase().trim();
         if (this.trackers[coin]) {
-          toast(`${coin} tracker already exists!`, 'error');
+          if (!quiet) toast(`${coin} tracker already exists!`, 'error');
           this.start(coin); // Start it if stopped
           this.scrollToPanel();
           return;
         }
 
-        // Initialize state for this coin
+        // Initialize state for this coin with the current mobile buy USD amount
+        let currentUsdVal = this.defaultUsdAmount;
+        const amtUsdField = document.getElementById('amtUsd');
+        if (amtUsdField) {
+          currentUsdVal = parseFloat(amtUsdField.textContent.replace(/[$,]/g, '')) || this.defaultUsdAmount;
+        }
+
         this.trackers[coin] = {
           running: false,
           offsetSteps: 1, // default steps offset is 1 (corresponds to -1 step below bid)
-          usdAmount: this.defaultUsdAmount,
+          usdAmount: currentUsdVal,
           priceInterval: null,
           candleInterval: null,
           bid: 0,
@@ -1858,10 +1918,17 @@
 
         // Render card
         this.selectedCoin = coin;
+        if (coin) {
+          localStorage.setItem('selectedMultiTrackerCoin', coin);
+        }
         this.renderContainer();
         this.start(coin);
         this.scrollToPanel();
-        toast(`Started tracker for ${coin}`);
+
+        // Save trackers list
+        localStorage.setItem('mt_tracked_coins', JSON.stringify(Object.keys(this.trackers)));
+
+        if (!quiet) toast(`Started tracker for ${coin}`);
       },
 
       async loadProductDetails(coin) {
@@ -1913,8 +1980,9 @@
         delete this.trackers[coin];
         const remaining = Object.keys(this.trackers);
         if (this.selectedCoin === coin) {
-          this.selectedCoin = remaining.length > 0 ? remaining[0] : null;
+          this.selectCard(remaining.length > 0 ? remaining[0] : null);
         }
+        localStorage.setItem('mt_tracked_coins', JSON.stringify(Object.keys(this.trackers)));
         this.renderContainer();
         toast(`Removed tracker for ${coin}`);
       },
@@ -2000,9 +2068,30 @@
         this.calculatePrice(coin);
       },
 
-      updateUsdAmount(coin, value) {
+       updateUsdAmount(coin, value) {
         if (!this.trackers[coin]) return;
-        this.trackers[coin].usdAmount = parseFloat(value) || 0;
+        const val = parseFloat(value) || 0;
+        this.trackers[coin].usdAmount = val;
+
+        // Sync back to main buy panel
+        if (usdBalance > 0) {
+          const pct = Math.min(100, Math.round(val / usdBalance * 100));
+          document.getElementById('amtInput').value = pct;
+          document.getElementById('amtUsd').textContent = '$' + val.toFixed(2);
+          localStorage.setItem('buySize', pct);
+
+          // Sync to all other tracker cards
+          for (const c in this.trackers) {
+            if (c !== coin) {
+              this.trackers[c].usdAmount = val;
+              const card = document.getElementById(`mt-card-${c}`);
+              if (card) {
+                const input = card.querySelector('.mt-card-usd-input');
+                if (input) input.value = val;
+              }
+            }
+          }
+        }
       },
 
       async tickPrice(coin) {
