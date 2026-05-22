@@ -1892,7 +1892,7 @@
         if (card) {
           const slider = card.querySelector('.mt-offset-range');
           if (slider) {
-            slider.max = t.maxSteps;
+            slider.max = t.maxSteps + 1;
             slider.value = (t.maxSteps + 1) - t.offsetSteps;
           }
         }
@@ -1971,13 +1971,19 @@
         if (!t) return;
         const max = t.maxSteps || 500;
         const sliderVal = parseInt(value) || 1;
-        t.offsetSteps = Math.max(1, Math.min(max, (max + 1) - sliderVal));
+        t.offsetSteps = Math.max(0, Math.min(max, (max + 1) - sliderVal));
         
         const card = document.getElementById(`mt-card-${coin}`);
         if (card) {
           const valEl = card.querySelector('.mt-offset-val');
           const diffPct = (t.offsetSteps * t.tickSize / t.bid) * 100;
-          if (valEl) valEl.textContent = `-${t.offsetSteps} steps (-${diffPct.toFixed(2)}%)`;
+          if (valEl) {
+            if (t.offsetSteps === 0) {
+              valEl.textContent = `0 steps (0.00%)`;
+            } else {
+              valEl.textContent = `-${t.offsetSteps} steps (-${diffPct.toFixed(2)}%)`;
+            }
+          }
         }
         
         this.calculatePrice(coin);
@@ -1988,7 +1994,7 @@
         if (!t) return;
         let newSteps = t.offsetSteps + delta;
         const max = t.maxSteps || 500;
-        if (newSteps < 1) newSteps = 1;
+        if (newSteps < 0) newSteps = 0;
         if (newSteps > max) newSteps = max;
         t.offsetSteps = newSteps;
         this.calculatePrice(coin);
@@ -2175,13 +2181,22 @@
 
           const diffEl = card.querySelector('.mt-rec-diff');
           if (diffEl) {
-            diffEl.textContent = `(-${activeSteps} steps | ${diffPct.toFixed(2)}%)`;
-            diffEl.className = 'mt-rec-diff minus';
+            if (activeSteps === 0) {
+              diffEl.textContent = `(0 steps | 0.00%)`;
+              diffEl.className = 'mt-rec-diff';
+            } else {
+              diffEl.textContent = `(-${activeSteps} steps | ${diffPct.toFixed(2)}%)`;
+              diffEl.className = 'mt-rec-diff minus';
+            }
           }
 
           const offsetValEl = card.querySelector('.mt-offset-val');
           if (offsetValEl) {
-            offsetValEl.textContent = `-${activeSteps} steps (${diffPct.toFixed(2)}%)`;
+            if (activeSteps === 0) {
+              offsetValEl.textContent = `0 steps (0.00%)`;
+            } else {
+              offsetValEl.textContent = `-${activeSteps} steps (${diffPct.toFixed(2)}%)`;
+            }
           }
           const slider = card.querySelector('.mt-offset-range');
           if (slider) {
@@ -2345,7 +2360,7 @@
         const priceDiff = activeSteps * t.tickSize;
         const diffPct = t.bid ? -(priceDiff / t.bid) * 100 : 0;
         
-        const offsetLabel = `-${activeSteps} steps (${diffPct.toFixed(2)}%)`;
+        const offsetLabel = activeSteps === 0 ? `0 steps (0.00%)` : `-${activeSteps} steps (${diffPct.toFixed(2)}%)`;
 
         return `
           <div class="multi-tracker-card ${coin === MultiTracker.selectedCoin ? 'selected-card' : ''}" id="mt-card-${coin}" onclick="MultiTracker.selectCard('${coin}')">
@@ -2405,7 +2420,7 @@
                 <span class="mt-lbl">Offset: <strong class="mt-offset-val">${offsetLabel}</strong></span>
                 <div class="mt-offset-input-wrap">
                   <button class="mt-btn-step" onclick="MultiTracker.selectCard('${coin}'); event.stopPropagation(); MultiTracker.adjustSteps('${coin}', 1)">-</button>
-                  <input type="range" class="mt-offset-range" min="1" max="${t.maxSteps || 500}" step="1" value="${(t.maxSteps || 500) + 1 - activeSteps}" oninput="MultiTracker.selectCard('${coin}'); MultiTracker.updateOffsetSteps('${coin}', this.value)" onclick="MultiTracker.selectCard('${coin}'); event.stopPropagation()">
+                  <input type="range" class="mt-offset-range" min="1" max="${(t.maxSteps || 500) + 1}" step="1" value="${(t.maxSteps || 500) + 1 - activeSteps}" oninput="MultiTracker.selectCard('${coin}'); MultiTracker.updateOffsetSteps('${coin}', this.value)" onclick="MultiTracker.selectCard('${coin}'); event.stopPropagation()">
                   <button class="mt-btn-step" onclick="MultiTracker.selectCard('${coin}'); event.stopPropagation(); MultiTracker.adjustSteps('${coin}', -1)">+</button>
                 </div>
               </div>
