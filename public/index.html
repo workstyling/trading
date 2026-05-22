@@ -4958,6 +4958,34 @@
       accent-color: var(--yellow);
     }
 
+    .mt-btn-step {
+      width: 18px;
+      height: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--s2);
+      border: 1px solid var(--b1);
+      color: var(--t2);
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 700;
+      user-select: none;
+      transition: background 0.15s, border-color 0.15s, transform 0.1s, color 0.15s;
+    }
+
+    .mt-btn-step:hover {
+      background: var(--s3);
+      border-color: var(--yellow);
+      color: var(--yellow);
+      transform: scale(1.05);
+    }
+
+    .mt-btn-step:active {
+      transform: scale(0.95);
+    }
+
     .mt-usd-input-wrap {
       display: flex;
       align-items: center;
@@ -6490,7 +6518,9 @@
       updateOffsetSteps(coin, value) {
         const t = this.trackers[coin];
         if (!t) return;
-        t.offsetSteps = parseInt(value) || 1;
+        const max = t.maxSteps || 500;
+        const sliderVal = parseInt(value) || 1;
+        t.offsetSteps = Math.max(1, Math.min(max, (max + 1) - sliderVal));
         
         const card = document.getElementById(`mt-card-${coin}`);
         if (card) {
@@ -6499,6 +6529,17 @@
           if (valEl) valEl.textContent = `-${t.offsetSteps} steps (-${diffPct.toFixed(2)}%)`;
         }
         
+        this.calculatePrice(coin);
+      },
+
+      adjustSteps(coin, delta) {
+        const t = this.trackers[coin];
+        if (!t) return;
+        let newSteps = t.offsetSteps + delta;
+        const max = t.maxSteps || 500;
+        if (newSteps < 1) newSteps = 1;
+        if (newSteps > max) newSteps = max;
+        t.offsetSteps = newSteps;
         this.calculatePrice(coin);
       },
 
@@ -6685,7 +6726,8 @@
           }
           const slider = card.querySelector('.mt-offset-range');
           if (slider) {
-            slider.value = activeSteps;
+            const max = t.maxSteps || 500;
+            slider.value = (max + 1) - activeSteps;
           }
         }
       },
@@ -6904,7 +6946,9 @@
               <div class="mt-ctrl-group">
                 <span class="mt-lbl">Offset: <strong class="mt-offset-val">${offsetLabel}</strong></span>
                 <div class="mt-offset-input-wrap">
-                  <input type="range" class="mt-offset-range" min="1" max="${t.maxSteps || 500}" step="1" value="${activeSteps}" oninput="MultiTracker.updateOffsetSteps('${coin}', this.value)">
+                  <button class="mt-btn-step" onclick="MultiTracker.adjustSteps('${coin}', 1)">-</button>
+                  <input type="range" class="mt-offset-range" min="1" max="${t.maxSteps || 500}" step="1" value="${(t.maxSteps || 500) + 1 - activeSteps}" oninput="MultiTracker.updateOffsetSteps('${coin}', this.value)">
+                  <button class="mt-btn-step" onclick="MultiTracker.adjustSteps('${coin}', -1)">+</button>
                 </div>
               </div>
               
