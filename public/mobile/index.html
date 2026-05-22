@@ -2207,6 +2207,41 @@
             return;
           }
 
+          // If realPrice/bid/ask are not initialized yet, populate them from the current candle
+          if (!t.realPrice && data1m && data1m[0]) {
+            t.realPrice = parseFloat(data1m[0][4]);
+            if (!t.bid) t.bid = t.realPrice;
+            if (!t.ask) t.ask = t.realPrice;
+          }
+
+          // Pre-populate price history if it has fewer than 10 entries (e.g. on startup) to show 30s/1m change immediately
+          if (t.realPrice && (!t.priceHistory || t.priceHistory.length < 10)) {
+            const now = Date.now();
+            const history = [];
+            const currentPrice = t.realPrice;
+            const price60sAgo = data1m && data1m[1] ? parseFloat(data1m[1][4]) : currentPrice;
+            const price30sAgo = (currentPrice + price60sAgo) / 2;
+
+            for (let i = 70; i >= 0; i--) {
+              const time = now - i * 1000;
+              let price;
+              if (i <= 30) {
+                const pct = i / 30;
+                price = currentPrice * (1 - pct) + price30sAgo * pct;
+              } else {
+                const pct = (i - 30) / 40;
+                price = price30sAgo * (1 - pct) + price60sAgo * pct;
+              }
+              history.push({ time, price });
+            }
+            t.priceHistory = history;
+
+            // Immediately update the change values in UI
+            const price30s = this.getHistoricPrice(t.priceHistory, 30);
+            const price1m = this.getHistoricPrice(t.priceHistory, 60);
+            this.updateCardRealChangesUI(coin, price30s, price1m);
+          }
+
           // newest first, so index 0 is current candle
           const closes1m = data1m.slice(0, 6).reverse().map(c => parseFloat(c[4]));
           const closes5m = data5m.slice(0, 16).reverse().map(c => parseFloat(c[4]));
