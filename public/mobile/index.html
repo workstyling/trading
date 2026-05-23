@@ -7,19 +7,40 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📈</text></svg>">
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg: #000; --s1: #111114; --s2: #1c1c1e; --s3: #2c2c2e;
-      --b0: rgba(255,255,255,.06); --b1: rgba(255,255,255,.10); --b2: rgba(255,255,255,.18);
-      --t0: #f5f5f7; --t1: #aeaeb2; --t2: #636366; --t3: #3a3a3c;
-      --red: #e82127; --green: #30d158; --loss: #ff453a; --blue: #0a84ff; --yellow: #ffd60a;
-      --r1: 10px; --r2: 14px;
+      --bg: #060609;
+      --s1: rgba(13, 13, 20, 0.65);
+      --s2: rgba(22, 22, 33, 0.75);
+      --s3: rgba(32, 32, 48, 0.85);
+      --b0: rgba(255, 255, 255, 0.04);
+      --b1: rgba(255, 255, 255, 0.08);
+      --b2: rgba(0, 242, 254, 0.25);
+      --t0: #f0f3f6;
+      --t1: #c1cad6;
+      --t2: #748393;
+      --t3: #485666;
+      --red: #ff2e93;
+      --green: #00e676;
+      --loss: #ff3860;
+      --blue: #00f2fe;
+      --yellow: #ffd60a;
+      --purple: #b5179e;
+      --r1: 8px;
+      --r2: 12px;
+      --r3: 16px;
+      --font-display: 'Space Grotesk', sans-serif;
+      --font-body: 'Inter', sans-serif;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      background: var(--bg); color: var(--t0);
-      font-family: -apple-system, BlinkMacSystemFont, 'Inter', sans-serif;
+      background: 
+        radial-gradient(circle at 10% 20%, rgba(0, 242, 254, 0.04) 0%, transparent 40%),
+        radial-gradient(circle at 90% 80%, rgba(181, 23, 158, 0.04) 0%, transparent 40%),
+        #060609;
+      color: var(--t0);
+      font-family: var(--font-body);
       min-height: 100vh; min-height: 100dvh;
       -webkit-font-smoothing: antialiased;
       overflow-x: hidden;
@@ -843,6 +864,226 @@
       background: var(--yellow);
       color: #000;
       box-shadow: 0 0 8px rgba(255, 214, 10, 0.3);
+    }
+
+    /* ═══════════════════════════════════════
+       TECH-NOIR OVERRIDES & ENHANCEMENTS
+       ═══════════════════════════════════════ */
+    h1, h2, h3, .at-title, .tg-title, .logo-text {
+      font-family: var(--font-display) !important;
+    }
+
+    /* Glassmorphism panels */
+    .header {
+      background: rgba(6, 6, 9, 0.7) !important;
+      backdrop-filter: blur(20px) !important;
+      -webkit-backdrop-filter: blur(20px) !important;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
+      padding: 12px 16px !important;
+    }
+    .header h1 {
+      font-family: var(--font-display) !important;
+      font-size: 20px !important;
+      font-weight: 700 !important;
+      letter-spacing: -0.5px !important;
+      background: linear-gradient(135deg, var(--blue), var(--purple)) !important;
+      -webkit-background-clip: text !important;
+      -webkit-text-fill-color: transparent !important;
+    }
+    .header-balance {
+      font-family: 'JetBrains Mono', monospace !important;
+      font-size: 16px !important;
+      font-weight: 700 !important;
+      color: var(--green) !important;
+      text-shadow: 0 0 10px rgba(0, 230, 118, 0.25) !important;
+    }
+
+    /* Sticky tab navigation */
+    .tabs {
+      background: rgba(13, 13, 20, 0.8) !important;
+      backdrop-filter: blur(12px) !important;
+      -webkit-backdrop-filter: blur(12px) !important;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
+      padding: 6px 8px !important;
+      gap: 6px !important;
+      position: sticky;
+      top: 49px; /* adjust top to match header height */
+      z-index: 99;
+    }
+    .tab {
+      flex: 1;
+      padding: 8px 0 !important;
+      border-radius: var(--r1) !important;
+      border: none !important;
+      font-size: 12px !important;
+      font-weight: 600 !important;
+      color: var(--t2) !important;
+      background: transparent !important;
+      transition: all 0.2s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
+      border-bottom: none !important;
+    }
+    .tab.active {
+      background: rgba(255, 255, 255, 0.06) !important;
+      color: var(--blue) !important;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 0 0 1px rgba(0, 242, 254, 0.15) !important;
+    }
+
+    /* Glass Panels & Containers */
+    #topGainersPanel,
+    #topRecoveriesPanel,
+    .active-trackers-panel,
+    .profit-summary,
+    .holding-card,
+    .holdings-total-bar,
+    .profit-item,
+    .monitor-group,
+    .settings-row {
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.05) !important;
+      background: rgba(13, 13, 20, 0.45) !important;
+      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4) !important;
+      border-radius: var(--r2) !important;
+    }
+
+    /* Inputs */
+    input[type="text"], input[type="number"], .coin-input, .amt-input, .limit-input, .set-input, .order-search, .at-coin-input, .at-usd-input, .mt-card-usd-input {
+      font-family: 'JetBrains Mono', monospace !important;
+      border: 1px solid rgba(255, 255, 255, 0.08) !important;
+      border-radius: var(--r1) !important;
+      background: rgba(255, 255, 255, 0.02) !important;
+      color: var(--t0) !important;
+      transition: all 0.2s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
+    }
+    input[type="text"]:focus, input[type="number"]:focus, .coin-input:focus, .amt-input:focus, .limit-input:focus, .set-input:focus, .order-search:focus, .at-coin-input:focus, .at-usd-input:focus, .mt-card-usd-input:focus {
+      border-color: var(--blue) !important;
+      box-shadow: 0 0 12px rgba(0, 242, 254, 0.35), inset 0 1px 2px rgba(0, 0, 0, 0.2) !important;
+      background: rgba(255, 255, 255, 0.05) !important;
+      outline: none;
+    }
+    input[type="text"]:hover, input[type="number"]:hover {
+      border-color: rgba(0, 242, 254, 0.2) !important;
+    }
+
+    /* Buttons */
+    button, .btn, .trade-btn, .save-coin-btn, .amt-btn, .btn-limit, .filter-btn, .cancel-btn, .tg-refresh-btn, .at-add-btn, .mt-toggle-btn, .mt-buy-btn, .mon-sell-btn, .mon-deselect, .tg-track-btn {
+      transition: all 0.2s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
+      cursor: pointer;
+    }
+    button:active, .btn:active, .trade-btn:active, .save-coin-btn:active, .amt-btn:active, .btn-limit:active, .filter-btn:active, .cancel-btn:active, .tg-refresh-btn:active, .at-add-btn:active, .mt-toggle-btn:active, .mt-buy-btn:active, .mon-sell-btn:active, .mon-deselect:active, .tg-track-btn:active {
+      transform: scale(0.95) !important;
+    }
+
+    .trade-btn.btn-buy {
+      background: linear-gradient(135deg, #00e676, #00b0ff) !important;
+      color: #050508 !important;
+      font-weight: 700 !important;
+      box-shadow: 0 4px 15px rgba(0, 230, 118, 0.3) !important;
+      border: none !important;
+    }
+    .save-coin-btn, .btn-limit, .at-add-btn {
+      border: 1px solid rgba(0, 242, 254, 0.3) !important;
+      background: rgba(0, 242, 254, 0.05) !important;
+      color: var(--blue) !important;
+    }
+    .amt-btn {
+      background: rgba(255, 255, 255, 0.03) !important;
+      border: 1px solid rgba(255, 255, 255, 0.08) !important;
+      color: var(--t0) !important;
+    }
+    .filter-btn {
+      background: rgba(255, 255, 255, 0.03) !important;
+      border: 1px solid rgba(255, 255, 255, 0.05) !important;
+      color: var(--t1) !important;
+      border-radius: 20px !important;
+    }
+    .filter-btn.active {
+      background: var(--blue) !important;
+      border-color: var(--blue) !important;
+      color: #050508 !important;
+      box-shadow: 0 0 10px rgba(0, 242, 254, 0.25) !important;
+    }
+
+    /* MultiTracker Card Styling */
+    .multi-tracker-card {
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.05) !important;
+      background: rgba(13, 13, 20, 0.45) !important;
+      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4) !important;
+      border-radius: var(--r2) !important;
+      transition: all 0.25s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
+    }
+    .multi-tracker-card.selected-card {
+      border-color: var(--blue) !important;
+      box-shadow: 0 0 18px rgba(0, 242, 254, 0.3) !important;
+    }
+    .mt-highlight-card.rising {
+      background: rgba(0, 230, 118, 0.08) !important;
+      border-color: rgba(0, 230, 118, 0.3) !important;
+      box-shadow: 0 0 12px rgba(0, 230, 118, 0.2) !important;
+    }
+    .mt-highlight-card.falling {
+      background: rgba(255, 46, 147, 0.08) !important;
+      border-color: rgba(255, 46, 147, 0.3) !important;
+      box-shadow: 0 0 12px rgba(255, 46, 147, 0.2) !important;
+    }
+    .mt-real-price {
+      color: var(--blue) !important;
+      text-shadow: 0 0 8px rgba(0, 242, 254, 0.25) !important;
+    }
+    .mt-card {
+      background: rgba(255, 255, 255, 0.02) !important;
+      border: 1px solid rgba(255, 255, 255, 0.04) !important;
+    }
+    .mt-rec-price {
+      color: var(--blue) !important;
+      text-shadow: 0 0 8px rgba(0, 242, 254, 0.2) !important;
+    }
+
+    /* Profit Dynamic Glows */
+    .profit-value.profit-positive {
+      color: var(--green) !important;
+      text-shadow: 0 0 15px rgba(0, 230, 118, 0.3);
+    }
+    .profit-value.profit-negative {
+      color: var(--red) !important;
+      text-shadow: 0 0 15px rgba(255, 46, 147, 0.3);
+    }
+
+    /* Cards in Lists */
+    .profit-item, .holding-card {
+      background: rgba(13, 13, 20, 0.4) !important;
+      border: 1px solid rgba(255, 255, 255, 0.04) !important;
+      margin-bottom: 8px !important;
+      transition: all 0.2s ease !important;
+    }
+    .profit-item:active, .holding-card:active {
+      background: rgba(255, 255, 255, 0.02) !important;
+    }
+
+    /* Orders Checkbox & Tables */
+    .order-checkbox {
+      border: 1px solid rgba(255, 255, 255, 0.15) !important;
+      background: rgba(255, 255, 255, 0.02) !important;
+      border-radius: 4px !important;
+      width: 18px !important;
+      height: 18px !important;
+    }
+    .order-checkbox:checked {
+      background: var(--blue) !important;
+      border-color: var(--blue) !important;
+    }
+    .otbl th {
+      background: rgba(22, 22, 33, 0.9) !important;
+      color: var(--t2) !important;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
+    }
+    .otbl td {
+      border-bottom: 1px solid rgba(255, 255, 255, 0.03) !important;
+    }
+    .otbl tr:active {
+      background: rgba(255, 255, 255, 0.03) !important;
     }
   </style>
 </head>
