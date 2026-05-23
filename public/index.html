@@ -5156,10 +5156,27 @@
       font-family: var(--font-display) !important;
     }
 
+    body > h1 {
+      display: flex !important;
+      align-items: center !important;
+      justify-content: space-between !important;
+      padding: 14px 28px !important;
+      background: rgba(6, 6, 9, 0.65) !important;
+      backdrop-filter: blur(24px) !important;
+      -webkit-backdrop-filter: blur(24px) !important;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
+      margin: 0 0 16px 0 !important;
+      position: sticky !important;
+      top: 0 !important;
+      z-index: 1000 !important;
+      width: 100vw !important;
+      margin-left: calc(-50vw + 50%) !important;
+    }
+
     .container {
       max-width: 1440px;
       margin: 0 auto;
-      padding: 0 10px;
+      padding: 0 12px;
     }
 
     /* Glassmorphism panels */
@@ -5170,25 +5187,62 @@
     #chat,
     .multi-tracker-card,
     .settings-panel,
-    .tg-card {
+    .tg-card,
+    #selectedOrders,
+    #latestOrders,
+    #profitPanel,
+    #holdingsPanel,
+    #telegramPanel,
+    #activeTrackersPanel {
       backdrop-filter: blur(16px);
       -webkit-backdrop-filter: blur(16px);
       border: 1px solid rgba(255, 255, 255, 0.05) !important;
       background: rgba(13, 13, 20, 0.45) !important;
       box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4) !important;
       border-radius: var(--r2) !important;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Panel top neon accent border gradients */
+    #balancePanel::before,
+    #latestOrders::before {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+      background: linear-gradient(90deg, var(--green) 0%, transparent 60%);
+      border-radius: var(--r2) var(--r2) 0 0;
+    }
+    #buyPanel::before,
+    #holdingsPanel::before {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+      background: linear-gradient(90deg, var(--blue) 0%, transparent 60%);
+      border-radius: var(--r2) var(--r2) 0 0;
+    }
+    #profitPanel::before,
+    #telegramPanel::before,
+    #selectedOrders::before {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+      background: linear-gradient(90deg, var(--purple) 0%, transparent 60%);
+      border-radius: var(--r2) var(--r2) 0 0;
+    }
+    #activeTrackersPanel::before,
+    #predictorPanel::before,
+    .pred-card::before {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+      background: linear-gradient(90deg, var(--yellow) 0%, transparent 60%);
+      border-radius: var(--r2) var(--r2) 0 0;
     }
 
     /* Input upgrades */
-    input[type="text"], input[type="number"], .settings-input, .buy-coin-input, .buy-size-input, .limit-price-input, .at-coin-input, .at-usd-input, .mt-card-usd-input {
-      font-family: 'JetBrains Mono', monospace;
+    input[type="text"], input[type="number"], .settings-input, .buy-coin-input, .buy-size-input, .limit-price-input, .at-coin-input, .at-usd-input, .mt-card-usd-input, #query {
+      font-family: 'JetBrains Mono', monospace !important;
       border: 1px solid rgba(255, 255, 255, 0.08) !important;
       border-radius: var(--r1) !important;
       background: rgba(255, 255, 255, 0.02) !important;
+      color: var(--t0) !important;
       transition: all 0.2s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
     }
 
-    input[type="text"]:focus, input[type="number"]:focus, .settings-input:focus, .buy-coin-input:focus, .buy-size-input:focus, .limit-price-input:focus, .at-coin-input:focus, .at-usd-input:focus, .mt-card-usd-input:focus {
+    input[type="text"]:focus, input[type="number"]:focus, .settings-input:focus, .buy-coin-input:focus, .buy-size-input:focus, .limit-price-input:focus, .at-coin-input:focus, .at-usd-input:focus, .mt-card-usd-input:focus, #query:focus {
       border-color: var(--blue) !important;
       box-shadow: 0 0 12px rgba(0, 242, 254, 0.35), inset 0 1px 2px rgba(0, 0, 0, 0.2) !important;
       background: rgba(255, 255, 255, 0.05) !important;
@@ -5209,6 +5263,45 @@
       transform: scale(0.96) !important;
     }
 
+    /* Button Colors & Shadows */
+    .buy-btn {
+      background: linear-gradient(135deg, var(--green), #00b0ff) !important;
+      color: #050508 !important;
+      border: none !important;
+      font-weight: 700 !important;
+      box-shadow: 0 4px 15px rgba(0, 230, 118, 0.25) !important;
+    }
+    .buy-btn:hover {
+      box-shadow: 0 6px 20px rgba(0, 230, 118, 0.45) !important;
+      filter: brightness(1.1) !important;
+    }
+
+    .buy-limit-btn, .tracker-toggle-btn, .at-add-btn, .tg-refresh-btn, .telegram-btn {
+      border: 1px solid rgba(0, 242, 254, 0.3) !important;
+      background: rgba(0, 242, 254, 0.05) !important;
+      color: var(--blue) !important;
+      font-weight: 600 !important;
+    }
+    .buy-limit-btn:hover, .tracker-toggle-btn:hover, .at-add-btn:hover, .tg-refresh-btn:hover, .telegram-btn:hover {
+      background: rgba(0, 242, 254, 0.15) !important;
+      border-color: var(--blue) !important;
+      color: #fff !important;
+      box-shadow: 0 0 10px rgba(0, 242, 254, 0.2) !important;
+    }
+
+    /* Pulsing Stop tracker state */
+    .tracker-toggle-btn.active {
+      background: rgba(255, 46, 147, 0.1) !important;
+      border-color: var(--red) !important;
+      color: var(--red) !important;
+      box-shadow: 0 0 10px rgba(255, 46, 147, 0.25) !important;
+      animation: pulse-red 2s infinite !important;
+    }
+    @keyframes pulse-red {
+      0%, 100% { box-shadow: 0 0 8px rgba(255, 46, 147, 0.2); }
+      50% { box-shadow: 0 0 16px rgba(255, 46, 147, 0.5); }
+    }
+
     /* Tab navigation bar polish */
     .tab-nav {
       background: rgba(13, 13, 20, 0.5) !important;
@@ -5219,6 +5312,7 @@
       width: fit-content;
       backdrop-filter: blur(12px);
       -webkit-backdrop-filter: blur(12px);
+      margin-bottom: 4px;
     }
     
     .tab-btn {
@@ -5240,9 +5334,9 @@
     }
     
     .tab-btn.active {
-      background: var(--s3) !important;
-      color: var(--t0) !important;
-      box-shadow: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 0 0 1px var(--b1) !important;
+      background: rgba(255, 255, 255, 0.06) !important;
+      color: var(--blue) !important;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 0 0 1px rgba(0, 242, 254, 0.15) !important;
     }
 
     /* Tracker layout polish */
@@ -5274,6 +5368,70 @@
       border-color: rgba(255, 46, 147, 0.3) !important;
       box-shadow: 0 0 12px rgba(255, 46, 147, 0.2) !important;
     }
+
+    /* Orders Table and Status Badges */
+    .orders-table {
+      width: 100% !important;
+      border-collapse: collapse !important;
+      font-family: 'JetBrains Mono', monospace !important;
+      font-size: 12px !important;
+    }
+    .orders-table th {
+      background: rgba(22, 22, 33, 0.9) !important;
+      color: var(--t2) !important;
+      font-weight: 600 !important;
+      text-transform: uppercase !important;
+      letter-spacing: .04em !important;
+      padding: 10px 8px !important;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
+      text-align: left !important;
+    }
+    .orders-table td {
+      padding: 10px 8px !important;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.02) !important;
+      color: var(--t1) !important;
+      white-space: nowrap !important;
+    }
+    .orders-table tr:hover {
+      background: rgba(255, 255, 255, 0.02) !important;
+    }
+    .orders-table tr:active {
+      background: rgba(255, 255, 255, 0.04) !important;
+    }
+
+    .status-open {
+      color: var(--yellow) !important;
+      background: rgba(255, 214, 10, 0.08) !important;
+      border: 1px solid rgba(255, 214, 10, 0.15) !important;
+      padding: 2px 6px !important;
+      border-radius: 4px !important;
+      font-size: 11px !important;
+      font-weight: 600 !important;
+      text-transform: uppercase !important;
+      display: inline-block !important;
+    }
+    .status-filled {
+      color: var(--green) !important;
+      background: rgba(0, 230, 118, 0.08) !important;
+      border: 1px solid rgba(0, 230, 118, 0.15) !important;
+      padding: 2px 6px !important;
+      border-radius: 4px !important;
+      font-size: 11px !important;
+      font-weight: 600 !important;
+      text-transform: uppercase !important;
+      display: inline-block !important;
+    }
+    .status-cancelled {
+      color: var(--t2) !important;
+      background: rgba(255, 255, 255, 0.02) !important;
+      border: 1px solid rgba(255, 255, 255, 0.05) !important;
+      padding: 2px 6px !important;
+      border-radius: 4px !important;
+      font-size: 11px !important;
+      font-weight: 600 !important;
+      text-transform: uppercase !important;
+      display: inline-block !important;
+    }
   </style>
 </head>
 
@@ -5287,8 +5445,8 @@
           stroke-linejoin="round" />
         <defs>
           <linearGradient id="logoGrad" x1="3" y1="17" x2="21" y2="7">
-            <stop stop-color="#ff4444" />
-            <stop offset="1" stop-color="#ff8800" />
+            <stop stop-color="#00f2fe" />
+            <stop offset="1" stop-color="#b5179e" />
           </linearGradient>
         </defs>
       </svg>

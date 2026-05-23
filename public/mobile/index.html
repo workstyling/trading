@@ -203,9 +203,36 @@
     .otbl tr:active { background: var(--s2); }
     .otbl .side-buy { color: var(--green); font-weight: 700; }
     .otbl .side-sell { color: var(--loss); font-weight: 700; }
-    .otbl .st-open { color: var(--yellow); }
-    .otbl .st-filled { color: var(--green); }
-    .otbl .st-cancelled { color: var(--t3); }
+    .otbl .st-open {
+      color: var(--yellow) !important;
+      background: rgba(255, 214, 10, 0.08) !important;
+      border: 1px solid rgba(255, 214, 10, 0.15) !important;
+      padding: 2px 6px !important;
+      border-radius: 4px !important;
+      font-size: 11px !important;
+      font-weight: 600 !important;
+      text-transform: uppercase !important;
+    }
+    .otbl .st-filled {
+      color: var(--green) !important;
+      background: rgba(0, 230, 118, 0.08) !important;
+      border: 1px solid rgba(0, 230, 118, 0.15) !important;
+      padding: 2px 6px !important;
+      border-radius: 4px !important;
+      font-size: 11px !important;
+      font-weight: 600 !important;
+      text-transform: uppercase !important;
+    }
+    .otbl .st-cancelled {
+      color: var(--t2) !important;
+      background: rgba(255, 255, 255, 0.02) !important;
+      border: 1px solid rgba(255, 255, 255, 0.05) !important;
+      padding: 2px 6px !important;
+      border-radius: 4px !important;
+      font-size: 11px !important;
+      font-weight: 600 !important;
+      text-transform: uppercase !important;
+    }
     .otbl .pair-col { color: var(--blue); font-weight: 600; }
     .otbl th:nth-child(1), .otbl td:nth-child(1) { width: 34px; text-align: center; }
     .otbl th:nth-child(2), .otbl td:nth-child(2) { width: 60px; } /* Pair */
@@ -1084,6 +1111,38 @@
     }
     .otbl tr:active {
       background: rgba(255, 255, 255, 0.03) !important;
+    }
+
+    /* Mobile Panel top neon accent border gradients */
+    #topGainersPanel,
+    #topRecoveriesPanel,
+    .active-trackers-panel,
+    .profit-summary,
+    .holdings-total-bar,
+    .monitor-group {
+      position: relative;
+      overflow: hidden;
+    }
+    #topGainersPanel::before,
+    .profit-summary::before {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+      background: linear-gradient(90deg, var(--green) 0%, transparent 60%);
+      border-radius: var(--r2) var(--r2) 0 0;
+    }
+    .holdings-total-bar::before {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+      background: linear-gradient(90deg, var(--blue) 0%, transparent 60%);
+      border-radius: var(--r2) var(--r2) 0 0;
+    }
+    #topRecoveriesPanel::before {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+      background: linear-gradient(90deg, var(--purple) 0%, transparent 60%);
+      border-radius: var(--r2) var(--r2) 0 0;
+    }
+    .active-trackers-panel::before {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+      background: linear-gradient(90deg, var(--yellow) 0%, transparent 60%);
+      border-radius: var(--r2) var(--r2) 0 0;
     }
   </style>
 </head>
