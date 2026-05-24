@@ -1473,6 +1473,7 @@
       display: flex;
       flex-direction: column;
       gap: 2px;
+      min-width: 85px; /* Fixed width to prevent shifting when prices load or change */
     }
 
     .buy-price-label {
@@ -1485,7 +1486,12 @@
     .buy-price-value {
       font-family: 'JetBrains Mono', monospace;
       font-size: 13px;
-      transition: all 0.3s;
+      transition: all 0.2s ease-in-out;
+    }
+
+    .buy-price-value.loading {
+      opacity: 0.4;
+      filter: blur(1.5px);
     }
 
     .buy-price-bid {
@@ -6209,13 +6215,22 @@
         const pair = selectedBuyCoin + '-USD';
         const res = await fetch(`https://api.exchange.coinbase.com/products/${pair}/book?level=1`);
         const data = await res.json();
+        const bidEl = document.getElementById('buyBestBid');
+        const askEl = document.getElementById('buyBestAsk');
+        
         if (data.bids && data.bids[0]) {
           buyPanelPrices.bid = parseFloat(data.bids[0][0]);
-          document.getElementById('buyBestBid').textContent = '$' + formatPrice(buyPanelPrices.bid);
+          if (bidEl) {
+            bidEl.textContent = '$' + formatPrice(buyPanelPrices.bid);
+            bidEl.classList.remove('loading');
+          }
         }
         if (data.asks && data.asks[0]) {
           buyPanelPrices.ask = parseFloat(data.asks[0][0]);
-          document.getElementById('buyBestAsk').textContent = '$' + formatPrice(buyPanelPrices.ask);
+          if (askEl) {
+            askEl.textContent = '$' + formatPrice(buyPanelPrices.ask);
+            askEl.classList.remove('loading');
+          }
         }
         
         // Smart Tracker integration
@@ -6224,6 +6239,8 @@
         }
       } catch (e) {
         console.warn('Cannot update buy prices:', e.message);
+        document.getElementById('buyBestBid')?.classList.remove('loading');
+        document.getElementById('buyBestAsk')?.classList.remove('loading');
       }
     }
 
@@ -6234,8 +6251,11 @@
       if (!coin) return false;
 
       input.classList.remove('valid', 'invalid');
-      document.getElementById('buyBestBid').textContent = '...';
-      document.getElementById('buyBestAsk').textContent = '...';
+      
+      const bidEl = document.getElementById('buyBestBid');
+      const askEl = document.getElementById('buyBestAsk');
+      if (bidEl) bidEl.classList.add('loading');
+      if (askEl) askEl.classList.add('loading');
 
       try {
         // Check if coin exists on Coinbase
@@ -6269,6 +6289,8 @@
         input.classList.add('invalid');
         setTimeout(() => input.classList.remove('invalid'), 1500);
         input.value = selectedBuyCoin; // Revert to previous valid coin
+        if (bidEl) bidEl.classList.remove('loading');
+        if (askEl) askEl.classList.remove('loading');
         return false;
       }
     }
