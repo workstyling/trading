@@ -1212,6 +1212,10 @@
 
   <!-- Trade Panel -->
   <div class="panel active" id="panelTrade" data-tab="trade">
+    <!-- Monitor Section -->
+    <div style="margin-bottom:14px;" id="monitorSection">
+      <div id="monitorList"><div class="loading"><div class="spinner"></div>Loading orders...</div></div>
+    </div>
     <div class="trade-coin">
       <input type="text" class="coin-input" id="coinInput" value="BTC" maxlength="10" spellcheck="false" autocomplete="off">
       <button class="save-coin-btn" onclick="saveCoin()">Save</button>
@@ -1235,9 +1239,9 @@
     <div class="trade-actions">
       <button class="trade-btn btn-buy" id="btnBuy" onclick="executeBuy()">BUY</button>
     </div>
-    <div class="limit-section">
-      <input type="text" class="limit-input" id="limitPrice" placeholder="Limit price..." autocomplete="off">
-      <button class="btn-limit" onclick="executeBuyLimit()">Buy Limit</button>
+    <div class="trade-actions" style="margin-top: 10px; display: flex; gap: 8px;">
+      <input type="text" class="limit-input" id="limitPrice" placeholder="Limit price..." autocomplete="off" style="flex: 1;">
+      <button class="btn-limit" onclick="executeBuyLimit()" style="flex: 1;">Buy Limit</button>
     </div>
     <div class="settings-row">
       <span class="set-label">Sell Markup</span>
@@ -1265,11 +1269,6 @@
       <div id="activeTrackersContainer" class="active-trackers-container">
         <div class="no-trackers-placeholder">No active trackers. Click ⚡ next to a coin name below or enter a symbol to start one.</div>
       </div>
-    </div>
-
-    <!-- Monitor Section -->
-    <div style="margin-top:14px;" id="monitorSection">
-      <div id="monitorList"><div class="loading"><div class="spinner"></div>Loading orders...</div></div>
     </div>
   </div>
 
