@@ -5686,10 +5686,10 @@
               <input type="text" class="buy-usd-field" id="buyUsdAmount" value="0" onclick="this.select()" onchange="onUsdAmountChange(this.value)">
               <span class="buy-usd-label">USD</span>
               <button class="buy-btn" id="buyBtn" onclick="executeBuyOrder()">BUY</button>
-              <span class="limit-separator">|</span>
-              <input type="text" class="limit-price-input" id="limitPriceInput" placeholder="Price" autocomplete="off">
-              <button class="buy-limit-btn" id="buyLimitBtn" onclick="executeBuyLimitOrder()">Buy Limit</button>
-              <button class="tracker-toggle-btn" id="trackerToggleBtn" onclick="togglePriceTracker()" title="Auto Price Tracker based on trend">⚡ Track</button>
+              <span class="limit-separator" style="display: none !important;">|</span>
+              <input type="text" class="limit-price-input" id="limitPriceInput" placeholder="Price" autocomplete="off" style="display: none !important;">
+              <button class="buy-limit-btn" id="buyLimitBtn" onclick="executeBuyLimitOrder()" style="display: none !important;">Buy Limit</button>
+              <button class="tracker-toggle-btn" id="trackerToggleBtn" onclick="togglePriceTracker()" title="Auto Price Tracker based on trend" style="display: none !important;">⚡ Track</button>
             </div>
             
             <div id="trackerPanel" class="tracker-panel" style="display: none; max-height: 0px; opacity: 0;">
