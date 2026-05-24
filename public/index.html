@@ -5164,12 +5164,12 @@
       display: flex !important;
       align-items: center !important;
       justify-content: space-between !important;
-      padding: 14px 28px !important;
+      padding: 8px 18px !important;
       background: rgba(6, 6, 9, 0.65) !important;
       backdrop-filter: blur(24px) !important;
       -webkit-backdrop-filter: blur(24px) !important;
       border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
-      margin: 0 0 24px 0 !important;
+      margin: 0 0 16px 0 !important;
       position: sticky !important;
       top: 0 !important;
       z-index: 1000 !important;
@@ -5564,23 +5564,25 @@
 
 <body>
   <h1 style="display:flex;align-items:center;gap:12px;">
-    <div class="logo-icon">
-      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M3 17L9 11L13 15L21 7" stroke="url(#logoGrad)" stroke-width="2.5" stroke-linecap="round"
-          stroke-linejoin="round" />
-        <path d="M17 7H21V11" stroke="url(#logoGrad)" stroke-width="2.5" stroke-linecap="round"
-          stroke-linejoin="round" />
-        <defs>
-          <linearGradient id="logoGrad" x1="3" y1="17" x2="21" y2="7">
-            <stop stop-color="#00f2fe" />
-            <stop offset="1" stop-color="#b5179e" />
-          </linearGradient>
-        </defs>
-      </svg>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <div class="logo-icon" style="width:26px;height:26px;">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="width:26px;height:26px;">
+          <path d="M3 17L9 11L13 15L21 7" stroke="url(#logoGrad)" stroke-width="2.5" stroke-linecap="round"
+            stroke-linejoin="round" />
+          <path d="M17 7H21V11" stroke="url(#logoGrad)" stroke-width="2.5" stroke-linecap="round"
+            stroke-linejoin="round" />
+          <defs>
+            <linearGradient id="logoGrad" x1="3" y1="17" x2="21" y2="7">
+              <stop stop-color="#00f2fe" />
+              <stop offset="1" stop-color="#b5179e" />
+            </linearGradient>
+          </defs>
+        </svg>
+      </div>
+      <span class="logo-text" style="font-size:18px;font-weight:700;">Crypto Signal Lab</span>
+      <span class="logo-pro" style="font-size:9px;padding:1px 6px;">PRO</span>
     </div>
-    <span class="logo-text">Crypto Signal Lab</span>
-    <span class="logo-pro">PRO</span>
-    <a href="/mobile/" style="margin-left:12px;padding:3px 10px;border:1px solid var(--blue);border-radius:5px;color:var(--blue);font-size:10px;font-weight:600;text-decoration:none;">Mobile</a>
+    <a href="/mobile/" style="padding:3px 10px;border:1px solid var(--blue);border-radius:5px;color:var(--blue);font-size:10px;font-weight:600;text-decoration:none;">Mobile</a>
   </h1>
   <!-- Market Overview Bar -->
   <div id="marketHeader" style="display:none;">
