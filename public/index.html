@@ -5629,6 +5629,17 @@
     </div>
 
     <div id="tab-trading" class="tab-pane active">
+    <div id="latestOrders" style="margin-bottom: 14px;">
+      <div class="orders-header">
+        <h3>Latest Orders</h3>
+        <div class="search-group"><button class="filter-open-btn" id="filterOpenBtn"
+            onclick="toggleOpenFilter()">Open</button><input type="text" id="orderSearch"
+            placeholder="Search Order ID..." autocomplete="off" autocorrect="off" autocapitalize="off"
+            spellcheck="false"><button class="search-clear-btn" id="orderSearchClear"
+            onclick="clearOrderSearch()">Clear</button></div>
+      </div>
+      <div class="orders-scroll"></div>
+    </div>
     <div class="main-row">
       <div class="main-left">
         <div id="balancePanel">
@@ -5933,17 +5944,6 @@
           autocorrect="off" spellcheck="false">
         <div id="chat"></div>
       </div>
-    </div>
-    <div id="latestOrders" style="margin-top: 14px;">
-      <div class="orders-header">
-        <h3>Latest Orders</h3>
-        <div class="search-group"><button class="filter-open-btn" id="filterOpenBtn"
-            onclick="toggleOpenFilter()">Open</button><input type="text" id="orderSearch"
-            placeholder="Search Order ID..." autocomplete="off" autocorrect="off" autocapitalize="off"
-            spellcheck="false"><button class="search-clear-btn" id="orderSearchClear"
-            onclick="clearOrderSearch()">Clear</button></div>
-      </div>
-      <div class="orders-scroll"></div>
     </div>
     </div><!-- /tab-trading -->
 
