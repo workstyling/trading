@@ -5156,6 +5156,10 @@
       font-family: var(--font-display) !important;
     }
 
+    body {
+      padding-top: 0 !important;
+    }
+
     body > h1 {
       display: flex !important;
       align-items: center !important;
@@ -5165,7 +5169,7 @@
       backdrop-filter: blur(24px) !important;
       -webkit-backdrop-filter: blur(24px) !important;
       border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
-      margin: 0 0 16px 0 !important;
+      margin: 0 0 24px 0 !important;
       position: sticky !important;
       top: 0 !important;
       z-index: 1000 !important;
@@ -5193,7 +5197,8 @@
     #profitPanel,
     #holdingsPanel,
     #telegramPanel,
-    #activeTrackersPanel {
+    #activeTrackersPanel,
+    #botPanel {
       backdrop-filter: blur(16px);
       -webkit-backdrop-filter: blur(16px);
       border: 1px solid rgba(255, 255, 255, 0.05) !important;
@@ -5212,7 +5217,8 @@
       border-radius: var(--r2) var(--r2) 0 0;
     }
     #buyPanel::before,
-    #holdingsPanel::before {
+    #holdingsPanel::before,
+    #botPanel::before {
       content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
       background: linear-gradient(90deg, var(--blue) 0%, transparent 60%);
       border-radius: var(--r2) var(--r2) 0 0;
@@ -5233,7 +5239,7 @@
     }
 
     /* Input upgrades */
-    input[type="text"], input[type="number"], .settings-input, .buy-coin-input, .buy-size-input, .limit-price-input, .at-coin-input, .at-usd-input, .mt-card-usd-input, #query {
+    input[type="text"], input[type="number"], .settings-input, .buy-coin-input, .buy-size-input, .limit-price-input, .at-coin-input, .at-usd-input, .mt-card-usd-input, #query, .buy-usd-field, .bp-inp {
       font-family: 'JetBrains Mono', monospace !important;
       border: 1px solid rgba(255, 255, 255, 0.08) !important;
       border-radius: var(--r1) !important;
@@ -5241,25 +5247,39 @@
       color: var(--t0) !important;
       transition: all 0.2s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
     }
+    .buy-usd-field {
+      color: var(--green) !important;
+    }
 
-    input[type="text"]:focus, input[type="number"]:focus, .settings-input:focus, .buy-coin-input:focus, .buy-size-input:focus, .limit-price-input:focus, .at-coin-input:focus, .at-usd-input:focus, .mt-card-usd-input:focus, #query:focus {
+    input[type="text"]:focus, input[type="number"]:focus, .settings-input:focus, .buy-coin-input:focus, .buy-size-input:focus, .limit-price-input:focus, .at-coin-input:focus, .at-usd-input:focus, .mt-card-usd-input:focus, #query:focus, .buy-usd-field:focus, .bp-inp:focus {
       border-color: var(--blue) !important;
       box-shadow: 0 0 12px rgba(0, 242, 254, 0.35), inset 0 1px 2px rgba(0, 0, 0, 0.2) !important;
       background: rgba(255, 255, 255, 0.05) !important;
       outline: none;
     }
 
-    input[type="text"]:hover, input[type="number"]:hover, .settings-input:hover, .buy-coin-input:hover, .buy-size-input:hover, .limit-price-input:hover, .at-coin-input:hover, .at-usd-input:hover, .mt-card-usd-input:hover {
+    input[type="text"]:hover, input[type="number"]:hover, .settings-input:hover, .buy-coin-input:hover, .buy-size-input:hover, .limit-price-input:hover, .at-coin-input:hover, .at-usd-input:hover, .mt-card-usd-input:hover, .buy-usd-field:hover, .bp-inp:hover {
       border-color: rgba(0, 242, 254, 0.2) !important;
     }
 
+    .buy-input-group {
+      background: rgba(255, 255, 255, 0.02) !important;
+      border: 1px solid rgba(255, 255, 255, 0.08) !important;
+      border-radius: var(--r1) !important;
+      transition: all 0.2s ease !important;
+    }
+    .buy-input-group:focus-within {
+      border-color: var(--blue) !important;
+      box-shadow: 0 0 10px rgba(0, 242, 254, 0.25) !important;
+    }
+
     /* Interactive button states with scale on click */
-    button, .btn, .buy-btn, .sell-btn, .buy-limit-btn, .select-coin-btn, .tg-refresh-btn, .telegram-btn, .modal-btn, .sell-target-btn, .sell-ask-btn, .cancel-order-btn, .mt-toggle-btn, .mt-buy-btn, .tab-btn {
+    button, .btn, .buy-btn, .sell-btn, .buy-limit-btn, .select-coin-btn, .tg-refresh-btn, .telegram-btn, .modal-btn, .sell-target-btn, .sell-ask-btn, .cancel-order-btn, .mt-toggle-btn, .mt-buy-btn, .tab-btn, .bp-btn, .buy-input-btn {
       transition: all 0.2s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
       cursor: pointer;
     }
 
-    button:active, .btn:active, .buy-btn:active, .sell-btn:active, .buy-limit-btn:active, .select-coin-btn:active, .tg-refresh-btn:active, .telegram-btn:active, .modal-btn:active, .sell-target-btn:active, .sell-ask-btn:active, .cancel-order-btn:active, .mt-toggle-btn:active, .mt-buy-btn:active, .tab-btn:active {
+    button:active, .btn:active, .buy-btn:active, .sell-btn:active, .buy-limit-btn:active, .select-coin-btn:active, .tg-refresh-btn:active, .telegram-btn:active, .modal-btn:active, .sell-target-btn:active, .sell-ask-btn:active, .cancel-order-btn:active, .mt-toggle-btn:active, .mt-buy-btn:active, .tab-btn:active, .bp-btn:active, .buy-input-btn:active {
       transform: scale(0.96) !important;
     }
 
@@ -5326,6 +5346,7 @@
       letter-spacing: 0.3px !important;
       cursor: pointer;
       transition: all 0.2s ease !important;
+      position: relative;
     }
     
     .tab-btn:hover {
@@ -5338,20 +5359,36 @@
       color: var(--blue) !important;
       box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 0 0 1px rgba(0, 242, 254, 0.15) !important;
     }
+    .tab-btn.active::after {
+      content: '';
+      position: absolute;
+      bottom: -6px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 16px;
+      height: 2px;
+      background: var(--blue);
+      box-shadow: 0 0 8px var(--blue);
+      border-radius: 2px;
+    }
 
     /* Tracker layout polish */
     .multi-tracker-card {
       border: 1px solid rgba(255, 255, 255, 0.05) !important;
-      transition: all 0.25s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
+      transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
     }
     .multi-tracker-card:hover {
       border-color: rgba(0, 242, 254, 0.2) !important;
       box-shadow: 0 12px 24px rgba(0, 0, 0, 0.4) !important;
       transform: translateY(-2px);
     }
+    
+    @keyframes border-glow-blue {
+      0%, 100% { border-color: rgba(0, 242, 254, 0.3) !important; box-shadow: 0 0 12px rgba(0, 242, 254, 0.2) !important; }
+      50% { border-color: var(--blue) !important; box-shadow: 0 0 20px rgba(0, 242, 254, 0.45) !important; }
+    }
     .multi-tracker-card.selected-card {
-      border-color: var(--blue) !important;
-      box-shadow: 0 0 18px rgba(0, 242, 254, 0.3) !important;
+      animation: border-glow-blue 3s infinite ease-in-out !important;
     }
 
     .mt-highlight-card {
@@ -5399,6 +5436,25 @@
       background: rgba(255, 255, 255, 0.04) !important;
     }
 
+    .orders-table td a, .otbl td a {
+      color: var(--blue) !important;
+      text-decoration: none !important;
+      font-weight: 600 !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      gap: 3px !important;
+      transition: all 0.2s ease !important;
+    }
+    .orders-table td a:hover, .otbl td a:hover {
+      color: #fff !important;
+      text-shadow: 0 0 8px rgba(0, 242, 254, 0.6) !important;
+    }
+    .orders-table td a::after, .otbl td a::after {
+      content: '↗';
+      font-size: 10px !important;
+      opacity: 0.7 !important;
+    }
+
     .status-open {
       color: var(--yellow) !important;
       background: rgba(255, 214, 10, 0.08) !important;
@@ -5431,6 +5487,77 @@
       font-weight: 600 !important;
       text-transform: uppercase !important;
       display: inline-block !important;
+    }
+
+    /* Trading Bot visual polish */
+    #botPanel {
+      font-family: var(--font-body) !important;
+    }
+    .bp-head-title {
+      font-family: var(--font-display) !important;
+      font-weight: 700 !important;
+    }
+    .bp-badge {
+      border-radius: 4px !important;
+      padding: 3px 8px !important;
+      font-size: 11px !important;
+      font-weight: 700 !important;
+      text-transform: uppercase !important;
+      letter-spacing: 0.03em !important;
+      display: inline-block !important;
+      border: 1px solid transparent !important;
+      font-family: var(--font-display) !important;
+    }
+    .bpb-stopped {
+      background: rgba(255, 255, 255, 0.02) !important;
+      color: var(--t2) !important;
+      border-color: rgba(255, 255, 255, 0.05) !important;
+    }
+    .bpb-scanning {
+      background: rgba(255, 214, 10, 0.08) !important;
+      color: var(--yellow) !important;
+      border-color: rgba(255, 214, 10, 0.15) !important;
+    }
+    .bpb-buying {
+      background: rgba(0, 230, 118, 0.08) !important;
+      color: var(--green) !important;
+      border-color: rgba(0, 230, 118, 0.15) !important;
+    }
+    .bpb-holding {
+      background: rgba(0, 242, 254, 0.08) !important;
+      color: var(--blue) !important;
+      border-color: rgba(0, 242, 254, 0.15) !important;
+    }
+    .bpb-selling {
+      background: rgba(255, 46, 147, 0.08) !important;
+      color: var(--red) !important;
+      border-color: rgba(255, 46, 147, 0.15) !important;
+    }
+    .bp-btn {
+      font-family: var(--font-display) !important;
+      font-weight: 700 !important;
+      border-radius: var(--r1) !important;
+      height: 26px !important;
+    }
+    .bp-go {
+      background: linear-gradient(135deg, var(--green), #00b0ff) !important;
+      color: #050508 !important;
+      border: none !important;
+      box-shadow: 0 2px 8px rgba(0, 230, 118, 0.2) !important;
+    }
+    .bp-go:hover {
+      box-shadow: 0 4px 12px rgba(0, 230, 118, 0.4) !important;
+      filter: brightness(1.1) !important;
+    }
+    .bp-stp {
+      background: rgba(255, 46, 147, 0.05) !important;
+      color: var(--red) !important;
+      border: 1px solid rgba(255, 46, 147, 0.25) !important;
+    }
+    .bp-stp:hover {
+      background: var(--red) !important;
+      color: #fff !important;
+      box-shadow: 0 0 10px rgba(255, 46, 147, 0.3) !important;
     }
   </style>
 </head>

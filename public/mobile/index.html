@@ -1144,6 +1144,51 @@
       background: linear-gradient(90deg, var(--yellow) 0%, transparent 60%);
       border-radius: var(--r2) var(--r2) 0 0;
     }
+
+    /* Active Tab Underline Glow on Mobile */
+    .tab {
+      position: relative !important;
+    }
+    .tab.active::after {
+      content: '';
+      position: absolute;
+      bottom: 0px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 14px;
+      height: 2px;
+      background: var(--blue);
+      box-shadow: 0 0 6px var(--blue);
+      border-radius: 2px;
+    }
+
+    /* Slick TradingView Links for Mobile Tables */
+    .otbl td a {
+      color: var(--blue) !important;
+      text-decoration: none !important;
+      font-weight: 600 !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      gap: 3px !important;
+      transition: all 0.2s ease !important;
+    }
+    .otbl td a:hover {
+      color: #fff !important;
+      text-shadow: 0 0 8px rgba(0, 242, 254, 0.6) !important;
+    }
+    .otbl td a::after {
+      content: '↗';
+      font-size: 9px !important;
+      opacity: 0.7 !important;
+    }
+
+    /* Glowing USD amount text */
+    #amtUsd {
+      color: var(--green) !important;
+      text-shadow: 0 0 8px rgba(0, 230, 118, 0.3) !important;
+      font-weight: 700 !important;
+      font-family: 'JetBrains Mono', monospace !important;
+    }
   </style>
 </head>
 <body>
