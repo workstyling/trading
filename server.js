@@ -1438,6 +1438,8 @@ async function fetchTopRecoveries() {
   const losers = withMonth.filter(g => g.pct30d < -10);
 
   // Step 5: 1h RSI and 1h EMA alignment for losers
+  const prevScores = new Map((topRecoveriesCache.data || []).map(g => [g.coin, g.score]));
+
   await Promise.all(losers.map(async g => {
     try {
       const r = await fetch(`${CB}/products/${g.coin}-USD/candles?granularity=3600`);
@@ -1509,7 +1511,7 @@ async function fetchTopRecoveries() {
 
         g.signals = signals;
 
-        g.score = calcDetailedReversalScore({
+        const rawScore = calcDetailedReversalScore({
           pct24h: g.pct24h,
           pct30d: g.pct30d,
           volUsd: g.volUsd,
@@ -1524,6 +1526,13 @@ async function fetchTopRecoveries() {
           wasOversold,
           aboveEma50
         });
+
+        const prevScore = prevScores.get(g.coin);
+        if (prevScore !== undefined) {
+          g.score = Math.round(prevScore * 0.65 + rawScore * 0.35);
+        } else {
+          g.score = rawScore;
+        }
       }
     } catch (e) {
       console.error(`[fetchTopRecoveries] error for ${g.coin}:`, e.message);

@@ -11231,12 +11231,17 @@ Requirements:
       } catch {}
     }
 
+    let tgPaused = false;
     function startTgCountdown() {
       clearInterval(tgTimer);
       tgNextIn = TG_INTERVAL;
       tgTimer = setInterval(() => {
-        tgNextIn--;
         const el = document.getElementById('tgCountdown');
+        if (tgPaused) {
+          if (el) el.textContent = 'paused';
+          return;
+        }
+        tgNextIn--;
         if (el) el.textContent = tgNextIn + 's';
         if (tgNextIn <= 0) {
           tgNextIn = TG_INTERVAL;
@@ -11313,12 +11318,17 @@ Requirements:
       } catch {}
     }
 
+    let trPaused = false;
     function startTrCountdown() {
       clearInterval(trTimer);
       trNextIn = TR_INTERVAL;
       trTimer = setInterval(() => {
-        trNextIn--;
         const el = document.getElementById('trCountdown');
+        if (trPaused) {
+          if (el) el.textContent = 'paused';
+          return;
+        }
+        trNextIn--;
         if (el) el.textContent = trNextIn + 's';
         if (trNextIn <= 0) {
           trNextIn = TR_INTERVAL;
@@ -11342,6 +11352,12 @@ Requirements:
 
     loadTopRecoveries();
     startTrCountdown();
+
+    // Hover-pause listeners to freeze countdowns on table interaction
+    document.getElementById('tgBody')?.addEventListener('mouseenter', () => { tgPaused = true; });
+    document.getElementById('tgBody')?.addEventListener('mouseleave', () => { tgPaused = false; });
+    document.getElementById('trBody')?.addEventListener('mouseenter', () => { trPaused = true; });
+    document.getElementById('trBody')?.addEventListener('mouseleave', () => { trPaused = false; });
 
     // ── Holdings ──────────────────────────────────────
     async function loadHoldings() {
