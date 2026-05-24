@@ -2009,13 +2009,14 @@
       </table>`;
     }
 
-    async function loadTopGainers() {
+    async function loadTopGainers(force = false) {
       const body = document.getElementById('tgBody');
       if (body) {
         body.innerHTML = `<div class="tg-loader-container"><div class="tg-spinner"></div><div>Fetching gainers...</div></div>`;
       }
       try {
-        const r = await fetch('/api/top-gainers');
+        const url = force ? '/api/top-gainers?force=true' : '/api/top-gainers';
+        const r = await fetch(url);
         const d = await r.json();
         if (d.success) renderTopGainers(d.gainers);
       } catch {}
@@ -2047,7 +2048,7 @@
         void btn.offsetWidth;
         btn.classList.add('spinning');
       }
-      loadTopGainers();
+      loadTopGainers(true);
       tgNextIn = TG_INTERVAL;
       const el = document.getElementById('tgCountdown');
       if (el) el.textContent = tgNextIn + 's';
@@ -2100,13 +2101,14 @@
       </table>`;
     }
 
-    async function loadTopRecoveries() {
+    async function loadTopRecoveries(force = false) {
       const body = document.getElementById('trBody');
       if (body) {
         body.innerHTML = `<div class="tg-loader-container"><div class="tg-spinner"></div><div>Fetching recoveries...</div></div>`;
       }
       try {
-        const r = await fetch('/api/top-recoveries');
+        const url = force ? '/api/top-recoveries?force=true' : '/api/top-recoveries';
+        const r = await fetch(url);
         const d = await r.json();
         if (d.success) renderTopRecoveries(d.recoveries);
       } catch {}
@@ -2138,7 +2140,7 @@
         void btn.offsetWidth;
         btn.classList.add('spinning');
       }
-      loadTopRecoveries();
+      loadTopRecoveries(true);
       trNextIn = TR_INTERVAL;
       const el = document.getElementById('trCountdown');
       if (el) el.textContent = trNextIn + 's';

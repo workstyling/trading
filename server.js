@@ -1256,7 +1256,8 @@ async function fetchTopGainers() {
 app.get('/api/top-gainers', async (req, res) => {
   try {
     const now = Date.now();
-    if (now - topGainersCache.fetchedAt < TOP_GAINERS_TTL && topGainersCache.data.length) {
+    const force = req.query.force === 'true';
+    if (!force && now - topGainersCache.fetchedAt < TOP_GAINERS_TTL && topGainersCache.data.length) {
       return res.json({ success: true, gainers: topGainersCache.data, fetchedAt: topGainersCache.fetchedAt, cached: true });
     }
     const gainers = await fetchTopGainers();
@@ -1555,7 +1556,8 @@ async function fetchTopRecoveries() {
 app.get('/api/top-recoveries', async (req, res) => {
   try {
     const now = Date.now();
-    if (now - topRecoveriesCache.fetchedAt < TOP_RECOVERIES_TTL && topRecoveriesCache.data.length) {
+    const force = req.query.force === 'true';
+    if (!force && now - topRecoveriesCache.fetchedAt < TOP_RECOVERIES_TTL && topRecoveriesCache.data.length) {
       return res.json({ success: true, recoveries: topRecoveriesCache.data, fetchedAt: topRecoveriesCache.fetchedAt, cached: true });
     }
     const recoveries = await fetchTopRecoveries();
