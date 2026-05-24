@@ -1288,7 +1288,13 @@ function calcDetailedReversalScore(params) {
     freshEmaCross,
     freshEma50Breakout,
     wasOversold,
-    aboveEma50
+    aboveEma50,
+    // New parameters:
+    buyPressureRatio,
+    isBullStructure,
+    makingHigherLows,
+    emaRibbonAlign,
+    isRsiRisingBull
   } = params;
 
   let s = 30; // baseline score
@@ -1359,6 +1365,20 @@ function calcDetailedReversalScore(params) {
   else if (volUsd < 250_000) s -= 20;
   else if (volUsd < 500_000) s -= 10;
   else if (volUsd > 1_000_000) s += 15; // Liquid, safer entry
+
+  // 10. Trend Alignment (Ribbon)
+  if (emaRibbonAlign) s += 10;
+
+  // 11. Market Structure
+  if (isBullStructure) s += 12;
+  else if (makingHigherLows) s += 6;
+
+  // 12. Buying Volume Pressure
+  if (buyPressureRatio > 1.35) s += 10;
+  else if (buyPressureRatio > 1.2) s += 5;
+
+  // 13. RSI Momentum
+  if (isRsiRisingBull) s += 6;
 
   return Math.max(0, Math.min(100, Math.round(s)));
 }
@@ -1495,6 +1515,53 @@ async function fetchTopRecoveries() {
         }
         wasOversold = rsis.some(r => r < 30);
 
+        // Up/down hour buying volume pressure
+        let buyPressureRatio = 1.0;
+        let upCount = 0;
+        if (reversedCandles.length >= 24) {
+          const last24 = reversedCandles.slice(-24);
+          let volUp = 0, countUp = 0;
+          let volDown = 0, countDown = 0;
+          last24.forEach(c => {
+            const open = c[3], close = c[4], vol = c[5];
+            if (close > open) {
+              volUp += vol;
+              countUp++;
+            } else {
+              volDown += vol;
+              countDown++;
+            }
+          });
+          const avgVolUp = countUp > 0 ? (volUp / countUp) : 0;
+          const avgVolDown = countDown > 0 ? (volDown / countDown) : 0;
+          buyPressureRatio = avgVolDown > 0 ? (avgVolUp / avgVolDown) : 1.0;
+          upCount = countUp;
+        }
+
+        // Market structure check (last 24h)
+        let isBullStructure = false;
+        let makingHigherLows = false;
+        if (reversedCandles.length >= 24) {
+          const last24 = reversedCandles.slice(-24);
+          const block1 = last24.slice(0, 12);
+          const block2 = last24.slice(12, 24);
+          const low1 = Math.min(...block1.map(c => c[1])); // low price
+          const low2 = Math.min(...block2.map(c => c[1]));
+          const high1 = Math.max(...block1.map(c => c[2])); // high price
+          const high2 = Math.max(...block2.map(c => c[2]));
+
+          makingHigherLows = low2 > low1;
+          isBullStructure = makingHigherLows && (high2 > high1);
+        }
+
+        // EMA Ribbon Alignment
+        const emaRibbonAlign = (ema9 !== null && ema21 !== null && ema50 !== null)
+          ? (ema9 > ema21 && ema21 > ema50) : false;
+
+        // RSI Momentum
+        const prevRsi = calcRSI(closes.slice(0, -1));
+        const isRsiRisingBull = (g.rsi > 50 && g.rsi > prevRsi);
+
         // Build signals array
         const signals = [];
         if (g.pct30d < -30) signals.push("Deep Discount");
@@ -1509,6 +1576,14 @@ async function fetchTopRecoveries() {
         else if (aboveEma50) signals.push("Above EMA50");
 
         if (wasOversold && g.rsi >= 32 && g.rsi <= 55) signals.push("Oversold Bounce");
+
+        // New indicators added to signals:
+        if (emaRibbonAlign) signals.push("Bull Ribbon");
+        if (isBullStructure) signals.push("Bull Structure");
+        else if (makingHigherLows) signals.push("Higher Lows");
+        
+        if (buyPressureRatio > 1.25 && upCount >= 6) signals.push("Buying Pressure");
+        if (isRsiRisingBull) signals.push("RSI Momentum");
 
         g.signals = signals;
 
@@ -1525,7 +1600,12 @@ async function fetchTopRecoveries() {
           freshEmaCross,
           freshEma50Breakout,
           wasOversold,
-          aboveEma50
+          aboveEma50,
+          buyPressureRatio,
+          isBullStructure,
+          makingHigherLows,
+          emaRibbonAlign,
+          isRsiRisingBull
         });
 
         const prevScore = prevScores.get(g.coin);
