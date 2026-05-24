@@ -1054,7 +1054,7 @@
       overflow-y: auto;
       overflow-x: auto;
       overscroll-behavior: contain;
-      scroll-padding-top: 25px;
+      scroll-padding-top: 30px;
     }
 
     #latestOrders .orders-scroll {
@@ -11106,7 +11106,11 @@ Requirements:
         }
         rows.forEach(r => r.classList.remove('active-row'));
         rows[currentIndex].classList.add('active-row');
-        rows[currentIndex].scrollIntoView({ block: 'nearest' });
+        if (currentIndex === 0) {
+          container.scrollTop = 0;
+        } else {
+          rows[currentIndex].scrollIntoView({ block: 'nearest' });
+        }
         window._activeOrderId = rows[currentIndex].dataset.orderId;
       }
 
