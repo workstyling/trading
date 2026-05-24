@@ -11283,12 +11283,14 @@ Requirements:
         else               { sigLabel = '◌ Weak';   sigColor = '#f97316'; }
         const sigTitle = `Score: ${sc}/100 · RSI: ${rsi}`;
         const sign24 = g.pct24h >= 0 ? '+' : '';
+        const signalsText = g.signals && g.signals.length ? g.signals.join(' • ') : `RSI ${rsi}`;
+        const volStyle = g.volUsd >= 1000000 ? 'style="color: var(--green); font-weight: 600;"' : '';
         return `<tr onclick="validateAndSelectCoin('${g.coin}')">
           <td><span class="tg-coin">${g.coin}</span> <button class="tg-track-btn" onclick="event.stopPropagation(); MultiTracker.add('${g.coin}')" title="Track ${g.coin} in real-time">⚡</button><br><span style="color:var(--t2);font-size:10px;">$${price}</span></td>
           <td class="tg-pct neg">${g.pct30d.toFixed(1)}%</td>
           <td class="tg-pct">${sign24}${g.pct24h.toFixed(1)}%</td>
-          <td class="tg-vol">$${fmtTgVol(g.volUsd)}</td>
-          <td title="${sigTitle}" style="color:${sigColor};font-weight:600;font-size:10px;white-space:nowrap;">${sigLabel}<br><span style="color:var(--t2);font-weight:400;">RSI ${rsi}</span></td>
+          <td class="tg-vol" ${volStyle}>$${fmtTgVol(g.volUsd)}</td>
+          <td title="${sigTitle}" style="color:${sigColor};font-weight:600;font-size:10px;white-space:nowrap;">${sigLabel}<br><span style="color:var(--t2);font-weight:400;font-size:9px;">${signalsText}</span></td>
         </tr>`;
       }).join('');
       body.innerHTML = `<table class="tg-table">

@@ -1273,55 +1273,91 @@ app.get('/api/top-gainers', async (req, res) => {
 let topRecoveriesCache = { data: [], fetchedAt: 0 };
 const TOP_RECOVERIES_TTL = 60_000;
 
-function calcDetailedReversalScore(pct24h, pct30d, volUsd, rsi, distFromBottom, ema10Cross, volIncreaseDaily, emaAligned1h) {
-  let s = 30; // lower baseline
+function calcDetailedReversalScore(params) {
+  const {
+    pct24h,
+    pct30d,
+    volUsd,
+    rsi,
+    distFromBottom,
+    ema10Cross,
+    volIncreaseDaily,
+    emaAligned1h,
+    volRatio,
+    freshEmaCross,
+    freshEma50Breakout,
+    wasOversold,
+    aboveEma50
+  } = params;
 
-  // 1. Drop depth
+  let s = 30; // baseline score
+
+  // 1. Drop depth (30d)
   if (pct30d < -45) s += 15;
-  else if (pct30d < -25) s += 20;
+  else if (pct30d < -25) s += 20; // Sweet spot for recovery
   else if (pct30d < -12) s += 10;
   else s -= 15;
 
   // 2. 24h change (momentum)
-  if (pct24h >= 2.0 && pct24h <= 8.0) s += 15;
-  else if (pct24h >= 0.5 && pct24h < 2.0) s += 8;
-  else if (pct24h > 8.0) s += 5; // risk of chasing a breakout
-  else s -= 15;
+  if (pct24h >= 2.0 && pct24h <= 10.0) s += 18; // Strong but healthy bounce
+  else if (pct24h >= 0.5 && pct24h < 2.0) s += 8;  // Early recovery sign
+  else if (pct24h > 10.0 && pct24h <= 20.0) s += 12; // High momentum
+  else if (pct24h > 20.0) s += 2;  // Risk of chasing
+  else s -= 15; // flat or negative 24h is not reversing
 
   // 3. Distance from 30d Bottom
   if (distFromBottom >= 2.0 && distFromBottom <= 15.0) {
-    s += 12; // Bouncing from bottom
+    s += 15; // Perfect bounce range
   } else if (distFromBottom > 15.0 && distFromBottom <= 25.0) {
-    s += 6;
+    s += 8;
   } else if (distFromBottom > 25.0) {
-    s -= 15; // Recovered too much already
+    s -= 15; // Extended recovery, potential pullback
   } else {
-    s -= 5;  // Sitting at absolute bottom (no sign of bounce)
+    s -= 5;  // At absolute low, no bounce yet
   }
 
   // 4. Daily Trend Reversal
-  if (ema10Cross) s += 15;
+  if (ema10Cross) s += 10;
+  else s -= 3;
+
+  // 5. Daily Volume surge
+  if (volIncreaseDaily > 1.4) s += 10;
+  else if (volIncreaseDaily > 1.0) s += 3;
   else s -= 5;
 
-  // 5. Volume Accumulation (Daily Volume Surge)
-  if (volIncreaseDaily > 1.4) s += 15;
-  else if (volIncreaseDaily > 1.0) s += 5;
-  else s -= 10;
+  // 6. Hourly Trend & Crossovers
+  if (emaAligned1h) s += 12;
+  else s -= 8;
 
-  // 6. 1h RSI
-  if (rsi >= 35 && rsi <= 55) s += 12;
-  else if (rsi >= 55 && rsi <= 68) s += 4;
-  else if (rsi < 35) s += 6;
-  else s -= 12;
+  if (freshEmaCross) s += 6; // Bonus for fresh EMA9/21 cross
 
-  // 7. 1h Trend Alignment
-  if (emaAligned1h) s += 8;
+  if (aboveEma50) s += 10;
   else s -= 5;
 
-  // 8. Liquidity
-  if (volUsd < 150_000) s -= 25;
+  if (freshEma50Breakout) s += 5; // Bonus for fresh breakout above 50h EMA
+
+  // 7. Hourly Volume surge
+  if (volRatio > 1.8) s += 15;
+  else if (volRatio > 1.2) s += 8;
+  else if (volRatio < 0.8) s -= 10;
+
+  // 8. Hourly RSI state
+  if (rsi >= 35 && rsi <= 55) {
+    s += 10;
+    if (wasOversold && rsi >= 32) s += 8; // Oversold bounce bonus
+  } else if (rsi > 55 && rsi <= 68) {
+    s += 4;
+  } else if (rsi > 68) {
+    s -= 12; // Overbought locally
+  } else if (rsi < 35) {
+    s += 4; // oversold, possible value, but risky
+  }
+
+  // 9. Liquidity (24H Vol)
+  if (volUsd < 150_000) s -= 35;
+  else if (volUsd < 250_000) s -= 20;
   else if (volUsd < 500_000) s -= 10;
-  else if (volUsd > 3_000_000) s += 10;
+  else if (volUsd > 1_000_000) s += 15; // Liquid, safer entry
 
   return Math.max(0, Math.min(100, Math.round(s)));
 }
@@ -1356,7 +1392,7 @@ async function fetchTopRecoveries() {
 
   // Step 2: keep only candidates that look like reversals (modest 24h gain, decent vol)
   const candidates = stats24
-    .filter(s => s.pct24h >= 0.3 && s.pct24h <= 15 && s.volUsd > 100_000)
+    .filter(s => s.pct24h >= 0.3 && s.pct24h <= 25 && s.volUsd > 100_000)
     .sort((a, b) => b.volUsd - a.volUsd)
     .slice(0, 80);
 
@@ -1406,22 +1442,96 @@ async function fetchTopRecoveries() {
     try {
       const r = await fetch(`${CB}/products/${g.coin}-USD/candles?granularity=3600`);
       const candles = await r.json();
-      if (!Array.isArray(candles) || candles.length < 30) {
+      if (!Array.isArray(candles) || candles.length < 55) {
         g.rsi = 50;
         g.emaAligned1h = false;
+        g.signals = [];
+        g.score = 30;
       } else {
-        const closes = candles.slice(0, 50).reverse().map(c => c[4]);
+        const slice100 = candles.slice(0, 100);
+        const reversedCandles = slice100.reverse();
+        const closes = reversedCandles.map(c => c[4]);
+        const vols = reversedCandles.map(c => c[5]);
+
         g.rsi = calcRSI(closes);
 
         const ema9 = calcEMA(closes, 9);
         const ema21 = calcEMA(closes, 21);
+        const ema50 = calcEMA(closes, 50);
+
         g.emaAligned1h = (ema9 !== null && ema21 !== null) ? (ema9 > ema21) : false;
+
+        const prevEma9 = calcEMA(closes.slice(0, -1), 9);
+        const prevEma21 = calcEMA(closes.slice(0, -1), 21);
+        const prevEma50 = calcEMA(closes.slice(0, -1), 50);
+
+        const closeNow = closes[closes.length - 1];
+        const prevClose = closes[closes.length - 2];
+
+        const freshEmaCross = (ema9 !== null && ema21 !== null && prevEma9 !== null && prevEma21 !== null)
+          ? (prevEma9 <= prevEma21 && ema9 > ema21) : false;
+
+        const aboveEma50 = (ema50 !== null) ? (closeNow > ema50) : false;
+        const freshEma50Breakout = (ema50 !== null && prevEma50 !== null)
+          ? (prevClose <= prevEma50 && closeNow > ema50) : false;
+
+        // Vol ratio (last 4h vs hist)
+        let volRatio = 1.0;
+        if (vols.length >= 10) {
+          const volLast4 = vols.slice(-4).reduce((a, b) => a + b, 0) / 4;
+          const histVols = vols.slice(0, vols.length - 4);
+          const volPrevAvg = histVols.reduce((a, b) => a + b, 0) / histVols.length;
+          volRatio = volPrevAvg > 0 ? (volLast4 / volPrevAvg) : 1.0;
+        }
+
+        // Was oversold in last 24 hours
+        let wasOversold = false;
+        const rsis = [];
+        for (let i = Math.max(15, closes.length - 24); i <= closes.length; i++) {
+          rsis.push(calcRSI(closes.slice(0, i)));
+        }
+        wasOversold = rsis.some(r => r < 30);
+
+        // Build signals array
+        const signals = [];
+        if (g.pct30d < -30) signals.push("Deep Discount");
+        
+        if (volRatio > 1.8) signals.push("Vol Surge");
+        else if (volRatio > 1.2) signals.push("Accumulating");
+
+        if (freshEmaCross) signals.push("EMA Cross");
+        else if (g.emaAligned1h) signals.push("1H Uptrend");
+
+        if (freshEma50Breakout) signals.push("EMA50 Breakout");
+        else if (aboveEma50) signals.push("Above EMA50");
+
+        if (wasOversold && g.rsi >= 32 && g.rsi <= 55) signals.push("Oversold Bounce");
+
+        g.signals = signals;
+
+        g.score = calcDetailedReversalScore({
+          pct24h: g.pct24h,
+          pct30d: g.pct30d,
+          volUsd: g.volUsd,
+          rsi: g.rsi,
+          distFromBottom: g.distFromBottom,
+          ema10Cross: g.ema10Cross,
+          volIncreaseDaily: g.volIncreaseDaily,
+          emaAligned1h: g.emaAligned1h,
+          volRatio,
+          freshEmaCross,
+          freshEma50Breakout,
+          wasOversold,
+          aboveEma50
+        });
       }
-    } catch {
+    } catch (e) {
+      console.error(`[fetchTopRecoveries] error for ${g.coin}:`, e.message);
       g.rsi = 50;
       g.emaAligned1h = false;
+      g.signals = [];
+      g.score = 30;
     }
-    g.score = calcDetailedReversalScore(g.pct24h, g.pct30d, g.volUsd, g.rsi, g.distFromBottom, g.ema10Cross, g.volIncreaseDaily, g.emaAligned1h);
   }));
 
   // Best-to-buy ordering: score → 24h momentum → volume
