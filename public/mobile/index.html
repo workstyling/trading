@@ -2451,6 +2451,9 @@
           t.bid = parseFloat(data.bid);
           t.ask = parseFloat(data.ask);
           t.realPrice = parseFloat(data.price || data.bid);
+          if (data.volume) {
+            t.volume24h = parseFloat(data.volume) * t.realPrice;
+          }
 
           const now = Date.now();
           if (t.realPrice) {
@@ -2465,6 +2468,7 @@
           
           this.calculatePrice(coin);
           this.updateCardPricesUI(coin);
+          this.updateCardStatusUI(coin);
 
           const price30s = this.getHistoricPrice(t.priceHistory, 30);
           const price1m = this.getHistoricPrice(t.priceHistory, 60);
@@ -2490,6 +2494,14 @@
           return closest.price;
         }
         return null;
+      },
+
+      formatVol(v) {
+        if (!v || isNaN(v)) return '—';
+        if (v >= 1e9) return '$' + (v / 1e9).toFixed(2) + 'B';
+        if (v >= 1e6) return '$' + (v / 1e6).toFixed(2) + 'M';
+        if (v >= 1e3) return '$' + (v / 1e3).toFixed(1) + 'K';
+        return '$' + v.toFixed(2);
       },
 
       updateCardRealChangesUI(coin, price30s, price1m) {
@@ -2743,7 +2755,11 @@
         if (!t) return;
         const statusEl = document.getElementById(`mt-status-${coin}`);
         if (statusEl) {
-          statusEl.textContent = t.status || 'Sideways trend';
+          let volText = '';
+          if (t.volume24h) {
+            volText = ' | Vol24: ' + this.formatVol(t.volume24h);
+          }
+          statusEl.textContent = (t.status || 'Sideways trend') + volText;
         }
       },
 
