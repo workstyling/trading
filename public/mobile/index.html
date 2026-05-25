@@ -442,18 +442,22 @@
     }
     .tg-table { width: 100%; border-collapse: collapse; font-size: 12px; }
     .tg-table th {
-      color: var(--t2); font-weight: 500; padding: 4px 4px;
-      text-align: left; border-bottom: 1px solid var(--b0); font-size: 10px;
-      text-transform: uppercase; letter-spacing: .04em;
+      color: var(--t2); font-weight: 600; padding: 6px 4px;
+      text-align: left; border-bottom: 1px solid var(--b1); font-size: 9px;
+      text-transform: uppercase; letter-spacing: .06em;
     }
     .tg-table th:not(:first-child) { text-align: right; }
     .tg-table td {
-      padding: 8px 4px; border-bottom: 1px solid rgba(255,255,255,0.03);
+      padding: 10px 4px; border-bottom: 1px solid rgba(255,255,255,0.03);
       cursor: pointer;
+      vertical-align: middle;
     }
     .tg-table td:not(:first-child) { text-align: right; }
+    .tg-table tr {
+      transition: background 0.15s ease;
+    }
     .tg-table tr:active td { background: rgba(255,255,255,0.06); }
-    .tg-coin { color: var(--blue); font-weight: 700; font-size: 13px; }
+    .tg-coin { color: var(--blue); font-weight: 700; font-size: 13px; font-family: var(--font-display); }
     .tg-price { color: var(--t2); font-size: 10px; font-family: 'JetBrains Mono', monospace; }
     .tg-pct { color: #4ade80; font-weight: 600; font-family: 'JetBrains Mono', monospace; }
     .tg-pct.neg { color: var(--loss); }
@@ -872,15 +876,16 @@
     }
     /* Small table track button */
     .tg-track-btn {
-      padding: 2px 5px;
-      font-size: 10px;
+      padding: 0;
+      width: 20px;
+      height: 20px;
       background: rgba(255, 214, 10, 0.08);
-      border: 1px solid rgba(255, 214, 10, 0.3);
+      border: 1px solid rgba(255, 214, 10, 0.25);
       color: var(--yellow);
-      border-radius: 4px;
+      border-radius: 50%;
       cursor: pointer;
       margin-left: 6px;
-      transition: all 0.15s ease-in-out;
+      transition: all 0.2s ease-in-out;
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -888,9 +893,71 @@
       vertical-align: middle;
     }
     .tg-track-btn:active {
+      transform: scale(0.9);
       background: var(--yellow);
       color: #000;
-      box-shadow: 0 0 8px rgba(255, 214, 10, 0.3);
+      box-shadow: 0 0 10px rgba(255, 214, 10, 0.4);
+    }
+    .tg-track-icon {
+      width: 11px;
+      height: 11px;
+      fill: currentColor;
+    }
+
+    /* Flex wrapper and details for coin column */
+    .tg-coin-cell {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 2px;
+    }
+    .tg-coin-row {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      white-space: nowrap;
+    }
+
+    /* Signal Badges styling for mobile */
+    .tg-signal-badge {
+      display: inline-block;
+      padding: 2px 5px;
+      font-size: 10px;
+      font-weight: 700;
+      border-radius: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      line-height: 1.2;
+      text-align: center;
+      margin-bottom: 2px;
+    }
+    .tg-signal-badge.strong {
+      background: rgba(167, 139, 250, 0.1);
+      border: 1px solid rgba(167, 139, 250, 0.3);
+      color: var(--purple);
+      box-shadow: 0 0 6px rgba(167, 139, 250, 0.1);
+    }
+    .tg-signal-badge.buy {
+      background: rgba(74, 222, 128, 0.1);
+      border: 1px solid rgba(74, 222, 128, 0.3);
+      color: var(--green);
+      box-shadow: 0 0 6px rgba(74, 222, 128, 0.1);
+    }
+    .tg-signal-badge.watch {
+      background: rgba(255, 214, 10, 0.08);
+      border: 1px solid rgba(255, 214, 10, 0.3);
+      color: var(--yellow);
+      box-shadow: 0 0 6px rgba(255, 214, 10, 0.05);
+    }
+    .tg-signal-badge.weak {
+      background: rgba(249, 115, 22, 0.08);
+      border: 1px solid rgba(249, 115, 22, 0.3);
+      color: #f97316;
+    }
+    .tg-signal-badge.skip {
+      background: rgba(248, 113, 113, 0.08);
+      border: 1px solid rgba(248, 113, 113, 0.3);
+      color: var(--red);
     }
 
     /* ═══════════════════════════════════════
@@ -1990,17 +2057,31 @@
         const price = g.price < 0.001 ? g.price.toFixed(6) : g.price < 1 ? g.price.toFixed(4) : g.price < 100 ? g.price.toFixed(3) : g.price.toFixed(2);
         const sc = g.score ?? 50;
         const rsi = g.rsi ?? 50;
-        let sigLabel, sigColor;
-        if (sc >= 68) { sigLabel = '▲ Buy'; sigColor = '#4ade80'; }
-        else if (sc >= 50) { sigLabel = '◎ Watch'; sigColor = '#facc15'; }
-        else if (sc >= 35) { sigLabel = '◌ Weak'; sigColor = '#f97316'; }
-        else { sigLabel = '▼ Skip'; sigColor = '#f87171'; }
+        let sigLabel, badgeCls;
+        if (sc >= 68) { sigLabel = '▲ Buy'; badgeCls = 'buy'; }
+        else if (sc >= 50) { sigLabel = '◎ Watch'; badgeCls = 'watch'; }
+        else if (sc >= 35) { sigLabel = '◌ Weak'; badgeCls = 'weak'; }
+        else { sigLabel = '▼ Skip'; badgeCls = 'skip'; }
         const sigTitle = `Score: ${sc}/100 · RSI: ${rsi}`;
         return `<tr onclick="selectCoinFromGainers('${g.coin}')">
-          <td><span class="tg-coin">${g.coin}</span> <button class="tg-track-btn" onclick="event.stopPropagation(); MultiTracker.add('${g.coin}')" title="Track ${g.coin} in real-time">⚡</button><br><span class="tg-price">$${price}</span></td>
+          <td>
+            <div class="tg-coin-cell">
+              <div class="tg-coin-row">
+                <span class="tg-coin">${g.coin}</span>
+                <button class="tg-track-btn" onclick="event.stopPropagation(); MultiTracker.add('${g.coin}')" title="Track ${g.coin} in real-time">
+                  <svg viewBox="0 0 24 24" class="tg-track-icon"><path d="M13 2L3 14H12L11 22L21 10H12L13 2Z"/></svg>
+                </button>
+              </div>
+              <span class="tg-price">$${price}</span>
+            </div>
+          </td>
           <td class="${pctCls}">${sign}${g.pct.toFixed(1)}%</td>
           <td class="tg-vol">$${fmtTgVol(g.volUsd)}</td>
-          <td title="${sigTitle}" style="color:${sigColor};font-weight:600;font-size:11px;white-space:nowrap;">${sigLabel}<br><span style="color:var(--t2);font-weight:400;font-size:10px;">RSI ${rsi}</span></td>
+          <td title="${sigTitle}">
+            <span class="tg-signal-badge ${badgeCls}">${sigLabel}</span>
+            <br>
+            <span style="color:var(--t2);font-weight:400;font-size:10px;">RSI ${rsi}</span>
+          </td>
         </tr>`;
       }).join('');
       body.innerHTML = `<table class="tg-table">
@@ -2078,21 +2159,35 @@
         const price = p < 0.001 ? p.toFixed(6) : p < 1 ? p.toFixed(4) : p < 100 ? p.toFixed(3) : p.toFixed(2);
         const sc = g.score ?? 50;
         const rsi = g.rsi ?? 50;
-        let sigLabel, sigColor;
-        if (sc >= 80)      { sigLabel = '★ Strong'; sigColor = '#c084fc'; }
-        else if (sc >= 65) { sigLabel = '▲ Buy';    sigColor = '#4ade80'; }
-        else if (sc >= 50) { sigLabel = '◎ Watch';  sigColor = '#facc15'; }
-        else               { sigLabel = '◌ Weak';   sigColor = '#f97316'; }
+        let sigLabel, badgeCls;
+        if (sc >= 80)      { sigLabel = '★ Strong'; badgeCls = 'strong'; }
+        else if (sc >= 65) { sigLabel = '▲ Buy';    badgeCls = 'buy'; }
+        else if (sc >= 50) { sigLabel = '◎ Watch';  badgeCls = 'watch'; }
+        else               { sigLabel = '◌ Weak';   badgeCls = 'weak'; }
         const sigTitle = `Score: ${sc}/100 · RSI: ${rsi}`;
         const sign24 = g.pct24h >= 0 ? '+' : '';
         const signalsText = g.signals && g.signals.length ? g.signals.join(' • ') : `RSI ${rsi}`;
         const volStyle = g.volUsd >= 1000000 ? 'style="color: var(--green); font-weight: 600;"' : '';
         return `<tr onclick="selectCoinFromGainers('${g.coin}')">
-          <td><span class="tg-coin">${g.coin}</span> <button class="tg-track-btn" onclick="event.stopPropagation(); MultiTracker.add('${g.coin}')" title="Track ${g.coin} in real-time">⚡</button><br><span class="tg-price">$${price}</span></td>
+          <td>
+            <div class="tg-coin-cell">
+              <div class="tg-coin-row">
+                <span class="tg-coin">${g.coin}</span>
+                <button class="tg-track-btn" onclick="event.stopPropagation(); MultiTracker.add('${g.coin}')" title="Track ${g.coin} in real-time">
+                  <svg viewBox="0 0 24 24" class="tg-track-icon"><path d="M13 2L3 14H12L11 22L21 10H12L13 2Z"/></svg>
+                </button>
+              </div>
+              <span class="tg-price">$${price}</span>
+            </div>
+          </td>
           <td class="tg-pct neg">${g.pct30d.toFixed(1)}%</td>
           <td class="tg-pct">${sign24}${g.pct24h.toFixed(1)}%</td>
           <td class="tg-vol" ${volStyle}>$${fmtTgVol(g.volUsd)}</td>
-          <td title="${sigTitle}" style="color:${sigColor};font-weight:600;font-size:11px;white-space:nowrap;">${sigLabel}<br><span style="color:var(--t2);font-weight:400;font-size:10px;">${signalsText}</span></td>
+          <td title="${sigTitle}">
+            <span class="tg-signal-badge ${badgeCls}">${sigLabel}</span>
+            <br>
+            <span style="color:var(--t2);font-weight:400;font-size:10px;">${signalsText}</span>
+          </td>
         </tr>`;
       }).join('');
       body.innerHTML = `<table class="tg-table">
