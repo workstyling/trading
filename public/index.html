@@ -10222,9 +10222,17 @@ Requirements:
         const datesHtml = buyDate
           ? `<span class="profit-item-date" title="Bought">${buyDate}</span><span style="color:#555;margin:0 3px;">→</span><span class="profit-item-date" title="Sold">${sellDate}</span>`
           : `<span class="profit-item-date">${sellDate}</span>`;
-        h += `<div class="profit-item">
-          <span><span class="profit-item-coin">${e.coin}</span> ${datesHtml}</span>
-          <span><span class="profit-item-value ${profitClass}">${e.profit >= 0 ? '+' : ''}$${profitFmt}</span>${sentBtn}<span class="profit-item-delete" onclick="deleteProfitEntry(${e.id})">×</span></span>
+        const buyIds = (e.buyOrders || []).map(id => `<span title="Buy order">${id.slice(0,8)}</span>`).join(' ');
+        const sellIds = (e.sellOrders || []).map(id => `<span title="Sell order" style="color:var(--red,#f55)">${id.slice(0,8)}</span>`).join(' ');
+        const orderIdsHtml = (buyIds || sellIds)
+          ? `<div style="font-size:9px;color:#555;margin-top:2px;font-family:'JetBrains Mono',monospace;">${buyIds}${buyIds && sellIds ? ' <span style="color:#444">|</span> ' : ''}${sellIds}</div>`
+          : '';
+        h += `<div class="profit-item" style="flex-direction:column;align-items:stretch;">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <span><span class="profit-item-coin">${e.coin}</span> ${datesHtml}</span>
+            <span><span class="profit-item-value ${profitClass}">${e.profit >= 0 ? '+' : ''}$${profitFmt}</span>${sentBtn}<span class="profit-item-delete" onclick="deleteProfitEntry(${e.id})">×</span></span>
+          </div>
+          ${orderIdsHtml}
         </div>`;
       });
       listEl.innerHTML = h;
