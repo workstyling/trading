@@ -8772,12 +8772,15 @@ Requirements:
         return;
       }
 
+      const _details = (window._orderDetailsMap || {})[coin] || {};
       const entry = {
         id: Date.now(),
         coin: coin,
         profit: profit,
         buyOrders: buyOrderIds.split(',').filter(Boolean),
         sellOrders: sellOrderIds.split(',').filter(Boolean),
+        buyOrderDetails: _details.buys || [],
+        sellOrderDetails: _details.sells || [],
         createdDate: createdDate || null,
         date: new Date().toISOString(),
         sentToAccount: false
@@ -10350,6 +10353,22 @@ Requirements:
           return t < min ? t : min;
         }, Infinity);
         const buyCreatedDate = earliestBuy < Infinity ? new Date(earliestBuy).toISOString() : null;
+
+        // Store full order details for saveGroupProfit to pick up
+        window._orderDetailsMap = window._orderDetailsMap || {};
+        const _pickFields = o => ({
+          order_id: o.order_id,
+          product_id: o.product_id,
+          side: o.side,
+          created_time: o.created_time || null,
+          filled_size: o.filled_size,
+          average_filled_price: o.average_filled_price,
+          limit_price: o.limit_price || null
+        });
+        window._orderDetailsMap[coin] = {
+          buys: filledBuys.map(_pickFields),
+          sells: filledSells.map(_pickFields)
+        };
 
         h += `<div class="coin-group" data-coin="${coin}">
           <h4><a href="https://www.tradingview.com/chart/?symbol=COINBASE%3A${coin}USD" target="_blank">${pair}</a>${todayBadge} <button class="select-coin-btn" onclick="selectCoinForBuy('${coin}')" title="Set for Buy">⬆</button></h4>
