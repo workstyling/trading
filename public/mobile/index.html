@@ -1405,6 +1405,19 @@
     const SELECTED_KEY = 'mobileSelectedOrders';
     let selectedOrders = [];
 
+    const FAVORITE_COINS_KEY = 'favoriteCoins';
+    let favoriteCoins = new Set(JSON.parse(localStorage.getItem(FAVORITE_COINS_KEY) || '[]'));
+
+    function toggleFavoriteCoin(coin) {
+      if (favoriteCoins.has(coin)) {
+        favoriteCoins.delete(coin);
+      } else {
+        favoriteCoins.add(coin);
+      }
+      localStorage.setItem(FAVORITE_COINS_KEY, JSON.stringify([...favoriteCoins]));
+      renderMonitorList();
+    }
+
     // Sync with server
     async function syncSelectedFromServer() {
       try {
@@ -1808,7 +1821,13 @@
       });
 
       let html = '';
-      for (const pair of Object.keys(byCoin).sort()) {
+      const sortedPairs = Object.keys(byCoin).sort((a, b) => {
+        const aFav = favoriteCoins.has(a.split('-')[0]) ? 0 : 1;
+        const bFav = favoriteCoins.has(b.split('-')[0]) ? 0 : 1;
+        if (aFav !== bFav) return aFav - bFav;
+        return a.localeCompare(b);
+      });
+      for (const pair of sortedPairs) {
         const orders = byCoin[pair];
         const coin = pair.split('-')[0];
 
@@ -1850,10 +1869,14 @@
         const pnlColor = limitPnL >= 0 ? 'var(--green)' : 'var(--loss)';
         const mktColor = marketPnL >= 0 ? 'var(--green)' : 'var(--loss)';
 
+        const isFav = favoriteCoins.has(coin);
         html += `<div class="monitor-group">
           <div class="monitor-group-header">
             <span class="monitor-coin" style="cursor:pointer" onclick="selectCoin('${coin}')">${pair}</span>
-            <span class="monitor-pnl" style="color:${pnlColor}">${limitPnL >= 0 ? '+' : ''}$${Math.abs(limitPnL).toFixed(2)}</span>
+            <span style="display:flex;align-items:center;gap:8px;">
+              <span onclick="toggleFavoriteCoin('${coin}')" title="${isFav ? 'Remove from favorites' : 'Add to favorites'}" style="cursor:pointer;font-size:16px;opacity:${isFav ? '1' : '0.3'};">★</span>
+              <span class="monitor-pnl" style="color:${pnlColor}">${limitPnL >= 0 ? '+' : ''}$${Math.abs(limitPnL).toFixed(2)}</span>
+            </span>
           </div>
           <div class="monitor-stats">
             <div class="monitor-stat"><span class="monitor-stat-label">Bid</span><span class="monitor-stat-val" style="color:var(--green)">$${fmt(bid)}</span></div>
