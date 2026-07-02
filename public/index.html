@@ -8747,7 +8747,15 @@ Requirements:
       }
     }
 
-    async function saveGroupProfit(coin, profit, buyOrderIds, sellOrderIds) {
+    async function toggleSentToAccount(id) {
+      const entry = profitHistory.find(e => e.id === id);
+      if (!entry) return;
+      entry.sentToAccount = !entry.sentToAccount;
+      await saveProfitHistoryToServer();
+      updateProfitPanel();
+    }
+
+    async function saveGroupProfit(coin, profit, buyOrderIds, sellOrderIds, createdDate) {
       // Check if these specific orders are already saved in profitHistory
       const buyIds = buyOrderIds.split(',').filter(Boolean);
       const sellIds = sellOrderIds.split(',').filter(Boolean);
@@ -8770,7 +8778,9 @@ Requirements:
         profit: profit,
         buyOrders: buyOrderIds.split(',').filter(Boolean),
         sellOrders: sellOrderIds.split(',').filter(Boolean),
-        date: new Date().toISOString()
+        createdDate: createdDate || null,
+        date: new Date().toISOString(),
+        sentToAccount: false
       };
       profitHistory.push(entry);
       await saveProfitHistoryToServer();
@@ -10200,12 +10210,18 @@ Requirements:
       let h = '';
       // Show newest first
       [...profitHistory].reverse().forEach(e => {
-        const date = new Date(e.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+        const sellDate = new Date(e.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+        const buyDate = e.createdDate ? new Date(e.createdDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : null;
         const profitClass = e.profit >= 0 ? 'pos' : 'neg';
         const profitFmt = e.profit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const sent = !!e.sentToAccount;
+        const sentBtn = `<span onclick="toggleSentToAccount(${e.id})" title="${sent ? 'Sent to account' : 'Not sent yet'}" style="cursor:pointer;margin-left:4px;font-size:13px;opacity:${sent ? '1' : '0.35'};" >💰</span>`;
+        const datesHtml = buyDate
+          ? `<span class="profit-item-date" title="Bought">${buyDate}</span><span style="color:#555;margin:0 3px;">→</span><span class="profit-item-date" title="Sold">${sellDate}</span>`
+          : `<span class="profit-item-date">${sellDate}</span>`;
         h += `<div class="profit-item">
-          <span><span class="profit-item-coin">${e.coin}</span> <span class="profit-item-date">${date}</span></span>
-          <span><span class="profit-item-value ${profitClass}">${e.profit >= 0 ? '+' : ''}$${profitFmt}</span><span class="profit-item-delete" onclick="deleteProfitEntry(${e.id})">×</span></span>
+          <span><span class="profit-item-coin">${e.coin}</span> ${datesHtml}</span>
+          <span><span class="profit-item-value ${profitClass}">${e.profit >= 0 ? '+' : ''}$${profitFmt}</span>${sentBtn}<span class="profit-item-delete" onclick="deleteProfitEntry(${e.id})">×</span></span>
         </div>`;
       });
       listEl.innerHTML = h;
@@ -10328,9 +10344,16 @@ Requirements:
         const hasToday = orders.some(o => o.created_time && new Date(o.created_time).toDateString() === today);
         const todayBadge = hasToday ? ' <span style="color:var(--green);font-size:10px;font-weight:700;">Today</span>' : '';
 
+        // Earliest buy order creation date
+        const earliestBuy = filledBuys.reduce((min, o) => {
+          const t = o.created_time ? new Date(o.created_time).getTime() : Infinity;
+          return t < min ? t : min;
+        }, Infinity);
+        const buyCreatedDate = earliestBuy < Infinity ? new Date(earliestBuy).toISOString() : null;
+
         h += `<div class="coin-group" data-coin="${coin}">
           <h4><a href="https://www.tradingview.com/chart/?symbol=COINBASE%3A${coin}USD" target="_blank">${pair}</a>${todayBadge} <button class="select-coin-btn" onclick="selectCoinForBuy('${coin}')" title="Set for Buy">⬆</button></h4>
-          <div class="balance">Selected: ${fmtSize(totalFilled)} ${coin} <span id="realBal_${coin}" style="color:var(--t2);font-size:10px;">(loading real balance...)</span> ${totalFilled > 0 ? `<button class="sell-all-btn" onclick="sellAllCoin('${pair}', '${totalFilled}')">SELL ALL</button>` : ''} <button class="${btnClass}" onclick="saveGroupProfit('${coin}', ${groupProfit.toFixed(2)}, '${filledBuys.map(o => o.order_id).join(',')}', '${filledSells.map(o => o.order_id).join(',')}')" ${btnDisabled ? 'disabled' : ''}>${btnText}</button>
+          <div class="balance">Selected: ${fmtSize(totalFilled)} ${coin} <span id="realBal_${coin}" style="color:var(--t2);font-size:10px;">(loading real balance...)</span> ${totalFilled > 0 ? `<button class="sell-all-btn" onclick="sellAllCoin('${pair}', '${totalFilled}')">SELL ALL</button>` : ''} <button class="${btnClass}" onclick="saveGroupProfit('${coin}', ${groupProfit.toFixed(2)}, '${filledBuys.map(o => o.order_id).join(',')}', '${filledSells.map(o => o.order_id).join(',')}', ${JSON.stringify(buyCreatedDate)})" ${btnDisabled ? 'disabled' : ''}>${btnText}</button>
           ${totalFilled > 0 ? `<span style="margin-left:10px;display:inline-flex;align-items:center;gap:4px;">
             <input type="text" id="limitSellPrice_${coin}" placeholder="Limit price" style="width:90px;padding:3px 6px;background:var(--s3);border:1px solid var(--b1);border-radius:5px;color:var(--t0);font-family:'JetBrains Mono',monospace;font-size:11px;outline:none;" autocomplete="off">
             <button onclick="sellAllLimit('${pair}','${totalFilled}','${coin}')" style="padding:3px 10px;border:1px solid var(--yellow);border-radius:5px;background:transparent;color:var(--yellow);font-size:10px;font-weight:600;cursor:pointer;">Sell Limit</button>
