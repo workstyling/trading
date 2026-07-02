@@ -1415,7 +1415,32 @@
         favoriteCoins.add(coin);
       }
       localStorage.setItem(FAVORITE_COINS_KEY, JSON.stringify([...favoriteCoins]));
-      renderMonitorList();
+
+      // Update star appearance instantly without re-fetching prices
+      const list = document.getElementById('monitorList');
+      if (!list) return;
+
+      // Update star icon color/opacity on all matching spans
+      list.querySelectorAll('[data-fav-coin]').forEach(el => {
+        if (el.dataset.favCoin === coin) {
+          const isFav = favoriteCoins.has(coin);
+          el.style.opacity = isFav ? '1' : '0.25';
+          el.style.color = isFav ? '#f5c518' : '';
+          el.title = isFav ? 'Remove from favorites' : 'Add to favorites';
+        }
+      });
+
+      // Re-sort groups in DOM
+      const groups = [...list.querySelectorAll('.monitor-group')];
+      groups.sort((a, b) => {
+        const aC = (a.dataset.coin || '');
+        const bC = (b.dataset.coin || '');
+        const aFav = favoriteCoins.has(aC) ? 0 : 1;
+        const bFav = favoriteCoins.has(bC) ? 0 : 1;
+        if (aFav !== bFav) return aFav - bFav;
+        return aC.localeCompare(bC);
+      });
+      groups.forEach(g => list.appendChild(g));
     }
 
     // Sync with server
@@ -1870,11 +1895,11 @@
         const mktColor = marketPnL >= 0 ? 'var(--green)' : 'var(--loss)';
 
         const isFav = favoriteCoins.has(coin);
-        html += `<div class="monitor-group">
+        html += `<div class="monitor-group" data-coin="${coin}">
           <div class="monitor-group-header">
             <span class="monitor-coin" style="cursor:pointer" onclick="selectCoin('${coin}')">${pair}</span>
             <span style="display:flex;align-items:center;gap:8px;">
-              <span onclick="toggleFavoriteCoin('${coin}')" title="${isFav ? 'Remove from favorites' : 'Add to favorites'}" style="cursor:pointer;font-size:22px;opacity:${isFav ? '1' : '0.25'};padding:0 8px;line-height:1;color:${isFav ? '#f5c518' : 'inherit'};">★</span>
+              <span data-fav-coin="${coin}" onclick="toggleFavoriteCoin('${coin}')" title="${isFav ? 'Remove from favorites' : 'Add to favorites'}" style="cursor:pointer;font-size:22px;opacity:${isFav ? '1' : '0.25'};padding:0 8px;line-height:1;color:${isFav ? '#f5c518' : 'inherit'};">★</span>
               <span class="monitor-pnl" style="color:${pnlColor}">${limitPnL >= 0 ? '+' : ''}$${Math.abs(limitPnL).toFixed(2)}</span>
             </span>
           </div>
