@@ -1874,7 +1874,7 @@
           <div class="monitor-group-header">
             <span class="monitor-coin" style="cursor:pointer" onclick="selectCoin('${coin}')">${pair}</span>
             <span style="display:flex;align-items:center;gap:8px;">
-              <span onclick="toggleFavoriteCoin('${coin}')" title="${isFav ? 'Remove from favorites' : 'Add to favorites'}" style="cursor:pointer;font-size:16px;opacity:${isFav ? '1' : '0.3'};">★</span>
+              <span onclick="toggleFavoriteCoin('${coin}')" title="${isFav ? 'Remove from favorites' : 'Add to favorites'}" style="cursor:pointer;font-size:22px;opacity:${isFav ? '1' : '0.25'};padding:0 8px;line-height:1;color:${isFav ? '#f5c518' : 'inherit'};">★</span>
               <span class="monitor-pnl" style="color:${pnlColor}">${limitPnL >= 0 ? '+' : ''}$${Math.abs(limitPnL).toFixed(2)}</span>
             </span>
           </div>
