@@ -8706,6 +8706,19 @@ Requirements:
       syncAllOrderSelectors();
     }
 
+    const FAVORITE_COINS_KEY = 'favoriteCoins';
+    let favoriteCoins = new Set(JSON.parse(safeStorage.getItem(FAVORITE_COINS_KEY) || '[]'));
+
+    function toggleFavoriteCoin(coin) {
+      if (favoriteCoins.has(coin)) {
+        favoriteCoins.delete(coin);
+      } else {
+        favoriteCoins.add(coin);
+      }
+      safeStorage.setItem(FAVORITE_COINS_KEY, JSON.stringify([...favoriteCoins]));
+      updateSelectedOrdersView();
+    }
+
     // Sync all order-selector checkboxes across all tables
     function syncAllOrderSelectors() {
       document.querySelectorAll('.order-selector[data-order-id]').forEach(sel => {
@@ -10260,7 +10273,13 @@ Requirements:
       });
 
       let h = '';
-      for (const pair of Object.keys(byCoin).sort()) {
+      const sortedPairs = Object.keys(byCoin).sort((a, b) => {
+        const aFav = favoriteCoins.has(a.split('-')[0]) ? 0 : 1;
+        const bFav = favoriteCoins.has(b.split('-')[0]) ? 0 : 1;
+        if (aFav !== bFav) return aFav - bFav;
+        return a.localeCompare(b);
+      });
+      for (const pair of sortedPairs) {
         const orders = byCoin[pair];
         const coin = pair.split('-')[0];
 
@@ -10378,8 +10397,9 @@ Requirements:
           sells: filledSells.map(_pickFields)
         };
 
+        const isFav = favoriteCoins.has(coin);
         h += `<div class="coin-group" data-coin="${coin}">
-          <h4><a href="https://www.tradingview.com/chart/?symbol=COINBASE%3A${coin}USD" target="_blank">${pair}</a>${todayBadge} <button class="select-coin-btn" onclick="selectCoinForBuy('${coin}')" title="Set for Buy">⬆</button></h4>
+          <h4><a href="https://www.tradingview.com/chart/?symbol=COINBASE%3A${coin}USD" target="_blank">${pair}</a>${todayBadge} <span onclick="toggleFavoriteCoin('${coin}')" title="${isFav ? 'Remove from favorites' : 'Add to favorites'}" style="cursor:pointer;font-size:13px;opacity:${isFav ? '1' : '0.3'};margin-right:2px;">★</span><button class="select-coin-btn" onclick="selectCoinForBuy('${coin}')" title="Set for Buy">⬆</button></h4>
           <div class="balance">Selected: ${fmtSize(totalFilled)} ${coin} <span id="realBal_${coin}" style="color:var(--t2);font-size:10px;">(loading real balance...)</span> ${totalFilled > 0 ? `<button class="sell-all-btn" onclick="sellAllCoin('${pair}', '${totalFilled}')">SELL ALL</button>` : ''} <button class="${btnClass}" onclick="saveGroupProfit('${coin}', ${groupProfit.toFixed(2)}, '${filledBuys.map(o => o.order_id).join(',')}', '${filledSells.map(o => o.order_id).join(',')}', ${buyCreatedDate ? `'${buyCreatedDate}'` : 'null'})" ${btnDisabled ? 'disabled' : ''}>${btnText}</button>
           ${totalFilled > 0 ? `<span style="margin-left:10px;display:inline-flex;align-items:center;gap:4px;">
             <input type="text" id="limitSellPrice_${coin}" placeholder="Limit price" style="width:90px;padding:3px 6px;background:var(--s3);border:1px solid var(--b1);border-radius:5px;color:var(--t0);font-family:'JetBrains Mono',monospace;font-size:11px;outline:none;" autocomplete="off">
