@@ -1934,7 +1934,7 @@
             </div>
             <div class="monitor-actions">
               ${isBuy ? `<button class="mon-sell-btn" onclick="createSellAt('${pair}','${exactSize}','${exactTarget}')">+${tradingSettings.sellMarkup}%</button>` : ''}
-              ${isBuy ? `<button class="mon-sell-btn ask" onclick="sellAtAsk('${pair}','${exactSize}')">Ask</button>` : ''}
+              ${isBuy ? `<button class="mon-sell-btn ask" onclick="sellAtAsk('${pair}','${exactSize}',${avgP})">Ask</button>` : ''}
               <button class="mon-deselect" onclick="deselectOrder('${o.order_id}')">✕</button>
             </div>
           </div>`;
@@ -1972,13 +1972,26 @@
       else toast(r.error || (r.details?.error_response?.message) || 'Failed', 'error');
     }
 
-    async function sellAtAsk(pair, size) {
+    async function sellAtAsk(pair, size, avgBuyPrice) {
       const cached = monitorPriceCache[pair];
       if (!cached || !cached.ask) { toast('No ask price', 'error'); return; }
       const coin = pair.split('-')[0];
-      const usd = (parseFloat(size) * cached.ask).toFixed(2);
-      const ok = await confirmTrade(`SELL ${coin} at Ask<br>${parseFloat(size).toFixed(6)} @ $${fmt(cached.ask)}<br>~$${usd}`);
-      if (!ok) return;
+      const askPrice = cached.ask;
+      const fee = (tradingSettings.tradeFee || 0.4) / 100;
+      const effectiveReceived = parseFloat(size) * askPrice * (1 - fee);
+      const cost = (avgBuyPrice || 0) * parseFloat(size);
+      const profit = avgBuyPrice > 0 ? effectiveReceived - cost : 0;
+
+      if (avgBuyPrice > 0 && profit < 0) {
+        const lossFmt = Math.abs(profit).toFixed(2);
+        const pctFmt = (Math.abs(profit) / cost * 100).toFixed(2);
+        const ok = await confirmTrade(`⚠️ SELLING AT A LOSS<br><span style="color:#f55;font-size:16px;">-$${lossFmt} (-${pctFmt}%)</span><br><br>Ask: $${fmt(askPrice)} | Avg Buy: $${fmt(avgBuyPrice)}<br><br>Sell anyway?`);
+        if (!ok) return;
+      } else {
+        const usd = (parseFloat(size) * askPrice).toFixed(2);
+        const ok = await confirmTrade(`SELL ${coin} at Ask<br>${parseFloat(size).toFixed(6)} @ $${fmt(askPrice)}<br>~$${usd}`);
+        if (!ok) return;
+      }
       const r = await api('/create-sell-order', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ productId: pair, size: size, price: fmtPriceForOrder(cached.ask) })
