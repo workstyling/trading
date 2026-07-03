@@ -1283,7 +1283,7 @@
   <div class="tabs">
     <button class="tab active" data-tab="trade">Trade</button>
     <button class="tab" data-tab="orders">Orders</button>
-    <button class="tab" data-tab="gainers">🔥 Gainers</button>
+    <button class="tab" data-tab="volume">📊 Volume</button>
     <button class="tab" data-tab="profit">Profit</button>
     <button class="tab" data-tab="holdings">Holdings</button>
   </div>
@@ -1363,27 +1363,15 @@
   </div>
 
   <!-- Top Gainers Panel -->
-  <div class="panel" id="panelGainers" data-tab="gainers">
-    <div id="topGainersPanel">
-      <div class="tg-header">
-        <span class="tg-title">🔥 Top Gainers (Coinbase)</span>
-        <span class="tg-meta">
-          <button class="tg-refresh-btn" id="tgRefreshBtn" onclick="refreshTopGainers()" title="Refresh now"><span class="spin-icon">⟳</span> Refresh</button>
-          next: <span class="tg-countdown" id="tgCountdown">—</span>
-        </span>
-      </div>
-      <div id="tgBody"><div style="color:var(--t2);font-size:12px;text-align:center;padding:14px;">Loading...</div></div>
+  <div class="panel" id="panelVolume" data-tab="volume">
+    <div class="tg-header">
+      <span class="tg-title">📊 Top Volume 24h (Coinbase)</span>
+      <span class="tg-meta">
+        <button class="tg-refresh-btn" id="tvRefreshBtn" onclick="loadTopVolumeMobile(true)" title="Refresh now"><span class="spin-icon">⟳</span> Refresh</button>
+        next: <span class="tg-countdown" id="tvCountdown">—</span>
+      </span>
     </div>
-    <div id="topRecoveriesPanel">
-      <div class="tg-header">
-        <span class="tg-title">💎 Recoveries (30d losers reversing)</span>
-        <span class="tg-meta">
-          <button class="tg-refresh-btn" id="trRefreshBtn" onclick="refreshTopRecoveries()" title="Refresh now"><span class="spin-icon">⟳</span> Refresh</button>
-          next: <span class="tg-countdown" id="trCountdown">—</span>
-        </span>
-      </div>
-      <div id="trBody"><div style="color:var(--t2);font-size:12px;text-align:center;padding:14px;">Loading...</div></div>
-    </div>
+    <div id="tvBody"><div style="color:var(--t2);font-size:12px;text-align:center;padding:14px;">Loading...</div></div>
   </div>
 
   <!-- Profit Panel -->
@@ -3161,6 +3149,53 @@
       } catch(e) { console.error('vol30 mobile:', e); }
     }
 
+    // ── Top Volume Mobile ──
+    let tvCountdownSec = 60, tvTimer = null;
+
+    function fmtVolShort(v) {
+      if (v >= 1e9) return '$' + (v / 1e9).toFixed(2) + 'B';
+      if (v >= 1e6) return '$' + (v / 1e6).toFixed(2) + 'M';
+      if (v >= 1e3) return '$' + (v / 1e3).toFixed(0) + 'K';
+      return '$' + v.toFixed(0);
+    }
+
+    function renderTopVolumeMobile(coins) {
+      const body = document.getElementById('tvBody');
+      if (!body) return;
+      if (!coins || !coins.length) { body.innerHTML = '<div style="color:var(--t2);font-size:12px;text-align:center;padding:14px;">No data</div>'; return; }
+      const rows = coins.map((c, i) => {
+        const pctCls = c.pct24h >= 0 ? 'color:var(--green)' : 'color:#f55';
+        const sign = c.pct24h >= 0 ? '+' : '';
+        const price = c.price < 0.001 ? c.price.toFixed(6) : c.price < 1 ? c.price.toFixed(4) : c.price < 100 ? c.price.toFixed(3) : c.price.toFixed(2);
+        return `<tr onclick="selectCoin('${c.coin}')">
+          <td style="color:#555;font-size:10px;width:24px;">${i + 1}</td>
+          <td class="tg-coin" style="font-weight:700;">${c.coin}<br><span style="color:#555;font-size:9px;">$${price}</span></td>
+          <td style="${pctCls};font-weight:600;text-align:right;">${sign}${c.pct24h.toFixed(2)}%</td>
+          <td class="tg-vol" style="text-align:right;">${fmtVolShort(c.volUsd)}</td>
+        </tr>`;
+      }).join('');
+      body.innerHTML = `<table class="tg-table" style="width:100%;"><thead><tr><th>#</th><th>COIN</th><th style="text-align:right;">24H%</th><th style="text-align:right;">VOL</th></tr></thead><tbody>${rows}</tbody></table>`;
+    }
+
+    async function loadTopVolumeMobile(force = false) {
+      try {
+        const res = await fetch(BASE + '/api/top-volume' + (force ? '?force=true' : ''));
+        const data = await res.json();
+        if (data.success) renderTopVolumeMobile(data.coins);
+        tvCountdownSec = 60;
+      } catch(e) { console.error('[top-volume mobile]', e); }
+    }
+
+    function startTvCountdown() {
+      clearInterval(tvTimer);
+      tvTimer = setInterval(() => {
+        tvCountdownSec--;
+        const el = document.getElementById('tvCountdown');
+        if (el) el.textContent = tvCountdownSec + 's';
+        if (tvCountdownSec <= 0) { tvCountdownSec = 60; loadTopVolumeMobile(); }
+      }, 1000);
+    }
+
     // Init
     loadSettings();
     MultiTracker.init();
@@ -3168,10 +3203,8 @@
     setInterval(loadVol30dMobile, 5 * 60 * 1000);
     refreshAll();
     connectPriceWs();
-    loadTopGainers();
-    startTgCountdown();
-    loadTopRecoveries();
-    startTrCountdown();
+    loadTopVolumeMobile();
+    startTvCountdown();
 
     // Hover/touch pause listeners to freeze countdowns on mobile tables interaction
     document.getElementById('tgBody')?.addEventListener('mouseenter', () => { tgPaused = true; });

@@ -1269,6 +1269,59 @@ app.get('/api/top-gainers', async (req, res) => {
   }
 });
 
+// ========== TOP VOLUME (24h volume leaders) ==========
+
+let topVolumeCache = { data: [], fetchedAt: 0 };
+const TOP_VOLUME_TTL = 60_000;
+
+async function fetchTopVolume() {
+  const CB = 'https://api.exchange.coinbase.com';
+  const prodRes = await fetch(`${CB}/products?type=SPOT`);
+  const products = await prodRes.json();
+  const usdPairs = products.filter(p =>
+    p.quote_currency === 'USD' && p.status === 'online' && !p.trading_disabled
+  ).map(p => p.id);
+
+  const BATCH = 40;
+  const results = [];
+  for (let i = 0; i < usdPairs.length; i += BATCH) {
+    const batch = usdPairs.slice(i, i + BATCH);
+    const stats = await Promise.all(batch.map(async id => {
+      try {
+        const r = await fetch(`${CB}/products/${id}/stats`);
+        const s = await r.json();
+        const open = parseFloat(s.open), last = parseFloat(s.last);
+        const vol = parseFloat(s.volume);
+        const volUsd = vol * last;
+        if (!last || !volUsd) return null;
+        const pct24h = open ? (last - open) / open * 100 : 0;
+        return { coin: id.replace('-USD', ''), price: last, pct24h, volUsd };
+      } catch { return null; }
+    }));
+    results.push(...stats.filter(Boolean));
+    if (i + BATCH < usdPairs.length) await new Promise(r => setTimeout(r, 80));
+  }
+  results.sort((a, b) => b.volUsd - a.volUsd);
+  return results.slice(0, 20);
+}
+
+app.get('/api/top-volume', async (req, res) => {
+  try {
+    const now = Date.now();
+    const force = req.query.force === 'true';
+    if (!force && now - topVolumeCache.fetchedAt < TOP_VOLUME_TTL && topVolumeCache.data.length) {
+      return res.json({ success: true, coins: topVolumeCache.data, fetchedAt: topVolumeCache.fetchedAt, cached: true });
+    }
+    const coins = await fetchTopVolume();
+    topVolumeCache = { data: coins, fetchedAt: Date.now() };
+    res.json({ success: true, coins, fetchedAt: topVolumeCache.fetchedAt, cached: false });
+  } catch (e) {
+    console.error('[top-volume]', e.message);
+    if (topVolumeCache.data.length) return res.json({ success: true, coins: topVolumeCache.data, stale: true });
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
 // ========== TOP RECOVERIES (30d losers showing reversal) ==========
 
 let topRecoveriesCache = { data: [], fetchedAt: 0 };

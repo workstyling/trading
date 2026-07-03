@@ -5918,25 +5918,15 @@
         <div id="coinsList"></div>
       </div>
       <div class="main-right">
-        <div id="topRecoveriesPanel">
+        <div id="topVolumePanel">
           <div class="tg-header">
-            <span class="tg-title">💎 Recoveries (30d losers reversing)</span>
+            <span class="tg-title">📊 Top Volume 24h (Coinbase)</span>
             <span class="tg-meta">
-              <button class="tg-refresh-btn" id="trRefreshBtn" onclick="refreshTopRecoveries()" title="Refresh now"><span class="spin-icon">⟳</span> Refresh</button>
-              next: <span class="tg-countdown" id="trCountdown">—</span>
+              <button class="tg-refresh-btn" id="tvRefreshBtn" onclick="loadTopVolume(true)" title="Refresh now"><span class="spin-icon">⟳</span> Refresh</button>
+              next: <span class="tg-countdown" id="tvCountdown">—</span>
             </span>
           </div>
-          <div id="trBody"><div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">Loading...</div></div>
-        </div>
-        <div id="topGainersPanel">
-          <div class="tg-header">
-            <span class="tg-title">🔥 Top Gainers (Coinbase)</span>
-            <span class="tg-meta">
-              <button class="tg-refresh-btn" id="tgRefreshBtn" onclick="refreshTopGainers()" title="Refresh now"><span class="spin-icon">⟳</span> Refresh</button>
-              next: <span class="tg-countdown" id="tgCountdown">—</span>
-            </span>
-          </div>
-          <div id="tgBody"><div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">Loading...</div></div>
+          <div id="tvBody"><div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">Loading...</div></div>
         </div>
         <div id="profitPanel">
           <div class="profit-header">
@@ -11616,6 +11606,62 @@ Requirements:
 
     loadTopRecoveries();
     startTrCountdown();
+
+    // ── Top Volume (24h) ──────────────────────────────────
+    let tvCountdownSec = 60, tvPaused = false, tvTimer = null;
+
+    function fmtVolShort(v) {
+      if (v >= 1e9) return '$' + (v / 1e9).toFixed(2) + 'B';
+      if (v >= 1e6) return '$' + (v / 1e6).toFixed(2) + 'M';
+      if (v >= 1e3) return '$' + (v / 1e3).toFixed(0) + 'K';
+      return '$' + v.toFixed(0);
+    }
+
+    function renderTopVolume(coins) {
+      const body = document.getElementById('tvBody');
+      if (!body) return;
+      if (!coins || !coins.length) { body.innerHTML = '<div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">No data</div>'; return; }
+      const rows = coins.map((c, i) => {
+        const pctCls = c.pct24h >= 0 ? 'color:var(--green)' : 'color:var(--red,#f55)';
+        const sign = c.pct24h >= 0 ? '+' : '';
+        const price = c.price < 0.001 ? c.price.toFixed(6) : c.price < 1 ? c.price.toFixed(4) : c.price < 100 ? c.price.toFixed(3) : c.price.toFixed(2);
+        return `<tr style="cursor:pointer" onclick="selectCoinForBuy('${c.coin}')">
+          <td style="color:#555;font-size:10px;">${i + 1}</td>
+          <td class="tg-coin">${c.coin}<br><span style="color:#555;font-size:9px;">$${price}</span></td>
+          <td style="${pctCls};font-weight:600;">${sign}${c.pct24h.toFixed(2)}%</td>
+          <td class="tg-vol">${fmtVolShort(c.volUsd)}</td>
+        </tr>`;
+      }).join('');
+      body.innerHTML = `<table class="tg-table"><thead><tr><th>#</th><th>COIN</th><th>24H%</th><th>VOL</th></tr></thead><tbody>${rows}</tbody></table>`;
+    }
+
+    async function loadTopVolume(force = false) {
+      try {
+        const btn = document.getElementById('tvRefreshBtn');
+        if (btn) btn.classList.add('spinning');
+        const res = await fetch('/api/top-volume' + (force ? '?force=true' : ''));
+        const data = await res.json();
+        if (data.success) renderTopVolume(data.coins);
+        if (btn) btn.classList.remove('spinning');
+      } catch (e) { console.error('[top-volume]', e); }
+    }
+
+    function startTvCountdown() {
+      tvCountdownSec = 60;
+      clearInterval(tvTimer);
+      tvTimer = setInterval(() => {
+        if (!tvPaused) tvCountdownSec--;
+        const el = document.getElementById('tvCountdown');
+        if (el) el.textContent = tvCountdownSec + 's';
+        if (tvCountdownSec <= 0) { tvCountdownSec = 60; loadTopVolume(); }
+      }, 1000);
+    }
+
+    loadTopVolume();
+    startTvCountdown();
+
+    document.getElementById('tvBody')?.addEventListener('mouseenter', () => { tvPaused = true; });
+    document.getElementById('tvBody')?.addEventListener('mouseleave', () => { tvPaused = false; });
 
     // Hover-pause listeners to freeze countdowns on table interaction
     document.getElementById('tgBody')?.addEventListener('mouseenter', () => { tgPaused = true; });
