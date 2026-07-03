@@ -5742,6 +5742,7 @@
             <span class="vol30-pill" id="vol30Pill" title="Loading...">
               <span class="vol30-lbl">30D Vol</span>
               <span class="vol30-val" id="vol30Val">—</span>
+              <span id="vol30Tier" style="font-size:9px;color:#888;margin-left:4px;"></span>
             </span>
             <div id="tradingSettings" class="settings-panel"
               style="margin:0;border:none;background:none;padding:0;margin-left:12px;">
@@ -6288,6 +6289,28 @@
         valEl.textContent = '$' + Math.round(data.totalUsd).toLocaleString('en-US');
         const tip = `Total fills (30d): ${data.totalFills}\nBuy: ${fmtVol(data.buyUsd)} (${data.buyCount}) · Sell: ${fmtVol(data.sellUsd)} (${data.sellCount})\nFees paid: ${fmtVol(data.totalFees)}`;
         pillEl.title = tip;
+        const tierEl = document.getElementById('vol30Tier');
+        if (tierEl) {
+          const vol = data.totalUsd || 0;
+          const tiers = [
+            { min: 250e6, label: 'VIP 8', fee: '0.00/0.02%' },
+            { min: 100e6, label: 'VIP 7', fee: '0.00/0.025%' },
+            { min: 50e6,  label: 'VIP 6', fee: '0.00/0.035%' },
+            { min: 20e6,  label: 'VIP 5', fee: '0.01/0.05%' },
+            { min: 10e6,  label: 'VIP 4', fee: '0.025/0.065%' },
+            { min: 5e6,   label: 'VIP 3', fee: '0.04/0.085%' },
+            { min: 1e6,   label: 'VIP 2', fee: '0.05/0.10%' },
+            { min: 500e3, label: 'VIP 1', fee: '0.06/0.125%' },
+            { min: 250e3, label: 'Adv 3', fee: '0.075/0.15%' },
+            { min: 75e3,  label: 'Adv 2', fee: '0.125/0.25%' },
+            { min: 25e3,  label: 'Adv 1', fee: '0.25/0.50%' },
+            { min: 10e3,  label: 'Intro 2', fee: '0.40/0.80%' },
+            { min: 0,     label: 'Intro 1', fee: '0.60/1.20%' },
+          ];
+          const tier = tiers.find(t => vol >= t.min) || tiers[tiers.length - 1];
+          tierEl.textContent = tier.label;
+          tierEl.title = `M/T: ${tier.fee}`;
+        }
       } catch (e) {
         console.error('Cannot load 30d volume:', e.message);
       }
