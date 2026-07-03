@@ -11625,14 +11625,21 @@ Requirements:
         const pctCls = c.pct24h >= 0 ? 'color:var(--green)' : 'color:var(--red,#f55)';
         const sign = c.pct24h >= 0 ? '+' : '';
         const price = c.price < 0.001 ? c.price.toFixed(6) : c.price < 1 ? c.price.toFixed(4) : c.price < 100 ? c.price.toFixed(3) : c.price.toFixed(2);
+        const buyMore = (c.depth2Buy || 0) >= (c.depth2Sell || 0);
+        const buyCol = buyMore ? 'var(--green)' : '#f55';
+        const sellCol = '#f55';
+        const depthHtml = (c.depth2Buy || c.depth2Sell)
+          ? `<span style="color:${buyCol}">${fmtVolShort(c.depth2Buy)}</span><span style="color:#555">/</span><span style="color:${sellCol}">${fmtVolShort(c.depth2Sell)}</span>`
+          : '—';
         return `<tr style="cursor:pointer" onclick="selectCoinForBuy('${c.coin}')">
           <td style="color:#555;font-size:10px;">${i + 1}</td>
           <td class="tg-coin">${c.coin}<br><span style="color:#555;font-size:9px;">$${price}</span></td>
           <td style="${pctCls};font-weight:600;">${sign}${c.pct24h.toFixed(2)}%</td>
           <td class="tg-vol">${fmtVolShort(c.volUsd)}</td>
+          <td style="font-size:10px;white-space:nowrap;">${depthHtml}</td>
         </tr>`;
       }).join('');
-      body.innerHTML = `<table class="tg-table"><thead><tr><th>#</th><th>COIN</th><th>24H%</th><th>VOL</th></tr></thead><tbody>${rows}</tbody></table>`;
+      body.innerHTML = `<table class="tg-table"><thead><tr><th>#</th><th>COIN</th><th>24H%</th><th>VOL</th><th>+2%/-2%</th></tr></thead><tbody>${rows}</tbody></table>`;
     }
 
     async function loadTopVolume(force = false) {

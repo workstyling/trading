@@ -1302,7 +1302,33 @@ async function fetchTopVolume() {
     if (i + BATCH < usdPairs.length) await new Promise(r => setTimeout(r, 80));
   }
   results.sort((a, b) => b.volUsd - a.volUsd);
-  return results.slice(0, 20);
+  const top20 = results.slice(0, 20);
+
+  // Fetch order book depth ±2% for each coin
+  await Promise.all(top20.map(async c => {
+    try {
+      const r = await fetch(`${CB}/products/${c.coin}-USD/book?level=2`);
+      const book = await r.json();
+      const mid = c.price;
+      const lowBound = mid * 0.98;
+      const highBound = mid * 1.02;
+      let buyDepth = 0, sellDepth = 0;
+      for (const [price, size] of (book.bids || [])) {
+        const p = parseFloat(price), s = parseFloat(size);
+        if (p >= lowBound) buyDepth += p * s;
+        else break;
+      }
+      for (const [price, size] of (book.asks || [])) {
+        const p = parseFloat(price), s = parseFloat(size);
+        if (p <= highBound) sellDepth += p * s;
+        else break;
+      }
+      c.depth2Buy = buyDepth;
+      c.depth2Sell = sellDepth;
+    } catch { c.depth2Buy = 0; c.depth2Sell = 0; }
+  }));
+
+  return top20;
 }
 
 app.get('/api/top-volume', async (req, res) => {
