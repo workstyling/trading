@@ -1274,12 +1274,15 @@ app.get('/api/top-gainers', async (req, res) => {
 let topVolumeCache = { data: [], fetchedAt: 0 };
 const TOP_VOLUME_TTL = 60_000;
 
+const STABLECOINS = new Set(['USDT','USDC','DAI','BUSD','TUSD','GUSD','USDP','FRAX','LUSD','CRVUSD','PYUSD','EURC','FDUSD','USDS','USDM','ALUSD','SUSD','MUSD','DOLA','RAI']);
+
 async function fetchTopVolume() {
   const CB = 'https://api.exchange.coinbase.com';
   const prodRes = await fetch(`${CB}/products?type=SPOT`);
   const products = await prodRes.json();
   const usdPairs = products.filter(p =>
-    p.quote_currency === 'USD' && p.status === 'online' && !p.trading_disabled
+    p.quote_currency === 'USD' && p.status === 'online' && !p.trading_disabled &&
+    !STABLECOINS.has(p.base_currency)
   ).map(p => p.id);
 
   const BATCH = 40;
@@ -1304,29 +1307,30 @@ async function fetchTopVolume() {
   results.sort((a, b) => b.volUsd - a.volUsd);
   const top20 = results.slice(0, 20);
 
-  // Fetch order book depth ±2% for each coin
-  await Promise.all(top20.map(async c => {
+  // Fetch order book depth ±2% for each coin (sequentially to avoid rate limits)
+  for (const c of top20) {
     try {
       const r = await fetch(`${CB}/products/${c.coin}-USD/book?level=2`);
+      if (!r.ok) { c.depth2Buy = 0; c.depth2Sell = 0; continue; }
       const book = await r.json();
+      if (!Array.isArray(book.bids)) { c.depth2Buy = 0; c.depth2Sell = 0; continue; }
       const mid = c.price;
       const lowBound = mid * 0.98;
       const highBound = mid * 1.02;
       let buyDepth = 0, sellDepth = 0;
-      for (const [price, size] of (book.bids || [])) {
-        const p = parseFloat(price), s = parseFloat(size);
-        if (p >= lowBound) buyDepth += p * s;
-        else break;
+      for (const entry of (book.bids || [])) {
+        const p = parseFloat(entry[0]), s = parseFloat(entry[1]);
+        if (p >= lowBound) buyDepth += p * s; else break;
       }
-      for (const [price, size] of (book.asks || [])) {
-        const p = parseFloat(price), s = parseFloat(size);
-        if (p <= highBound) sellDepth += p * s;
-        else break;
+      for (const entry of (book.asks || [])) {
+        const p = parseFloat(entry[0]), s = parseFloat(entry[1]);
+        if (p <= highBound) sellDepth += p * s; else break;
       }
       c.depth2Buy = buyDepth;
       c.depth2Sell = sellDepth;
     } catch { c.depth2Buy = 0; c.depth2Sell = 0; }
-  }));
+    await new Promise(r => setTimeout(r, 60));
+  }
 
   return top20;
 }
