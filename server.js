@@ -1292,8 +1292,7 @@ async function fetchTopVolume() {
         const r = await fetch(`${CB}/products/${id}/stats`);
         const s = await r.json();
         const open = parseFloat(s.open), last = parseFloat(s.last);
-        const vol = parseFloat(s.volume);
-        const volUsd = vol * last;
+        const volUsd = parseFloat(s.volume) * last;
         if (!last || !volUsd) return null;
         const pct24h = open ? (last - open) / open * 100 : 0;
         return { coin: id.replace('-USD', ''), price: last, pct24h, volUsd };
@@ -1303,34 +1302,20 @@ async function fetchTopVolume() {
     if (i + BATCH < usdPairs.length) await new Promise(r => setTimeout(r, 80));
   }
   results.sort((a, b) => b.volUsd - a.volUsd);
-  const top20 = results.slice(0, 20);
+  return results.slice(0, 20);
+}
 
-  // Fetch order book depth ±2% for each coin (sequentially to avoid rate limits)
-  for (const c of top20) {
-    try {
-      const r = await fetch(`${CB}/products/${c.coin}-USD/book?level=3`);
-      if (!r.ok) { c.depth2Buy = 0; c.depth2Sell = 0; continue; }
-      const book = await r.json();
-      if (!Array.isArray(book.bids)) { c.depth2Buy = 0; c.depth2Sell = 0; continue; }
-      const mid = c.price;
-      const lowBound = mid * 0.98;
-      const highBound = mid * 1.02;
-      let buyDepth = 0, sellDepth = 0;
-      for (const entry of (book.bids || [])) {
-        const p = parseFloat(entry[0]), s = parseFloat(entry[1]);
-        if (p >= lowBound) buyDepth += p * s;
-      }
-      for (const entry of (book.asks || [])) {
-        const p = parseFloat(entry[0]), s = parseFloat(entry[1]);
-        if (p <= highBound) sellDepth += p * s;
-      }
-      c.depth2Buy = buyDepth;
-      c.depth2Sell = sellDepth;
-    } catch { c.depth2Buy = 0; c.depth2Sell = 0; }
-    await new Promise(r => setTimeout(r, 60));
-  }
-
-  return top20;
+async function fetchCoinDepth(coin, midPrice) {
+  const CB = 'https://api.exchange.coinbase.com';
+  const r = await fetch(`${CB}/products/${coin}-USD/book?level=3`);
+  if (!r.ok) return { buy: 0, sell: 0 };
+  const book = await r.json();
+  if (!Array.isArray(book.bids)) return { buy: 0, sell: 0 };
+  const lowBound = midPrice * 0.98, highBound = midPrice * 1.02;
+  let buy = 0, sell = 0;
+  for (const e of (book.bids || [])) { const p = parseFloat(e[0]), s = parseFloat(e[1]); if (p >= lowBound) buy += p * s; }
+  for (const e of (book.asks || [])) { const p = parseFloat(e[0]), s = parseFloat(e[1]); if (p <= highBound) sell += p * s; }
+  return { buy, sell };
 }
 
 app.get('/api/top-volume', async (req, res) => {
@@ -1346,6 +1331,18 @@ app.get('/api/top-volume', async (req, res) => {
   } catch (e) {
     console.error('[top-volume]', e.message);
     if (topVolumeCache.data.length) return res.json({ success: true, coins: topVolumeCache.data, stale: true });
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+app.get('/api/coin-depth/:coin', async (req, res) => {
+  try {
+    const coin = req.params.coin.toUpperCase();
+    const price = parseFloat(req.query.price);
+    if (!price) return res.status(400).json({ success: false, error: 'price required' });
+    const depth = await fetchCoinDepth(coin, price);
+    res.json({ success: true, coin, ...depth });
+  } catch (e) {
     res.status(500).json({ success: false, error: e.message });
   }
 });
