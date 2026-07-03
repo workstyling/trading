@@ -11649,20 +11649,18 @@ Requirements:
     }
 
     async function loadDepthSequential(coins) {
-      try {
-        const payload = coins.map(c => ({ coin: c.coin, price: c.price }));
-        const r = await fetch('/api/all-depths', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ coins: payload })
-        });
-        const d = await r.json();
-        if (d.success) {
-          for (const c of coins) applyDepth(c.coin, d.depths[c.coin]?.buy || 0, d.depths[c.coin]?.sell || 0);
-        }
-      } catch (e) {
-        console.error('[all-depths]', e);
-        for (const c of coins) { const el = document.getElementById(`tvDepth_${c.coin}`); if (el) el.textContent = '—'; }
+      const CB = 'https://api.exchange.coinbase.com';
+      for (const c of coins) {
+        try {
+          const r = await fetch(`${CB}/products/${c.coin}-USD/book?level=2`);
+          if (!r.ok) { applyDepth(c.coin, 0, 0); continue; }
+          const book = await r.json();
+          const lo = c.price * 0.98, hi = c.price * 1.02;
+          let buy = 0, sell = 0;
+          for (const e of (book.bids || [])) { const p = +e[0], s = +e[1]; if (p >= lo) buy += p * s; }
+          for (const e of (book.asks || [])) { const p = +e[0], s = +e[1]; if (p <= hi) sell += p * s; }
+          applyDepth(c.coin, buy, sell);
+        } catch { applyDepth(c.coin, 0, 0); }
       }
     }
 

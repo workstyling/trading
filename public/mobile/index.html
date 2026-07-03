@@ -3179,29 +3179,24 @@
     }
 
     async function loadDepthSequentialMobile(coins) {
-      try {
-        const payload = coins.map(c => ({ coin: c.coin, price: c.price }));
-        const r = await fetch(BASE + '/api/all-depths', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ coins: payload })
-        });
-        const d = await r.json();
-        if (d.success) {
-          for (const c of coins) {
-            const el = document.getElementById(`tvDepth_${c.coin}`);
-            if (!el) continue;
-            const buy = d.depths[c.coin]?.buy || 0, sell = d.depths[c.coin]?.sell || 0;
-            if (buy || sell) {
-              const buyMore = buy >= sell;
-              const buyCol = buyMore ? 'var(--green)' : '#f55';
-              el.innerHTML = `<span style="color:${buyCol}">${fmtVolShort(buy)}</span><span style="color:#444">/</span><span style="color:#f55">${fmtVolShort(sell)}</span>`;
-            } else { el.textContent = '—'; }
-          }
-        }
-      } catch (e) {
-        console.error('[all-depths mobile]', e);
-        for (const c of coins) { const el = document.getElementById(`tvDepth_${c.coin}`); if (el) el.textContent = '—'; }
+      const CB = 'https://api.exchange.coinbase.com';
+      for (const c of coins) {
+        try {
+          const r = await fetch(`${CB}/products/${c.coin}-USD/book?level=2`);
+          if (!r.ok) { const el = document.getElementById(`tvDepth_${c.coin}`); if (el) el.textContent = '—'; continue; }
+          const book = await r.json();
+          const lo = c.price * 0.98, hi = c.price * 1.02;
+          let buy = 0, sell = 0;
+          for (const e of (book.bids || [])) { const p = +e[0], s = +e[1]; if (p >= lo) buy += p * s; }
+          for (const e of (book.asks || [])) { const p = +e[0], s = +e[1]; if (p <= hi) sell += p * s; }
+          const el = document.getElementById(`tvDepth_${c.coin}`);
+          if (!el) continue;
+          if (buy || sell) {
+            const buyMore = buy >= sell;
+            const buyCol = buyMore ? 'var(--green)' : '#f55';
+            el.innerHTML = `<span style="color:${buyCol}">${fmtVolShort(buy)}</span><span style="color:#444">/</span><span style="color:#f55">${fmtVolShort(sell)}</span>`;
+          } else { el.textContent = '—'; }
+        } catch { const el = document.getElementById(`tvDepth_${c.coin}`); if (el) el.textContent = '—'; }
       }
     }
 
