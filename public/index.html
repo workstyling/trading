@@ -11640,9 +11640,9 @@ Requirements:
       const el = document.getElementById(`tvDepth_${coin}`);
       if (!el) return;
       if (buy || sell) {
-        const buyMore = buy >= sell;
-        const buyCol = buyMore ? 'var(--green)' : '#f55';
-        el.innerHTML = `<span style="color:${buyCol}">${fmtVolShort(buy)}</span><span style="color:#444">/</span><span style="color:#f55">${fmtVolShort(sell)}</span>`;
+        // +2% = asks (sell orders above price), -2% = bids (buy orders below price) — matches CMC convention
+        const askCol = sell >= buy ? 'var(--green)' : '#f55';
+        el.innerHTML = `<span style="color:${askCol}">${fmtVolShort(sell)}</span><span style="color:#444">/</span><span style="color:#f55">${fmtVolShort(buy)}</span>`;
       } else {
         el.textContent = '—';
       }
