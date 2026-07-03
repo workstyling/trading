@@ -1305,16 +1305,28 @@ async function fetchTopVolume() {
   return results.slice(0, 20);
 }
 
+const depthCache = {};
+const DEPTH_TTL = 30_000;
+
 async function fetchCoinDepth(coin, midPrice) {
   const CB = 'https://api.exchange.coinbase.com';
-  const r = await fetch(`${CB}/products/${coin}-USD/book?level=3`);
-  if (!r.ok) return { buy: 0, sell: 0 };
+  // level=2 returns top 50 aggregated price levels — fast and covers 2% range
+  const r = await fetch(`${CB}/products/${coin}-USD/book?level=2`, {
+    headers: { 'User-Agent': 'trading-app/1.0' }
+  });
+  if (!r.ok) {
+    console.warn(`[depth] ${coin} HTTP ${r.status}`);
+    return { buy: 0, sell: 0 };
+  }
   const book = await r.json();
-  if (!Array.isArray(book.bids)) return { buy: 0, sell: 0 };
+  if (!Array.isArray(book.bids) || !book.bids.length) {
+    console.warn(`[depth] ${coin} no bids in response`);
+    return { buy: 0, sell: 0 };
+  }
   const lowBound = midPrice * 0.98, highBound = midPrice * 1.02;
   let buy = 0, sell = 0;
-  for (const e of (book.bids || [])) { const p = parseFloat(e[0]), s = parseFloat(e[1]); if (p >= lowBound) buy += p * s; }
-  for (const e of (book.asks || [])) { const p = parseFloat(e[0]), s = parseFloat(e[1]); if (p <= highBound) sell += p * s; }
+  for (const e of book.bids) { const p = parseFloat(e[0]), s = parseFloat(e[1]); if (p >= lowBound) buy += p * s; }
+  for (const e of book.asks) { const p = parseFloat(e[0]), s = parseFloat(e[1]); if (p <= highBound) sell += p * s; }
   return { buy, sell };
 }
 
@@ -1340,9 +1352,15 @@ app.get('/api/coin-depth/:coin', async (req, res) => {
     const coin = req.params.coin.toUpperCase();
     const price = parseFloat(req.query.price);
     if (!price) return res.status(400).json({ success: false, error: 'price required' });
+    const now = Date.now();
+    if (depthCache[coin] && now - depthCache[coin].ts < DEPTH_TTL) {
+      return res.json({ success: true, coin, ...depthCache[coin].depth, cached: true });
+    }
     const depth = await fetchCoinDepth(coin, price);
+    depthCache[coin] = { depth, ts: now };
     res.json({ success: true, coin, ...depth });
   } catch (e) {
+    console.error('[coin-depth]', e.message);
     res.status(500).json({ success: false, error: e.message });
   }
 });
