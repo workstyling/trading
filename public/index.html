@@ -11667,14 +11667,16 @@ Requirements:
     async function loadTopVolume(force = false) {
       try {
         const btn = document.getElementById('tvRefreshBtn');
-        if (btn) btn.classList.add('spinning');
+        const body = document.getElementById('tvBody');
+        if (btn) { btn.disabled = true; btn.classList.add('spinning'); }
+        if (force && body) body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;gap:10px;padding:30px;color:var(--t2);font-size:13px;"><span class="spin-icon" style="font-size:20px;display:inline-block;animation:spin 0.8s linear infinite;">⟳</span> Loading...</div>';
         const res = await fetch('/api/top-volume' + (force ? '?force=true' : ''));
         const data = await res.json();
         if (data.success) {
           renderTopVolume(data.coins);
           loadDepthSequential(data.coins);
         }
-        if (btn) btn.classList.remove('spinning');
+        if (btn) { btn.disabled = false; btn.classList.remove('spinning'); }
       } catch (e) { console.error('[top-volume]', e); }
     }
 
