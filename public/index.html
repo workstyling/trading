@@ -6310,6 +6310,20 @@
           const tier = tiers.find(t => vol >= t.min) || tiers[tiers.length - 1];
           tierEl.textContent = tier.label;
           tierEl.title = `M/T: ${tier.fee}`;
+
+          // Auto-update fees if they differ from current tier
+          const [makerStr, takerStr] = tier.fee.split('/');
+          const newMaker = parseFloat(makerStr);
+          const newTaker = parseFloat(takerStr);
+          if (tradingSettings.tradeFee !== newMaker || tradingSettings.marketFee !== newTaker) {
+            tradingSettings.tradeFee = newMaker;
+            tradingSettings.marketFee = newTaker;
+            const tradeFeeEl = document.getElementById('tradeFee');
+            const marketFeeEl = document.getElementById('marketFee');
+            if (tradeFeeEl) tradeFeeEl.value = newMaker;
+            if (marketFeeEl) marketFeeEl.value = newTaker;
+            saveSettingsToServer();
+          }
         }
       } catch (e) {
         console.error('Cannot load 30d volume:', e.message);
