@@ -715,7 +715,7 @@ setInterval(fetchAllCbVolumes, 30 * 60 * 1000);
 // API: Research - 100% Coinbase data
 let researchCache = { data: null, ts: 0 };
 const RESEARCH_CACHE_TTL = 300000; // 5 minutes
-const STABLECOINS = new Set(['USDT', 'USDC', 'DAI', 'BUSD', 'TUSD', 'USDP', 'GUSD', 'FRAX', 'USDS', 'PYUSD', 'EURC', 'EUR', 'GBP', 'CBETH']);
+const STABLECOINS = new Set(['USDT','USDC','DAI','BUSD','TUSD','GUSD','USDP','FRAX','LUSD','CRVUSD','PYUSD','EURC','FDUSD','USDS','USDM','ALUSD','SUSD','MUSD','DOLA','RAI','EUR','GBP','CBETH']);
 
 // Research data cache (from background scan)
 let researchCoinsCache = [];
@@ -1273,8 +1273,6 @@ app.get('/api/top-gainers', async (req, res) => {
 
 let topVolumeCache = { data: [], fetchedAt: 0 };
 const TOP_VOLUME_TTL = 60_000;
-
-const STABLECOINS = new Set(['USDT','USDC','DAI','BUSD','TUSD','GUSD','USDP','FRAX','LUSD','CRVUSD','PYUSD','EURC','FDUSD','USDS','USDM','ALUSD','SUSD','MUSD','DOLA','RAI']);
 
 async function fetchTopVolume() {
   const CB = 'https://api.exchange.coinbase.com';
