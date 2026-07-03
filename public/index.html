@@ -6285,7 +6285,7 @@
         const res = await fetch('/get-volume-30d');
         const data = await res.json();
         if (!data.success) return;
-        valEl.textContent = fmtVol(data.totalUsd);
+        valEl.textContent = '$' + Math.round(data.totalUsd).toLocaleString('en-US');
         const tip = `Total fills (30d): ${data.totalFills}\nBuy: ${fmtVol(data.buyUsd)} (${data.buyCount}) · Sell: ${fmtVol(data.sellUsd)} (${data.sellCount})\nFees paid: ${fmtVol(data.totalFees)}`;
         pillEl.title = tip;
       } catch (e) {
