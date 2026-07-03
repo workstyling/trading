@@ -3179,18 +3179,29 @@
     }
 
     async function loadDepthSequentialMobile(coins) {
-      for (const c of coins) {
-        try {
-          const r = await fetch(BASE + `/api/coin-depth/${c.coin}?price=${c.price}`);
-          const d = await r.json();
-          const el = document.getElementById(`tvDepth_${c.coin}`);
-          if (!el) continue;
-          if (d.success && (d.buy || d.sell)) {
-            const buyMore = d.buy >= d.sell;
-            const buyCol = buyMore ? 'var(--green)' : '#f55';
-            el.innerHTML = `<span style="color:${buyCol}">${fmtVolShort(d.buy)}</span><span style="color:#444">/</span><span style="color:#f55">${fmtVolShort(d.sell)}</span>`;
-          } else { el.textContent = '—'; }
-        } catch { const el = document.getElementById(`tvDepth_${c.coin}`); if (el) el.textContent = '—'; }
+      try {
+        const payload = coins.map(c => ({ coin: c.coin, price: c.price }));
+        const r = await fetch(BASE + '/api/all-depths', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ coins: payload })
+        });
+        const d = await r.json();
+        if (d.success) {
+          for (const c of coins) {
+            const el = document.getElementById(`tvDepth_${c.coin}`);
+            if (!el) continue;
+            const buy = d.depths[c.coin]?.buy || 0, sell = d.depths[c.coin]?.sell || 0;
+            if (buy || sell) {
+              const buyMore = buy >= sell;
+              const buyCol = buyMore ? 'var(--green)' : '#f55';
+              el.innerHTML = `<span style="color:${buyCol}">${fmtVolShort(buy)}</span><span style="color:#444">/</span><span style="color:#f55">${fmtVolShort(sell)}</span>`;
+            } else { el.textContent = '—'; }
+          }
+        }
+      } catch (e) {
+        console.error('[all-depths mobile]', e);
+        for (const c of coins) { const el = document.getElementById(`tvDepth_${c.coin}`); if (el) el.textContent = '—'; }
       }
     }
 

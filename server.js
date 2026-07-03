@@ -1347,6 +1347,7 @@ app.get('/api/top-volume', async (req, res) => {
   }
 });
 
+// Single-coin depth (kept for compatibility)
 app.get('/api/coin-depth/:coin', async (req, res) => {
   try {
     const coin = req.params.coin.toUpperCase();
@@ -1361,6 +1362,30 @@ app.get('/api/coin-depth/:coin', async (req, res) => {
     res.json({ success: true, coin, ...depth });
   } catch (e) {
     console.error('[coin-depth]', e.message);
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// Batch depth — POST { coins: [{coin, price}] } → parallel fetch all, return map
+app.post('/api/all-depths', async (req, res) => {
+  try {
+    const list = Array.isArray(req.body && req.body.coins) ? req.body.coins : [];
+    if (!list.length) return res.json({ success: true, depths: {} });
+    const now = Date.now();
+    const results = await Promise.all(list.map(async ({ coin, price }) => {
+      const key = coin.toUpperCase();
+      if (depthCache[key] && now - depthCache[key].ts < DEPTH_TTL) {
+        return { coin: key, ...depthCache[key].depth };
+      }
+      const depth = await fetchCoinDepth(key, price);
+      depthCache[key] = { depth, ts: now };
+      return { coin: key, ...depth };
+    }));
+    const depths = {};
+    for (const r of results) depths[r.coin] = { buy: r.buy, sell: r.sell };
+    res.json({ success: true, depths });
+  } catch (e) {
+    console.error('[all-depths]', e.message);
     res.status(500).json({ success: false, error: e.message });
   }
 });
