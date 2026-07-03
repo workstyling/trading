@@ -6645,7 +6645,7 @@
     }
 
     // Confirmation modal
-    function showConfirmModal(title, message, onConfirm) {
+    function showConfirmModal(title, message, onConfirm, onCancel) {
       const overlay = document.createElement('div');
       overlay.className = 'modal-overlay';
       overlay.innerHTML = `
@@ -6653,17 +6653,16 @@
           <div class="modal-title">⚠️ ${title}</div>
           <div class="modal-body">${message}</div>
           <div class="modal-buttons">
-            <button class="modal-btn modal-btn-cancel" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
+            <button class="modal-btn modal-btn-cancel" id="modalCancelBtn">Cancel</button>
             <button class="modal-btn modal-btn-confirm" id="modalConfirmBtn">Confirm</button>
           </div>
         </div>
       `;
       document.body.appendChild(overlay);
-      overlay.querySelector('#modalConfirmBtn').onclick = () => {
-        overlay.remove();
-        onConfirm();
-      };
-      overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+      const close = () => overlay.remove();
+      overlay.querySelector('#modalConfirmBtn').onclick = () => { close(); onConfirm(); };
+      overlay.querySelector('#modalCancelBtn').onclick = () => { close(); if (onCancel) onCancel(); };
+      overlay.onclick = (e) => { if (e.target === overlay) { close(); if (onCancel) onCancel(); } };
     }
 
     // Sell at Best Ask with confirmation
@@ -7903,7 +7902,7 @@
     }
 
     // Sell at current ask price (your price, waits for buyer)
-    async function sellAtCurrentAsk(productId, size) {
+    async function sellAtCurrentAsk(productId, size, avgBuyPrice) {
       try {
         // Get current ask price from ticker (your sell price)
         const tickerRes = await fetch(`https://api.exchange.coinbase.com/products/${productId}/ticker`);
@@ -7915,6 +7914,27 @@
 
         if (!askPrice) {
           throw new Error('No ask price available');
+        }
+
+        // Check for loss before proceeding
+        if (avgBuyPrice > 0) {
+          const fee = tradingSettings.tradeFee / 100;
+          const effectiveReceived = parseFloat(askPrice) * parseFloat(size) * (1 - fee);
+          const cost = avgBuyPrice * parseFloat(size);
+          const profit = effectiveReceived - cost;
+          if (profit < 0) {
+            const lossFmt = Math.abs(profit).toFixed(2);
+            const pctFmt = (Math.abs(profit) / cost * 100).toFixed(2);
+            const confirmed = await new Promise(resolve => {
+              showConfirmModal(
+                '⚠️ Selling at a loss!',
+                `This sell will result in a loss of <strong style="color:#f55">-$${lossFmt} (-${pctFmt}%)</strong><br><br>Ask: $${parseFloat(askPrice).toFixed(4)} | Avg Buy: $${avgBuyPrice.toFixed(4)}<br><br>Sell anyway?`,
+                () => resolve(true),
+                () => resolve(false)
+              );
+            });
+            if (!confirmed) return;
+          }
         }
 
         // Create sell order at ask price (your price)
@@ -10513,7 +10533,7 @@ Requirements:
           let sellBtn = '';
           if (isBuy && filledVal > 0) {
             const checkMark = existingSellOrder ? `<span class="sell-exists" title="Sell order exists">✓</span>` : '';
-            sellBtn = `<button class="sell-target-btn" onclick="createSellOrder('${pair}', '${o.filled_size}', '${targetPrice}')">+${tradingSettings.sellMarkup}%</button><button class="sell-ask-btn" onclick="sellAtCurrentAsk('${pair}', '${o.filled_size}')" title="Sell at Best Ask">Sell Ask</button>${checkMark}`;
+            sellBtn = `<button class="sell-target-btn" onclick="createSellOrder('${pair}', '${o.filled_size}', '${targetPrice}')">+${tradingSettings.sellMarkup}%</button><button class="sell-ask-btn" onclick="sellAtCurrentAsk('${pair}', '${o.filled_size}', ${parseFloat(o.average_filled_price) || 0})" title="Sell at Best Ask">Sell Ask</button>${checkMark}`;
           }
           // Cancel button for OPEN orders (both buy and sell)
           if (o.status === 'OPEN') {
