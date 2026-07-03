@@ -1310,7 +1310,7 @@ async function fetchTopVolume() {
   // Fetch order book depth ±2% for each coin (sequentially to avoid rate limits)
   for (const c of top20) {
     try {
-      const r = await fetch(`${CB}/products/${c.coin}-USD/book?level=2`);
+      const r = await fetch(`${CB}/products/${c.coin}-USD/book?level=3`);
       if (!r.ok) { c.depth2Buy = 0; c.depth2Sell = 0; continue; }
       const book = await r.json();
       if (!Array.isArray(book.bids)) { c.depth2Buy = 0; c.depth2Sell = 0; continue; }
@@ -1320,11 +1320,11 @@ async function fetchTopVolume() {
       let buyDepth = 0, sellDepth = 0;
       for (const entry of (book.bids || [])) {
         const p = parseFloat(entry[0]), s = parseFloat(entry[1]);
-        if (p >= lowBound) buyDepth += p * s; else break;
+        if (p >= lowBound) buyDepth += p * s;
       }
       for (const entry of (book.asks || [])) {
         const p = parseFloat(entry[0]), s = parseFloat(entry[1]);
-        if (p <= highBound) sellDepth += p * s; else break;
+        if (p <= highBound) sellDepth += p * s;
       }
       c.depth2Buy = buyDepth;
       c.depth2Sell = sellDepth;
