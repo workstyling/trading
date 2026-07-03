@@ -1267,6 +1267,17 @@
     <a href="/" style="padding:3px 8px;border:1px solid var(--blue);border-radius:5px;color:var(--blue);font-size:10px;font-weight:600;text-decoration:none;">Desktop</a>
     <span class="header-balance" id="headerBalance">$0.00</span>
   </div>
+  <!-- Vol + Fees bar -->
+  <div style="display:flex;align-items:center;gap:10px;padding:5px 12px;background:var(--s1);border-bottom:1px solid var(--b0);font-family:'JetBrains Mono',monospace;font-size:11px;flex-wrap:wrap;">
+    <span style="color:#888;font-size:10px;">30D VOL</span>
+    <span id="mVol30Val" style="font-weight:700;color:var(--t0);">—</span>
+    <span id="mVol30Tier" style="color:#888;font-size:10px;"></span>
+    <span style="color:#444;margin:0 2px;">|</span>
+    <span style="color:#888;font-size:10px;">Limit</span>
+    <span id="mLimitFee" style="color:var(--t0);">—%</span>
+    <span style="color:#888;font-size:10px;">Market</span>
+    <span id="mMarketFee" style="color:var(--t0);">—%</span>
+  </div>
 
   <!-- Tabs -->
   <div class="tabs">
@@ -3114,9 +3125,47 @@
       }
     }
 
+    async function loadVol30dMobile() {
+      try {
+        const r = await api('/get-volume-30d');
+        if (!r.success) return;
+        const vol = r.totalUsd || 0;
+        const volEl = document.getElementById('mVol30Val');
+        const tierEl = document.getElementById('mVol30Tier');
+        const limitEl = document.getElementById('mLimitFee');
+        const marketEl = document.getElementById('mMarketFee');
+        if (volEl) volEl.textContent = '$' + Math.round(vol).toLocaleString('en-US');
+        const tiers = [
+          { min: 250e6, label: 'VIP 8',   maker: 0,     taker: 0.02  },
+          { min: 100e6, label: 'VIP 7',   maker: 0,     taker: 0.025 },
+          { min: 50e6,  label: 'VIP 6',   maker: 0,     taker: 0.035 },
+          { min: 20e6,  label: 'VIP 5',   maker: 0.01,  taker: 0.05  },
+          { min: 10e6,  label: 'VIP 4',   maker: 0.025, taker: 0.065 },
+          { min: 5e6,   label: 'VIP 3',   maker: 0.04,  taker: 0.085 },
+          { min: 1e6,   label: 'VIP 2',   maker: 0.05,  taker: 0.10  },
+          { min: 500e3, label: 'VIP 1',   maker: 0.06,  taker: 0.125 },
+          { min: 250e3, label: 'Adv 3',   maker: 0.075, taker: 0.15  },
+          { min: 75e3,  label: 'Adv 2',   maker: 0.125, taker: 0.25  },
+          { min: 25e3,  label: 'Adv 1',   maker: 0.25,  taker: 0.50  },
+          { min: 10e3,  label: 'Intro 2', maker: 0.40,  taker: 0.80  },
+          { min: 0,     label: 'Intro 1', maker: 0.60,  taker: 1.20  },
+        ];
+        const tier = tiers.find(t => vol >= t.min) || tiers[tiers.length - 1];
+        if (tierEl) tierEl.textContent = tier.label;
+        if (limitEl) limitEl.textContent = tier.maker + '%';
+        if (marketEl) marketEl.textContent = tier.taker + '%';
+        if (tradingSettings.tradeFee !== tier.maker || tradingSettings.marketFee !== tier.taker) {
+          tradingSettings.tradeFee = tier.maker;
+          tradingSettings.marketFee = tier.taker;
+        }
+      } catch(e) { console.error('vol30 mobile:', e); }
+    }
+
     // Init
     loadSettings();
     MultiTracker.init();
+    loadVol30dMobile();
+    setInterval(loadVol30dMobile, 5 * 60 * 1000);
     refreshAll();
     connectPriceWs();
     loadTopGainers();
