@@ -1274,27 +1274,35 @@ app.get('/api/top-gainers', async (req, res) => {
 let topVolumeCache = { data: [], fetchedAt: 0 };
 const TOP_VOLUME_TTL = 60_000;
 
-const candle7hCache = {};
-const CANDLE_7H_TTL = 5 * 60 * 1000;
+const trendCache = {};
+const TREND_TTL = 5 * 60 * 1000;
 
-async function fetch7hPrice(coin) {
+async function fetchTrendData(coin) {
   const now = Date.now();
-  if (candle7hCache[coin] && now - candle7hCache[coin].ts < CANDLE_7H_TTL) {
-    return candle7hCache[coin].price;
+  if (trendCache[coin] && now - trendCache[coin].ts < TREND_TTL) {
+    return trendCache[coin].data;
   }
   try {
     const CB = 'https://api.exchange.coinbase.com';
     const end = new Date(now);
-    const start = new Date(now - 9 * 3600 * 1000);
+    const start = new Date(now - 10 * 3600 * 1000);
     const url = `${CB}/products/${coin}-USD/candles?granularity=3600&start=${start.toISOString()}&end=${end.toISOString()}`;
     const r = await fetch(url, { headers: { 'User-Agent': 'trading-app/1.0' } });
     if (!r.ok) return null;
     const candles = await r.json();
-    if (!Array.isArray(candles) || candles.length < 2) return null;
+    if (!Array.isArray(candles) || candles.length < 4) return null;
     candles.sort((a, b) => a[0] - b[0]);
-    const price7h = candles[0][3]; // open of oldest candle
-    candle7hCache[coin] = { price: price7h, ts: now };
-    return price7h;
+    const closes = candles.map(c => c[4]);
+    const cur = closes[closes.length - 1];
+    const h1 = closes[closes.length - 2];
+    const h4 = closes.length >= 5 ? closes[closes.length - 5] : null;
+    const pct1h = h1 ? (cur - h1) / h1 * 100 : null;
+    const pct4h = h4 ? (cur - h4) / h4 * 100 : null;
+    // Recovery: falling last 4h but last hour turned positive
+    const recovering = pct4h !== null && pct4h < -1.5 && pct1h !== null && pct1h > 0.3;
+    const data = { pct1h, pct4h, recovering };
+    trendCache[coin] = { data, ts: now };
+    return data;
   } catch { return null; }
 }
 
@@ -1328,11 +1336,13 @@ async function fetchTopVolume() {
   results.sort((a, b) => b.volUsd - a.volUsd);
   const top20 = results.slice(0, 20);
 
-  // Fetch 7h candle prices in parallel
-  const prices7h = await Promise.all(top20.map(c => fetch7hPrice(c.coin)));
+  // Fetch trend data (hourly candles) in parallel
+  const trends = await Promise.all(top20.map(c => fetchTrendData(c.coin)));
   top20.forEach((c, i) => {
-    const p = prices7h[i];
-    c.pct7h = p ? (c.price - p) / p * 100 : null;
+    const t = trends[i];
+    c.pct1h = t?.pct1h ?? null;
+    c.pct4h = t?.pct4h ?? null;
+    c.recovering = t?.recovering ?? false;
   });
 
   return top20;

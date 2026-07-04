@@ -3167,19 +3167,26 @@
         const pctCls = c.pct24h >= 0 ? 'color:var(--green)' : 'color:#f55';
         const sign = c.pct24h >= 0 ? '+' : '';
         const price = c.price < 0.001 ? c.price.toFixed(6) : c.price < 1 ? c.price.toFixed(4) : c.price < 100 ? c.price.toFixed(3) : c.price.toFixed(2);
-        const h7Cls = c.pct7h == null ? 'color:#444' : c.pct7h >= 0 ? 'color:var(--green)' : 'color:#f55';
-        const h7Sign = c.pct7h != null && c.pct7h >= 0 ? '+' : '';
-        const h7Val = c.pct7h != null ? `${h7Sign}${c.pct7h.toFixed(2)}%` : '—';
+        let trendHtml;
+        if (c.pct1h == null) {
+          trendHtml = '<span style="color:#444">—</span>';
+        } else if (c.recovering) {
+          trendHtml = `<span style="color:#00e5a0;font-weight:700;">↩+${c.pct1h.toFixed(2)}%</span><br><span style="color:#f55;font-size:9px;">${c.pct4h.toFixed(1)}% 4h</span>`;
+        } else if (c.pct1h >= 0) {
+          trendHtml = `<span style="color:var(--green);">↑+${c.pct1h.toFixed(2)}%</span>`;
+        } else {
+          trendHtml = `<span style="color:#f55;">↓${c.pct1h.toFixed(2)}%</span>`;
+        }
         return `<tr onclick="selectCoin('${c.coin}')">
           <td style="color:#555;font-size:11px;width:20px;">${i + 1}</td>
           <td class="tg-coin" style="font-weight:700;font-size:13px;">${c.coin}<br><span style="color:#555;font-size:10px;">$${price}</span></td>
           <td style="${pctCls};font-weight:600;text-align:right;font-size:12px;">${sign}${c.pct24h.toFixed(2)}%</td>
-          <td style="${h7Cls};font-weight:600;text-align:right;font-size:12px;">${h7Val}</td>
+          <td style="text-align:right;font-size:12px;line-height:1.4;">${trendHtml}</td>
           <td style="text-align:right;font-size:12px;">${fmtVolShort(c.volUsd)}</td>
           <td id="tvDepth_${c.coin}" style="text-align:right;font-size:11px;white-space:nowrap;color:#555;">...</td>
         </tr>`;
       }).join('');
-      body.innerHTML = `<table class="tg-table" style="width:100%;"><thead><tr><th>#</th><th>COIN</th><th style="text-align:right;">24H%</th><th style="text-align:right;">7H%</th><th style="text-align:right;">VOL</th><th style="text-align:right;">+2%/-2%</th></tr></thead><tbody>${rows}</tbody></table>`;
+      body.innerHTML = `<table class="tg-table" style="width:100%;"><thead><tr><th>#</th><th>COIN</th><th style="text-align:right;">24H%</th><th style="text-align:right;">TREND</th><th style="text-align:right;">VOL</th><th style="text-align:right;">+2%/-2%</th></tr></thead><tbody>${rows}</tbody></table>`;
     }
 
     async function loadDepthSequentialMobile(coins) {
