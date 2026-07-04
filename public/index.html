@@ -11625,21 +11625,11 @@ Requirements:
         const pctCls = c.pct24h >= 0 ? 'color:var(--green)' : 'color:#f55';
         const sign = c.pct24h >= 0 ? '+' : '';
         const price = c.price < 0.001 ? c.price.toFixed(6) : c.price < 1 ? c.price.toFixed(4) : c.price < 100 ? c.price.toFixed(3) : c.price.toFixed(2);
-        let trendHtml;
-        if (c.pct1h == null) {
-          trendHtml = '<span style="color:#444">—</span>';
-        } else if (c.recovering) {
-          trendHtml = `<span style="color:#00e5a0;font-weight:700;">↩ +${c.pct1h.toFixed(2)}%</span><br><span style="color:#f55;font-size:10px;">${c.pct4h.toFixed(1)}% 4h</span>`;
-        } else if (c.pct1h >= 0) {
-          trendHtml = `<span style="color:var(--green);">↑ +${c.pct1h.toFixed(2)}%</span>`;
-        } else {
-          trendHtml = `<span style="color:#f55;">↓ ${c.pct1h.toFixed(2)}%</span>`;
-        }
         return `<tr style="cursor:pointer" onclick="selectCoinForBuy('${c.coin}')">
           <td style="color:#555;font-size:11px;">${i + 1}</td>
           <td class="tg-coin" style="font-size:13px;">${c.coin}<br><span style="color:#555;font-size:10px;">$${price}</span></td>
           <td style="${pctCls};font-weight:600;font-size:12px;">${sign}${c.pct24h.toFixed(2)}%</td>
-          <td style="font-size:12px;line-height:1.4;">${trendHtml}</td>
+          <td id="tvTrend_${c.coin}" style="font-size:12px;line-height:1.4;color:#444;">...</td>
           <td class="tg-vol" style="font-size:12px;">${fmtVolShort(c.volUsd)}</td>
           <td id="tvDepth_${c.coin}" style="font-size:11px;white-space:nowrap;color:#555;">...</td>
         </tr>`;
@@ -11656,6 +11646,43 @@ Requirements:
         el.innerHTML = `<span style="color:${askCol}">${fmtVolShort(sell)}</span><span style="color:#444">/</span><span style="color:#f55">${fmtVolShort(buy)}</span>`;
       } else {
         el.textContent = '—';
+      }
+    }
+
+    function applyTrend(coin, pct1h, pct4h) {
+      const el = document.getElementById(`tvTrend_${coin}`);
+      if (!el) return;
+      if (pct1h == null) { el.innerHTML = '<span style="color:#444">—</span>'; return; }
+      const recovering = pct4h !== null && pct4h < -1.5 && pct1h > 0.3;
+      if (recovering) {
+        el.innerHTML = `<span style="color:#00e5a0;font-weight:700;">↩ +${pct1h.toFixed(2)}%</span><br><span style="color:#f55;font-size:10px;">${pct4h.toFixed(1)}% 4h</span>`;
+      } else if (pct1h >= 0) {
+        el.innerHTML = `<span style="color:var(--green);">↑ +${pct1h.toFixed(2)}%</span>`;
+      } else {
+        el.innerHTML = `<span style="color:#f55;">↓ ${pct1h.toFixed(2)}%</span>`;
+      }
+    }
+
+    async function loadTrendSequential(coins) {
+      const CB = 'https://api.exchange.coinbase.com';
+      for (const c of coins) {
+        try {
+          const now = Date.now();
+          const start = new Date(now - 10 * 3600 * 1000).toISOString();
+          const end = new Date(now).toISOString();
+          const r = await fetch(`${CB}/products/${c.coin}-USD/candles?granularity=3600&start=${start}&end=${end}`);
+          if (!r.ok) { applyTrend(c.coin, null, null); continue; }
+          const candles = await r.json();
+          if (!Array.isArray(candles) || candles.length < 3) { applyTrend(c.coin, null, null); continue; }
+          candles.sort((a, b) => a[0] - b[0]);
+          const closes = candles.map(x => x[4]);
+          const cur = closes[closes.length - 1];
+          const h1 = closes[closes.length - 2];
+          const h4 = closes.length >= 5 ? closes[closes.length - 5] : null;
+          const pct1h = h1 ? (cur - h1) / h1 * 100 : null;
+          const pct4h = h4 ? (cur - h4) / h4 * 100 : null;
+          applyTrend(c.coin, pct1h, pct4h);
+        } catch { applyTrend(c.coin, null, null); }
       }
     }
 
@@ -11685,6 +11712,7 @@ Requirements:
         const data = await res.json();
         if (data.success) {
           renderTopVolume(data.coins);
+          loadTrendSequential(data.coins);
           loadDepthSequential(data.coins);
         }
         if (btn) { btn.disabled = false; btn.classList.remove('spinning'); }
