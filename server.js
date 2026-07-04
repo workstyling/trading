@@ -36,6 +36,7 @@ const PORT = process.env.PORT || 3847;
 const publicDir = path.join(__dirname, 'public');
 const settingsFile = path.join(__dirname, 'settings.json');
 const profitFile = path.join(__dirname, 'profit-history.json');
+const favoritesFile = path.join(__dirname, 'favorites.json');
 
 // CryptoRank API
 const CRYPTORANK_API_KEY = 'ef01b6459dbfbf7bad96be0c01fbdb393fd5d2bb9c3db186a2bc94d40371';
@@ -156,6 +157,21 @@ app.post('/save-selected-orders', (req, res) => {
 });
 
 // API: Get profit history
+app.get('/api/favorites', (req, res) => {
+  try {
+    const coins = fs.existsSync(favoritesFile) ? JSON.parse(fs.readFileSync(favoritesFile, 'utf8')) : [];
+    res.json({ success: true, coins });
+  } catch { res.json({ success: true, coins: [] }); }
+});
+
+app.post('/api/favorites', (req, res) => {
+  try {
+    const coins = Array.isArray(req.body.coins) ? req.body.coins : [];
+    fs.writeFileSync(favoritesFile, JSON.stringify(coins));
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
 app.get('/get-profit-history', (req, res) => {
   const history = loadProfitHistory();
   res.json({ success: true, history });

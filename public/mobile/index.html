@@ -1407,13 +1407,32 @@
     const FAVORITE_COINS_KEY = 'favoriteCoins';
     let favoriteCoins = new Set(JSON.parse(localStorage.getItem(FAVORITE_COINS_KEY) || '[]'));
 
+    async function loadFavoritesFromServer() {
+      try {
+        const r = await fetch(BASE + '/api/favorites');
+        const d = await r.json();
+        if (d.success && d.coins.length) {
+          favoriteCoins = new Set(d.coins);
+          localStorage.setItem(FAVORITE_COINS_KEY, JSON.stringify(d.coins));
+        }
+      } catch {}
+    }
+
+    async function saveFavoritesToServer() {
+      try {
+        await fetch(BASE + '/api/favorites', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ coins: [...favoriteCoins] })
+        });
+      } catch {}
+    }
+
     function toggleFavoriteCoin(coin) {
-      if (favoriteCoins.has(coin)) {
-        favoriteCoins.delete(coin);
-      } else {
-        favoriteCoins.add(coin);
-      }
+      const adding = !favoriteCoins.has(coin);
+      if (adding) favoriteCoins.add(coin); else favoriteCoins.delete(coin);
       localStorage.setItem(FAVORITE_COINS_KEY, JSON.stringify([...favoriteCoins]));
+      saveFavoritesToServer();
 
       // Update star appearance instantly without re-fetching prices
       const list = document.getElementById('monitorList');
@@ -1439,8 +1458,30 @@
         if (aFav !== bFav) return aFav - bFav;
         return aC.localeCompare(bC);
       });
-      groups.forEach(g => list.appendChild(g));
+      if (adding) {
+        // Animate the favorited card sliding to top
+        const favGroup = groups.find(g => g.dataset.coin === coin);
+        if (favGroup) {
+          favGroup.style.transition = 'none';
+          favGroup.style.opacity = '0.5';
+          favGroup.style.transform = 'scale(0.97)';
+          groups.forEach(g => list.appendChild(g));
+          requestAnimationFrame(() => {
+            favGroup.style.transition = 'transform 0.35s ease, opacity 0.35s ease, box-shadow 0.35s ease';
+            favGroup.style.opacity = '1';
+            favGroup.style.transform = 'translateY(0)';
+            favGroup.style.boxShadow = '0 0 14px 2px #f5c51866';
+            setTimeout(() => { favGroup.style.boxShadow = ''; favGroup.style.transition = ''; }, 500);
+          });
+        } else {
+          groups.forEach(g => list.appendChild(g));
+        }
+      } else {
+        groups.forEach(g => list.appendChild(g));
+      }
     }
+
+    loadFavoritesFromServer();
 
     // Sync with server
     async function syncSelectedFromServer() {

@@ -305,9 +305,12 @@
     }
 
     @keyframes spin {
-      to {
-        transform: rotate(360deg);
-      }
+      to { transform: rotate(360deg); }
+    }
+    @keyframes favSlideIn {
+      0%   { transform: translateY(-18px); opacity: 0; box-shadow: 0 0 20px 4px #f5c51866; }
+      60%  { transform: translateY(3px);  opacity: 1; box-shadow: 0 0 12px 2px #f5c51844; }
+      100% { transform: translateY(0);    opacity: 1; box-shadow: none; }
     }
 
     .btn-row {
@@ -8756,15 +8759,59 @@ Requirements:
     const FAVORITE_COINS_KEY = 'favoriteCoins';
     let favoriteCoins = new Set(JSON.parse(safeStorage.getItem(FAVORITE_COINS_KEY) || '[]'));
 
+    async function loadFavoritesFromServer() {
+      try {
+        const r = await fetch('/api/favorites');
+        const d = await r.json();
+        if (d.success && d.coins.length) {
+          favoriteCoins = new Set(d.coins);
+          safeStorage.setItem(FAVORITE_COINS_KEY, JSON.stringify(d.coins));
+        }
+      } catch {}
+    }
+
+    async function saveFavoritesToServer() {
+      try {
+        await fetch('/api/favorites', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ coins: [...favoriteCoins] })
+        });
+      } catch {}
+    }
+
     function toggleFavoriteCoin(coin) {
-      if (favoriteCoins.has(coin)) {
-        favoriteCoins.delete(coin);
-      } else {
-        favoriteCoins.add(coin);
-      }
+      const adding = !favoriteCoins.has(coin);
+      if (adding) favoriteCoins.add(coin); else favoriteCoins.delete(coin);
       safeStorage.setItem(FAVORITE_COINS_KEY, JSON.stringify([...favoriteCoins]));
+      saveFavoritesToServer();
+      if (adding) {
+        // Animate the coin card before re-rendering
+        const card = document.querySelector(`[data-coin-pair="${coin}-USD"]`);
+        if (card) {
+          card.style.transition = 'transform 0.35s ease, opacity 0.35s ease, box-shadow 0.35s ease';
+          card.style.boxShadow = '0 0 16px 2px #f5c51888';
+          card.style.opacity = '0.7';
+          card.style.transform = 'scale(0.97)';
+          setTimeout(() => {
+            card.style.opacity = '';
+            card.style.transform = '';
+            card.style.boxShadow = '';
+            updateSelectedOrdersView().then(() => {
+              const moved = document.querySelector(`[data-coin-pair="${coin}-USD"]`);
+              if (moved) {
+                moved.style.animation = 'favSlideIn 0.4s ease';
+                setTimeout(() => { moved.style.animation = ''; }, 400);
+              }
+            });
+          }, 300);
+          return;
+        }
+      }
       updateSelectedOrdersView();
     }
+
+    loadFavoritesFromServer();
 
     // Sync all order-selector checkboxes across all tables
     function syncAllOrderSelectors() {
@@ -10445,7 +10492,7 @@ Requirements:
         };
 
         const isFav = favoriteCoins.has(coin);
-        h += `<div class="coin-group" data-coin="${coin}">
+        h += `<div class="coin-group" data-coin="${coin}" data-coin-pair="${pair}">
           <h4><a href="https://www.tradingview.com/chart/?symbol=COINBASE%3A${coin}USD" target="_blank">${pair}</a>${todayBadge} <span onclick="toggleFavoriteCoin('${coin}')" title="${isFav ? 'Remove from favorites' : 'Add to favorites'}" style="cursor:pointer;font-size:16px;opacity:${isFav ? '1' : '0.25'};padding:0 6px;color:${isFav ? '#f5c518' : 'inherit'};">★</span><button class="select-coin-btn" onclick="selectCoinForBuy('${coin}')" title="Set for Buy">⬆</button></h4>
           <div class="balance">Selected: ${fmtSize(totalFilled)} ${coin} <span id="realBal_${coin}" style="color:var(--t2);font-size:10px;">(loading real balance...)</span> ${totalFilled > 0 ? `<button class="sell-all-btn" onclick="sellAllCoin('${pair}', '${totalFilled}', ${avgBuyPrice})">SELL ALL</button>` : ''} <button class="${btnClass}" onclick="saveGroupProfit('${coin}', ${groupProfit.toFixed(2)}, '${filledBuys.map(o => o.order_id).join(',')}', '${filledSells.map(o => o.order_id).join(',')}', ${buyCreatedDate ? `'${buyCreatedDate}'` : 'null'})" ${btnDisabled ? 'disabled' : ''}>${btnText}</button>
           ${totalFilled > 0 ? `<span style="margin-left:10px;display:inline-flex;align-items:center;gap:4px;">
