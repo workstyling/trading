@@ -3285,9 +3285,10 @@
         const res = await fetch(BASE + '/api/top-volume' + (force ? '?force=true' : ''));
         const data = await res.json();
         if (data.success) {
-          renderTopVolumeMobile(data.coins);
-          loadTrendSequentialMobile(data.coins);
-          loadDepthSequentialMobile(data.coins);
+          const coins = data.coins.filter(c => c.volUsd >= 5_000_000);
+          renderTopVolumeMobile(coins);
+          loadTrendSequentialMobile(coins);
+          loadDepthSequentialMobile(coins);
         }
         tvCountdownSec = 60;
         if (btn) { btn.disabled = false; btn.classList.remove('spinning'); }

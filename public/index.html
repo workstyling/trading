@@ -11771,9 +11771,10 @@ Requirements:
         const res = await fetch('/api/top-volume' + (force ? '?force=true' : ''));
         const data = await res.json();
         if (data.success) {
-          renderTopVolume(data.coins);
-          loadTrendSequential(data.coins);
-          loadDepthSequential(data.coins);
+          const coins = data.coins.filter(c => c.volUsd >= 5_000_000);
+          renderTopVolume(coins);
+          loadTrendSequential(coins);
+          loadDepthSequential(coins);
         }
         if (btn) { btn.disabled = false; btn.classList.remove('spinning'); }
       } catch (e) { console.error('[top-volume]', e); }
