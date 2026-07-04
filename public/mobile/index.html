@@ -312,6 +312,11 @@
       border-radius: 50%; animation: spin .8s linear infinite; margin: 0 auto 10px;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes favSlideInMobile {
+      0%   { transform: translateY(-24px) scale(0.96); opacity: 0; box-shadow: 0 0 20px 4px #f5c51877; }
+      65%  { transform: translateY(4px) scale(1.01); opacity: 1; box-shadow: 0 0 10px 2px #f5c51844; }
+      100% { transform: translateY(0) scale(1); opacity: 1; box-shadow: none; }
+    }
 
     .toast-container {
       position: fixed; bottom: 70px; left: 50%; transform: translateX(-50%);
@@ -1459,23 +1464,25 @@
         return aC.localeCompare(bC);
       });
       if (adding) {
-        // Animate the favorited card sliding to top
         const favGroup = groups.find(g => g.dataset.coin === coin);
-        if (favGroup) {
-          favGroup.style.transition = 'none';
-          favGroup.style.opacity = '0.5';
-          favGroup.style.transform = 'scale(0.97)';
-          groups.forEach(g => list.appendChild(g));
-          requestAnimationFrame(() => {
-            favGroup.style.transition = 'transform 0.35s ease, opacity 0.35s ease, box-shadow 0.35s ease';
-            favGroup.style.opacity = '1';
-            favGroup.style.transform = 'translateY(0)';
-            favGroup.style.boxShadow = '0 0 14px 2px #f5c51866';
-            setTimeout(() => { favGroup.style.boxShadow = ''; favGroup.style.transition = ''; }, 500);
-          });
-        } else {
-          groups.forEach(g => list.appendChild(g));
+        // First flash the star gold, then move card
+        const starEl = favGroup ? favGroup.querySelector('[data-fav-coin]') : null;
+        if (starEl) {
+          starEl.style.transition = 'transform 0.2s ease, color 0.2s ease';
+          starEl.style.transform = 'scale(1.5)';
+          setTimeout(() => { starEl.style.transform = 'scale(1)'; }, 200);
         }
+        // Move cards in DOM after short delay so star flash is visible
+        setTimeout(() => {
+          groups.forEach(g => list.appendChild(g));
+          if (favGroup) {
+            favGroup.style.animation = 'none';
+            requestAnimationFrame(() => {
+              favGroup.style.animation = 'favSlideInMobile 0.45s cubic-bezier(0.22,1,0.36,1) forwards';
+              setTimeout(() => { favGroup.style.animation = ''; }, 450);
+            });
+          }
+        }, 180);
       } else {
         groups.forEach(g => list.appendChild(g));
       }
