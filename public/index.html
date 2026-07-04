@@ -7897,49 +7897,46 @@
     // Sell at current ask price (your price, waits for buyer)
     async function sellAtCurrentAsk(productId, size, avgBuyPrice) {
       try {
-        // Get current ask price from ticker (your sell price)
+        const coin = productId.split('-')[0];
         const tickerRes = await fetch(`https://api.exchange.coinbase.com/products/${productId}/ticker`);
-        if (!tickerRes.ok) {
-          throw new Error('Failed to get current price');
-        }
+        if (!tickerRes.ok) throw new Error('Failed to get current price');
         const tickerData = await tickerRes.json();
-        const askPrice = tickerData.ask;
+        const askPrice = parseFloat(tickerData.ask);
+        if (!askPrice) throw new Error('No ask price available');
 
-        if (!askPrice) {
-          throw new Error('No ask price available');
-        }
+        const fee = tradingSettings.tradeFee / 100;
+        const sz = parseFloat(size);
+        const effectiveReceived = askPrice * sz * (1 - fee);
+        const costBasis = avgBuyPrice > 0 ? avgBuyPrice * (1 + fee) * sz : null;
+        const profit = costBasis !== null ? effectiveReceived - costBasis : null;
+        const pct = costBasis ? (profit / costBasis * 100) : null;
 
-        // Check for loss before proceeding
-        if (avgBuyPrice > 0) {
-          const fee = tradingSettings.tradeFee / 100;
-          const effectiveReceived = parseFloat(askPrice) * parseFloat(size) * (1 - fee);
-          const cost = avgBuyPrice * parseFloat(size);
-          const profit = effectiveReceived - cost;
-          if (profit < 0) {
-            const lossFmt = Math.abs(profit).toFixed(2);
-            const pctFmt = (Math.abs(profit) / cost * 100).toFixed(2);
-            const confirmed = await new Promise(resolve => {
-              showConfirmModal(
-                '⚠️ Selling at a loss!',
-                `This sell will result in a loss of <strong style="color:#f55">-$${lossFmt} (-${pctFmt}%)</strong><br><br>Ask: $${parseFloat(askPrice).toFixed(4)} | Avg Buy: $${avgBuyPrice.toFixed(4)}<br><br>Sell anyway?`,
-                () => resolve(true),
-                () => resolve(false)
-              );
-            });
-            if (!confirmed) return;
-          }
-        }
+        const isProfit = profit !== null && profit >= 0;
+        const pnlColor = isProfit ? '#2ecc71' : '#f55';
+        const pnlSign = isProfit ? '+' : '';
+        const pnlHtml = profit !== null
+          ? `<br><span style="font-size:15px;font-weight:700;color:${pnlColor}">${pnlSign}$${profit.toFixed(2)} (${pnlSign}${pct.toFixed(2)}%)</span>`
+          : '';
+        const title = profit !== null && profit < 0 ? '⚠️ Продажа в убыток' : 'Подтвердите продажу';
 
-        // Create sell order at ask price (your price)
+        const confirmed = await new Promise(resolve => {
+          showConfirmModal(
+            title,
+            `<strong>${sz} ${coin}</strong> по Ask: <strong>$${askPrice.toFixed(6)}</strong>${pnlHtml}<br><br><span style="color:#888;font-size:11px;">Цена зафиксирована. Подтвердите продажу.</span>`,
+            () => resolve(true),
+            () => resolve(false)
+          );
+        });
+        if (!confirmed) return;
+
         const res = await fetch('/create-sell-order', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ productId, size, price: askPrice })
+          body: JSON.stringify({ productId, size, price: tickerData.ask })
         });
         const data = await res.json();
-
         if (data.success) {
-          showCustomAlert(`Sell order at Ask! ${productId} @ $${parseFloat(askPrice).toFixed(4)}`);
+          showCustomAlert(`Sell order placed! ${productId} @ $${askPrice.toFixed(4)}`);
           const newOrderId = data.order_id;
           if (newOrderId && !selectedOrders.includes(newOrderId)) {
             selectedOrders.push(newOrderId);
@@ -7956,16 +7953,8 @@
       }
     }
 
-    // Sell all coins of a specific pair at current bid (immediate)
     async function sellAllCoin(productId, size, avgBuyPrice) {
-      const coin = productId.split('-')[0];
-      showConfirmModal(
-        'Confirm Sell All',
-        `Sell <strong>${size} ${coin}</strong> at Best Ask?`,
-        async () => {
-          await sellAtCurrentAsk(productId, size, avgBuyPrice);
-        }
-      );
+      await sellAtCurrentAsk(productId, size, avgBuyPrice);
     }
 
     async function sellAllLimit(productId, size, coin) {
