@@ -10754,9 +10754,10 @@ Requirements:
 
           if (buyPrice > 0) {
             const currentAsk = bestAsk > 0 ? bestAsk : buyPrice;
-            const effectivePrice = currentAsk * (1 - fee); // what you actually get after fee
+            const effectivePrice = currentAsk * (1 - fee); // net received after sell fee
+            const costBasis = buyPrice * (1 + fee); // actual cost including buy fee
             const targetPct = ((targetSellPrice - buyPrice) / buyPrice * 100);
-            const currentPct = ((effectivePrice - buyPrice) / buyPrice * 100);
+            const currentPct = ((effectivePrice - costBasis) / costBasis * 100);
 
             const rightMax = targetPct + 1;
             const baseLeft = -(targetPct + 1);
@@ -11087,8 +11088,9 @@ Requirements:
 
             if (buyPrice > 0) {
               const effectivePrice = bestAsk * (1 - fee);
+              const costBasis = buyPrice * (1 + fee);
               const targetPct = ((targetSellPrice - buyPrice) / buyPrice * 100);
-              const currentPct = ((effectivePrice - buyPrice) / buyPrice * 100);
+              const currentPct = ((effectivePrice - costBasis) / costBasis * 100);
               const breakevenPct = parseFloat(progressEl.dataset.breakevenPct) || 0.12;
 
               const rightMax = targetPct + 1;
