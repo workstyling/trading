@@ -1463,28 +1463,26 @@
         if (aFav !== bFav) return aFav - bFav;
         return aC.localeCompare(bC);
       });
-      if (adding) {
-        const favGroup = groups.find(g => g.dataset.coin === coin);
-        // First flash the star gold, then move card
-        const starEl = favGroup ? favGroup.querySelector('[data-fav-coin]') : null;
+      const favGroup = adding ? groups.find(g => g.dataset.coin === coin) : null;
+
+      // Flash star first
+      if (favGroup) {
+        const starEl = favGroup.querySelector('[data-fav-coin]');
         if (starEl) {
-          starEl.style.transition = 'transform 0.2s ease, color 0.2s ease';
-          starEl.style.transform = 'scale(1.5)';
-          setTimeout(() => { starEl.style.transform = 'scale(1)'; }, 200);
+          starEl.style.transform = 'scale(1.6)';
+          setTimeout(() => { starEl.style.transform = ''; }, 220);
         }
-        // Move cards in DOM after short delay so star flash is visible
-        setTimeout(() => {
-          groups.forEach(g => list.appendChild(g));
-          if (favGroup) {
-            favGroup.style.animation = 'none';
-            requestAnimationFrame(() => {
-              favGroup.style.animation = 'favSlideInMobile 0.45s cubic-bezier(0.22,1,0.36,1) forwards';
-              setTimeout(() => { favGroup.style.animation = ''; }, 450);
-            });
-          }
-        }, 180);
-      } else {
-        groups.forEach(g => list.appendChild(g));
+      }
+
+      // Move all groups to new sorted positions
+      groups.forEach(g => list.appendChild(g));
+
+      // Play slide-in animation on the newly favorited card
+      if (favGroup) {
+        favGroup.style.animation = 'none';
+        void favGroup.offsetWidth; // force reflow so animation restarts
+        favGroup.style.animation = 'favSlideInMobile 0.45s cubic-bezier(0.22,1,0.36,1) forwards';
+        setTimeout(() => { favGroup.style.animation = ''; }, 460);
       }
     }
 
