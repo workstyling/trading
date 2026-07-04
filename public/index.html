@@ -11649,13 +11649,15 @@ Requirements:
       }
     }
 
-    function applyTrend(coin, pct1h, pct4h) {
+    function applyTrend(coin, pct1h, fallingHours, totalFallPct) {
       const el = document.getElementById(`tvTrend_${coin}`);
       if (!el) return;
       if (pct1h == null) { el.innerHTML = '<span style="color:#444">—</span>'; return; }
-      const recovering = pct4h !== null && pct4h < -1.5 && pct1h > 0.3;
+      const recovering = fallingHours >= 2 && pct1h > 0.2;
       if (recovering) {
-        el.innerHTML = `<span style="color:#00e5a0;font-weight:700;">↩ +${pct1h.toFixed(2)}%</span><br><span style="color:#f55;font-size:10px;">${pct4h.toFixed(1)}% 4h</span>`;
+        // strength of signal: more hours falling = stronger
+        const hColor = fallingHours >= 8 ? '#ff4444' : fallingHours >= 4 ? '#f55' : '#f88';
+        el.innerHTML = `<span style="color:#00e5a0;font-weight:700;">↩ +${pct1h.toFixed(2)}%</span><br><span style="color:${hColor};font-size:10px;">↓${fallingHours}h ${totalFallPct.toFixed(1)}%</span>`;
       } else if (pct1h >= 0) {
         el.innerHTML = `<span style="color:var(--green);">↑ +${pct1h.toFixed(2)}%</span>`;
       } else {
@@ -11668,21 +11670,28 @@ Requirements:
       for (const c of coins) {
         try {
           const now = Date.now();
-          const start = new Date(now - 10 * 3600 * 1000).toISOString();
+          const start = new Date(now - 26 * 3600 * 1000).toISOString();
           const end = new Date(now).toISOString();
           const r = await fetch(`${CB}/products/${c.coin}-USD/candles?granularity=3600&start=${start}&end=${end}`);
-          if (!r.ok) { applyTrend(c.coin, null, null); continue; }
+          if (!r.ok) { applyTrend(c.coin, null, 0, 0); continue; }
           const candles = await r.json();
-          if (!Array.isArray(candles) || candles.length < 3) { applyTrend(c.coin, null, null); continue; }
+          if (!Array.isArray(candles) || candles.length < 3) { applyTrend(c.coin, null, 0, 0); continue; }
           candles.sort((a, b) => a[0] - b[0]);
           const closes = candles.map(x => x[4]);
-          const cur = closes[closes.length - 1];
-          const h1 = closes[closes.length - 2];
-          const h4 = closes.length >= 5 ? closes[closes.length - 5] : null;
-          const pct1h = h1 ? (cur - h1) / h1 * 100 : null;
-          const pct4h = h4 ? (cur - h4) / h4 * 100 : null;
-          applyTrend(c.coin, pct1h, pct4h);
-        } catch { applyTrend(c.coin, null, null); }
+          const n = closes.length;
+          // pct1h: last completed candle vs previous
+          const pct1h = closes[n-2] ? (closes[n-1] - closes[n-2]) / closes[n-2] * 100 : null;
+          // Count consecutive falling hours before the last candle
+          let fallingHours = 0;
+          for (let i = n - 2; i > 0; i--) {
+            if (closes[i] <= closes[i-1]) fallingHours++;
+            else break;
+          }
+          // Total % decline over those falling hours
+          const fallStart = n - 1 - fallingHours;
+          const totalFallPct = fallStart >= 0 && closes[fallStart] ? (closes[n-2] - closes[fallStart]) / closes[fallStart] * 100 : 0;
+          applyTrend(c.coin, pct1h, fallingHours, totalFallPct);
+        } catch { applyTrend(c.coin, null, 0, 0); }
       }
     }
 
