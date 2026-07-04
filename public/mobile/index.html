@@ -3255,22 +3255,24 @@
     async function loadDepthSequentialMobile(coins) {
       const CB = 'https://api.exchange.coinbase.com';
       for (const c of coins) {
-        try {
-          const r = await fetch(`${CB}/products/${c.coin}-USD/book?level=2`);
-          if (!r.ok) { const el = document.getElementById(`tvDepth_${c.coin}`); if (el) el.textContent = '—'; continue; }
-          const book = await r.json();
-          const lo = c.price * 0.98, hi = c.price * 1.02;
-          let buy = 0, sell = 0;
-          for (const e of (book.bids || [])) { const p = +e[0], s = +e[1]; if (p >= lo) buy += p * s; }
-          for (const e of (book.asks || [])) { const p = +e[0], s = +e[1]; if (p <= hi) sell += p * s; }
-          const el = document.getElementById(`tvDepth_${c.coin}`);
-          if (!el) continue;
-          if (buy || sell) {
-            // +2% = asks (sell), -2% = bids (buy) — matches CMC convention
-            const askCol = sell >= buy ? 'var(--green)' : '#f55';
-            el.innerHTML = `<span style="color:${askCol}">${fmtVolShort(sell)}</span><span style="color:#444">/</span><span style="color:#f55">${fmtVolShort(buy)}</span>`;
-          } else { el.textContent = '—'; }
-        } catch { const el = document.getElementById(`tvDepth_${c.coin}`); if (el) el.textContent = '—'; }
+        for (let attempt = 0; attempt < 2; attempt++) {
+          try {
+            const r = await fetch(`${CB}/products/${c.coin}-USD/book?level=2`);
+            if (!r.ok) { if (attempt === 0) continue; const el = document.getElementById(`tvDepth_${c.coin}`); if (el) el.textContent = '—'; break; }
+            const book = await r.json();
+            const lo = c.price * 0.98, hi = c.price * 1.02;
+            let buy = 0, sell = 0;
+            for (const e of (book.bids || [])) { const p = +e[0], s = +e[1]; if (p >= lo) buy += p * s; }
+            for (const e of (book.asks || [])) { const p = +e[0], s = +e[1]; if (p <= hi) sell += p * s; }
+            const el = document.getElementById(`tvDepth_${c.coin}`);
+            if (!el) break;
+            if (buy || sell) {
+              const askCol = sell >= buy ? 'var(--green)' : '#f55';
+              el.innerHTML = `<span style="color:${askCol}">${fmtVolShort(sell)}</span><span style="color:#444">/</span><span style="color:#f55">${fmtVolShort(buy)}</span>`;
+            } else { el.textContent = '—'; }
+            break;
+          } catch { if (attempt === 1) { const el = document.getElementById(`tvDepth_${c.coin}`); if (el) el.textContent = '—'; } }
+        }
       }
     }
 

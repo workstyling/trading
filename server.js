@@ -1350,7 +1350,7 @@ async function fetchTopVolume() {
     if (i + BATCH < usdPairs.length) await new Promise(r => setTimeout(r, 80));
   }
   results.sort((a, b) => b.volUsd - a.volUsd);
-  const top20 = results.slice(0, 20);
+  const top20 = results.filter(c => c.volUsd >= 5_000_000).slice(0, 20);
 
   // Fetch trend data (hourly candles) in parallel
   const trends = await Promise.all(top20.map(c => fetchTrendData(c.coin)));

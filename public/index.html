@@ -11745,16 +11745,20 @@ Requirements:
     async function loadDepthSequential(coins) {
       const CB = 'https://api.exchange.coinbase.com';
       for (const c of coins) {
-        try {
-          const r = await fetch(`${CB}/products/${c.coin}-USD/book?level=2`);
-          if (!r.ok) { applyDepth(c.coin, 0, 0); continue; }
-          const book = await r.json();
-          const lo = c.price * 0.98, hi = c.price * 1.02;
-          let buy = 0, sell = 0;
-          for (const e of (book.bids || [])) { const p = +e[0], s = +e[1]; if (p >= lo) buy += p * s; }
-          for (const e of (book.asks || [])) { const p = +e[0], s = +e[1]; if (p <= hi) sell += p * s; }
-          applyDepth(c.coin, buy, sell);
-        } catch { applyDepth(c.coin, 0, 0); }
+        let ok = false;
+        for (let attempt = 0; attempt < 2; attempt++) {
+          try {
+            const r = await fetch(`${CB}/products/${c.coin}-USD/book?level=2`);
+            if (!r.ok) { if (attempt === 0) continue; applyDepth(c.coin, 0, 0); break; }
+            const book = await r.json();
+            const lo = c.price * 0.98, hi = c.price * 1.02;
+            let buy = 0, sell = 0;
+            for (const e of (book.bids || [])) { const p = +e[0], s = +e[1]; if (p >= lo) buy += p * s; }
+            for (const e of (book.asks || [])) { const p = +e[0], s = +e[1]; if (p <= hi) sell += p * s; }
+            applyDepth(c.coin, buy, sell);
+            ok = true; break;
+          } catch { if (attempt === 1) applyDepth(c.coin, 0, 0); }
+        }
       }
     }
 
