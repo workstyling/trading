@@ -1339,21 +1339,6 @@
       <span class="set-unit">%</span>
     </div>
     
-    <!-- Active Trackers Panel -->
-    <div id="activeTrackersPanel" class="active-trackers-panel">
-      <div class="at-header">
-        <span class="at-title">⚡ Real-Time Coin Trackers (1s)</span>
-        <div class="at-add-controls">
-          <input type="text" id="addTrackerCoinInput" placeholder="Symbol" class="at-coin-input" onkeydown="if(event.key === 'Enter') addManualCoinTracker()">
-          <button onclick="addManualCoinTracker()" class="at-add-btn">+ Add</button>
-          <span class="at-usd-label">Default $:</span>
-          <input type="number" id="defaultTrackerUsdAmount" value="100" class="at-usd-input" oninput="MultiTracker.defaultUsdAmount = parseFloat(this.value) || 100">
-        </div>
-      </div>
-      <div id="activeTrackersContainer" class="active-trackers-container">
-        <div class="no-trackers-placeholder">No active trackers. Click ⚡ next to a coin name below or enter a symbol to start one.</div>
-      </div>
-    </div>
   </div>
 
   <!-- Orders Panel -->
