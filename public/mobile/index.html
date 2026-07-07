@@ -1539,15 +1539,15 @@
         ' ' + dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
     }
 
-    function flashPrice(el, newText, highlightColor) {
+    function flashPrice(el, newText, baseColor) {
       const oldText = el.textContent;
       if (oldText === newText) return;
       let i = 0;
       while (i < oldText.length && i < newText.length && oldText[i] === newText[i]) i++;
       const unchanged = newText.slice(0, i);
       const changed = newText.slice(i);
-      el.innerHTML = unchanged + `<span style="color:${highlightColor || '#fff'};transition:color 0.6s">${changed}</span>`;
-      setTimeout(() => { if (el.textContent === newText) el.innerHTML = newText; }, 700);
+      el.innerHTML = `<span style="color:${baseColor};opacity:0.45">${unchanged}</span><span style="color:#fff;font-weight:700">${changed}</span>`;
+      setTimeout(() => { el.innerHTML = newText; }, 800);
     }
 
     // ── API calls ──
@@ -1601,8 +1601,8 @@
       priceWs.onmessage = (e) => {
         const d = JSON.parse(e.data);
         if (d.type === 'ticker') {
-          if (d.best_bid) { prices.bid = parseFloat(d.best_bid); flashPrice(document.getElementById('priceBid'), '$' + fmt(prices.bid), '#4fc3f7'); }
-          if (d.best_ask) { prices.ask = parseFloat(d.best_ask); flashPrice(document.getElementById('priceAsk'), '$' + fmt(prices.ask), '#ff8a65'); }
+          if (d.best_bid) { prices.bid = parseFloat(d.best_bid); flashPrice(document.getElementById('priceBid'), '$' + fmt(prices.bid), '#2ecc71'); }
+          if (d.best_ask) { prices.ask = parseFloat(d.best_ask); flashPrice(document.getElementById('priceAsk'), '$' + fmt(prices.ask), '#f55'); }
           updateUsd();
         }
       };
