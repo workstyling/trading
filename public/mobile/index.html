@@ -1539,14 +1539,16 @@
         ' ' + dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
     }
 
-    function flashPrice(el, newText, baseColor) {
+    function flashPrice(el, newText, oldVal, newVal) {
       const oldText = el.textContent;
       if (oldText === newText) return;
       let i = 0;
       while (i < oldText.length && i < newText.length && oldText[i] === newText[i]) i++;
       const unchanged = newText.slice(0, i);
       const changed = newText.slice(i);
-      el.innerHTML = `<span style="color:${baseColor};opacity:0.45">${unchanged}</span><span style="color:#fff;font-weight:700">${changed}</span>`;
+      const dir = newVal > oldVal ? 1 : newVal < oldVal ? -1 : 0;
+      const changeColor = dir > 0 ? '#2ecc71' : dir < 0 ? '#f55' : '#fff';
+      el.innerHTML = `<span style="opacity:0.5">${unchanged}</span><span style="color:${changeColor};font-weight:700">${changed}</span>`;
       setTimeout(() => { el.innerHTML = newText; }, 800);
     }
 
@@ -1601,8 +1603,8 @@
       priceWs.onmessage = (e) => {
         const d = JSON.parse(e.data);
         if (d.type === 'ticker') {
-          if (d.best_bid) { prices.bid = parseFloat(d.best_bid); flashPrice(document.getElementById('priceBid'), '$' + fmt(prices.bid), '#2ecc71'); }
-          if (d.best_ask) { prices.ask = parseFloat(d.best_ask); flashPrice(document.getElementById('priceAsk'), '$' + fmt(prices.ask), '#f55'); }
+          if (d.best_bid) { const prev = prices.bid; prices.bid = parseFloat(d.best_bid); flashPrice(document.getElementById('priceBid'), '$' + fmt(prices.bid), prev, prices.bid); }
+          if (d.best_ask) { const prev = prices.ask; prices.ask = parseFloat(d.best_ask); flashPrice(document.getElementById('priceAsk'), '$' + fmt(prices.ask), prev, prices.ask); }
           updateUsd();
         }
       };
