@@ -11655,11 +11655,54 @@ Requirements:
       return '$' + v.toFixed(0);
     }
 
+    const tvCoinData = {};
+
+    function calcCoinScore(coin) {
+      const d = tvCoinData[coin];
+      if (!d) return null;
+      let score = 5;
+      // 1H Trend (±3)
+      if (d.pct1h != null) {
+        if (d.recovering) score += 3;
+        else if (d.pct1h > 0.5) score += 2;
+        else if (d.pct1h > 0.1) score += 1;
+        else if (d.pct1h < -0.5) score -= 2;
+        else if (d.pct1h < -0.15) score -= 1;
+      }
+      // 24H% (±2)
+      if (d.pct24h != null) {
+        if (d.pct24h > 5) score += 2;
+        else if (d.pct24h > 1.5) score += 1;
+        else if (d.pct24h < -5) score -= 2;
+        else if (d.pct24h < -2) score -= 1;
+      }
+      // Depth ratio: bid support vs ask resistance (±1)
+      if (d.bidDepth > 0 && d.askDepth > 0) {
+        const ratio = d.bidDepth / d.askDepth;
+        if (ratio > 1.5) score += 1;
+        else if (ratio < 0.67) score -= 1;
+      }
+      // Volume (±1)
+      if (d.vol > 100e6) score += 1;
+      else if (d.vol < 8e6) score -= 0.5;
+      return Math.max(0, Math.min(10, Math.round(score)));
+    }
+
+    function updateScore(coin) {
+      const el = document.getElementById(`tvScore_${coin}`);
+      if (!el) return;
+      const score = calcCoinScore(coin);
+      if (score === null) return;
+      const color = score >= 8 ? '#00e5a0' : score >= 6 ? '#f5c518' : score >= 4 ? '#f5843a' : '#f55';
+      el.innerHTML = `<span style="color:${color};font-weight:700;font-size:15px;">${score}</span><span style="color:#444;font-size:9px;">/10</span>`;
+    }
+
     function renderTopVolume(coins) {
       const body = document.getElementById('tvBody');
       if (!body) return;
       if (!coins || !coins.length) { body.innerHTML = '<div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">No data</div>'; return; }
       const rows = coins.map((c, i) => {
+        tvCoinData[c.coin] = { pct24h: c.pct24h, vol: c.volUsd, pct1h: null, fallingHours: 0, recovering: false, bidDepth: 0, askDepth: 0 };
         const pctCls = c.pct24h >= 0 ? 'color:var(--green)' : 'color:#f55';
         const sign = c.pct24h >= 0 ? '+' : '';
         const price = c.price < 0.001 ? c.price.toFixed(6) : c.price < 1 ? c.price.toFixed(4) : c.price < 100 ? c.price.toFixed(3) : c.price.toFixed(2);
@@ -11670,30 +11713,33 @@ Requirements:
           <td id="tvTrend_${c.coin}" style="font-size:12px;line-height:1.4;color:#444;">...</td>
           <td class="tg-vol" style="font-size:12px;">${fmtVolShort(c.volUsd)}</td>
           <td id="tvDepth_${c.coin}" style="font-size:11px;white-space:nowrap;color:#555;">...</td>
+          <td id="tvScore_${c.coin}" style="text-align:center;color:#444;font-size:11px;">...</td>
         </tr>`;
       }).join('');
-      body.innerHTML = `<table class="tg-table"><thead><tr><th>#</th><th>COIN</th><th>24H%</th><th>TREND 1H</th><th>VOL</th><th>+2%/-2%</th></tr></thead><tbody>${rows}</tbody></table>`;
+      body.innerHTML = `<table class="tg-table"><thead><tr><th>#</th><th>COIN</th><th>24H%</th><th>TREND 1H</th><th>VOL</th><th>+2%/-2%</th><th>SCORE</th></tr></thead><tbody>${rows}</tbody></table>`;
     }
 
     function applyDepth(coin, buy, sell) {
       const el = document.getElementById(`tvDepth_${coin}`);
       if (!el) return;
       if (buy || sell) {
-        // +2% = asks (sell orders above price), -2% = bids (buy orders below price) — matches CMC convention
         const askCol = sell >= buy ? 'var(--green)' : '#f55';
         el.innerHTML = `<span style="color:${askCol}">${fmtVolShort(sell)}</span><span style="color:#444">/</span><span style="color:#f55">${fmtVolShort(buy)}</span>`;
       } else {
         el.textContent = '—';
       }
+      if (tvCoinData[coin]) { tvCoinData[coin].bidDepth = buy; tvCoinData[coin].askDepth = sell; }
+      updateScore(coin);
     }
 
     function applyTrend(coin, pct1h, fallingHours, totalFallPct) {
       const el = document.getElementById(`tvTrend_${coin}`);
       if (!el) return;
-      if (pct1h == null) { el.innerHTML = '<span style="color:#444">—</span>'; return; }
       const recovering = fallingHours >= 2 && pct1h > 0.2;
+      if (tvCoinData[coin]) { tvCoinData[coin].pct1h = pct1h; tvCoinData[coin].fallingHours = fallingHours; tvCoinData[coin].recovering = recovering; }
+      updateScore(coin);
+      if (pct1h == null) { el.innerHTML = '<span style="color:#444">—</span>'; return; }
       if (recovering) {
-        // strength of signal: more hours falling = stronger
         const hColor = fallingHours >= 8 ? '#ff4444' : fallingHours >= 4 ? '#f55' : '#f88';
         el.innerHTML = `<span style="color:#00e5a0;font-weight:700;">↩ +${pct1h.toFixed(2)}%</span><br><span style="color:${hColor};font-size:10px;">↓${fallingHours}h ${totalFallPct.toFixed(1)}%</span>`;
       } else if (pct1h >= 0) {
