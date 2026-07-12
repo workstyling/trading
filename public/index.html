@@ -11657,6 +11657,30 @@ Requirements:
 
     const tvCoinData = {};
 
+    function calcRSI(closes, period = 14) {
+      if (closes.length < period + 1) return null;
+      const changes = closes.slice(1).map((c, i) => c - closes[i]);
+      let avgGain = 0, avgLoss = 0;
+      for (let i = 0; i < period; i++) {
+        if (changes[i] > 0) avgGain += changes[i]; else avgLoss += Math.abs(changes[i]);
+      }
+      avgGain /= period; avgLoss /= period;
+      for (let i = period; i < changes.length; i++) {
+        avgGain = (avgGain * (period - 1) + Math.max(0, changes[i])) / period;
+        avgLoss = (avgLoss * (period - 1) + Math.max(0, -changes[i])) / period;
+      }
+      if (avgLoss === 0) return 100;
+      return 100 - 100 / (1 + avgGain / avgLoss);
+    }
+
+    function calcEMA(closes, period) {
+      if (closes.length < period) return null;
+      const k = 2 / (period + 1);
+      let ema = closes.slice(0, period).reduce((a, b) => a + b) / period;
+      for (let i = period; i < closes.length; i++) ema = closes[i] * k + ema * (1 - k);
+      return ema;
+    }
+
     function calcCoinScore(coin) {
       const d = tvCoinData[coin];
       if (!d) return null;
@@ -11669,22 +11693,38 @@ Requirements:
         else if (d.pct1h < -0.5) score -= 2;
         else if (d.pct1h < -0.15) score -= 1;
       }
-      // 24H% (±2)
-      if (d.pct24h != null) {
-        if (d.pct24h > 5) score += 2;
-        else if (d.pct24h > 1.5) score += 1;
-        else if (d.pct24h < -5) score -= 2;
-        else if (d.pct24h < -2) score -= 1;
+      // RSI(14) (±1.5): oversold = buy signal, overbought = risk
+      if (d.rsi != null) {
+        if (d.rsi < 30) score += 1.5;
+        else if (d.rsi < 40) score += 1;
+        else if (d.rsi < 50) score += 0.5;
+        else if (d.rsi > 70) score -= 1.5;
+        else if (d.rsi > 60) score -= 0.5;
       }
-      // Depth ratio: bid support vs ask resistance (±1)
+      // EMA20 position (±1): price above rising EMA = bullish
+      if (d.priceVsEma != null) {
+        score += d.priceVsEma > 0 ? 0.5 : -0.5;
+        if (d.emaRising != null) score += d.emaRising ? 0.5 : -0.5;
+      }
+      // Volume surge (±0.5): high volume confirms move
+      if (d.volRatio != null) {
+        if (d.volRatio > 2) score += 0.5;
+        else if (d.volRatio > 1.5) score += 0.3;
+        else if (d.volRatio < 0.5) score -= 0.3;
+      }
+      // 24H% (±1)
+      if (d.pct24h != null) {
+        if (d.pct24h > 5) score += 1;
+        else if (d.pct24h > 1.5) score += 0.5;
+        else if (d.pct24h < -5) score -= 1;
+        else if (d.pct24h < -2) score -= 0.5;
+      }
+      // Depth ratio (±0.5)
       if (d.bidDepth > 0 && d.askDepth > 0) {
         const ratio = d.bidDepth / d.askDepth;
-        if (ratio > 1.5) score += 1;
-        else if (ratio < 0.67) score -= 1;
+        if (ratio > 1.5) score += 0.5;
+        else if (ratio < 0.67) score -= 0.5;
       }
-      // Volume (±1)
-      if (d.vol > 100e6) score += 1;
-      else if (d.vol < 8e6) score -= 0.5;
       return Math.max(0, Math.min(10, Math.round(score)));
     }
 
@@ -11739,13 +11779,17 @@ Requirements:
       if (tvCoinData[coin]) { tvCoinData[coin].pct1h = pct1h; tvCoinData[coin].fallingHours = fallingHours; tvCoinData[coin].recovering = recovering; }
       updateScore(coin);
       if (pct1h == null) { el.innerHTML = '<span style="color:#444">—</span>'; return; }
+      const rsi = tvCoinData[coin]?.rsi;
+      const rsiHint = rsi != null
+        ? `<span style="color:${rsi < 35 ? '#00e5a0' : rsi > 65 ? '#f55' : '#555'};font-size:9px;"> RSI:${Math.round(rsi)}</span>`
+        : '';
       if (recovering) {
         const hColor = fallingHours >= 8 ? '#ff4444' : fallingHours >= 4 ? '#f55' : '#f88';
-        el.innerHTML = `<span style="color:#00e5a0;font-weight:700;">↩ +${pct1h.toFixed(2)}%</span><br><span style="color:${hColor};font-size:10px;">↓${fallingHours}h ${totalFallPct.toFixed(1)}%</span>`;
+        el.innerHTML = `<span style="color:#00e5a0;font-weight:700;">↩ +${pct1h.toFixed(2)}%</span><br><span style="color:${hColor};font-size:10px;">↓${fallingHours}h ${totalFallPct.toFixed(1)}%${rsiHint}</span>`;
       } else if (pct1h >= 0) {
-        el.innerHTML = `<span style="color:var(--green);">↑ +${pct1h.toFixed(2)}%</span>`;
+        el.innerHTML = `<span style="color:var(--green);">↑ +${pct1h.toFixed(2)}%</span>${rsiHint}`;
       } else {
-        el.innerHTML = `<span style="color:#f55;">↓ ${pct1h.toFixed(2)}%</span>`;
+        el.innerHTML = `<span style="color:#f55;">↓ ${pct1h.toFixed(2)}%</span>${rsiHint}`;
       }
     }
 
@@ -11763,17 +11807,25 @@ Requirements:
           candles.sort((a, b) => a[0] - b[0]);
           const closes = candles.map(x => x[4]);
           const n = closes.length;
-          // pct1h: last completed candle vs previous
           const pct1h = closes[n-2] ? (closes[n-1] - closes[n-2]) / closes[n-2] * 100 : null;
-          // Count consecutive falling hours before the last candle
           let fallingHours = 0;
           for (let i = n - 2; i > 0; i--) {
             if (closes[i] <= closes[i-1]) fallingHours++;
             else break;
           }
-          // Total % decline over those falling hours
           const fallStart = n - 1 - fallingHours;
           const totalFallPct = fallStart >= 0 && closes[fallStart] ? (closes[n-2] - closes[fallStart]) / closes[fallStart] * 100 : 0;
+          // RSI(14), EMA(20), Volume surge — from same candle data
+          const workCloses = closes.slice(0, -1); // exclude current incomplete candle
+          const rsi = calcRSI(workCloses, 14);
+          const ema20 = calcEMA(workCloses, 20);
+          const ema20prev = workCloses.length > 21 ? calcEMA(workCloses.slice(0, -1), 20) : null;
+          const priceVsEma = ema20 ? (workCloses[workCloses.length - 1] - ema20) / ema20 * 100 : null;
+          const emaRising = ema20 && ema20prev ? ema20 > ema20prev : null;
+          const volumes = candles.map(x => x[5]);
+          const avgVol = volumes.slice(0, -1).reduce((a, b) => a + b, 0) / Math.max(1, volumes.length - 1);
+          const volRatio = avgVol > 0 ? volumes[n - 1] / avgVol : 1;
+          if (tvCoinData[c.coin]) Object.assign(tvCoinData[c.coin], { rsi, priceVsEma, emaRising, volRatio });
           applyTrend(c.coin, pct1h, fallingHours, totalFallPct);
         } catch { applyTrend(c.coin, null, 0, 0); }
       }

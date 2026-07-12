@@ -3223,6 +3223,30 @@
 
     const tvCoinData = {};
 
+    function calcRSI(closes, period = 14) {
+      if (closes.length < period + 1) return null;
+      const changes = closes.slice(1).map((c, i) => c - closes[i]);
+      let avgGain = 0, avgLoss = 0;
+      for (let i = 0; i < period; i++) {
+        if (changes[i] > 0) avgGain += changes[i]; else avgLoss += Math.abs(changes[i]);
+      }
+      avgGain /= period; avgLoss /= period;
+      for (let i = period; i < changes.length; i++) {
+        avgGain = (avgGain * (period - 1) + Math.max(0, changes[i])) / period;
+        avgLoss = (avgLoss * (period - 1) + Math.max(0, -changes[i])) / period;
+      }
+      if (avgLoss === 0) return 100;
+      return 100 - 100 / (1 + avgGain / avgLoss);
+    }
+
+    function calcEMA(closes, period) {
+      if (closes.length < period) return null;
+      const k = 2 / (period + 1);
+      let ema = closes.slice(0, period).reduce((a, b) => a + b) / period;
+      for (let i = period; i < closes.length; i++) ema = closes[i] * k + ema * (1 - k);
+      return ema;
+    }
+
     function calcCoinScoreMobile(coin) {
       const d = tvCoinData[coin];
       if (!d) return null;
@@ -3234,19 +3258,33 @@
         else if (d.pct1h < -0.5) score -= 2;
         else if (d.pct1h < -0.15) score -= 1;
       }
+      if (d.rsi != null) {
+        if (d.rsi < 30) score += 1.5;
+        else if (d.rsi < 40) score += 1;
+        else if (d.rsi < 50) score += 0.5;
+        else if (d.rsi > 70) score -= 1.5;
+        else if (d.rsi > 60) score -= 0.5;
+      }
+      if (d.priceVsEma != null) {
+        score += d.priceVsEma > 0 ? 0.5 : -0.5;
+        if (d.emaRising != null) score += d.emaRising ? 0.5 : -0.5;
+      }
+      if (d.volRatio != null) {
+        if (d.volRatio > 2) score += 0.5;
+        else if (d.volRatio > 1.5) score += 0.3;
+        else if (d.volRatio < 0.5) score -= 0.3;
+      }
       if (d.pct24h != null) {
-        if (d.pct24h > 5) score += 2;
-        else if (d.pct24h > 1.5) score += 1;
-        else if (d.pct24h < -5) score -= 2;
-        else if (d.pct24h < -2) score -= 1;
+        if (d.pct24h > 5) score += 1;
+        else if (d.pct24h > 1.5) score += 0.5;
+        else if (d.pct24h < -5) score -= 1;
+        else if (d.pct24h < -2) score -= 0.5;
       }
       if (d.bidDepth > 0 && d.askDepth > 0) {
         const ratio = d.bidDepth / d.askDepth;
-        if (ratio > 1.5) score += 1;
-        else if (ratio < 0.67) score -= 1;
+        if (ratio > 1.5) score += 0.5;
+        else if (ratio < 0.67) score -= 0.5;
       }
-      if (d.vol > 100e6) score += 1;
-      else if (d.vol < 8e6) score -= 0.5;
       return Math.max(0, Math.min(10, Math.round(score)));
     }
 
@@ -3302,15 +3340,25 @@
           const fallStart = n - 1 - fallingHours;
           const totalFallPct = fallStart >= 0 && closes[fallStart] ? (closes[n-2] - closes[fallStart]) / closes[fallStart] * 100 : 0;
           const recovering = fallingHours >= 2 && pct1h > 0.2;
-          if (tvCoinData[c.coin]) { tvCoinData[c.coin].pct1h = pct1h; tvCoinData[c.coin].fallingHours = fallingHours; tvCoinData[c.coin].recovering = recovering; }
+          const workCloses = closes.slice(0, -1);
+          const rsi = calcRSI(workCloses, 14);
+          const ema20 = calcEMA(workCloses, 20);
+          const ema20prev = workCloses.length > 21 ? calcEMA(workCloses.slice(0, -1), 20) : null;
+          const priceVsEma = ema20 ? (workCloses[workCloses.length - 1] - ema20) / ema20 * 100 : null;
+          const emaRising = ema20 && ema20prev ? ema20 > ema20prev : null;
+          const volumes = candles.map(x => x[5]);
+          const avgVol = volumes.slice(0, -1).reduce((a, b) => a + b, 0) / Math.max(1, volumes.length - 1);
+          const volRatio = avgVol > 0 ? volumes[n - 1] / avgVol : 1;
+          if (tvCoinData[c.coin]) Object.assign(tvCoinData[c.coin], { pct1h, fallingHours, recovering, rsi, priceVsEma, emaRising, volRatio });
           updateScoreMobile(c.coin);
+          const rsiHint = rsi != null ? `<span style="color:${rsi < 35 ? '#00e5a0' : rsi > 65 ? '#f55' : '#555'};font-size:9px;"> ${Math.round(rsi)}</span>` : '';
           if (pct1h == null) { el.innerHTML = '<span style="color:#444">—</span>'; }
           else if (recovering) {
             const hColor = fallingHours >= 8 ? '#ff4444' : fallingHours >= 4 ? '#f55' : '#f88';
-            el.innerHTML = `<span style="color:#00e5a0;font-weight:700;">↩+${pct1h.toFixed(2)}%</span><br><span style="color:${hColor};font-size:9px;">↓${fallingHours}h</span>`;
+            el.innerHTML = `<span style="color:#00e5a0;font-weight:700;">↩+${pct1h.toFixed(2)}%</span><br><span style="color:${hColor};font-size:9px;">↓${fallingHours}h${rsiHint}</span>`;
           }
-          else if (pct1h >= 0) { el.innerHTML = `<span style="color:var(--green);">↑+${pct1h.toFixed(2)}%</span>`; }
-          else { el.innerHTML = `<span style="color:#f55;">↓${pct1h.toFixed(2)}%</span>`; }
+          else if (pct1h >= 0) { el.innerHTML = `<span style="color:var(--green);">↑+${pct1h.toFixed(2)}%</span>${rsiHint}`; }
+          else { el.innerHTML = `<span style="color:#f55;">↓${pct1h.toFixed(2)}%</span>${rsiHint}`; }
         } catch { const el = document.getElementById(`tvTrend_${c.coin}`); if (el) el.innerHTML = '<span style="color:#444">—</span>'; }
       }
     }
