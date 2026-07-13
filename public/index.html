@@ -5653,6 +5653,27 @@
       color: #fff !important;
       box-shadow: 0 0 10px rgba(255, 46, 147, 0.3) !important;
     }
+    /* ── Design Refresh: Top Volume ── */
+    .tg-table tr { border-left: 3px solid transparent; transition: border-color 0.5s ease, background 0.15s ease; }
+    .tg-table tr:hover td { background: rgba(76,201,240,0.03) !important; }
+    .tg-table .tg-coin { color: var(--blue); }
+    .tg-refresh-btn { border-radius: 20px !important; font-weight: 600 !important; letter-spacing: 0.03em !important; }
+
+    /* ── Design Refresh: Panels ── */
+    #topVolumeSection, #topGainersPanel, #topRecoveriesPanel, #balancePanel, #buyPanel {
+      box-shadow: 0 8px 32px rgba(0,0,0,0.35);
+    }
+    #topVolumeSection { border-color: rgba(76,201,240,0.1) !important; }
+
+    /* ── Design Refresh: Section headers ── */
+    .tg-header-title {
+      font-family: var(--font-display);
+      background: linear-gradient(90deg, var(--t0) 60%, var(--blue) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      font-weight: 700;
+    }
   </style>
 </head>
 
@@ -5923,7 +5944,7 @@
       <div class="main-right">
         <div id="topVolumePanel">
           <div class="tg-header">
-            <span class="tg-title">📊 Top Volume 24h</span>
+            <span class="tg-title"><span class="tg-header-title">📊 Top Volume 24h</span></span>
             <span class="tg-meta">
               <button class="tg-refresh-btn" id="tvRefreshBtn" onclick="loadTopVolume(true)" title="Refresh now"><span class="spin-icon">⟳</span> Refresh</button>
               next: <span class="tg-countdown" id="tvCountdown">—</span>
@@ -11733,8 +11754,16 @@ Requirements:
       if (!el) return;
       const score = calcCoinScore(coin);
       if (score === null) return;
-      const color = score >= 8 ? '#00e5a0' : score >= 6 ? '#f5c518' : score >= 4 ? '#f5843a' : '#f55';
-      el.innerHTML = `<span style="color:${color};font-weight:700;font-size:15px;">${score}</span><span style="color:#444;font-size:9px;">/10</span>`;
+      const [bg, glow, tc] = score >= 8
+        ? ['#00e5a0','rgba(0,229,160,0.35)','#000']
+        : score >= 6
+        ? ['#f5c518','rgba(245,197,24,0.35)','#000']
+        : score >= 4
+        ? ['#f5843a','rgba(245,132,58,0.3)','#000']
+        : ['#f55353','rgba(255,83,83,0.3)','#fff'];
+      el.innerHTML = `<div style="display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:50%;background:${bg};color:${tc};font-weight:800;font-size:13px;box-shadow:0 0 10px ${glow},0 0 20px ${glow.replace('0.35','0.12')};">${score}</div>`;
+      const row = document.getElementById(`tvRow_${coin}`);
+      if (row) { row.style.borderLeftColor = bg; }
     }
 
     function renderTopVolume(coins) {
@@ -11746,7 +11775,7 @@ Requirements:
         const pctCls = c.pct24h >= 0 ? 'color:var(--green)' : 'color:#f55';
         const sign = c.pct24h >= 0 ? '+' : '';
         const price = c.price < 0.001 ? c.price.toFixed(6) : c.price < 1 ? c.price.toFixed(4) : c.price < 100 ? c.price.toFixed(3) : c.price.toFixed(2);
-        return `<tr style="cursor:pointer" onclick="selectCoinForBuy('${c.coin}')">
+        return `<tr id="tvRow_${c.coin}" style="cursor:pointer;border-left:3px solid transparent;" onclick="selectCoinForBuy('${c.coin}')">
           <td style="color:#555;font-size:11px;">${i + 1}</td>
           <td class="tg-coin" style="font-size:13px;">${c.coin}<br><span style="color:#555;font-size:10px;">$${price}</span></td>
           <td style="${pctCls};font-weight:600;font-size:12px;">${sign}${c.pct24h.toFixed(2)}%</td>

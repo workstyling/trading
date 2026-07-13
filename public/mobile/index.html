@@ -1261,6 +1261,24 @@
       font-weight: 700 !important;
       font-family: 'JetBrains Mono', monospace !important;
     }
+    /* ── Design Refresh ── */
+    .tab.active { border-bottom-color: var(--blue) !important; background: rgba(76,201,240,0.06); color: var(--t0) !important; }
+    .tabs { gap: 2px; padding: 0 4px; }
+    .tab { border-radius: 6px 6px 0 0; font-size: 11px; letter-spacing: 0.02em; }
+
+    /* Header CSL gradient text */
+    .header h1, .header h1 * { background: linear-gradient(135deg, #fff 30%, var(--blue) 100%) !important; -webkit-background-clip: text !important; -webkit-text-fill-color: transparent !important; background-clip: text !important; }
+
+    /* Top Volume table */
+    .tg-table tr { border-left: 3px solid transparent; transition: border-color 0.5s ease; }
+    .tg-table tr:active td { background: rgba(76,201,240,0.04) !important; }
+
+    /* Panels */
+    #topGainersPanel { box-shadow: 0 8px 32px rgba(0,0,0,0.35); }
+
+    /* Monitor sell buttons */
+    .mon-sell-btn.ask { background: rgba(244,211,94,0.06) !important; }
+    .mon-sell-btn.all { background: rgba(238,82,83,0.08) !important; border-color: rgba(238,82,83,0.4) !important; }
   </style>
 </head>
 <body>
@@ -3293,8 +3311,16 @@
       if (!el) return;
       const score = calcCoinScoreMobile(coin);
       if (score === null) return;
-      const color = score >= 8 ? '#00e5a0' : score >= 6 ? '#f5c518' : score >= 4 ? '#f5843a' : '#f55';
-      el.innerHTML = `<span style="color:${color};font-weight:700;font-size:14px;">${score}</span><span style="color:#444;font-size:9px;">/10</span>`;
+      const [bg, glow, tc] = score >= 8
+        ? ['#00e5a0','rgba(0,229,160,0.35)','#000']
+        : score >= 6
+        ? ['#f5c518','rgba(245,197,24,0.35)','#000']
+        : score >= 4
+        ? ['#f5843a','rgba(245,132,58,0.3)','#000']
+        : ['#f55353','rgba(255,83,83,0.3)','#fff'];
+      el.innerHTML = `<div style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;background:${bg};color:${tc};font-weight:800;font-size:12px;box-shadow:0 0 8px ${glow};">${score}</div>`;
+      const row = document.getElementById(`tvRow_${coin}`);
+      if (row) { row.style.borderLeftColor = bg; }
     }
 
     function renderTopVolumeMobile(coins) {
@@ -3306,7 +3332,7 @@
         const pctCls = c.pct24h >= 0 ? 'color:var(--green)' : 'color:#f55';
         const sign = c.pct24h >= 0 ? '+' : '';
         const price = c.price < 0.001 ? c.price.toFixed(6) : c.price < 1 ? c.price.toFixed(4) : c.price < 100 ? c.price.toFixed(3) : c.price.toFixed(2);
-        return `<tr onclick="selectCoin('${c.coin}')">
+        return `<tr id="tvRow_${c.coin}" style="border-left:3px solid transparent;" onclick="selectCoin('${c.coin}')">
           <td style="color:#555;font-size:10px;padding:5px 2px;width:18px;">${i + 1}</td>
           <td style="font-weight:700;font-size:11px;padding:5px 3px;width:52px;">${c.coin}<br><span style="color:#555;font-size:9px;">$${price}</span></td>
           <td style="${pctCls};font-weight:600;text-align:right;font-size:11px;padding:5px 3px;width:48px;">${sign}${c.pct24h.toFixed(2)}%</td>
