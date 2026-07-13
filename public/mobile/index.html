@@ -1354,7 +1354,11 @@
 
     <div style="margin-top:10px;">
       <button onclick="toggleTVChartMobile()" id="tvChartToggleBtnM" style="width:100%;padding:10px;border:1px solid rgba(76,201,240,0.35);border-radius:var(--r1);background:rgba(76,201,240,0.07);color:var(--blue);font-size:13px;font-weight:600;cursor:pointer;transition:all 0.2s;">📈 Chart (15m)</button>
-      <div id="tvChartContainerM" style="display:none;margin-top:8px;border-radius:var(--r1);overflow:hidden;border:1px solid rgba(76,201,240,0.15);">
+      <div id="tvChartContainerM" style="display:none;margin-top:8px;border-radius:var(--r1);overflow:hidden;border:1px solid rgba(76,201,240,0.15);background:var(--s1);">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 10px;border-bottom:1px solid rgba(255,255,255,0.05);">
+          <span id="tvChartCoinLabelM" style="font-size:12px;color:var(--blue);font-weight:600;">— · 15m</span>
+          <button onclick="toggleTVChartMobile()" style="background:none;border:none;color:#94a3b8;cursor:pointer;font-size:18px;line-height:1;padding:2px 6px;" title="Close">✕</button>
+        </div>
         <div id="tvChartInnerM" style="height:360px;"></div>
       </div>
     </div>
@@ -1578,9 +1582,11 @@
       if (!container) return;
       _tvChartVisibleM = !_tvChartVisibleM;
       container.style.display = _tvChartVisibleM ? 'block' : 'none';
-      btn.innerHTML = _tvChartVisibleM ? '📉 Скрыть график' : '📈 Chart (15m)';
+      btn.innerHTML = _tvChartVisibleM ? '📉 Закрыть' : '📈 Chart (15m)';
       if (!_tvChartVisibleM) return;
       const coin = (document.getElementById('coinInput')?.value || 'BTC').trim().toUpperCase();
+      const lbl = document.getElementById('tvChartCoinLabelM');
+      if (lbl) lbl.textContent = coin + ' · 15m';
       const symbol = `COINBASE:${coin}USD`;
       const wid = 'tvw_mobile_' + Date.now();
       document.getElementById('tvChartInnerM').innerHTML = `<div id="${wid}" style="height:360px;"></div>`;
