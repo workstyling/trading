@@ -1394,9 +1394,17 @@
     <div class="tg-header">
       <span class="tg-title">📊 Top Volume 24h</span>
       <span class="tg-meta">
+        <button id="tvgChartBtnM" onclick="toggleTVChartVolumeMobile()" style="padding:3px 9px;border:1px solid rgba(76,201,240,0.35);border-radius:12px;background:rgba(76,201,240,0.08);color:var(--blue);font-size:10px;font-weight:600;cursor:pointer;margin-right:4px;">📈 Chart</button>
         <button class="tg-refresh-btn" id="tvRefreshBtn" onclick="loadTopVolumeMobile(true)" title="Refresh now"><span class="spin-icon">⟳</span> Refresh</button>
         next: <span class="tg-countdown" id="tvCountdown">—</span>
       </span>
+    </div>
+    <div id="tvChartContainerVolM" style="display:none;margin-bottom:8px;border-radius:var(--r1);overflow:hidden;border:1px solid rgba(76,201,240,0.15);background:var(--s1);">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 12px;border-bottom:1px solid rgba(255,255,255,0.05);">
+        <span id="tvChartCoinLabelVolM" style="font-size:13px;color:var(--blue);font-weight:700;">— · 15m</span>
+        <button onclick="closeTVChartVolumeMobile()" style="background:none;border:none;color:#94a3b8;cursor:pointer;font-size:20px;line-height:1;padding:0 4px;" title="Close">✕</button>
+      </div>
+      <div id="tvChartInnerVolM" style="height:320px;"></div>
     </div>
     <div id="tvBody"><div style="color:var(--t2);font-size:12px;text-align:center;padding:14px;">Loading...</div></div>
   </div>
@@ -1574,6 +1582,35 @@
       const dt = new Date(d);
       return dt.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' }) +
         ' ' + dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+    }
+
+    let _tvChartVolMCoin = null;
+    function toggleTVChartVolumeMobile(coin) {
+      const container = document.getElementById('tvChartContainerVolM');
+      const btn = document.getElementById('tvgChartBtnM');
+      const label = document.getElementById('tvChartCoinLabelVolM');
+      if (!container) return;
+      if (!coin) coin = _tvChartVolMCoin || 'BTC';
+      if (container.style.display !== 'none' && _tvChartVolMCoin === coin) { closeTVChartVolumeMobile(); return; }
+      _tvChartVolMCoin = coin;
+      container.style.display = 'block';
+      if (btn) btn.innerHTML = '📉 Hide';
+      if (label) label.textContent = coin + ' · 15m';
+      const symbol = `COINBASE:${coin}USD`;
+      const wid = 'tvw_volm_' + Date.now();
+      document.getElementById('tvChartInnerVolM').innerHTML = `<div id="${wid}" style="height:320px;"></div>`;
+      const init = () => new TradingView.widget({ autosize: true, symbol, interval: '15', timezone: 'Etc/UTC', theme: 'dark', style: '1', locale: 'en', backgroundColor: '#0a0b10', allow_symbol_change: false, save_image: false, container_id: wid, height: 320 });
+      if (typeof TradingView === 'undefined') {
+        if (!document.getElementById('tv-js')) { const s = document.createElement('script'); s.id = 'tv-js'; s.src = 'https://s3.tradingview.com/tv.js'; s.onload = init; document.head.appendChild(s); }
+      } else { init(); }
+      container.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    function closeTVChartVolumeMobile() {
+      const container = document.getElementById('tvChartContainerVolM');
+      const btn = document.getElementById('tvgChartBtnM');
+      if (container) container.style.display = 'none';
+      if (btn) btn.innerHTML = '📈 Chart';
+      _tvChartVolMCoin = null;
     }
 
     let _tvChartVisibleM = false;
@@ -3366,9 +3403,10 @@
         const pctCls = c.pct24h >= 0 ? 'color:var(--green)' : 'color:#f55';
         const sign = c.pct24h >= 0 ? '+' : '';
         const price = c.price < 0.001 ? c.price.toFixed(6) : c.price < 1 ? c.price.toFixed(4) : c.price < 100 ? c.price.toFixed(3) : c.price.toFixed(2);
+        const cSvg = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>`;
         return `<tr id="tvRow_${c.coin}" style="border-left:3px solid transparent;" onclick="selectCoin('${c.coin}')">
           <td style="color:#555;font-size:10px;padding:5px 2px;width:18px;">${i + 1}</td>
-          <td style="font-weight:700;font-size:11px;padding:5px 3px;width:52px;">${c.coin}<br><span style="color:#555;font-size:9px;">$${price}</span></td>
+          <td style="font-weight:700;font-size:11px;padding:5px 3px;width:60px;">${c.coin}<span onclick="event.stopPropagation();toggleTVChartVolumeMobile('${c.coin}')" style="display:inline-flex;align-items:center;margin-left:3px;color:var(--blue);opacity:0.5;cursor:pointer;vertical-align:middle;" onmouseenter="this.style.opacity='1'" onmouseleave="this.style.opacity='0.5'">${cSvg}</span><br><span style="color:#555;font-size:9px;">$${price}</span></td>
           <td style="${pctCls};font-weight:600;text-align:right;font-size:11px;padding:5px 3px;width:48px;">${sign}${c.pct24h.toFixed(2)}%</td>
           <td style="text-align:right;font-size:10px;padding:5px 3px;width:48px;color:#666;">${fmtVolShort(c.volUsd)}</td>
           <td id="tvTrend_${c.coin}" style="text-align:right;font-size:10px;line-height:1.3;color:#444;padding:5px 3px;width:62px;">...</td>
