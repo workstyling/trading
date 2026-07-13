@@ -5748,7 +5748,7 @@
     <div id="tab-trading" class="tab-pane active">
     <div id="latestOrders" style="margin-bottom: 14px;">
       <div class="orders-header">
-        <h3 style="display:flex;align-items:center;gap:10px;">Latest Orders <button onclick="toggleTVChart()" id="tvChartToggleBtn" style="padding:3px 10px;border:1px solid rgba(76,201,240,0.35);border-radius:12px;background:rgba(76,201,240,0.08);color:var(--blue);font-size:11px;font-weight:600;cursor:pointer;transition:all 0.2s;">📈 Chart</button></h3>
+        <h3>Latest Orders</h3>
         <div class="search-group"><button class="filter-open-btn" id="filterOpenBtn"
             onclick="toggleOpenFilter()">Open</button><input type="text" id="orderSearch"
             placeholder="Search Order ID..." autocomplete="off" autocorrect="off" autocapitalize="off"
@@ -5811,6 +5811,7 @@
               <input type="text" class="buy-usd-field" id="buyUsdAmount" value="0" onclick="this.select()" onchange="onUsdAmountChange(this.value)">
               <span class="buy-usd-label">USD</span>
               <button class="buy-btn" id="buyBtn" onclick="executeBuyOrder()">BUY</button>
+              <button onclick="toggleTVChart()" id="tvChartToggleBtn" title="TradingView 15m chart" style="padding:6px 10px;border:1px solid rgba(76,201,240,0.35);border-radius:8px;background:rgba(76,201,240,0.08);color:var(--blue);font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all 0.2s;flex-shrink:0;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align:middle;margin-right:3px;"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>Chart</button>
               <span class="limit-separator" style="display: none !important;">|</span>
               <input type="text" class="limit-price-input" id="limitPriceInput" placeholder="Price" autocomplete="off" style="display: none !important;">
               <button class="buy-limit-btn" id="buyLimitBtn" onclick="executeBuyLimitOrder()" style="display: none !important;">Buy Limit</button>
@@ -6290,7 +6291,8 @@
       if (!container) return;
       _tvChartVisible = !_tvChartVisible;
       container.style.display = _tvChartVisible ? 'block' : 'none';
-      btn.innerHTML = _tvChartVisible ? '📉 Hide' : '📈 Chart';
+      const _chartSvg = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align:middle;margin-right:3px;"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>';
+      btn.innerHTML = _tvChartVisible ? _chartSvg + 'Close' : _chartSvg + 'Chart';
       if (!_tvChartVisible) return;
       const coin = (document.getElementById('buyCoin')?.value || 'BTC').trim().toUpperCase();
       const label = document.getElementById('tvChartCoinLabel');
@@ -11848,7 +11850,7 @@ Requirements:
         const price = c.price < 0.001 ? c.price.toFixed(6) : c.price < 1 ? c.price.toFixed(4) : c.price < 100 ? c.price.toFixed(3) : c.price.toFixed(2);
         return `<tr id="tvRow_${c.coin}" style="cursor:pointer;border-left:3px solid transparent;" onclick="selectCoinForBuy('${c.coin}');if(_tvTGChartVisible)toggleTopVolumeChart('${c.coin}')">
           <td style="color:#555;font-size:11px;">${i + 1}</td>
-          <td class="tg-coin" style="font-size:13px;">${c.coin}<span onclick="event.stopPropagation();toggleTopVolumeChart('${c.coin}')" title="Open chart" style="display:inline-block;margin-left:5px;opacity:0.4;font-size:10px;cursor:pointer;" onmouseenter="this.style.opacity='1'" onmouseleave="this.style.opacity='0.4'">📈</span><br><span style="color:#555;font-size:10px;">$${price}</span></td>
+          <td class="tg-coin" style="font-size:13px;">${c.coin}<span onclick="event.stopPropagation();toggleTopVolumeChart('${c.coin}')" title="Open chart" style="display:inline-block;margin-left:5px;color:var(--blue);opacity:0.35;cursor:pointer;vertical-align:middle;" onmouseenter="this.style.opacity='1'" onmouseleave="this.style.opacity='0.35'"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></span><br><span style="color:#555;font-size:10px;">$${price}</span></td>
           <td style="${pctCls};font-weight:600;font-size:12px;">${sign}${c.pct24h.toFixed(2)}%</td>
           <td id="tvTrend_${c.coin}" style="font-size:12px;line-height:1.4;color:#444;">...</td>
           <td class="tg-vol" style="font-size:12px;">${fmtVolShort(c.volUsd)}</td>
