@@ -11848,9 +11848,16 @@ Requirements:
         const pctCls = c.pct24h >= 0 ? 'color:var(--green)' : 'color:#f55';
         const sign = c.pct24h >= 0 ? '+' : '';
         const price = c.price < 0.001 ? c.price.toFixed(6) : c.price < 1 ? c.price.toFixed(4) : c.price < 100 ? c.price.toFixed(3) : c.price.toFixed(2);
+        const chartSvg = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>`;
         return `<tr id="tvRow_${c.coin}" style="cursor:pointer;border-left:3px solid transparent;" onclick="selectCoinForBuy('${c.coin}');if(_tvTGChartVisible)toggleTopVolumeChart('${c.coin}')">
           <td style="color:#555;font-size:11px;">${i + 1}</td>
-          <td class="tg-coin" style="font-size:13px;">${c.coin}<span onclick="event.stopPropagation();toggleTopVolumeChart('${c.coin}')" title="Open chart" style="display:inline-block;margin-left:5px;color:var(--blue);opacity:0.35;cursor:pointer;vertical-align:middle;" onmouseenter="this.style.opacity='1'" onmouseleave="this.style.opacity='0.35'"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></span><br><span style="color:#555;font-size:10px;">$${price}</span></td>
+          <td class="tg-coin" style="font-size:13px;min-width:80px;">
+            <div style="display:flex;align-items:center;gap:5px;">
+              <span>${c.coin}</span>
+              <button onclick="event.stopPropagation();toggleTopVolumeChart('${c.coin}')" title="Chart ${c.coin}" style="display:inline-flex;align-items:center;gap:2px;padding:2px 5px;border:1px solid rgba(76,201,240,0.3);border-radius:5px;background:rgba(76,201,240,0.07);color:var(--blue);font-size:9px;font-weight:600;cursor:pointer;transition:all 0.15s;white-space:nowrap;" onmouseenter="this.style.background='rgba(76,201,240,0.18)'" onmouseleave="this.style.background='rgba(76,201,240,0.07)'">${chartSvg}</button>
+            </div>
+            <span style="color:#555;font-size:10px;">$${price}</span>
+          </td>
           <td style="${pctCls};font-weight:600;font-size:12px;">${sign}${c.pct24h.toFixed(2)}%</td>
           <td id="tvTrend_${c.coin}" style="font-size:12px;line-height:1.4;color:#444;">...</td>
           <td class="tg-vol" style="font-size:12px;">${fmtVolShort(c.volUsd)}</td>
