@@ -3403,10 +3403,14 @@
         const pctCls = c.pct24h >= 0 ? 'color:var(--green)' : 'color:#f55';
         const sign = c.pct24h >= 0 ? '+' : '';
         const price = c.price < 0.001 ? c.price.toFixed(6) : c.price < 1 ? c.price.toFixed(4) : c.price < 100 ? c.price.toFixed(3) : c.price.toFixed(2);
-        const cSvg = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>`;
+        const cSvg = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>`;
         return `<tr id="tvRow_${c.coin}" style="border-left:3px solid transparent;" onclick="selectCoin('${c.coin}')">
           <td style="color:#555;font-size:10px;padding:5px 2px;width:18px;">${i + 1}</td>
-          <td style="font-weight:700;font-size:11px;padding:5px 3px;width:60px;">${c.coin}<span onclick="event.stopPropagation();toggleTVChartVolumeMobile('${c.coin}')" style="display:inline-flex;align-items:center;margin-left:3px;color:var(--blue);opacity:0.5;cursor:pointer;vertical-align:middle;" onmouseenter="this.style.opacity='1'" onmouseleave="this.style.opacity='0.5'">${cSvg}</span><br><span style="color:#555;font-size:9px;">$${price}</span></td>
+          <td style="padding:5px 3px;width:72px;vertical-align:top;">
+            <div style="font-weight:700;font-size:11px;">${c.coin}</div>
+            <div style="color:#555;font-size:9px;margin-bottom:4px;">$${price}</div>
+            <button onclick="event.stopPropagation();toggleTVChartVolumeMobile('${c.coin}')" style="display:flex;align-items:center;justify-content:center;gap:3px;width:100%;padding:4px 0;border:1px solid rgba(76,201,240,0.4);border-radius:5px;background:rgba(76,201,240,0.09);color:var(--blue);font-size:9px;font-weight:600;cursor:pointer;">${cSvg}</button>
+          </td>
           <td style="${pctCls};font-weight:600;text-align:right;font-size:11px;padding:5px 3px;width:48px;">${sign}${c.pct24h.toFixed(2)}%</td>
           <td style="text-align:right;font-size:10px;padding:5px 3px;width:48px;color:#666;">${fmtVolShort(c.volUsd)}</td>
           <td id="tvTrend_${c.coin}" style="text-align:right;font-size:10px;line-height:1.3;color:#444;padding:5px 3px;width:62px;">...</td>
@@ -3414,7 +3418,7 @@
           <td id="tvScore_${c.coin}" style="text-align:center;padding:5px 3px;color:#444;font-size:10px;width:38px;">...</td>
         </tr>`;
       }).join('');
-      body.innerHTML = `<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;"><table style="width:100%;border-collapse:collapse;font-size:11px;min-width:310px;"><thead><tr style="border-bottom:1px solid #222;"><th style="width:18px;color:#666;font-weight:600;font-size:9px;padding:5px 2px;text-align:left;">#</th><th style="color:#666;font-weight:600;font-size:9px;padding:5px 3px;text-align:left;width:52px;">COIN</th><th style="color:#666;font-weight:600;font-size:9px;padding:5px 3px;text-align:right;width:48px;">24H%</th><th style="color:#666;font-weight:600;font-size:9px;padding:5px 3px;text-align:right;width:48px;">VOL</th><th style="color:#666;font-weight:600;font-size:9px;padding:5px 3px;text-align:right;width:62px;">TREND</th><th style="color:#666;font-weight:600;font-size:9px;padding:5px 3px;text-align:right;width:44px;">+2/-2</th><th style="color:#666;font-weight:600;font-size:9px;padding:5px 3px;text-align:center;width:38px;">SCR</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+      body.innerHTML = `<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;"><table style="width:100%;border-collapse:collapse;font-size:11px;min-width:310px;"><thead><tr style="border-bottom:1px solid #222;"><th style="width:18px;color:#666;font-weight:600;font-size:9px;padding:5px 2px;text-align:left;">#</th><th style="color:#666;font-weight:600;font-size:9px;padding:5px 3px;text-align:left;width:72px;">COIN</th><th style="color:#666;font-weight:600;font-size:9px;padding:5px 3px;text-align:right;width:48px;">24H%</th><th style="color:#666;font-weight:600;font-size:9px;padding:5px 3px;text-align:right;width:48px;">VOL</th><th style="color:#666;font-weight:600;font-size:9px;padding:5px 3px;text-align:right;width:62px;">TREND</th><th style="color:#666;font-weight:600;font-size:9px;padding:5px 3px;text-align:right;width:44px;">+2/-2</th><th style="color:#666;font-weight:600;font-size:9px;padding:5px 3px;text-align:center;width:38px;">SCR</th></tr></thead><tbody>${rows}</tbody></table></div>`;
     }
 
     async function loadTrendSequentialMobile(coins) {
