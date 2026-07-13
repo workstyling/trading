@@ -5762,7 +5762,7 @@
       <div id="tvChartContainer" style="display:none;flex:0 0 100%;width:100%;margin-bottom:12px;border-radius:var(--r2);overflow:hidden;border:1px solid rgba(76,201,240,0.15);background:var(--s1);">
         <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 14px;border-bottom:1px solid rgba(255,255,255,0.05);">
           <span id="tvChartCoinLabel" style="font-size:13px;color:var(--blue);font-weight:700;">— · 15m</span>
-          <button onclick="toggleTVChart()" style="background:none;border:none;color:#94a3b8;cursor:pointer;font-size:20px;line-height:1;padding:0 4px;transition:color 0.15s;" onmouseenter="this.style.color='#fff'" onmouseleave="this.style.color='#94a3b8'" title="Close">✕</button>
+          <button onclick="closeTVChart()" style="background:none;border:none;color:#94a3b8;cursor:pointer;font-size:20px;line-height:1;padding:0 4px;transition:color 0.15s;" onmouseenter="this.style.color='#fff'" onmouseleave="this.style.color='#94a3b8'" title="Close">✕</button>
         </div>
         <div id="tvChartInner" style="height:440px;"></div>
       </div>
@@ -6281,23 +6281,20 @@
     const _chartSvg = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align:middle;margin-right:3px;"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>';
     let _tvChartVisible = false;
     function toggleTVChart() {
-      const container = document.getElementById('tvChartContainer');
-      const btn = document.getElementById('tvChartToggleBtn');
-      if (!container) return;
-      _tvChartVisible = !_tvChartVisible;
-      container.style.display = _tvChartVisible ? 'flex' : 'none';
-      container.style.flexDirection = 'column';
-      btn.innerHTML = _tvChartVisible ? _chartSvg + 'Close' : _chartSvg + 'Chart';
-      // reset top-volume chart state when closing
-      if (!_tvChartVisible) {
-        _tvTGCurrentCoin = null;
-        const tvgBtn = document.getElementById('tvgChartBtn');
-        if (tvgBtn) tvgBtn.innerHTML = '📈 Chart';
-        return;
-      }
+      // Always open/update chart with current buy coin — never close via this button
       const coin = (document.getElementById('buyCoin')?.value || 'BTC').trim().toUpperCase();
       _tvTGCurrentCoin = null;
       _openSharedChart(coin);
+    }
+    function closeTVChart() {
+      const container = document.getElementById('tvChartContainer');
+      const btn = document.getElementById('tvChartToggleBtn');
+      const tvgBtn = document.getElementById('tvgChartBtn');
+      if (container) container.style.display = 'none';
+      if (btn) btn.innerHTML = _chartSvg + 'Chart';
+      if (tvgBtn) tvgBtn.innerHTML = '📈 Chart';
+      _tvChartVisible = false;
+      _tvTGCurrentCoin = null;
     }
 
     let _tvTGCurrentCoin = null;
@@ -6311,9 +6308,6 @@
       container.style.display = 'flex';
       container.style.flexDirection = 'column';
       if (label) label.textContent = coin + ' · 15m';
-      const _chartSvg = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align:middle;margin-right:3px;"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>';
-      const buyBtn = document.getElementById('tvChartToggleBtn');
-      if (buyBtn) buyBtn.innerHTML = _chartSvg + 'Close';
       const symbol = `COINBASE:${coin}USD`;
       const wid = 'tvw_shared_' + Date.now();
       document.getElementById('tvChartInner').innerHTML = `<div id="${wid}" style="height:440px;"></div>`;
@@ -6328,17 +6322,7 @@
       if (btn) btn.innerHTML = '📉 Hide';
       _openSharedChart(coin);
     }
-    function closeTopVolumeChart() {
-      const container = document.getElementById('tvChartContainer');
-      const btn = document.getElementById('tvgChartBtn');
-      const buyBtn = document.getElementById('tvChartToggleBtn');
-      if (container) container.style.display = 'none';
-      if (btn) btn.innerHTML = '📈 Chart';
-      const _chartSvg = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align:middle;margin-right:3px;"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>';
-      if (buyBtn) buyBtn.innerHTML = _chartSvg + 'Chart';
-      _tvChartVisible = false;
-      _tvTGCurrentCoin = null;
-    }
+    function closeTopVolumeChart() { closeTVChart(); }
 
 
     // Initialize coin input from saved value
