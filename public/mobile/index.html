@@ -1320,6 +1320,14 @@
 
   <!-- Trade Panel -->
   <div class="panel active" id="panelTrade" data-tab="trade">
+    <!-- Chart container — always above trade controls -->
+    <div id="tvChartContainerM" style="display:none;margin-bottom:10px;border-radius:var(--r1);overflow:hidden;border:1px solid rgba(76,201,240,0.15);background:var(--s1);">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 12px;border-bottom:1px solid rgba(255,255,255,0.05);">
+        <span id="tvChartCoinLabelM" style="font-size:13px;color:var(--blue);font-weight:700;">— · 15m</span>
+        <button onclick="toggleTVChartMobile()" style="background:none;border:none;color:#94a3b8;cursor:pointer;font-size:20px;line-height:1;padding:0 4px;" title="Close">✕</button>
+      </div>
+      <div id="tvChartInnerM" style="height:360px;"></div>
+    </div>
     <!-- Monitor Section -->
     <div style="margin-bottom:14px;" id="monitorSection">
       <div id="monitorList"><div class="loading"><div class="spinner"></div>Loading orders...</div></div>
@@ -1354,13 +1362,6 @@
 
     <div style="margin-top:10px;">
       <button onclick="toggleTVChartMobile()" id="tvChartToggleBtnM" style="width:100%;padding:10px;border:1px solid rgba(76,201,240,0.35);border-radius:var(--r1);background:rgba(76,201,240,0.07);color:var(--blue);font-size:13px;font-weight:600;cursor:pointer;transition:all 0.2s;">📈 Chart (15m)</button>
-      <div id="tvChartContainerM" style="display:none;margin-top:8px;border-radius:var(--r1);overflow:hidden;border:1px solid rgba(76,201,240,0.15);background:var(--s1);">
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 10px;border-bottom:1px solid rgba(255,255,255,0.05);">
-          <span id="tvChartCoinLabelM" style="font-size:12px;color:var(--blue);font-weight:600;">— · 15m</span>
-          <button onclick="toggleTVChartMobile()" style="background:none;border:none;color:#94a3b8;cursor:pointer;font-size:18px;line-height:1;padding:2px 6px;" title="Close">✕</button>
-        </div>
-        <div id="tvChartInnerM" style="height:360px;"></div>
-      </div>
     </div>
 
     <div class="settings-row" style="display:none;">
@@ -1594,6 +1595,7 @@
       if (typeof TradingView === 'undefined') {
         if (!document.getElementById('tv-js')) { const s = document.createElement('script'); s.id = 'tv-js'; s.src = 'https://s3.tradingview.com/tv.js'; s.onload = init; document.head.appendChild(s); }
       } else { init(); }
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
     function flashPrice(el, newText, oldVal, newVal) {

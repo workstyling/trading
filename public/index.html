@@ -5959,14 +5959,14 @@
               next: <span class="tg-countdown" id="tvCountdown">—</span>
             </span>
           </div>
-          <div id="tvBody"><div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">Loading...</div></div>
-          <div id="tvChartContainerTG" style="display:none;margin-top:8px;border-radius:var(--r2);overflow:hidden;border:1px solid rgba(76,201,240,0.15);background:var(--s1);">
+          <div id="tvChartContainerTG" style="display:none;margin-bottom:8px;border-radius:var(--r2);overflow:hidden;border:1px solid rgba(76,201,240,0.15);background:var(--s1);">
             <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 14px;border-bottom:1px solid rgba(255,255,255,0.05);">
               <span id="tvgChartCoinLabel" style="font-size:13px;color:var(--blue);font-weight:700;">— · 15m</span>
               <button onclick="closeTopVolumeChart()" style="background:none;border:none;color:#94a3b8;cursor:pointer;font-size:20px;line-height:1;padding:0 4px;transition:color 0.15s;" onmouseenter="this.style.color='#fff'" onmouseleave="this.style.color='#94a3b8'" title="Close">✕</button>
             </div>
             <div id="tvChartInnerTG" style="height:420px;"></div>
           </div>
+          <div id="tvBody"><div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">Loading...</div></div>
         </div>
         <div id="profitPanel">
           <div class="profit-header">
@@ -6322,7 +6322,6 @@
       document.getElementById('tvChartInnerTG').innerHTML = `<div id="${wid}" style="height:400px;"></div>`;
       const init = () => new TradingView.widget({ autosize: true, symbol, interval: '15', timezone: 'Etc/UTC', theme: 'dark', style: '1', locale: 'en', backgroundColor: '#0a0b10', allow_symbol_change: false, save_image: false, hide_volume: false, container_id: wid, height: 420 });
       _loadTVScript(init);
-      setTimeout(() => container.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 50);
     }
     function closeTopVolumeChart() {
       const container = document.getElementById('tvChartContainerTG');
