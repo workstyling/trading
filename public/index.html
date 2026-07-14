@@ -10858,7 +10858,7 @@ Requirements:
 
             const currentLabelPos = Math.max(14, currentPos);
             h += `
-            <div class="price-progress-container" id="progress_${coin}_${idx}" data-buy-price="${buyPrice}" data-target-price="${targetSellPrice}" data-breakeven-pct="${breakevenPct}" data-order-id="${buyOrder.order_id}" data-filled="${filledSize}" data-spent="${(filledSize * buyPrice).toFixed(2)}" data-fee="${fee}" data-left-max="${leftMax}" data-right-max="${rightMax}">
+            <div class="price-progress-container" id="progress_${coin}_${idx}" data-buy-price="${buyPrice}" data-target-price="${targetSellPrice}" data-breakeven-pct="${breakevenPct}" data-order-id="${buyOrder.order_id}" data-filled="${filledSize}" data-spent="${(filledSize * buyPrice).toFixed(2)}" data-fee="${buyFeeP}" data-left-max="${leftMax}" data-right-max="${rightMax}">
               <div class="price-progress-top">
                 <span class="info-order" style="left:0;color:#888;font-size:9px;">#${orderIdShort}</span>
                 <span class="info-current ${isProfit ? 'profit' : 'loss'}" style="left:${currentLabelPos}%">${currentPct >= 0 ? '+' : ''}${currentPct.toFixed(2)}%</span>
