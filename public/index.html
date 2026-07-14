@@ -7991,10 +7991,11 @@
         const askPrice = parseFloat(tickerData.ask);
         if (!askPrice) throw new Error('No ask price available');
 
-        const fee = tradingSettings.tradeFee / 100;
+        const buyFee = tradingSettings.tradeFee / 100;      // limit fee used at purchase
+        const sellFee = tradingSettings.marketFee / 100;    // taker fee (worst case for sell)
         const sz = parseFloat(size);
-        const effectiveReceived = askPrice * sz * (1 - fee);
-        const costBasis = avgBuyPrice > 0 ? avgBuyPrice * (1 + fee) * sz : null;
+        const effectiveReceived = askPrice * sz * (1 - sellFee);
+        const costBasis = avgBuyPrice > 0 ? avgBuyPrice * (1 + buyFee) * sz : null;
         const profit = costBasis !== null ? effectiveReceived - costBasis : null;
         const pct = costBasis ? (profit / costBasis * 100) : null;
 
@@ -8004,12 +8005,13 @@
         const pnlHtml = profit !== null
           ? `<br><span style="font-size:15px;font-weight:700;color:${pnlColor}">${pnlSign}$${profit.toFixed(2)} (${pnlSign}${pct.toFixed(2)}%)</span>`
           : '';
+        const feeNote = `buy ${(buyFee*100).toFixed(3)}% + sell ${(sellFee*100).toFixed(3)}%`;
         const title = profit !== null && profit < 0 ? '⚠️ Продажа в убыток' : 'Подтвердите продажу';
 
         const confirmed = await new Promise(resolve => {
           showConfirmModal(
             title,
-            `<strong>${sz} ${coin}</strong> по Ask: <strong>$${askPrice.toFixed(6)}</strong>${pnlHtml}<br><br><span style="color:#888;font-size:11px;">Цена зафиксирована. Подтвердите продажу.</span>`,
+            `<strong>${sz} ${coin}</strong> по Ask: <strong>$${askPrice.toFixed(6)}</strong>${pnlHtml}<br><br><span style="color:#888;font-size:11px;">Лимитный ордер — цена исполнения может отличаться. Учтены комиссии: ${feeNote}.</span>`,
             () => resolve(true),
             () => resolve(false)
           );
