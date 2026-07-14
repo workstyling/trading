@@ -10619,19 +10619,20 @@ Requirements:
           const targetPrice = targetPriceVal > 0 ? targetPriceVal.toFixed(priceDecimals) : '';
           const targetPriceFmt = targetPriceVal > 0 ? targetPriceVal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: Math.min(20, Math.max(2, priceDecimals)) }) : '';
           // Calculate profit (use real cost per coin for consistency)
-          const fee = tradingSettings.tradeFee / 100;
+          const buyFeeD = tradingSettings.tradeFee / 100;
+          const sellFeeD = tradingSettings.marketFee / 100;
           const costPerCoin = buyFilled > 0 ? buyUSD / buyFilled : 0;  // actual cost per coin (includes buy fee)
           let profitVal = 0;
           if (isBuy && targetPriceVal > 0 && costPerCoin > 0) {
             // BUY order: expected profit at target price
             const usdSpent = filledVal * costPerCoin;  // actual cost
-            const usdAtTarget = filledVal * targetPriceVal * (1 - fee);  // revenue after sell fee
+            const usdAtTarget = filledVal * targetPriceVal * (1 - sellFeeD);  // revenue after sell fee
             profitVal = usdAtTarget - usdSpent;
           } else if (isSellOrder && costPerCoin > 0) {
             // SELL order: expected or actual profit
             const sellSize = parseFloat(o.filled_size) || parseFloat(o.order_configuration?.limit_limit_gtc?.base_size) || 0;
             const sellPrice = parseFloat(o.average_filled_price) || parseFloat(o.limit_price) || 0;
-            const usdRevenue = sellSize * sellPrice * (1 - fee);  // revenue after sell fee
+            const usdRevenue = sellSize * sellPrice * (1 - sellFeeD);  // revenue after sell fee
             const usdCost = sellSize * costPerCoin;  // actual cost
             profitVal = usdRevenue - usdCost;
           }
@@ -10826,14 +10827,15 @@ Requirements:
           const filledSize = parseFloat(buyOrder.filled_size) || 0;
           const orderIdShort = buyOrder.order_id ? buyOrder.order_id.slice(0, 6) : '';
           const targetSellPrice = pendingSell ? parseFloat(pendingSell.limit_price) : (buyPrice * (1 + tradingSettings.sellMarkup / 100));
-          const fee = tradingSettings.tradeFee / 100;
-          const breakevenPrice = buyPrice * (1 + fee) / (1 - fee);
+          const buyFeeP = tradingSettings.tradeFee / 100;
+          const sellFeeP = tradingSettings.marketFee / 100;
+          const breakevenPrice = buyPrice * (1 + buyFeeP) / (1 - sellFeeP);
           const breakevenPct = ((breakevenPrice - buyPrice) / buyPrice * 100);
 
           if (buyPrice > 0) {
             const currentAsk = bestAsk > 0 ? bestAsk : buyPrice;
-            const effectivePrice = currentAsk * (1 - fee); // net received after sell fee
-            const costBasis = buyPrice * (1 + fee); // actual cost including buy fee
+            const effectivePrice = currentAsk * (1 - sellFeeP); // net received after sell fee
+            const costBasis = buyPrice * (1 + buyFeeP); // actual cost including buy fee
             const targetPct = ((targetSellPrice - buyPrice) / buyPrice * 100);
             const currentPct = ((effectivePrice - costBasis) / costBasis * 100);
 

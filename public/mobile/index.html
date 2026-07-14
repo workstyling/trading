@@ -2027,9 +2027,10 @@
         });
 
         const avgBuy = buyFilled > 0 ? buyWeighted / buyFilled : 0;
-        const fee = tradingSettings.tradeFee / 100;
-        const limitPnL = totalFilled * ask * (1 - fee) - totalUSD;
-        const marketPnL = totalFilled * bid * (1 - tradingSettings.marketFee / 100) - totalUSD;
+        const buyFeeM = tradingSettings.tradeFee / 100;
+        const sellFeeM = tradingSettings.marketFee / 100;
+        const limitPnL = totalFilled * ask * (1 - sellFeeM) - totalUSD;
+        const marketPnL = totalFilled * bid * (1 - sellFeeM) - totalUSD;
         const pnlColor = limitPnL >= 0 ? 'var(--green)' : 'var(--loss)';
         const mktColor = marketPnL >= 0 ? 'var(--green)' : 'var(--loss)';
 
