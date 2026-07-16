@@ -11776,46 +11776,93 @@ Requirements:
       const d = tvCoinData[coin];
       if (!d) return null;
       let score = 5;
-      // 1H Trend (±3)
+      const parts = [];
+      const add = (v, label) => { if (v) { score += v; parts.push(`${label}: ${v > 0 ? '+' : ''}${v}`); } };
+      const rising = d.pct1h != null && (d.pct1h > 0 || d.recovering);
+
+      // 1. 1H momentum + recovery quality ±3
       if (d.pct1h != null) {
-        if (d.recovering) score += 3;
-        else if (d.pct1h > 0.5) score += 2;
-        else if (d.pct1h > 0.1) score += 1;
-        else if (d.pct1h < -0.5) score -= 2;
-        else if (d.pct1h < -0.15) score -= 1;
+        if (d.recovering) {
+          let v = 1.5;
+          if (d.fallingHours >= 4) v += 0.5;                             // глубже падал — сильнее отскок
+          if (d.totalFallPct != null && d.totalFallPct < -3) v += 0.5;  // значительный дип
+          if (d.totalFallPct != null && d.totalFallPct < -6) v += 0.5;  // очень глубокий дип
+          add(v, 'разворот');
+        }
+        else if (d.pct1h > 1)    add(2.5, '1h тренд');
+        else if (d.pct1h > 0.4)  add(1.5, '1h тренд');
+        else if (d.pct1h > 0.1)  add(0.5, '1h тренд');
+        else if (d.pct1h < -1)   add(-2.5, '1h тренд');
+        else if (d.pct1h < -0.4) add(-1.5, '1h тренд');
+        else if (d.pct1h < -0.1) add(-0.5, '1h тренд');
       }
-      // RSI(14) (±1.5): oversold = buy signal, overbought = risk
+
+      // 2. RSI(14) ±2
       if (d.rsi != null) {
-        if (d.rsi < 30) score += 1.5;
-        else if (d.rsi < 40) score += 1;
-        else if (d.rsi < 50) score += 0.5;
-        else if (d.rsi > 70) score -= 1.5;
-        else if (d.rsi > 60) score -= 0.5;
+        if      (d.rsi < 25) add(2, 'RSI');
+        else if (d.rsi < 35) add(1.5, 'RSI');
+        else if (d.rsi < 45) add(0.8, 'RSI');
+        else if (d.rsi > 75) add(-2, 'RSI');
+        else if (d.rsi > 65) add(-1, 'RSI');
       }
-      // EMA20 position (±1): price above rising EMA = bullish
-      if (d.priceVsEma != null) {
-        score += d.priceVsEma > 0 ? 0.5 : -0.5;
-        if (d.emaRising != null) score += d.emaRising ? 0.5 : -0.5;
+
+      // 3. RSI × тренд синергия ±1 — комбинация сильнее каждого сигнала отдельно
+      if (d.rsi != null && d.pct1h != null) {
+        if (d.rsi < 45 && rising)          add(1, 'RSI+тренд');
+        if (d.rsi > 65 && d.pct1h < 0)     add(-1, 'RSI+тренд');
       }
-      // Volume surge (±0.5): high volume confirms move
+
+      // 4. Объём с направлением ±1 — рост на высоком объёме = подтверждение
       if (d.volRatio != null) {
-        if (d.volRatio > 2) score += 0.5;
-        else if (d.volRatio > 1.5) score += 0.3;
-        else if (d.volRatio < 0.5) score -= 0.3;
+        if      (d.volRatio > 2.5) add(rising ? 1 : -1, 'объём');
+        else if (d.volRatio > 1.5) add(rising ? 0.5 : -0.5, 'объём');
+        else if (d.volRatio < 0.5) add(-0.3, 'объём');
       }
-      // 24H% (±1)
+
+      // 5. EMA20 позиция + направление ±1
+      if (d.priceVsEma != null) {
+        if      (d.priceVsEma > 0 && d.emaRising)  add(1, 'EMA20');
+        else if (d.priceVsEma > 0 && !d.emaRising) add(0.2, 'EMA20');
+        else if (d.priceVsEma < 0 && d.emaRising)  add(0.5, 'EMA20'); // ниже EMA но EMA растёт = восстановление
+        else if (d.priceVsEma < 0 && !d.emaRising) add(-1, 'EMA20');
+      }
+
+      // 6. Крест EMA9/EMA20 ±0.5 — быстрая EMA выше медленной = бычий импульс
+      if (d.emaCross != null) add(d.emaCross > 0 ? 0.5 : -0.5, 'EMA крест');
+
+      // 7. Контекст 24h ±1 — дип = потенциал восстановления; уже вырос = меньше апсайда
       if (d.pct24h != null) {
-        if (d.pct24h > 5) score += 1;
-        else if (d.pct24h > 1.5) score += 0.5;
-        else if (d.pct24h < -5) score -= 1;
-        else if (d.pct24h < -2) score -= 0.5;
+        if      (d.pct24h < -5)  add(0.5, '24h дип');
+        else if (d.pct24h < -2)  add(0.2, '24h дип');
+        else if (d.pct24h > 10)  add(-1, '24h перегрев');
+        else if (d.pct24h > 5)   add(-0.5, '24h перегрев');
       }
-      // Depth ratio (±0.5)
+
+      // 8. Позиция в 24h диапазоне ±1 — у дна с разворотом = максимальный апсайд
+      if (d.rangePos != null) {
+        if (d.rangePos < 0.25)      add(rising ? 1 : 0.3, 'у дна 24h');
+        else if (d.rangePos > 0.9)  add((d.volRatio > 2 && rising) ? 0.5 : -0.5, d.volRatio > 2 && rising ? 'пробой хая' : 'у хая 24h');
+      }
+
+      // 9. Волатильность ±0.5 — мёртвой монете не дойти до цели +2%
+      if (d.avgRange != null) {
+        if      (d.avgRange < 0.25) add(-0.5, 'низкая волат.');
+        else if (d.avgRange > 1)    add(0.3, 'волатильность');
+      }
+
+      // 10. Higher lows — структура разворота
+      if (d.hlStreak >= 3) add(0.5, 'higher lows');
+
+      // 11. Глубина стакана ±1 — перевес бидов = давление покупателей
       if (d.bidDepth > 0 && d.askDepth > 0) {
         const ratio = d.bidDepth / d.askDepth;
-        if (ratio > 1.5) score += 0.5;
-        else if (ratio < 0.67) score -= 0.5;
+        if      (ratio > 2)    add(1, 'стакан');
+        else if (ratio > 1.5)  add(0.5, 'стакан');
+        else if (ratio < 0.5)  add(-1, 'стакан');
+        else if (ratio < 0.67) add(-0.5, 'стакан');
       }
+
+      d._scoreParts = parts;
       return Math.max(0, Math.min(10, Math.round(score)));
     }
 
@@ -11831,7 +11878,8 @@ Requirements:
         : score >= 4
         ? ['#f5843a','rgba(245,132,58,0.3)','#000']
         : ['#f55353','rgba(255,83,83,0.3)','#fff'];
-      el.innerHTML = `<div style="display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:50%;background:${bg};color:${tc};font-weight:800;font-size:13px;box-shadow:0 0 10px ${glow},0 0 20px ${glow.replace('0.35','0.12')};">${score}</div>`;
+      const tip = (tvCoinData[coin]?._scoreParts || []).join('\n');
+      el.innerHTML = `<div title="${tip.replace(/"/g, '&quot;')}" style="display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:50%;background:${bg};color:${tc};font-weight:800;font-size:13px;box-shadow:0 0 10px ${glow},0 0 20px ${glow.replace('0.35','0.12')};cursor:help;">${score}</div>`;
       const row = document.getElementById(`tvRow_${coin}`);
       if (row) { row.style.borderLeftColor = bg; }
     }
@@ -11882,7 +11930,7 @@ Requirements:
       const el = document.getElementById(`tvTrend_${coin}`);
       if (!el) return;
       const recovering = fallingHours >= 2 && pct1h > 0.2;
-      if (tvCoinData[coin]) { tvCoinData[coin].pct1h = pct1h; tvCoinData[coin].fallingHours = fallingHours; tvCoinData[coin].recovering = recovering; }
+      if (tvCoinData[coin]) { tvCoinData[coin].pct1h = pct1h; tvCoinData[coin].fallingHours = fallingHours; tvCoinData[coin].recovering = recovering; tvCoinData[coin].totalFallPct = totalFallPct; }
       updateScore(coin);
       if (pct1h == null) { el.innerHTML = '<span style="color:#444">—</span>'; return; }
       const rsi = tvCoinData[coin]?.rsi;
@@ -11931,7 +11979,17 @@ Requirements:
           const volumes = candles.map(x => x[5]);
           const avgVol = volumes.slice(0, -1).reduce((a, b) => a + b, 0) / Math.max(1, volumes.length - 1);
           const volRatio = avgVol > 0 ? volumes[n - 1] / avgVol : 1;
-          if (tvCoinData[c.coin]) Object.assign(tvCoinData[c.coin], { rsi, priceVsEma, emaRising, volRatio });
+          // Позиция в 24h диапазоне, крест EMA9/EMA20, волатильность, higher lows
+          const lows = candles.map(x => x[1]), highs = candles.map(x => x[2]);
+          const lo24 = Math.min(...lows.slice(-24)), hi24 = Math.max(...highs.slice(-24));
+          const rangePos = hi24 > lo24 ? (closes[n-1] - lo24) / (hi24 - lo24) : null;
+          const ema9 = calcEMA(workCloses, 9);
+          const emaCross = ema9 != null && ema20 != null ? (ema9 > ema20 ? 1 : -1) : null;
+          const rngs = candles.slice(-13, -1).map(x => x[1] > 0 ? (x[2] - x[1]) / x[1] * 100 : 0);
+          const avgRange = rngs.length ? rngs.reduce((a, b) => a + b, 0) / rngs.length : null;
+          let hlStreak = 0;
+          for (let i = n - 2; i > 0 && lows[i] > lows[i-1]; i--) hlStreak++;
+          if (tvCoinData[c.coin]) Object.assign(tvCoinData[c.coin], { rsi, priceVsEma, emaRising, volRatio, rangePos, emaCross, avgRange, hlStreak });
           applyTrend(c.coin, pct1h, fallingHours, totalFallPct);
         } catch { applyTrend(c.coin, null, 0, 0); }
       }
