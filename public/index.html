@@ -11936,6 +11936,16 @@ Requirements:
       }
       if (tvCoinData[coin]) { tvCoinData[coin].bidDepth = buy; tvCoinData[coin].askDepth = sell; }
       updateScore(coin);
+      // Мёртвый стакан (< $25K в ±2%) — торговать нельзя, приглушаем строку
+      const row = document.getElementById(`tvRow_${coin}`);
+      if (row) {
+        if (buy + sell < 25000) {
+          row.style.opacity = '0.35';
+          el.innerHTML += '<br><span style="color:#f55;font-size:9px;">нет ликв.</span>';
+        } else {
+          row.style.opacity = '';
+        }
+      }
     }
 
     function applyTrend(coin, pct1h, fallingHours, totalFallPct) {
@@ -12038,7 +12048,7 @@ Requirements:
         const res = await fetch('/api/top-volume' + (force ? '?force=true' : ''));
         const data = await res.json();
         if (data.success) {
-          const coins = data.coins.filter(c => c.volUsd >= 5_000_000);
+          const coins = data.coins.filter(c => c.volUsd >= 5_000_000 && c.pct24h <= 100);
           renderTopVolume(coins);
           loadTrendSequential(coins);
           loadDepthSequential(coins);

@@ -3543,6 +3543,16 @@
               const askCol = sell >= buy ? 'var(--green)' : '#f55';
               el.innerHTML = `<span style="color:${askCol}">${fmtVolShort(sell)}</span><br><span style="color:#f55">${fmtVolShort(buy)}</span>`;
             } else if (el) { el.textContent = '—'; }
+            // Мёртвый стакан (< $25K в ±2%) — торговать нельзя, приглушаем строку
+            const rowM = document.getElementById(`tvRow_${c.coin}`);
+            if (rowM) {
+              if (buy + sell < 25000) {
+                rowM.style.opacity = '0.35';
+                if (el) el.innerHTML += '<br><span style="color:#f55;font-size:8px;">нет ликв.</span>';
+              } else {
+                rowM.style.opacity = '';
+              }
+            }
             break;
           } catch {}
         }
@@ -3558,7 +3568,7 @@
         const res = await fetch(BASE + '/api/top-volume' + (force ? '?force=true' : ''));
         const data = await res.json();
         if (data.success) {
-          const coins = data.coins.filter(c => c.volUsd >= 5_000_000);
+          const coins = data.coins.filter(c => c.volUsd >= 5_000_000 && c.pct24h <= 100);
           renderTopVolumeMobile(coins);
           loadTrendSequentialMobile(coins);
           loadDepthSequentialMobile(coins);
