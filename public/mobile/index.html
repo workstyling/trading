@@ -2074,7 +2074,7 @@
             </div>
             <div class="monitor-actions">
               ${isBuy ? `<button class="mon-sell-btn" onclick="createSellAt('${pair}','${exactSize}','${exactTarget}')">+${tradingSettings.sellMarkup}%</button>` : ''}
-              ${isBuy ? `<button class="mon-sell-btn ask" onclick="sellAtAsk('${pair}','${exactSize}',${avgP})">Ask</button>` : ''}
+              ${isBuy ? `<button class="mon-sell-btn ask" onclick="sellAtAsk('${pair}','${exactSize}',${avgP},${parseFloat(o.total_value) || 0})">Ask</button>` : ''}
               <button class="mon-deselect" onclick="deselectOrder('${o.order_id}')">✕</button>
             </div>
           </div>`;
@@ -2083,7 +2083,7 @@
         // Sell All button
         if (totalFilled > 0) {
           const totalFilledStr = totalFilled.toFixed(totalFilled < 1 ? 8 : 6);
-          html += `<div style="margin-top:8px;"><button class="mon-sell-btn all" style="width:100%;padding:10px;" onclick="sellAtAsk('${pair}','${totalFilledStr}',${avgBuy})">SELL ALL ${coin}</button></div>`;
+          html += `<div style="margin-top:8px;"><button class="mon-sell-btn all" style="width:100%;padding:10px;" onclick="sellAtAsk('${pair}','${totalFilledStr}',${avgBuy},${totalUSD})">SELL ALL ${coin}</button></div>`;
         }
 
         html += `</div>`;
@@ -2112,7 +2112,7 @@
       else toast(r.error || (r.details?.error_response?.message) || 'Failed', 'error');
     }
 
-    async function sellAtAsk(pair, size, avgBuyPrice) {
+    async function sellAtAsk(pair, size, avgBuyPrice, actualCost) {
       const coin = pair.split('-')[0];
       const buyFee = (tradingSettings.tradeFee || 0.06) / 100;    // limit fee used at purchase
       const sellFee = (tradingSettings.marketFee || 0.125) / 100;  // taker fee for sell (worst case)
@@ -2129,14 +2129,18 @@
       if (!askPrice) { toast('No ask price', 'error'); return; }
 
       const effectiveReceived = sz * askPrice * (1 - sellFee);
-      const costBasis = avgBuyPrice > 0 ? avgBuyPrice * (1 + buyFee) * sz : null;
+      // Приоритет — фактические затраты с уплаченной комиссией (total_value_after_fees), как в мониторе
+      const costBasis = actualCost > 0 ? actualCost
+        : avgBuyPrice > 0 ? avgBuyPrice * (1 + buyFee) * sz : null;
       const profit = costBasis !== null ? effectiveReceived - costBasis : null;
       const pct = costBasis ? profit / costBasis * 100 : null;
 
       const isLoss = profit !== null && profit < 0;
       const pnlColor = isLoss ? '#f55' : '#2ecc71';
       const pnlSign = !isLoss && profit !== null ? '+' : '';
-      const feeNote = `покупка ${(buyFee*100).toFixed(3)}% + продажа ${(sellFee*100).toFixed(3)}%`;
+      const feeNote = actualCost > 0
+        ? `затраты факт. (комиссия покупки внутри) + продажа ${(sellFee*100).toFixed(3)}%`
+        : `покупка ${(buyFee*100).toFixed(3)}% + продажа ${(sellFee*100).toFixed(3)}%`;
       const pnlLine = profit !== null
         ? `<div style="font-size:17px;font-weight:700;color:${pnlColor};margin:8px 0;">${pnlSign}$${profit.toFixed(2)} (${pnlSign}${pct.toFixed(2)}%)</div>`
         : '';

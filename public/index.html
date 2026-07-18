@@ -7982,7 +7982,7 @@
     }
 
     // Sell at current ask price (your price, waits for buyer)
-    async function sellAtCurrentAsk(productId, size, avgBuyPrice) {
+    async function sellAtCurrentAsk(productId, size, avgBuyPrice, actualCost) {
       try {
         const coin = productId.split('-')[0];
         const tickerRes = await fetch(`https://api.exchange.coinbase.com/products/${productId}/ticker`);
@@ -7995,7 +7995,9 @@
         const sellFee = tradingSettings.marketFee / 100;    // taker fee (worst case for sell)
         const sz = parseFloat(size);
         const effectiveReceived = askPrice * sz * (1 - sellFee);
-        const costBasis = avgBuyPrice > 0 ? avgBuyPrice * (1 + buyFee) * sz : null;
+        // Приоритет — фактические затраты с уплаченной комиссией (total_value_after_fees), как в колонке LIMIT
+        const costBasis = actualCost > 0 ? actualCost
+          : avgBuyPrice > 0 ? avgBuyPrice * (1 + buyFee) * sz : null;
         const profit = costBasis !== null ? effectiveReceived - costBasis : null;
         const pct = costBasis ? (profit / costBasis * 100) : null;
 
@@ -8005,7 +8007,9 @@
         const pnlHtml = profit !== null
           ? `<br><span style="font-size:15px;font-weight:700;color:${pnlColor}">${pnlSign}$${profit.toFixed(2)} (${pnlSign}${pct.toFixed(2)}%)</span>`
           : '';
-        const feeNote = `buy ${(buyFee*100).toFixed(3)}% + sell ${(sellFee*100).toFixed(3)}%`;
+        const feeNote = actualCost > 0
+          ? `затраты факт. (комиссия покупки внутри) + sell ${(sellFee*100).toFixed(3)}%`
+          : `buy ${(buyFee*100).toFixed(3)}% + sell ${(sellFee*100).toFixed(3)}%`;
         const title = profit !== null && profit < 0 ? '⚠️ Продажа в убыток' : 'Подтвердите продажу';
 
         const confirmed = await new Promise(resolve => {
@@ -8042,8 +8046,8 @@
       }
     }
 
-    async function sellAllCoin(productId, size, avgBuyPrice) {
-      await sellAtCurrentAsk(productId, size, avgBuyPrice);
+    async function sellAllCoin(productId, size, avgBuyPrice, actualCost) {
+      await sellAtCurrentAsk(productId, size, avgBuyPrice, actualCost);
     }
 
     async function sellAllLimit(productId, size, coin) {
@@ -10514,7 +10518,7 @@ Requirements:
         const marketPnL = marketValue - totalUSD;
         const marketPnLPct = totalUSD !== 0 ? (marketPnL / Math.abs(totalUSD) * 100) : 0;
 
-        const initLimitPnL = totalFilled * bestAsk * (1 - getFeeLimit()) - totalUSD;
+        const initLimitPnL = totalFilled * bestAsk * (1 - getFeeMarket()) - totalUSD; // worst-case taker — как в диалоге продажи
         const initMarketPnL = totalFilled * bestBid * (1 - getFeeMarket()) - totalUSD;
         const initMarketDiff = initMarketPnL - initLimitPnL;
 
@@ -10572,7 +10576,7 @@ Requirements:
         const isFav = favoriteCoins.has(coin);
         h += `<div class="coin-group" data-coin="${coin}" data-coin-pair="${pair}">
           <h4><a href="https://www.tradingview.com/chart/?symbol=COINBASE%3A${coin}USD" target="_blank">${pair}</a>${todayBadge} <span onclick="toggleFavoriteCoin('${coin}')" title="${isFav ? 'Remove from favorites' : 'Add to favorites'}" style="cursor:pointer;font-size:16px;opacity:${isFav ? '1' : '0.25'};padding:0 6px;color:${isFav ? '#f5c518' : 'inherit'};">★</span><button class="select-coin-btn" onclick="selectCoinForBuy('${coin}')" title="Set for Buy">⬆</button></h4>
-          <div class="balance">Selected: ${fmtSize(totalFilled)} ${coin} <span id="realBal_${coin}" style="color:var(--t2);font-size:10px;">(loading real balance...)</span> ${totalFilled > 0 ? `<button class="sell-all-btn" onclick="sellAllCoin('${pair}', '${totalFilled}', ${avgBuyPrice})">SELL ALL</button>` : ''} <button class="${btnClass}" onclick="saveGroupProfit('${coin}', ${groupProfit.toFixed(2)}, '${filledBuys.map(o => o.order_id).join(',')}', '${filledSells.map(o => o.order_id).join(',')}', ${buyCreatedDate ? `'${buyCreatedDate}'` : 'null'})" ${btnDisabled ? 'disabled' : ''}>${btnText}</button>
+          <div class="balance">Selected: ${fmtSize(totalFilled)} ${coin} <span id="realBal_${coin}" style="color:var(--t2);font-size:10px;">(loading real balance...)</span> ${totalFilled > 0 ? `<button class="sell-all-btn" onclick="sellAllCoin('${pair}', '${totalFilled}', ${avgBuyPrice}, ${totalUSD})">SELL ALL</button>` : ''} <button class="${btnClass}" onclick="saveGroupProfit('${coin}', ${groupProfit.toFixed(2)}, '${filledBuys.map(o => o.order_id).join(',')}', '${filledSells.map(o => o.order_id).join(',')}', ${buyCreatedDate ? `'${buyCreatedDate}'` : 'null'})" ${btnDisabled ? 'disabled' : ''}>${btnText}</button>
           ${totalFilled > 0 ? `<span style="margin-left:10px;display:inline-flex;align-items:center;gap:4px;">
             <input type="text" id="limitSellPrice_${coin}" placeholder="Limit price" style="width:90px;padding:3px 6px;background:var(--s3);border:1px solid var(--b1);border-radius:5px;color:var(--t0);font-family:'JetBrains Mono',monospace;font-size:11px;outline:none;" autocomplete="off">
             <button onclick="sellAllLimit('${pair}','${totalFilled}','${coin}')" style="padding:3px 10px;border:1px solid var(--yellow);border-radius:5px;background:transparent;color:var(--yellow);font-size:10px;font-weight:600;cursor:pointer;">Sell Limit</button>
@@ -10649,7 +10653,7 @@ Requirements:
           let sellBtn = '';
           if (isBuy && filledVal > 0) {
             const checkMark = existingSellOrder ? `<span class="sell-exists" title="Sell order exists">✓</span>` : '';
-            sellBtn = `<button class="sell-target-btn" onclick="createSellOrder('${pair}', '${o.filled_size}', '${targetPrice}')">+${tradingSettings.sellMarkup}%</button><button class="sell-ask-btn" onclick="sellAtCurrentAsk('${pair}', '${o.filled_size}', ${parseFloat(o.average_filled_price) || 0})" title="Sell at Best Ask">Sell Ask</button>${checkMark}`;
+            sellBtn = `<button class="sell-target-btn" onclick="createSellOrder('${pair}', '${o.filled_size}', '${targetPrice}')">+${tradingSettings.sellMarkup}%</button><button class="sell-ask-btn" onclick="sellAtCurrentAsk('${pair}', '${o.filled_size}', ${parseFloat(o.average_filled_price) || 0}, ${parseFloat(o.total_value) || 0})" title="Sell at Best Ask">Sell Ask</button>${checkMark}`;
           }
           // Cancel button for OPEN orders (both buy and sell)
           if (o.status === 'OPEN') {
@@ -11137,11 +11141,11 @@ Requirements:
         if (bidEl && bestBid > 0) bidEl.textContent = '$' + fmtPrice(bestBid);
         if (askEl && bestAsk > 0) askEl.textContent = '$' + fmtPrice(bestAsk);
 
-        // Limit P&L (sell limit at Best Ask with 0.06% fee)
+        // Limit P&L: продажа лимиткой по Ask, worst-case комиссия taker — та же формула, что в диалоге продажи
         let limitPnL = 0;
         if (totalFilled !== 0) {
           const limitAmount = totalFilled * bestAsk;
-          const afterFees = limitAmount * (1 - getFeeLimit());
+          const afterFees = limitAmount * (1 - getFeeMarket());
           limitPnL = afterFees - totalUSD;
           if (limitPnlEl) {
             limitPnlEl.className = limitPnL >= 0 ? 'profit-pos' : 'profit-neg';
