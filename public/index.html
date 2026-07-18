@@ -11931,7 +11931,8 @@ Requirements:
       if (!coins || !coins.length) { body.innerHTML = '<div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">No data</div>'; return; }
       const rows = coins.map((c, i) => {
         _tvPrevScore[c.coin] = _tvLastScore[c.coin];
-        tvCoinData[c.coin] = { pct24h: c.pct24h, vol: c.volUsd, pct1h: null, fallingHours: 0, recovering: false, bidDepth: 0, askDepth: 0 };
+        // прошлые метрики оставляем как fallback — свежие данные их перезапишут
+        tvCoinData[c.coin] = { ...(tvCoinData[c.coin] || {}), pct24h: c.pct24h, vol: c.volUsd };
         const pctCls = c.pct24h >= 0 ? 'color:var(--green)' : 'color:#f55';
         const sign = c.pct24h >= 0 ? '+' : '';
         const price = c.price < 0.001 ? c.price.toFixed(6) : c.price < 1 ? c.price.toFixed(4) : c.price < 100 ? c.price.toFixed(3) : c.price.toFixed(2);
@@ -11999,8 +12000,17 @@ Requirements:
       }
     }
 
-    async function loadTrendSequential(coins, gen) {
+    async function loadTrendSequential(coins, gen, isRetry) {
       const CB = 'https://api.exchange.coinbase.com';
+      const _sleep = ms => new Promise(res => setTimeout(res, ms));
+      const failed = [];
+      // при сбое показываем прошлые данные вместо «—» и запоминаем для повтора
+      const markFail = (c) => {
+        failed.push(c);
+        const d = tvCoinData[c.coin];
+        if (d && d.pct1h != null) applyTrend(c.coin, d.pct1h, d.fallingHours || 0, d.totalFallPct || 0);
+        else applyTrend(c.coin, null, 0, 0);
+      };
       for (const c of coins) {
         if (gen !== undefined && gen !== _tvLoadGen) return; // начался новый цикл — этот останавливаем
         try {
@@ -12010,9 +12020,9 @@ Requirements:
           // 1h и 15m свечи грузим параллельно — вдвое быстрее
           const p15 = fetch(`${CB}/products/${c.coin}-USD/candles?granularity=900&start=${new Date(now - 6 * 3600 * 1000).toISOString()}&end=${end}`).then(x => x.ok ? x.json() : null).catch(() => null);
           const r = await fetch(`${CB}/products/${c.coin}-USD/candles?granularity=3600&start=${start}&end=${end}`);
-          if (!r.ok) { applyTrend(c.coin, null, 0, 0); continue; }
+          if (!r.ok) { markFail(c); continue; }
           const candles = await r.json();
-          if (!Array.isArray(candles) || candles.length < 3) { applyTrend(c.coin, null, 0, 0); continue; }
+          if (!Array.isArray(candles) || candles.length < 3) { markFail(c); continue; }
           candles.sort((a, b) => a[0] - b[0]);
           const closes = candles.map(x => x[4]);
           const n = closes.length;
@@ -12062,7 +12072,13 @@ Requirements:
             }
           } catch { }
           applyTrend(c.coin, pct1h, fallingHours, totalFallPct);
-        } catch { applyTrend(c.coin, null, 0, 0); }
+        } catch { markFail(c); }
+        await _sleep(120); // пауза между монетами — не упираемся в rate limit Coinbase
+      }
+      // вторая попытка для несработавших монет
+      if (failed.length && !isRetry && (gen === undefined || gen === _tvLoadGen)) {
+        await _sleep(2500);
+        return loadTrendSequential(failed, gen, true);
       }
     }
 
@@ -12074,7 +12090,7 @@ Requirements:
         for (let attempt = 0; attempt < 2; attempt++) {
           try {
             const r = await fetch(`${CB}/products/${c.coin}-USD/book?level=2`);
-            if (!r.ok) { if (attempt === 0) continue; applyDepth(c.coin, 0, 0); break; }
+            if (!r.ok) { if (attempt === 0) continue; const dp = tvCoinData[c.coin]; applyDepth(c.coin, dp?.bidDepth || 0, dp?.askDepth || 0); break; }
             const book = await r.json();
             const lo = c.price * 0.98, hi = c.price * 1.02;
             let buy = 0, sell = 0;
@@ -12085,8 +12101,9 @@ Requirements:
             if (tvCoinData[c.coin] && bb > 0 && ba > 0) tvCoinData[c.coin].spreadPct = (ba - bb) / ((ba + bb) / 2) * 100;
             applyDepth(c.coin, buy, sell);
             ok = true; break;
-          } catch { if (attempt === 1) applyDepth(c.coin, 0, 0); }
+          } catch { if (attempt === 1) { const dp = tvCoinData[c.coin]; applyDepth(c.coin, dp?.bidDepth || 0, dp?.askDepth || 0); } }
         }
+        await new Promise(res => setTimeout(res, 120)); // пауза — rate limit
       }
     }
 
