@@ -3304,7 +3304,7 @@
     }
 
     // ── Top Volume Mobile ──
-    let tvCountdownSec = 60, tvTimer = null;
+    let tvCountdownSec = 60, tvTimer = null, _tvLoadGen = 0;
 
     function fmtVolShort(v) {
       if (v >= 1e9) return '$' + (v / 1e9).toFixed(2) + 'B';
@@ -3496,13 +3496,16 @@
       body.innerHTML = `<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;"><table style="width:100%;border-collapse:collapse;font-size:11px;min-width:310px;"><thead><tr style="border-bottom:1px solid #222;"><th style="width:18px;color:#666;font-weight:600;font-size:9px;padding:5px 2px;text-align:left;">#</th><th style="color:#666;font-weight:600;font-size:9px;padding:5px 3px;text-align:left;width:72px;">COIN</th><th style="color:#666;font-weight:600;font-size:9px;padding:5px 3px;text-align:right;width:48px;">24H%</th><th style="color:#666;font-weight:600;font-size:9px;padding:5px 3px;text-align:right;width:48px;">VOL</th><th style="color:#666;font-weight:600;font-size:9px;padding:5px 3px;text-align:right;width:62px;">TREND</th><th style="color:#666;font-weight:600;font-size:9px;padding:5px 3px;text-align:right;width:44px;">+2/-2</th><th style="color:#666;font-weight:600;font-size:9px;padding:5px 3px;text-align:center;width:38px;">SCR</th></tr></thead><tbody>${rows}</tbody></table></div>`;
     }
 
-    async function loadTrendSequentialMobile(coins) {
+    async function loadTrendSequentialMobile(coins, gen) {
       const CB = 'https://api.exchange.coinbase.com';
       for (const c of coins) {
+        if (gen !== undefined && gen !== _tvLoadGen) return; // начался новый цикл — этот останавливаем
         try {
           const now = Date.now();
           const start = new Date(now - 26 * 3600 * 1000).toISOString();
           const end = new Date(now).toISOString();
+          // 1h и 15m свечи грузим параллельно — вдвое быстрее
+          const p15 = fetch(`${CB}/products/${c.coin}-USD/candles?granularity=900&start=${new Date(now - 6 * 3600 * 1000).toISOString()}&end=${end}`).then(x => x.ok ? x.json() : null).catch(() => null);
           const r = await fetch(`${CB}/products/${c.coin}-USD/candles?granularity=3600&start=${start}&end=${end}`);
           const el = document.getElementById(`tvTrend_${c.coin}`);
           if (!r.ok || !el) continue;
@@ -3542,18 +3545,15 @@
           if (c.coin === 'BTC') _btcPct1h = pct1h; // режим рынка для остальных монет
           // 15m свечи: раннее подтверждение/опровержение разворота
           try {
-            const r15 = await fetch(`${CB}/products/${c.coin}-USD/candles?granularity=900&start=${new Date(now - 6 * 3600 * 1000).toISOString()}&end=${end}`);
-            if (r15.ok) {
-              const c15 = await r15.json();
-              if (Array.isArray(c15) && c15.length >= 3) {
-                c15.sort((a, b) => a[0] - b[0]);
-                const cl15 = c15.map(x => x[4]);
-                const m = cl15.length;
-                const pct15m = cl15[m-2] ? (cl15[m-1] - cl15[m-2]) / cl15[m-2] * 100 : null;
-                let green15 = 0;
-                for (let i = Math.max(1, m - 4); i <= m - 1; i++) if (cl15[i] > cl15[i-1]) green15++;
-                if (tvCoinData[c.coin]) Object.assign(tvCoinData[c.coin], { pct15m, green15 });
-              }
+            const c15 = await p15;
+            if (Array.isArray(c15) && c15.length >= 3) {
+              c15.sort((a, b) => a[0] - b[0]);
+              const cl15 = c15.map(x => x[4]);
+              const m = cl15.length;
+              const pct15m = cl15[m-2] ? (cl15[m-1] - cl15[m-2]) / cl15[m-2] * 100 : null;
+              let green15 = 0;
+              for (let i = Math.max(1, m - 4); i <= m - 1; i++) if (cl15[i] > cl15[i-1]) green15++;
+              if (tvCoinData[c.coin]) Object.assign(tvCoinData[c.coin], { pct15m, green15 });
             }
           } catch { }
           updateScoreMobile(c.coin);
@@ -3569,9 +3569,10 @@
       }
     }
 
-    async function loadDepthSequentialMobile(coins) {
+    async function loadDepthSequentialMobile(coins, gen) {
       const CB = 'https://api.exchange.coinbase.com';
       for (const c of coins) {
+        if (gen !== undefined && gen !== _tvLoadGen) return; // начался новый цикл — этот останавливаем
         for (let attempt = 0; attempt < 2; attempt++) {
           try {
             const r = await fetch(`${CB}/products/${c.coin}-USD/book?level=2`);
@@ -3617,9 +3618,10 @@
         const data = await res.json();
         if (data.success) {
           const coins = data.coins.filter(c => c.volUsd >= 5_000_000 && c.pct24h <= 100);
+          const gen = ++_tvLoadGen; // отменяем незавершённые загрузки прошлого цикла
           renderTopVolumeMobile(coins);
-          loadTrendSequentialMobile(coins);
-          loadDepthSequentialMobile(coins);
+          loadTrendSequentialMobile(coins, gen);
+          loadDepthSequentialMobile(coins, gen);
         }
         tvCountdownSec = 60;
         if (btn) { btn.disabled = false; btn.classList.remove('spinning'); }

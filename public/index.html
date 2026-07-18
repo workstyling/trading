@@ -11737,7 +11737,7 @@ Requirements:
     startTrCountdown();
 
     // ── Top Volume (24h) ──────────────────────────────────
-    let tvCountdownSec = 60, tvPaused = false, tvTimer = null;
+    let tvCountdownSec = 60, tvPaused = false, tvTimer = null, _tvLoadGen = 0;
 
     function fmtVolShort(v) {
       if (v >= 1e9) return '$' + (v / 1e9).toFixed(2) + 'B';
@@ -11999,13 +11999,16 @@ Requirements:
       }
     }
 
-    async function loadTrendSequential(coins) {
+    async function loadTrendSequential(coins, gen) {
       const CB = 'https://api.exchange.coinbase.com';
       for (const c of coins) {
+        if (gen !== undefined && gen !== _tvLoadGen) return; // начался новый цикл — этот останавливаем
         try {
           const now = Date.now();
           const start = new Date(now - 26 * 3600 * 1000).toISOString();
           const end = new Date(now).toISOString();
+          // 1h и 15m свечи грузим параллельно — вдвое быстрее
+          const p15 = fetch(`${CB}/products/${c.coin}-USD/candles?granularity=900&start=${new Date(now - 6 * 3600 * 1000).toISOString()}&end=${end}`).then(x => x.ok ? x.json() : null).catch(() => null);
           const r = await fetch(`${CB}/products/${c.coin}-USD/candles?granularity=3600&start=${start}&end=${end}`);
           if (!r.ok) { applyTrend(c.coin, null, 0, 0); continue; }
           const candles = await r.json();
@@ -12047,18 +12050,15 @@ Requirements:
           if (c.coin === 'BTC') _btcPct1h = pct1h; // режим рынка для остальных монет
           // 15m свечи: раннее подтверждение/опровержение разворота
           try {
-            const r15 = await fetch(`${CB}/products/${c.coin}-USD/candles?granularity=900&start=${new Date(now - 6 * 3600 * 1000).toISOString()}&end=${end}`);
-            if (r15.ok) {
-              const c15 = await r15.json();
-              if (Array.isArray(c15) && c15.length >= 3) {
-                c15.sort((a, b) => a[0] - b[0]);
-                const cl15 = c15.map(x => x[4]);
-                const m = cl15.length;
-                const pct15m = cl15[m-2] ? (cl15[m-1] - cl15[m-2]) / cl15[m-2] * 100 : null;
-                let green15 = 0;
-                for (let i = Math.max(1, m - 4); i <= m - 1; i++) if (cl15[i] > cl15[i-1]) green15++;
-                if (tvCoinData[c.coin]) Object.assign(tvCoinData[c.coin], { pct15m, green15 });
-              }
+            const c15 = await p15;
+            if (Array.isArray(c15) && c15.length >= 3) {
+              c15.sort((a, b) => a[0] - b[0]);
+              const cl15 = c15.map(x => x[4]);
+              const m = cl15.length;
+              const pct15m = cl15[m-2] ? (cl15[m-1] - cl15[m-2]) / cl15[m-2] * 100 : null;
+              let green15 = 0;
+              for (let i = Math.max(1, m - 4); i <= m - 1; i++) if (cl15[i] > cl15[i-1]) green15++;
+              if (tvCoinData[c.coin]) Object.assign(tvCoinData[c.coin], { pct15m, green15 });
             }
           } catch { }
           applyTrend(c.coin, pct1h, fallingHours, totalFallPct);
@@ -12066,9 +12066,10 @@ Requirements:
       }
     }
 
-    async function loadDepthSequential(coins) {
+    async function loadDepthSequential(coins, gen) {
       const CB = 'https://api.exchange.coinbase.com';
       for (const c of coins) {
+        if (gen !== undefined && gen !== _tvLoadGen) return; // начался новый цикл — этот останавливаем
         let ok = false;
         for (let attempt = 0; attempt < 2; attempt++) {
           try {
@@ -12099,9 +12100,10 @@ Requirements:
         const data = await res.json();
         if (data.success) {
           const coins = data.coins.filter(c => c.volUsd >= 5_000_000 && c.pct24h <= 100);
+          const gen = ++_tvLoadGen; // отменяем незавершённые загрузки прошлого цикла
           renderTopVolume(coins);
-          loadTrendSequential(coins);
-          loadDepthSequential(coins);
+          loadTrendSequential(coins, gen);
+          loadDepthSequential(coins, gen);
         }
         if (btn) { btn.disabled = false; btn.classList.remove('spinning'); }
       } catch (e) { console.error('[top-volume]', e); }
