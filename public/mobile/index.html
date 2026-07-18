@@ -3439,6 +3439,27 @@
         if (_btcPct1h < -0.5)     score -= 0.7;
         else if (_btcPct1h > 0.3) score += 0.3;
       }
+      // Дистанция до сопротивления — хватит ли места до цели +2%
+      if (d.runwayPct != null) {
+        if (d.runwayPct < 1)       score -= 1;
+        else if (d.runwayPct < 2)  score -= 0.5;
+        else if (d.runwayPct > 3)  score += 0.3;
+      } else if (d.rangePos != null) score += 0.3;
+      // MACD — ускорение или затухание импульса
+      if (d.macdRising != null) {
+        if      (d.macdPos && d.macdRising)   score += 0.5;
+        else if (!d.macdPos && d.macdRising)  score += 0.3;
+        else if (!d.macdPos && !d.macdRising) score -= 0.5;
+        else                                  score -= 0.2;
+      }
+      // Бычье поглощение после падения
+      if (d.bullEngulf && (d.fallingHours >= 2 || (d.rangePos != null && d.rangePos < 0.35))) score += 0.4;
+      // Стакан вплотную к цене (±0.5%)
+      if (d.nearBidDepth > 0 && d.nearAskDepth > 0) {
+        const rN = d.nearBidDepth / d.nearAskDepth;
+        if      (rN > 1.5)  score += 0.5;
+        else if (rN < 0.67) score -= 0.5;
+      }
       return Math.max(0, Math.min(10, Math.round(score * 2) / 2));
     }
 
@@ -3513,7 +3534,7 @@
         if (gen !== undefined && gen !== _tvLoadGen) return; // начался новый цикл — этот останавливаем
         try {
           const now = Date.now();
-          const start = new Date(now - 26 * 3600 * 1000).toISOString();
+          const start = new Date(now - 40 * 3600 * 1000).toISOString(); // 40h: хватает для MACD и поиска уровней
           const end = new Date(now).toISOString();
           // 1h и 15m свечи грузим параллельно — вдвое быстрее
           const p15 = fetch(`${CB}/products/${c.coin}-USD/candles?granularity=900&start=${new Date(now - 6 * 3600 * 1000).toISOString()}&end=${end}`).then(x => x.ok ? x.json() : null).catch(() => null);
@@ -3553,7 +3574,25 @@
           for (let i = n - 2; i > 0 && lows[i] > lows[i-1]; i--) hlStreak++;
           let greenCount6 = 0;
           for (let i = Math.max(1, n - 7); i <= n - 2; i++) if (closes[i] > closes[i-1]) greenCount6++;
-          if (tvCoinData[c.coin]) Object.assign(tvCoinData[c.coin], { pct1h, fallingHours, recovering, totalFallPct, rsi, priceVsEma, emaRising, volRatio, rangePos, emaCross, avgRange, hlStreak, greenCount6 });
+          // Сопротивление: ближайший свинг-хай выше текущей цены
+          const priceNow = closes[n-1];
+          let resist = null;
+          for (let i = 1; i < n - 1; i++) {
+            if (highs[i] > highs[i-1] && highs[i] >= highs[i+1] && highs[i] > priceNow) {
+              if (resist === null || highs[i] < resist) resist = highs[i];
+            }
+          }
+          const runwayPct = resist ? (resist - priceNow) / priceNow * 100 : null;
+          // MACD(12,26): направление гистограммы
+          const e12 = calcEMA(workCloses, 12), e26 = calcEMA(workCloses, 26);
+          const pc = workCloses.slice(0, -1);
+          const e12p = calcEMA(pc, 12), e26p = calcEMA(pc, 26);
+          const macdPos = e12 != null && e26 != null ? e12 - e26 > 0 : null;
+          const macdRising = macdPos != null && e12p != null && e26p != null ? (e12 - e26) > (e12p - e26p) : null;
+          // Бычье поглощение на последней закрытой свече
+          const lastC = candles[n-2], prevC = candles[n-3];
+          const bullEngulf = !!(lastC && prevC && lastC[4] > lastC[3] && prevC[4] < prevC[3] && lastC[4] >= prevC[3] && lastC[3] <= prevC[4]);
+          if (tvCoinData[c.coin]) Object.assign(tvCoinData[c.coin], { pct1h, fallingHours, recovering, totalFallPct, rsi, priceVsEma, emaRising, volRatio, rangePos, emaCross, avgRange, hlStreak, greenCount6, runwayPct, macdPos, macdRising, bullEngulf });
           if (c.coin === 'BTC') _btcPct1h = pct1h; // режим рынка для остальных монет
           // 15m свечи: раннее подтверждение/опровержение разворота
           try {
@@ -3597,12 +3636,16 @@
             if (!r.ok) { if (attempt === 0) continue; break; }
             const book = await r.json();
             const lo = c.price * 0.98, hi = c.price * 1.02;
-            let buy = 0, sell = 0;
-            for (const e of (book.bids || [])) { const p = +e[0], s = +e[1]; if (p >= lo) buy += p * s; }
-            for (const e of (book.asks || [])) { const p = +e[0], s = +e[1]; if (p <= hi) sell += p * s; }
+            const lo5 = c.price * 0.995, hi5 = c.price * 1.005; // узкая зона у цены
+            let buy = 0, sell = 0, buyN = 0, sellN = 0;
+            for (const e of (book.bids || [])) { const p = +e[0], s = +e[1]; if (p >= lo) buy += p * s; if (p >= lo5) buyN += p * s; }
+            for (const e of (book.asks || [])) { const p = +e[0], s = +e[1]; if (p <= hi) sell += p * s; if (p <= hi5) sellN += p * s; }
             // Спред по верху стакана
             const bb = +(((book.bids || [])[0] || [])[0]), ba = +(((book.asks || [])[0] || [])[0]);
-            if (tvCoinData[c.coin] && bb > 0 && ba > 0) tvCoinData[c.coin].spreadPct = (ba - bb) / ((ba + bb) / 2) * 100;
+            if (tvCoinData[c.coin]) {
+              if (bb > 0 && ba > 0) tvCoinData[c.coin].spreadPct = (ba - bb) / ((ba + bb) / 2) * 100;
+              tvCoinData[c.coin].nearBidDepth = buyN; tvCoinData[c.coin].nearAskDepth = sellN;
+            }
             if (tvCoinData[c.coin]) { tvCoinData[c.coin].bidDepth = buy; tvCoinData[c.coin].askDepth = sell; }
             updateScoreMobile(c.coin);
             const el = document.getElementById(`tvDepth_${c.coin}`);
