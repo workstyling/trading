@@ -3339,6 +3339,9 @@
       return ema;
     }
 
+    let _btcPct1h = null;                       // режим рынка: 1h тренд BTC
+    const _tvPrevScore = {}, _tvLastScore = {}; // динамика скора между обновлениями
+
     function calcCoinScoreMobile(coin) {
       const d = tvCoinData[coin];
       if (!d) return null;
@@ -3420,6 +3423,22 @@
         else if (ratio < 0.5)  score -= 1;
         else if (ratio < 0.67) score -= 0.5;
       }
+      // Подтверждение на 15m
+      if (d.pct15m != null) {
+        if (rising && d.green15 >= 3)       score += 0.5;
+        else if (rising && d.pct15m < -0.3) score -= 0.5;
+        else if (!rising && d.green15 >= 3 && d.pct15m > 0.1) score += 0.7;
+      }
+      // Спред bid/ask
+      if (d.spreadPct != null) {
+        if (d.spreadPct > 0.5)      score -= 1;
+        else if (d.spreadPct > 0.2) score -= 0.4;
+      }
+      // Режим рынка — альты идут за BTC
+      if (coin !== 'BTC' && _btcPct1h != null) {
+        if (_btcPct1h < -0.5)     score -= 0.7;
+        else if (_btcPct1h > 0.3) score += 0.3;
+      }
       return Math.max(0, Math.min(10, Math.round(score * 2) / 2));
     }
 
@@ -3436,9 +3455,17 @@
         ? ['#f5843a','rgba(245,132,58,0.3)','#000']
         : ['#f55353','rgba(255,83,83,0.3)','#fff'];
       const scoreTxt = score % 1 ? score.toFixed(1) : score;
-      el.innerHTML = `<div style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;background:${bg};color:${tc};font-weight:800;font-size:${score % 1 ? 10 : 12}px;box-shadow:0 0 8px ${glow};">${scoreTxt}</div>`;
+      _tvLastScore[coin] = score;
+      const prev = _tvPrevScore[coin];
+      const delta = prev != null && score !== prev
+        ? `<span style="font-size:8px;vertical-align:top;color:${score > prev ? '#00e5a0' : '#f55'};">${score > prev ? '▲' : '▼'}</span>`
+        : '';
+      el.innerHTML = `<div style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;background:${bg};color:${tc};font-weight:800;font-size:${score % 1 ? 10 : 12}px;box-shadow:0 0 8px ${glow};">${scoreTxt}</div>${delta}`;
       const row = document.getElementById(`tvRow_${coin}`);
-      if (row) { row.style.borderLeftColor = bg; }
+      if (row) {
+        row.style.borderLeftColor = bg;
+        row.style.background = score >= 8 ? 'rgba(0,229,160,0.05)' : '';
+      }
     }
 
     function renderTopVolumeMobile(coins) {
@@ -3446,6 +3473,7 @@
       if (!body) return;
       if (!coins || !coins.length) { body.innerHTML = '<div style="color:var(--t2);font-size:12px;text-align:center;padding:14px;">No data</div>'; return; }
       const rows = coins.map((c, i) => {
+        _tvPrevScore[c.coin] = _tvLastScore[c.coin];
         tvCoinData[c.coin] = { pct24h: c.pct24h, vol: c.volUsd, pct1h: null, fallingHours: 0, recovering: false, bidDepth: 0, askDepth: 0 };
         const pctCls = c.pct24h >= 0 ? 'color:var(--green)' : 'color:#f55';
         const sign = c.pct24h >= 0 ? '+' : '';
@@ -3511,6 +3539,23 @@
           let greenCount6 = 0;
           for (let i = Math.max(1, n - 7); i <= n - 2; i++) if (closes[i] > closes[i-1]) greenCount6++;
           if (tvCoinData[c.coin]) Object.assign(tvCoinData[c.coin], { pct1h, fallingHours, recovering, totalFallPct, rsi, priceVsEma, emaRising, volRatio, rangePos, emaCross, avgRange, hlStreak, greenCount6 });
+          if (c.coin === 'BTC') _btcPct1h = pct1h; // режим рынка для остальных монет
+          // 15m свечи: раннее подтверждение/опровержение разворота
+          try {
+            const r15 = await fetch(`${CB}/products/${c.coin}-USD/candles?granularity=900&start=${new Date(now - 6 * 3600 * 1000).toISOString()}&end=${end}`);
+            if (r15.ok) {
+              const c15 = await r15.json();
+              if (Array.isArray(c15) && c15.length >= 3) {
+                c15.sort((a, b) => a[0] - b[0]);
+                const cl15 = c15.map(x => x[4]);
+                const m = cl15.length;
+                const pct15m = cl15[m-2] ? (cl15[m-1] - cl15[m-2]) / cl15[m-2] * 100 : null;
+                let green15 = 0;
+                for (let i = Math.max(1, m - 4); i <= m - 1; i++) if (cl15[i] > cl15[i-1]) green15++;
+                if (tvCoinData[c.coin]) Object.assign(tvCoinData[c.coin], { pct15m, green15 });
+              }
+            }
+          } catch { }
           updateScoreMobile(c.coin);
           const rsiHint = rsi != null ? `<span style="color:${rsi < 35 ? '#00e5a0' : rsi > 65 ? '#f55' : '#555'};font-size:9px;"> ${Math.round(rsi)}</span>` : '';
           if (pct1h == null) { el.innerHTML = '<span style="color:#444">—</span>'; }
@@ -3536,6 +3581,9 @@
             let buy = 0, sell = 0;
             for (const e of (book.bids || [])) { const p = +e[0], s = +e[1]; if (p >= lo) buy += p * s; }
             for (const e of (book.asks || [])) { const p = +e[0], s = +e[1]; if (p <= hi) sell += p * s; }
+            // Спред по верху стакана
+            const bb = +(((book.bids || [])[0] || [])[0]), ba = +(((book.asks || [])[0] || [])[0]);
+            if (tvCoinData[c.coin] && bb > 0 && ba > 0) tvCoinData[c.coin].spreadPct = (ba - bb) / ((ba + bb) / 2) * 100;
             if (tvCoinData[c.coin]) { tvCoinData[c.coin].bidDepth = buy; tvCoinData[c.coin].askDepth = sell; }
             updateScoreMobile(c.coin);
             const el = document.getElementById(`tvDepth_${c.coin}`);

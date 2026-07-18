@@ -11747,6 +11747,8 @@ Requirements:
     }
 
     const tvCoinData = {};
+    let _btcPct1h = null;                       // режим рынка: 1h тренд BTC
+    const _tvPrevScore = {}, _tvLastScore = {}; // динамика скора между обновлениями
 
     function calcRSI(closes, period = 14) {
       if (closes.length < period + 1) return null;
@@ -11873,6 +11875,25 @@ Requirements:
         else if (ratio < 0.67) add(-0.5, 'стакан');
       }
 
+      // 15. Подтверждение на 15m — часовой тренд запаздывает, 15m видит раньше
+      if (d.pct15m != null) {
+        if (rising && d.green15 >= 3)               add(0.5, '15m подтверждает');
+        else if (rising && d.pct15m < -0.3)         add(-0.5, '15m против');
+        else if (!rising && d.green15 >= 3 && d.pct15m > 0.1) add(0.7, '15m ранний разворот');
+      }
+
+      // 16. Спред bid/ask — широкий спред съедает профит на входе
+      if (d.spreadPct != null) {
+        if (d.spreadPct > 0.5)      add(-1, 'широкий спред');
+        else if (d.spreadPct > 0.2) add(-0.4, 'спред');
+      }
+
+      // 17. Режим рынка — альты идут за BTC
+      if (coin !== 'BTC' && _btcPct1h != null) {
+        if (_btcPct1h < -0.5)      add(-0.7, 'BTC падает');
+        else if (_btcPct1h > 0.3)  add(0.3, 'BTC растёт');
+      }
+
       d._scoreParts = parts;
       return Math.max(0, Math.min(10, Math.round(score * 2) / 2));
     }
@@ -11891,9 +11912,17 @@ Requirements:
         : ['#f55353','rgba(255,83,83,0.3)','#fff'];
       const tip = (tvCoinData[coin]?._scoreParts || []).join('\n');
       const scoreTxt = score % 1 ? score.toFixed(1) : score;
-      el.innerHTML = `<div title="${tip.replace(/"/g, '&quot;')}" style="display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:50%;background:${bg};color:${tc};font-weight:800;font-size:${score % 1 ? 11 : 13}px;box-shadow:0 0 10px ${glow},0 0 20px ${glow.replace('0.35','0.12')};cursor:help;">${scoreTxt}</div>`;
+      _tvLastScore[coin] = score;
+      const prev = _tvPrevScore[coin];
+      const delta = prev != null && score !== prev
+        ? `<span style="font-size:9px;vertical-align:top;color:${score > prev ? '#00e5a0' : '#f55'};" title="было ${prev}">${score > prev ? '▲' : '▼'}</span>`
+        : '';
+      el.innerHTML = `<div title="${tip.replace(/"/g, '&quot;')}" style="display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:50%;background:${bg};color:${tc};font-weight:800;font-size:${score % 1 ? 11 : 13}px;box-shadow:0 0 10px ${glow},0 0 20px ${glow.replace('0.35','0.12')};cursor:help;">${scoreTxt}</div>${delta}`;
       const row = document.getElementById(`tvRow_${coin}`);
-      if (row) { row.style.borderLeftColor = bg; }
+      if (row) {
+        row.style.borderLeftColor = bg;
+        row.style.background = score >= 8 ? 'rgba(0,229,160,0.05)' : '';
+      }
     }
 
     function renderTopVolume(coins) {
@@ -11901,6 +11930,7 @@ Requirements:
       if (!body) return;
       if (!coins || !coins.length) { body.innerHTML = '<div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">No data</div>'; return; }
       const rows = coins.map((c, i) => {
+        _tvPrevScore[c.coin] = _tvLastScore[c.coin];
         tvCoinData[c.coin] = { pct24h: c.pct24h, vol: c.volUsd, pct1h: null, fallingHours: 0, recovering: false, bidDepth: 0, askDepth: 0 };
         const pctCls = c.pct24h >= 0 ? 'color:var(--green)' : 'color:#f55';
         const sign = c.pct24h >= 0 ? '+' : '';
@@ -12014,6 +12044,23 @@ Requirements:
           let greenCount6 = 0;
           for (let i = Math.max(1, n - 7); i <= n - 2; i++) if (closes[i] > closes[i-1]) greenCount6++;
           if (tvCoinData[c.coin]) Object.assign(tvCoinData[c.coin], { rsi, priceVsEma, emaRising, volRatio, rangePos, emaCross, avgRange, hlStreak, greenCount6 });
+          if (c.coin === 'BTC') _btcPct1h = pct1h; // режим рынка для остальных монет
+          // 15m свечи: раннее подтверждение/опровержение разворота
+          try {
+            const r15 = await fetch(`${CB}/products/${c.coin}-USD/candles?granularity=900&start=${new Date(now - 6 * 3600 * 1000).toISOString()}&end=${end}`);
+            if (r15.ok) {
+              const c15 = await r15.json();
+              if (Array.isArray(c15) && c15.length >= 3) {
+                c15.sort((a, b) => a[0] - b[0]);
+                const cl15 = c15.map(x => x[4]);
+                const m = cl15.length;
+                const pct15m = cl15[m-2] ? (cl15[m-1] - cl15[m-2]) / cl15[m-2] * 100 : null;
+                let green15 = 0;
+                for (let i = Math.max(1, m - 4); i <= m - 1; i++) if (cl15[i] > cl15[i-1]) green15++;
+                if (tvCoinData[c.coin]) Object.assign(tvCoinData[c.coin], { pct15m, green15 });
+              }
+            }
+          } catch { }
           applyTrend(c.coin, pct1h, fallingHours, totalFallPct);
         } catch { applyTrend(c.coin, null, 0, 0); }
       }
@@ -12032,6 +12079,9 @@ Requirements:
             let buy = 0, sell = 0;
             for (const e of (book.bids || [])) { const p = +e[0], s = +e[1]; if (p >= lo) buy += p * s; }
             for (const e of (book.asks || [])) { const p = +e[0], s = +e[1]; if (p <= hi) sell += p * s; }
+            // Спред по верху стакана
+            const bb = +(((book.bids || [])[0] || [])[0]), ba = +(((book.asks || [])[0] || [])[0]);
+            if (tvCoinData[c.coin] && bb > 0 && ba > 0) tvCoinData[c.coin].spreadPct = (ba - bb) / ((ba + bb) / 2) * 100;
             applyDepth(c.coin, buy, sell);
             ok = true; break;
           } catch { if (attempt === 1) applyDepth(c.coin, 0, 0); }
