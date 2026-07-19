@@ -1482,6 +1482,19 @@ function scoreFromMetrics(d, isBTC, btcPct1h) {
     else if (d.pct24h > 5) add(-lerp(d.pct24h, 5, 0.5, 30, 3.5), '24h перегрев');
     if (d.pct24h > 60)     add(-1, 'экстрим-памп');
   }
+  if (d.riseHours != null && d.riseHours >= 5) {
+    const sevR = d.avgRange ? d.totalRisePct / Math.max(d.avgRange, 0.2) : null;
+    if (d.riseHours >= 8 || (sevR != null && sevR > 6)) add(-1.2, 'усталость роста');
+    else add(-0.6, 'усталость роста');
+  }
+  if (d.pct40h != null) {
+    if (d.pct40h > 20)      add(-1, 'перегрев 40h');
+    else if (d.pct40h > 12) add(-0.5, 'перегрев 40h');
+  }
+  if (d.priceVsEma != null) {
+    if (d.priceVsEma > 4)        add(-1, 'оторвана от EMA');
+    else if (d.priceVsEma > 2.5) add(-0.5, 'оторвана от EMA');
+  }
   if (d.rangePos != null) {
     if (d.rangePos < 0.25)     add(rising ? 1 : 0.3, 'у дна 24h');
     else if (d.rangePos > 0.9) add((d.volRatio > 2 && rising) ? 0.5 : -0.5, d.volRatio > 2 && rising ? 'пробой хая' : 'у хая 24h');
@@ -1588,6 +1601,12 @@ async function computeCoinMetrics(coin, price, pct24h) {
   for (let i = n - 2; i > 0 && lows[i] > lows[i-1]; i--) hlStreak++;
   let greenCount6 = 0;
   for (let i = Math.max(1, n - 7); i <= n - 2; i++) if (closes[i] > closes[i-1]) greenCount6++;
+  // Усталость роста: сколько часов подряд растёт и на сколько всего
+  let riseHours = 0;
+  for (let i = n - 2; i > 0; i--) { if (closes[i] >= closes[i-1]) riseHours++; else break; }
+  const riseStart = n - 1 - riseHours;
+  const totalRisePct = riseStart >= 0 && closes[riseStart] ? (closes[n-2] - closes[riseStart]) / closes[riseStart] * 100 : 0;
+  const pct40h = closes[0] ? (closes[n-1] - closes[0]) / closes[0] * 100 : null;
   const priceNow = closes[n-1];
   let resist = null;
   for (let i = 1; i < n - 1; i++) {
@@ -1634,7 +1653,7 @@ async function computeCoinMetrics(coin, price, pct24h) {
     }
   } catch { }
   return {
-    d: { pct24h, pct1h, fallingHours, recovering, totalFallPct, rsi, priceVsEma, emaRising, volRatio, rangePos, emaCross, avgRange, hlStreak, greenCount6, runwayPct, macdPos, macdRising, bullEngulf, pct15m, green15, dd15, bidDepth, askDepth, nearBidDepth, nearAskDepth, spreadPct },
+    d: { pct24h, pct1h, fallingHours, recovering, totalFallPct, rsi, priceVsEma, emaRising, volRatio, rangePos, emaCross, avgRange, hlStreak, greenCount6, runwayPct, macdPos, macdRising, bullEngulf, riseHours, totalRisePct, pct40h, pct15m, green15, dd15, bidDepth, askDepth, nearBidDepth, nearAskDepth, spreadPct },
     candles
   };
 }

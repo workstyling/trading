@@ -3410,6 +3410,22 @@
         else if (d.pct24h > 5) score -= lerp(d.pct24h, 5, 0.5, 30, 3.5);
         if (d.pct24h > 60)     score -= 1;
       }
+      // Усталость роста — много часов подряд без отката
+      if (d.riseHours != null && d.riseHours >= 5) {
+        const sevR = d.avgRange ? d.totalRisePct / Math.max(d.avgRange, 0.2) : null;
+        if (d.riseHours >= 8 || (sevR != null && sevR > 6)) score -= 1.2;
+        else score -= 0.6;
+      }
+      // Затяжной перегрев 40h
+      if (d.pct40h != null) {
+        if (d.pct40h > 20)      score -= 1;
+        else if (d.pct40h > 12) score -= 0.5;
+      }
+      // Отрыв от EMA20 вверх — перерастянута
+      if (d.priceVsEma != null) {
+        if (d.priceVsEma > 4)        score -= 1;
+        else if (d.priceVsEma > 2.5) score -= 0.5;
+      }
       // Позиция в 24h диапазоне
       if (d.rangePos != null) {
         if (d.rangePos < 0.25)     score += rising ? 1 : 0.3;
@@ -3601,6 +3617,12 @@
           for (let i = n - 2; i > 0 && lows[i] > lows[i-1]; i--) hlStreak++;
           let greenCount6 = 0;
           for (let i = Math.max(1, n - 7); i <= n - 2; i++) if (closes[i] > closes[i-1]) greenCount6++;
+          // Усталость роста: сколько часов подряд растёт и на сколько всего
+          let riseHours = 0;
+          for (let i = n - 2; i > 0; i--) { if (closes[i] >= closes[i-1]) riseHours++; else break; }
+          const riseStart = n - 1 - riseHours;
+          const totalRisePct = riseStart >= 0 && closes[riseStart] ? (closes[n-2] - closes[riseStart]) / closes[riseStart] * 100 : 0;
+          const pct40h = closes[0] ? (closes[n-1] - closes[0]) / closes[0] * 100 : null;
           // Сопротивление: ближайший свинг-хай выше текущей цены
           const priceNow = closes[n-1];
           let resist = null;
@@ -3619,7 +3641,7 @@
           // Бычье поглощение на последней закрытой свече
           const lastC = candles[n-2], prevC = candles[n-3];
           const bullEngulf = !!(lastC && prevC && lastC[4] > lastC[3] && prevC[4] < prevC[3] && lastC[4] >= prevC[3] && lastC[3] <= prevC[4]);
-          if (tvCoinData[c.coin]) Object.assign(tvCoinData[c.coin], { pct1h, fallingHours, recovering, totalFallPct, rsi, priceVsEma, emaRising, volRatio, rangePos, emaCross, avgRange, hlStreak, greenCount6, runwayPct, macdPos, macdRising, bullEngulf });
+          if (tvCoinData[c.coin]) Object.assign(tvCoinData[c.coin], { pct1h, fallingHours, recovering, totalFallPct, rsi, priceVsEma, emaRising, volRatio, rangePos, emaCross, avgRange, hlStreak, greenCount6, runwayPct, macdPos, macdRising, bullEngulf, riseHours, totalRisePct, pct40h });
           if (c.coin === 'BTC') _btcPct1h = pct1h; // режим рынка для остальных монет
           // 15m свечи: раннее подтверждение/опровержение разворота
           try {
