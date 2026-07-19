@@ -1557,6 +1557,21 @@ function scoreFromMetrics(d, isBTC, btcPct1h) {
     if      (rN > 1.5)  add(0.5, 'стакан у цены');
     else if (rN < 0.67) add(-0.5, 'стакан у цены');
   }
+  if (d.supportPct != null) {
+    if (d.supportPct < 1.2)    add(0.4, 'поддержка рядом');
+    else if (d.supportPct > 4) add(-0.4, 'пусто под ценой');
+  }
+  if (d.vsVwap != null) {
+    if (d.vsVwap < -1 && rising)     add(0.6, 'ниже VWAP');
+    else if (d.vsVwap < 0 && rising) add(0.3, 'ниже VWAP');
+    else if (d.vsVwap > 2.5)         add(-0.5, 'дорого к VWAP');
+  }
+  if (d.tapeRatio != null) {
+    if (d.tapeRatio > 1.8)       add(0.6, 'покупатели в ленте');
+    else if (d.tapeRatio > 1.3)  add(0.3, 'покупатели в ленте');
+    else if (d.tapeRatio < 0.55) add(-0.6, 'продавцы в ленте');
+    else if (d.tapeRatio < 0.77) add(-0.3, 'продавцы в ленте');
+  }
   return { score: Math.max(0, Math.min(10, Math.round(score * 2) / 2)), parts };
 }
 
@@ -1615,6 +1630,18 @@ async function computeCoinMetrics(coin, price, pct24h) {
     }
   }
   const runwayPct = resist ? (resist - priceNow) / priceNow * 100 : null;
+  // Поддержка: ближайший свинг-лоу ниже цены
+  let support = null;
+  for (let i = 1; i < n - 1; i++) {
+    if (lows[i] < lows[i-1] && lows[i] <= lows[i+1] && lows[i] < priceNow) {
+      if (support === null || lows[i] > support) support = lows[i];
+    }
+  }
+  const supportPct = support ? (priceNow - support) / priceNow * 100 : null;
+  // VWAP за 24h
+  let _pv = 0, _vv = 0;
+  for (const k of candles.slice(-24)) { _pv += k[4] * k[5]; _vv += k[5]; }
+  const vsVwap = _vv > 0 ? (priceNow - _pv / _vv) / (_pv / _vv) * 100 : null;
   const e12 = calcEMAsrv(workCloses, 12), e26 = calcEMAsrv(workCloses, 26);
   const pcl = workCloses.slice(0, -1);
   const e12p = calcEMAsrv(pcl, 12), e26p = calcEMAsrv(pcl, 26);
@@ -1639,8 +1666,9 @@ async function computeCoinMetrics(coin, price, pct24h) {
       }
     }
   } catch { }
-  // Стакан: глубина ±2%, узкая зона ±0.5%, спред
-  let bidDepth = 0, askDepth = 0, nearBidDepth = 0, nearAskDepth = 0, spreadPct = null;
+  // Стакан: глубина ±2%, узкая зона ±0.5%, спред; лента сделок параллельно
+  let bidDepth = 0, askDepth = 0, nearBidDepth = 0, nearAskDepth = 0, spreadPct = null, tapeRatio = null;
+  const pTape = fetch(`${CB}/products/${coin}-USD/trades?limit=100`, H).then(x => x.ok ? x.json() : null).catch(() => null);
   try {
     const rb = await fetch(`${CB}/products/${coin}-USD/book?level=2`, H);
     if (rb.ok) {
@@ -1652,8 +1680,17 @@ async function computeCoinMetrics(coin, price, pct24h) {
       if (bb > 0 && ba > 0) spreadPct = (ba - bb) / ((ba + bb) / 2) * 100;
     }
   } catch { }
+  // Агрессия в ленте: side = сторона мейкера, sell-мейкер значит агрессивный покупатель
+  try {
+    const tr = await pTape;
+    if (Array.isArray(tr) && tr.length) {
+      let bAg = 0, sAg = 0;
+      for (const t of tr) { const v = parseFloat(t.size) * parseFloat(t.price); if (t.side === 'sell') bAg += v; else if (t.side === 'buy') sAg += v; }
+      if (bAg || sAg) tapeRatio = sAg > 0 ? bAg / sAg : 5;
+    }
+  } catch { }
   return {
-    d: { pct24h, pct1h, fallingHours, recovering, totalFallPct, rsi, priceVsEma, emaRising, volRatio, rangePos, emaCross, avgRange, hlStreak, greenCount6, runwayPct, macdPos, macdRising, bullEngulf, riseHours, totalRisePct, pct40h, pct15m, green15, dd15, bidDepth, askDepth, nearBidDepth, nearAskDepth, spreadPct },
+    d: { pct24h, pct1h, fallingHours, recovering, totalFallPct, rsi, priceVsEma, emaRising, volRatio, rangePos, emaCross, avgRange, hlStreak, greenCount6, runwayPct, macdPos, macdRising, bullEngulf, riseHours, totalRisePct, pct40h, supportPct, vsVwap, tapeRatio, pct15m, green15, dd15, bidDepth, askDepth, nearBidDepth, nearAskDepth, spreadPct },
     candles
   };
 }
@@ -1680,7 +1717,8 @@ async function scoreEngineTick() {
         if (c.coin === 'BTC') btcPct1h = m.d.pct1h;
         const { score, parts } = scoreFromMetrics(m.d, c.coin === 'BTC', btcPct1h);
         latestScores[c.coin] = { score, price: c.price, t: Date.now(), parts };
-        scoreHist.push({ c: c.coin, s: score, p: c.price, t: Date.now() });
+        // parts сохраняем в историю — для будущей калибровки весов по реальным исходам
+        scoreHist.push({ c: c.coin, s: score, p: c.price, t: Date.now(), pt: parts });
         changed = true;
         // Оценка прошлых снапшотов этой монеты по свежим свечам
         const nowMs = Date.now();

@@ -3502,6 +3502,24 @@
         if      (rN > 1.5)  score += 0.5;
         else if (rN < 0.67) score -= 0.5;
       }
+      // Поддержка снизу
+      if (d.supportPct != null) {
+        if (d.supportPct < 1.2)    score += 0.4;
+        else if (d.supportPct > 4) score -= 0.4;
+      }
+      // VWAP 24h
+      if (d.vsVwap != null) {
+        if (d.vsVwap < -1 && rising)     score += 0.6;
+        else if (d.vsVwap < 0 && rising) score += 0.3;
+        else if (d.vsVwap > 2.5)         score -= 0.5;
+      }
+      // Лента сделок — кто агрессор
+      if (d.tapeRatio != null) {
+        if (d.tapeRatio > 1.8)       score += 0.6;
+        else if (d.tapeRatio > 1.3)  score += 0.3;
+        else if (d.tapeRatio < 0.55) score -= 0.6;
+        else if (d.tapeRatio < 0.77) score -= 0.3;
+      }
       return Math.max(0, Math.min(10, Math.round(score * 2) / 2));
     }
 
@@ -3632,6 +3650,18 @@
             }
           }
           const runwayPct = resist ? (resist - priceNow) / priceNow * 100 : null;
+          // Поддержка: ближайший свинг-лоу ниже цены
+          let support = null;
+          for (let i = 1; i < n - 1; i++) {
+            if (lows[i] < lows[i-1] && lows[i] <= lows[i+1] && lows[i] < priceNow) {
+              if (support === null || lows[i] > support) support = lows[i];
+            }
+          }
+          const supportPct = support ? (priceNow - support) / priceNow * 100 : null;
+          // VWAP за 24h
+          let _pv = 0, _vv = 0;
+          for (const k of candles.slice(-24)) { _pv += k[4] * k[5]; _vv += k[5]; }
+          const vsVwap = _vv > 0 ? (priceNow - _pv / _vv) / (_pv / _vv) * 100 : null;
           // MACD(12,26): направление гистограммы
           const e12 = calcEMA(workCloses, 12), e26 = calcEMA(workCloses, 26);
           const pc = workCloses.slice(0, -1);
@@ -3641,7 +3671,7 @@
           // Бычье поглощение на последней закрытой свече
           const lastC = candles[n-2], prevC = candles[n-3];
           const bullEngulf = !!(lastC && prevC && lastC[4] > lastC[3] && prevC[4] < prevC[3] && lastC[4] >= prevC[3] && lastC[3] <= prevC[4]);
-          if (tvCoinData[c.coin]) Object.assign(tvCoinData[c.coin], { pct1h, fallingHours, recovering, totalFallPct, rsi, priceVsEma, emaRising, volRatio, rangePos, emaCross, avgRange, hlStreak, greenCount6, runwayPct, macdPos, macdRising, bullEngulf, riseHours, totalRisePct, pct40h });
+          if (tvCoinData[c.coin]) Object.assign(tvCoinData[c.coin], { pct1h, fallingHours, recovering, totalFallPct, rsi, priceVsEma, emaRising, volRatio, rangePos, emaCross, avgRange, hlStreak, greenCount6, runwayPct, macdPos, macdRising, bullEngulf, riseHours, totalRisePct, pct40h, supportPct, vsVwap });
           if (c.coin === 'BTC') _btcPct1h = pct1h; // режим рынка для остальных монет
           // 15m свечи: раннее подтверждение/опровержение разворота
           try {
@@ -3686,6 +3716,8 @@
         if (gen !== undefined && gen !== _tvLoadGen) return; // начался новый цикл — этот останавливаем
         for (let attempt = 0; attempt < 2; attempt++) {
           try {
+            // Лента сделок грузится параллельно со стаканом
+            const pTape = fetch(`${CB}/products/${c.coin}-USD/trades?limit=100`).then(x => x.ok ? x.json() : null).catch(() => null);
             const r = await fetch(`${CB}/products/${c.coin}-USD/book?level=2`);
             if (!r.ok) { if (attempt === 0) continue; break; }
             const book = await r.json();
@@ -3701,6 +3733,15 @@
               tvCoinData[c.coin].nearBidDepth = buyN; tvCoinData[c.coin].nearAskDepth = sellN;
             }
             if (tvCoinData[c.coin]) { tvCoinData[c.coin].bidDepth = buy; tvCoinData[c.coin].askDepth = sell; }
+            // Агрессия в ленте: side = сторона мейкера, sell-мейкер значит агрессивный покупатель
+            try {
+              const tr = await pTape;
+              if (Array.isArray(tr) && tr.length) {
+                let bAg = 0, sAg = 0;
+                for (const t of tr) { const v = parseFloat(t.size) * parseFloat(t.price); if (t.side === 'sell') bAg += v; else if (t.side === 'buy') sAg += v; }
+                if (tvCoinData[c.coin] && (bAg || sAg)) tvCoinData[c.coin].tapeRatio = sAg > 0 ? bAg / sAg : 5;
+              }
+            } catch { }
             updateScoreMobile(c.coin);
             const el = document.getElementById(`tvDepth_${c.coin}`);
             if (el && (buy || sell)) {

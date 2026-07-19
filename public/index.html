@@ -11964,6 +11964,27 @@ Requirements:
         else if (rN < 0.67) add(-0.5, 'стакан у цены');
       }
 
+      // 22. Поддержка снизу — близкая поддержка ограничивает риск падения
+      if (d.supportPct != null) {
+        if (d.supportPct < 1.2)    add(0.4, 'поддержка рядом');
+        else if (d.supportPct > 4) add(-0.4, 'пусто под ценой');
+      }
+
+      // 23. VWAP 24h — вход ниже средневзвешенной цены дня выгоднее
+      if (d.vsVwap != null) {
+        if (d.vsVwap < -1 && rising)     add(0.6, 'ниже VWAP');
+        else if (d.vsVwap < 0 && rising) add(0.3, 'ниже VWAP');
+        else if (d.vsVwap > 2.5)         add(-0.5, 'дорого к VWAP');
+      }
+
+      // 24. Лента сделок — кто агрессор прямо сейчас (стакан можно спуфить, сделки — факт)
+      if (d.tapeRatio != null) {
+        if (d.tapeRatio > 1.8)       add(0.6, 'покупатели в ленте');
+        else if (d.tapeRatio > 1.3)  add(0.3, 'покупатели в ленте');
+        else if (d.tapeRatio < 0.55) add(-0.6, 'продавцы в ленте');
+        else if (d.tapeRatio < 0.77) add(-0.3, 'продавцы в ленте');
+      }
+
       d._scoreParts = parts;
       return Math.max(0, Math.min(10, Math.round(score * 2) / 2));
     }
@@ -12142,6 +12163,18 @@ Requirements:
             }
           }
           const runwayPct = resist ? (resist - priceNow) / priceNow * 100 : null; // null = чистое небо
+          // Поддержка: ближайший свинг-лоу ниже цены
+          let support = null;
+          for (let i = 1; i < n - 1; i++) {
+            if (lows[i] < lows[i-1] && lows[i] <= lows[i+1] && lows[i] < priceNow) {
+              if (support === null || lows[i] > support) support = lows[i];
+            }
+          }
+          const supportPct = support ? (priceNow - support) / priceNow * 100 : null;
+          // VWAP за 24h: где сидит основной объём
+          let _pv = 0, _vv = 0;
+          for (const k of candles.slice(-24)) { _pv += k[4] * k[5]; _vv += k[5]; }
+          const vsVwap = _vv > 0 ? (priceNow - _pv / _vv) / (_pv / _vv) * 100 : null;
           // MACD(12,26): направление гистограммы = ускорение/затухание импульса
           const e12 = calcEMA(workCloses, 12), e26 = calcEMA(workCloses, 26);
           const pc = workCloses.slice(0, -1);
@@ -12151,7 +12184,7 @@ Requirements:
           // Бычье поглощение на последней закрытой свече
           const lastC = candles[n-2], prevC = candles[n-3];
           const bullEngulf = !!(lastC && prevC && lastC[4] > lastC[3] && prevC[4] < prevC[3] && lastC[4] >= prevC[3] && lastC[3] <= prevC[4]);
-          if (tvCoinData[c.coin]) Object.assign(tvCoinData[c.coin], { rsi, priceVsEma, emaRising, volRatio, rangePos, emaCross, avgRange, hlStreak, greenCount6, runwayPct, macdPos, macdRising, bullEngulf, riseHours, totalRisePct, pct40h });
+          if (tvCoinData[c.coin]) Object.assign(tvCoinData[c.coin], { rsi, priceVsEma, emaRising, volRatio, rangePos, emaCross, avgRange, hlStreak, greenCount6, runwayPct, macdPos, macdRising, bullEngulf, riseHours, totalRisePct, pct40h, supportPct, vsVwap });
           if (c.coin === 'BTC') _btcPct1h = pct1h; // режим рынка для остальных монет
           // 15m свечи: раннее подтверждение/опровержение разворота
           try {
@@ -12189,6 +12222,8 @@ Requirements:
         let ok = false;
         for (let attempt = 0; attempt < 2; attempt++) {
           try {
+            // Лента сделок грузится параллельно со стаканом
+            const pTape = fetch(`${CB}/products/${c.coin}-USD/trades?limit=100`).then(x => x.ok ? x.json() : null).catch(() => null);
             const r = await fetch(`${CB}/products/${c.coin}-USD/book?level=2`);
             if (!r.ok) { if (attempt === 0) continue; const dp = tvCoinData[c.coin]; applyDepth(c.coin, dp?.bidDepth || 0, dp?.askDepth || 0); break; }
             const book = await r.json();
@@ -12203,6 +12238,15 @@ Requirements:
               if (bb > 0 && ba > 0) tvCoinData[c.coin].spreadPct = (ba - bb) / ((ba + bb) / 2) * 100;
               tvCoinData[c.coin].nearBidDepth = buyN; tvCoinData[c.coin].nearAskDepth = sellN;
             }
+            // Агрессия в ленте: side = сторона мейкера, sell-мейкер значит агрессивный покупатель
+            try {
+              const tr = await pTape;
+              if (Array.isArray(tr) && tr.length) {
+                let bAg = 0, sAg = 0;
+                for (const t of tr) { const v = parseFloat(t.size) * parseFloat(t.price); if (t.side === 'sell') bAg += v; else if (t.side === 'buy') sAg += v; }
+                if (tvCoinData[c.coin] && (bAg || sAg)) tvCoinData[c.coin].tapeRatio = sAg > 0 ? bAg / sAg : 5;
+              }
+            } catch { }
             applyDepth(c.coin, buy, sell);
             ok = true; break;
           } catch { if (attempt === 1) { const dp = tvCoinData[c.coin]; applyDepth(c.coin, dp?.bidDepth || 0, dp?.askDepth || 0); } }
