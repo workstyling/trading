@@ -9,7 +9,6 @@ exports.listFills = listFills;
 exports.getOrder = getOrder;
 exports.previewOrder = previewOrder;
 exports.closePosition = closePosition;
-exports.createLimitBuyOrder = createLimitBuyOrder;
 const constants_1 = require("../constants");
 const request_types_1 = require("./types/request-types");
 // [POST] Create Order
@@ -99,26 +98,6 @@ function closePosition(requestParams) {
         endpoint: `${constants_1.API_PREFIX}/orders/close_position`,
         queryParams: undefined,
         bodyParams: requestParams,
-        isPublic: false,
-    });
-}
-// Обновим функцию для создания лимитного ордера на покупку
-function createLimitBuyOrder(requestParams) {
-    return this.request({
-        method: request_types_1.method.POST,
-        endpoint: `${constants_1.API_PREFIX}/orders`,
-        bodyParams: {
-            client_order_id: Date.now().toString(),
-            product_id: requestParams.product_id,
-            side: 'BUY',
-            order_configuration: {
-                limit_limit_gtc: {
-                    base_size: requestParams.size,
-                    limit_price: requestParams.price,
-                    post_only: true
-                }
-            }
-        },
         isPublic: false,
     });
 }
