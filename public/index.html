@@ -11883,7 +11883,17 @@ Requirements:
       if (d.pct15m != null) {
         if (rising && d.green15 >= 3)               add(0.5, '15m подтверждает');
         else if (rising && d.pct15m < -0.3)         add(-0.5, '15m против');
-        else if (!rising && d.green15 >= 3 && d.pct15m > 0.1) add(0.7, '15m ранний разворот');
+        // ранний разворот НЕ засчитываем после свежего обвала — это отскок дохлой кошки
+        else if (!rising && d.green15 >= 3 && d.pct15m > 0.1 && (d.dd15 == null || d.dd15 < 1.5)) add(0.7, '15m ранний разворот');
+      }
+
+      // 15b. Обвал на 15m за последние 2 часа — падающий нож, скор режем жёстко
+      if (d.dd15 != null) {
+        const vol15 = Math.max(d.avgRange || 0.5, 0.3); // норм. на типичный часовой ход монеты
+        const sev = d.dd15 / vol15;
+        if      (sev > 4 || d.dd15 > 4)   add(-2.5, '15m обвал');
+        else if (sev > 2.5 || d.dd15 > 2.5) add(-1.5, '15m обвал');
+        else if (d.dd15 > 1.2)            add(-0.6, '15m просадка');
       }
 
       // 16. Спред bid/ask — широкий спред съедает профит на входе
@@ -12115,7 +12125,11 @@ Requirements:
               const pct15m = cl15[m-2] ? (cl15[m-1] - cl15[m-2]) / cl15[m-2] * 100 : null;
               let green15 = 0;
               for (let i = Math.max(1, m - 4); i <= m - 1; i++) if (cl15[i] > cl15[i-1]) green15++;
-              if (tvCoinData[c.coin]) Object.assign(tvCoinData[c.coin], { pct15m, green15 });
+              // Обвал на 15m: просадка текущей цены от хая последних 2 часов
+              const h15 = c15.map(x => x[2]);
+              const hi2h = Math.max(...h15.slice(-9));
+              const dd15 = hi2h > 0 ? (hi2h - cl15[m-1]) / hi2h * 100 : null;
+              if (tvCoinData[c.coin]) Object.assign(tvCoinData[c.coin], { pct15m, green15, dd15 });
             }
           } catch { }
           applyTrend(c.coin, pct1h, fallingHours, totalFallPct);
