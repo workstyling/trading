@@ -1412,6 +1412,16 @@ app.get('/api/top-volume', async (req, res) => {
 const SCORE_HIST_FILE = path.join(__dirname, 'score-history.json');
 let scoreHist = [];
 try { scoreHist = JSON.parse(fs.readFileSync(SCORE_HIST_FILE, 'utf8')); } catch { }
+// Дедупликация при старте: убираем снапшоты чаще 8 мин на монету (артефакт рестарт-циклов)
+{
+  const lastByCoin = {};
+  scoreHist = scoreHist.filter(s => {
+    const prev = lastByCoin[s.c];
+    if (prev != null && s.t - prev < 8 * 60 * 1000) return false;
+    lastByCoin[s.c] = s.t;
+    return true;
+  });
+}
 let latestScores = {};
 
 function saveScoreHist() {
@@ -1718,8 +1728,12 @@ async function scoreEngineTick() {
         const { score, parts } = scoreFromMetrics(m.d, c.coin === 'BTC', btcPct1h);
         latestScores[c.coin] = { score, price: c.price, t: Date.now(), parts };
         // parts сохраняем в историю — для будущей калибровки весов по реальным исходам
-        scoreHist.push({ c: c.coin, s: score, p: c.price, t: Date.now(), pt: parts });
-        changed = true;
+        // (не чаще раза в 8 минут на монету — защита от спама при рестарт-циклах)
+        const lastSnap = [...scoreHist].reverse().find(s => s.c === c.coin);
+        if (!lastSnap || Date.now() - lastSnap.t > 8 * 60 * 1000) {
+          scoreHist.push({ c: c.coin, s: score, p: c.price, t: Date.now(), pt: parts });
+          changed = true;
+        }
         // Оценка прошлых снапшотов этой монеты по свежим свечам
         const nowMs = Date.now();
         for (const s of scoreHist) {
