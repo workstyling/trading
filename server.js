@@ -1406,6 +1406,303 @@ app.get('/api/top-volume', async (req, res) => {
   }
 });
 
+// ══════════ Server-side Score engine ══════════
+// Считает скор по всем монетам каждые 10 минут 24/7, копит историю снапшотов
+// и оценивает точность: дошла ли цена до +2% раньше, чем до −2%.
+const SCORE_HIST_FILE = path.join(__dirname, 'score-history.json');
+let scoreHist = [];
+try { scoreHist = JSON.parse(fs.readFileSync(SCORE_HIST_FILE, 'utf8')); } catch { }
+let latestScores = {};
+
+function saveScoreHist() {
+  try { fs.writeFileSync(SCORE_HIST_FILE, JSON.stringify(scoreHist.slice(-5000))); }
+  catch (e) { console.error('[score] save', e.message); }
+}
+
+function calcRSIsrv(closes, period = 14) {
+  if (closes.length < period + 1) return null;
+  let g = 0, l = 0;
+  for (let i = 1; i <= period; i++) { const d = closes[i] - closes[i-1]; if (d > 0) g += d; else l -= d; }
+  let ag = g / period, al = l / period;
+  for (let i = period + 1; i < closes.length; i++) {
+    const d = closes[i] - closes[i-1];
+    ag = (ag * (period - 1) + Math.max(d, 0)) / period;
+    al = (al * (period - 1) + Math.max(-d, 0)) / period;
+  }
+  return al === 0 ? 100 : 100 - 100 / (1 + ag / al);
+}
+function calcEMAsrv(closes, period) {
+  if (closes.length < period) return null;
+  const k = 2 / (period + 1);
+  let e = closes.slice(0, period).reduce((a, b) => a + b) / period;
+  for (let i = period; i < closes.length; i++) e = closes[i] * k + e * (1 - k);
+  return e;
+}
+
+// Зеркало клиентского calcCoinScore (v5) — при изменении клиента менять и тут
+function scoreFromMetrics(d, isBTC, btcPct1h) {
+  let score = 5;
+  const parts = [];
+  const add = (v, label) => { v = Math.round(v * 10) / 10; if (v) { score += v; parts.push(`${label}: ${v > 0 ? '+' : ''}${v}`); } };
+  const lerp = (x, x0, y0, x1, y1) => y0 + (y1 - y0) * Math.max(0, Math.min(1, (x - x0) / (x1 - x0)));
+  const rising = d.pct1h != null && (d.pct1h > 0 || d.recovering);
+  if (d.pct1h != null) {
+    const vol = Math.max(d.avgRange || 0.5, 0.15);
+    add(Math.max(-2.2, Math.min(2.2, d.pct1h / vol * 1.1)), '1h импульс');
+    if (d.pct1h > 3) add(-lerp(d.pct1h, 3, 0, 10, 2), 'погоня за пампом');
+  }
+  if (d.recovering) {
+    let v = 0.8;
+    if (d.fallingHours >= 4) v += 0.4;
+    if (d.totalFallPct != null && d.totalFallPct < -3) v += 0.4;
+    if (d.totalFallPct != null && d.totalFallPct < -6) v += 0.4;
+    add(v, 'разворот');
+  }
+  if (d.rsi != null) {
+    if (d.rsi < 50)      add(lerp(d.rsi, 25, 2, 50, 0), 'RSI');
+    else if (d.rsi > 60) add(-lerp(d.rsi, 60, 0, 80, 2), 'RSI');
+  }
+  if (d.rsi != null && d.pct1h != null) {
+    if (d.rsi < 45 && rising)      add(1, 'RSI+тренд');
+    if (d.rsi > 65 && d.pct1h < 0) add(-1, 'RSI+тренд');
+  }
+  if (d.volRatio != null) {
+    if (d.volRatio > 1.3)      add(Math.min(1, (d.volRatio - 1.3) / 1.2) * (rising ? 1 : -1), 'объём');
+    else if (d.volRatio < 0.5) add(-0.3, 'объём');
+  }
+  if (d.priceVsEma != null) {
+    if      (d.priceVsEma > 0 && d.emaRising)  add(1, 'EMA20');
+    else if (d.priceVsEma > 0 && !d.emaRising) add(0.2, 'EMA20');
+    else if (d.priceVsEma < 0 && d.emaRising)  add(0.5, 'EMA20');
+    else if (d.priceVsEma < 0 && !d.emaRising) add(-1, 'EMA20');
+  }
+  if (d.emaCross != null) add(d.emaCross > 0 ? 0.5 : -0.5, 'EMA крест');
+  if (d.pct24h != null) {
+    if (d.pct24h < -2)     add(lerp(-d.pct24h, 2, 0.2, 8, 0.7), '24h дип');
+    else if (d.pct24h > 5) add(-lerp(d.pct24h, 5, 0.5, 30, 3.5), '24h перегрев');
+    if (d.pct24h > 60)     add(-1, 'экстрим-памп');
+  }
+  if (d.rangePos != null) {
+    if (d.rangePos < 0.25)     add(rising ? 1 : 0.3, 'у дна 24h');
+    else if (d.rangePos > 0.9) add((d.volRatio > 2 && rising) ? 0.5 : -0.5, d.volRatio > 2 && rising ? 'пробой хая' : 'у хая 24h');
+  }
+  if (d.greenCount6 != null) {
+    if (d.greenCount6 >= 4 && rising)       add(0.5, 'стабильный рост');
+    else if (d.greenCount6 <= 1 && !rising) add(-0.5, 'слабая структура');
+  }
+  if (d.avgRange != null) {
+    if      (d.avgRange < 0.25) add(-0.5, 'низкая волат.');
+    else if (d.avgRange > 1)    add(0.3, 'волатильность');
+  }
+  if (d.hlStreak >= 3) add(0.5, 'higher lows');
+  const totalDepth = (d.bidDepth || 0) + (d.askDepth || 0);
+  if (totalDepth > 0) {
+    if (totalDepth < 30000)       add(-1.5, 'тонкий стакан');
+    else if (totalDepth < 100000) add(-0.5, 'тонкий стакан');
+  }
+  if (d.bidDepth > 0 && d.askDepth > 0) {
+    const ratio = d.bidDepth / d.askDepth;
+    if      (ratio > 2)    add(1, 'стакан');
+    else if (ratio > 1.5)  add(0.5, 'стакан');
+    else if (ratio < 0.5)  add(-1, 'стакан');
+    else if (ratio < 0.67) add(-0.5, 'стакан');
+  }
+  if (d.pct15m != null) {
+    if (rising && d.green15 >= 3)       add(0.5, '15m подтверждает');
+    else if (rising && d.pct15m < -0.3) add(-0.5, '15m против');
+    else if (!rising && d.green15 >= 3 && d.pct15m > 0.1 && (d.dd15 == null || d.dd15 < 1.5)) add(0.7, '15m ранний разворот');
+  }
+  if (d.dd15 != null) {
+    const vol15 = Math.max(d.avgRange || 0.5, 0.3);
+    const sev = d.dd15 / vol15;
+    if      (sev > 4 || d.dd15 > 4)     add(-2.5, '15m обвал');
+    else if (sev > 2.5 || d.dd15 > 2.5) add(-1.5, '15m обвал');
+    else if (d.dd15 > 1.2)              add(-0.6, '15m просадка');
+  }
+  if (d.spreadPct != null) {
+    if (d.spreadPct > 0.5)      add(-1, 'широкий спред');
+    else if (d.spreadPct > 0.2) add(-0.4, 'спред');
+  }
+  if (!isBTC && btcPct1h != null) {
+    if (btcPct1h < -0.5)     add(-0.7, 'BTC падает');
+    else if (btcPct1h > 0.3) add(0.3, 'BTC растёт');
+  }
+  if (d.runwayPct != null) {
+    if (d.runwayPct < 1)       add(-1, 'сопротивление рядом');
+    else if (d.runwayPct < 2)  add(-0.5, 'сопротивление');
+    else if (d.runwayPct > 3)  add(0.3, 'путь свободен');
+  } else if (d.rangePos != null) add(0.3, 'нет сопротивления');
+  if (d.macdRising != null) {
+    if      (d.macdPos && d.macdRising)   add(0.5, 'MACD');
+    else if (!d.macdPos && d.macdRising)  add(0.3, 'MACD разворот');
+    else if (!d.macdPos && !d.macdRising) add(-0.5, 'MACD');
+    else                                  add(-0.2, 'MACD слабеет');
+  }
+  if (d.bullEngulf && (d.fallingHours >= 2 || (d.rangePos != null && d.rangePos < 0.35))) add(0.4, 'бычье поглощение');
+  if (d.nearBidDepth > 0 && d.nearAskDepth > 0) {
+    const rN = d.nearBidDepth / d.nearAskDepth;
+    if      (rN > 1.5)  add(0.5, 'стакан у цены');
+    else if (rN < 0.67) add(-0.5, 'стакан у цены');
+  }
+  return { score: Math.max(0, Math.min(10, Math.round(score * 2) / 2)), parts };
+}
+
+async function computeCoinMetrics(coin, price, pct24h) {
+  const CB = 'https://api.exchange.coinbase.com';
+  const H = { headers: { 'User-Agent': 'trading-app/1.0' } };
+  const now = Date.now();
+  const end = new Date(now).toISOString();
+  const [r1, r15] = await Promise.all([
+    fetch(`${CB}/products/${coin}-USD/candles?granularity=3600&start=${new Date(now - 40 * 3600 * 1000).toISOString()}&end=${end}`, H),
+    fetch(`${CB}/products/${coin}-USD/candles?granularity=900&start=${new Date(now - 6 * 3600 * 1000).toISOString()}&end=${end}`, H)
+  ]);
+  if (!r1.ok) return null;
+  const candles = await r1.json();
+  if (!Array.isArray(candles) || candles.length < 3) return null;
+  candles.sort((a, b) => a[0] - b[0]);
+  const closes = candles.map(x => x[4]);
+  const n = closes.length;
+  const pct1h = closes[n-2] ? (closes[n-1] - closes[n-2]) / closes[n-2] * 100 : null;
+  let fallingHours = 0;
+  for (let i = n - 2; i > 0; i--) { if (closes[i] <= closes[i-1]) fallingHours++; else break; }
+  const fallStart = n - 1 - fallingHours;
+  const totalFallPct = fallStart >= 0 && closes[fallStart] ? (closes[n-2] - closes[fallStart]) / closes[fallStart] * 100 : 0;
+  const recovering = fallingHours >= 2 && pct1h > 0.2;
+  const workCloses = closes.slice(0, -1);
+  const rsi = calcRSIsrv(workCloses, 14);
+  const ema20 = calcEMAsrv(workCloses, 20);
+  const ema20prev = workCloses.length > 21 ? calcEMAsrv(workCloses.slice(0, -1), 20) : null;
+  const priceVsEma = ema20 ? (workCloses[workCloses.length - 1] - ema20) / ema20 * 100 : null;
+  const emaRising = ema20 && ema20prev ? ema20 > ema20prev : null;
+  const volumes = candles.map(x => x[5]);
+  const avgVol = volumes.slice(0, -1).reduce((a, b) => a + b, 0) / Math.max(1, volumes.length - 1);
+  const volRatio = avgVol > 0 ? volumes[n - 1] / avgVol : 1;
+  const lows = candles.map(x => x[1]), highs = candles.map(x => x[2]);
+  const lo24 = Math.min(...lows.slice(-24)), hi24 = Math.max(...highs.slice(-24));
+  const rangePos = hi24 > lo24 ? (closes[n-1] - lo24) / (hi24 - lo24) : null;
+  const ema9 = calcEMAsrv(workCloses, 9);
+  const emaCross = ema9 != null && ema20 != null ? (ema9 > ema20 ? 1 : -1) : null;
+  const rngs = candles.slice(-13, -1).map(x => x[1] > 0 ? (x[2] - x[1]) / x[1] * 100 : 0);
+  const avgRange = rngs.length ? rngs.reduce((a, b) => a + b, 0) / rngs.length : null;
+  let hlStreak = 0;
+  for (let i = n - 2; i > 0 && lows[i] > lows[i-1]; i--) hlStreak++;
+  let greenCount6 = 0;
+  for (let i = Math.max(1, n - 7); i <= n - 2; i++) if (closes[i] > closes[i-1]) greenCount6++;
+  const priceNow = closes[n-1];
+  let resist = null;
+  for (let i = 1; i < n - 1; i++) {
+    if (highs[i] > highs[i-1] && highs[i] >= highs[i+1] && highs[i] > priceNow) {
+      if (resist === null || highs[i] < resist) resist = highs[i];
+    }
+  }
+  const runwayPct = resist ? (resist - priceNow) / priceNow * 100 : null;
+  const e12 = calcEMAsrv(workCloses, 12), e26 = calcEMAsrv(workCloses, 26);
+  const pcl = workCloses.slice(0, -1);
+  const e12p = calcEMAsrv(pcl, 12), e26p = calcEMAsrv(pcl, 26);
+  const macdPos = e12 != null && e26 != null ? e12 - e26 > 0 : null;
+  const macdRising = macdPos != null && e12p != null && e26p != null ? (e12 - e26) > (e12p - e26p) : null;
+  const lastC = candles[n-2], prevC = candles[n-3];
+  const bullEngulf = !!(lastC && prevC && lastC[4] > lastC[3] && prevC[4] < prevC[3] && lastC[4] >= prevC[3] && lastC[3] <= prevC[4]);
+  // 15m: подтверждение и детектор обвала
+  let pct15m = null, green15 = null, dd15 = null;
+  try {
+    if (r15.ok) {
+      const c15 = await r15.json();
+      if (Array.isArray(c15) && c15.length >= 3) {
+        c15.sort((a, b) => a[0] - b[0]);
+        const cl15 = c15.map(x => x[4]);
+        const m = cl15.length;
+        pct15m = cl15[m-2] ? (cl15[m-1] - cl15[m-2]) / cl15[m-2] * 100 : null;
+        green15 = 0;
+        for (let i = Math.max(1, m - 4); i <= m - 1; i++) if (cl15[i] > cl15[i-1]) green15++;
+        const hi2h = Math.max(...c15.map(x => x[2]).slice(-9));
+        dd15 = hi2h > 0 ? (hi2h - cl15[m-1]) / hi2h * 100 : null;
+      }
+    }
+  } catch { }
+  // Стакан: глубина ±2%, узкая зона ±0.5%, спред
+  let bidDepth = 0, askDepth = 0, nearBidDepth = 0, nearAskDepth = 0, spreadPct = null;
+  try {
+    const rb = await fetch(`${CB}/products/${coin}-USD/book?level=2`, H);
+    if (rb.ok) {
+      const book = await rb.json();
+      const lo = price * 0.98, hi = price * 1.02, lo5 = price * 0.995, hi5 = price * 1.005;
+      for (const e of (book.bids || [])) { const p = +e[0], s = +e[1]; if (p >= lo) bidDepth += p * s; if (p >= lo5) nearBidDepth += p * s; }
+      for (const e of (book.asks || [])) { const p = +e[0], s = +e[1]; if (p <= hi) askDepth += p * s; if (p <= hi5) nearAskDepth += p * s; }
+      const bb = +(((book.bids || [])[0] || [])[0]), ba = +(((book.asks || [])[0] || [])[0]);
+      if (bb > 0 && ba > 0) spreadPct = (ba - bb) / ((ba + bb) / 2) * 100;
+    }
+  } catch { }
+  return {
+    d: { pct24h, pct1h, fallingHours, recovering, totalFallPct, rsi, priceVsEma, emaRising, volRatio, rangePos, emaCross, avgRange, hlStreak, greenCount6, runwayPct, macdPos, macdRising, bullEngulf, pct15m, green15, dd15, bidDepth, askDepth, nearBidDepth, nearAskDepth, spreadPct },
+    candles
+  };
+}
+
+let scoreEngineRunning = false;
+async function scoreEngineTick() {
+  if (scoreEngineRunning) return;
+  scoreEngineRunning = true;
+  try {
+    let coins = topVolumeCache.data;
+    if (!coins.length || Date.now() - topVolumeCache.fetchedAt > TOP_VOLUME_TTL) {
+      coins = await fetchTopVolume();
+      topVolumeCache = { data: coins, fetchedAt: Date.now() };
+    }
+    coins = coins.filter(c => c.volUsd >= 5_000_000 && c.pct24h <= 100);
+    // BTC первым — задаёт режим рынка для остальных
+    coins = [...coins].sort((a, b) => (a.coin === 'BTC' ? -1 : 0) - (b.coin === 'BTC' ? -1 : 0));
+    let btcPct1h = null;
+    let changed = false;
+    for (const c of coins) {
+      try {
+        const m = await computeCoinMetrics(c.coin, c.price, c.pct24h);
+        if (!m) continue;
+        if (c.coin === 'BTC') btcPct1h = m.d.pct1h;
+        const { score, parts } = scoreFromMetrics(m.d, c.coin === 'BTC', btcPct1h);
+        latestScores[c.coin] = { score, price: c.price, t: Date.now(), parts };
+        scoreHist.push({ c: c.coin, s: score, p: c.price, t: Date.now() });
+        changed = true;
+        // Оценка прошлых снапшотов этой монеты по свежим свечам
+        const nowMs = Date.now();
+        for (const s of scoreHist) {
+          if (s.c !== c.coin || s.r !== undefined) continue;
+          if (nowMs - s.t < 30 * 60 * 1000) continue;
+          let res;
+          for (const k of m.candles) {
+            if (k[0] * 1000 <= s.t) continue;
+            const up = k[2] >= s.p * 1.02, dn = k[1] <= s.p * 0.98;
+            if (up && !dn) { res = 1; break; }
+            if (dn) { res = 0; break; }
+          }
+          if (res === undefined && nowMs - s.t > 24 * 3600 * 1000) res = 0;
+          if (res !== undefined) { s.r = res; changed = true; }
+        }
+      } catch (e) { console.error('[score]', c.coin, e.message); }
+      await new Promise(r => setTimeout(r, 150));
+    }
+    if (changed) { scoreHist = scoreHist.slice(-5000); saveScoreHist(); }
+    console.log(`[score] tick done: ${coins.length} coins, hist=${scoreHist.length}`);
+  } catch (e) { console.error('[score] tick', e.message); }
+  finally { scoreEngineRunning = false; }
+}
+setInterval(scoreEngineTick, 10 * 60 * 1000);
+setTimeout(scoreEngineTick, 15_000); // первый прогон вскоре после старта
+
+app.get('/api/score-stats', (req, res) => {
+  const done = scoreHist.filter(s => s.r !== undefined);
+  const bucket = (lo, hi) => {
+    const a = done.filter(s => s.s >= lo && s.s < hi);
+    return { n: a.length, rate: a.length ? Math.round(a.filter(s => s.r).length / a.length * 100) : null };
+  };
+  res.json({
+    success: true,
+    hi: bucket(7.5, 11), mid: bucket(5.5, 7.5), low: bucket(0, 5.5),
+    total: scoreHist.length, pending: scoreHist.length - done.length,
+    latest: latestScores
+  });
+});
+
 // Single-coin depth (kept for compatibility)
 app.get('/api/coin-depth/:coin', async (req, res) => {
   try {
