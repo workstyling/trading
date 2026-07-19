@@ -1396,6 +1396,7 @@
       <span class="tg-meta">
         <button id="tvgChartBtnM" onclick="toggleTVChartVolumeMobile()" style="padding:3px 9px;border:1px solid rgba(76,201,240,0.35);border-radius:12px;background:rgba(76,201,240,0.08);color:var(--blue);font-size:10px;font-weight:600;cursor:pointer;margin-right:4px;">📈 Chart</button>
         <button class="tg-refresh-btn" id="tvRefreshBtn" onclick="loadTopVolumeMobile(true)" title="Refresh now"><span class="spin-icon">⟳</span> Refresh</button>
+        <span id="tvHitRate" style="color:#666;font-size:9px;margin:0 4px;" title="Точность скора: доля случаев, когда цена дошла до +2% раньше −2%"></span>
         next: <span class="tg-countdown" id="tvCountdown">—</span>
       </span>
     </div>
@@ -3346,6 +3347,38 @@
     let _btcPct1h = null;                       // режим рынка: 1h тренд BTC
     const _tvPrevScore = {}, _tvLastScore = {}; // динамика скора между обновлениями
 
+    // ── Самопроверка скора: снапшоты и hit-rate (дошла ли цена до +2% раньше −2%) ──
+    const SNAP_KEY = 'tvScoreHist';
+    function _loadSnaps() { try { return JSON.parse(localStorage.getItem(SNAP_KEY)) || []; } catch { return []; } }
+    function _saveSnaps(a) { try { localStorage.setItem(SNAP_KEY, JSON.stringify(a.slice(-1500))); } catch { } }
+    function _evalScoreSnaps(coin, candles) {
+      const snaps = _loadSnaps();
+      let changed = false;
+      const nowMs = Date.now();
+      for (const s of snaps) {
+        if (s.c !== coin || s.r !== undefined) continue;
+        if (nowMs - s.t < 30 * 60 * 1000) continue;
+        let res;
+        for (const k of candles) {
+          if (k[0] * 1000 <= s.t) continue;
+          const hitUp = k[2] >= s.p * 1.02, hitDn = k[1] <= s.p * 0.98;
+          if (hitUp && !hitDn) { res = 1; break; }
+          if (hitDn) { res = 0; break; }
+        }
+        if (res === undefined && nowMs - s.t > 24 * 3600 * 1000) res = 0;
+        if (res !== undefined) { s.r = res; changed = true; }
+      }
+      if (changed) _saveSnaps(snaps);
+    }
+    function _renderHitRate() {
+      const el = document.getElementById('tvHitRate');
+      if (!el) return;
+      const done = _loadSnaps().filter(s => s.r !== undefined);
+      const hi = done.filter(s => s.s >= 7.5), mid = done.filter(s => s.s >= 5.5 && s.s < 7.5);
+      const f = a => a.length >= 5 ? Math.round(a.filter(s => s.r).length / a.length * 100) + '%' : '—';
+      el.textContent = `hit@8: ${f(hi)}(${hi.length}) @6: ${f(mid)}(${mid.length})`;
+    }
+
     function calcCoinScoreMobile(coin) {
       const d = tvCoinData[coin];
       if (!d) return null;
@@ -3505,8 +3538,19 @@
       const body = document.getElementById('tvBody');
       if (!body) return;
       if (!coins || !coins.length) { body.innerHTML = '<div style="color:var(--t2);font-size:12px;text-align:center;padding:14px;">No data</div>'; return; }
+      const _snaps = _loadSnaps();
+      let _snapsChanged = false;
       const rows = coins.map((c, i) => {
         _tvPrevScore[c.coin] = _tvLastScore[c.coin];
+        // снапшот скора для последующей оценки попадания (раз в 10 минут на монету)
+        const lastS = _tvLastScore[c.coin];
+        if (lastS != null && c.price > 0) {
+          const lastSnap = [..._snaps].reverse().find(s => s.c === c.coin);
+          if (!lastSnap || Date.now() - lastSnap.t > 10 * 60 * 1000) {
+            _snaps.push({ c: c.coin, s: lastS, p: c.price, t: Date.now() });
+            _snapsChanged = true;
+          }
+        }
         // прошлые метрики оставляем как fallback — свежие данные их перезапишут
         tvCoinData[c.coin] = { ...(tvCoinData[c.coin] || {}), pct24h: c.pct24h, vol: c.volUsd };
         const pctCls = c.pct24h >= 0 ? 'color:var(--green)' : 'color:#f55';
@@ -3527,7 +3571,9 @@
           <td id="tvScore_${c.coin}" style="text-align:center;padding:5px 3px;color:#444;font-size:10px;width:38px;">...</td>
         </tr>`;
       }).join('');
+      if (_snapsChanged) _saveSnaps(_snaps);
       body.innerHTML = `<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;"><table style="width:100%;border-collapse:collapse;font-size:11px;min-width:310px;"><thead><tr style="border-bottom:1px solid #222;"><th style="width:18px;color:#666;font-weight:600;font-size:9px;padding:5px 2px;text-align:left;">#</th><th style="color:#666;font-weight:600;font-size:9px;padding:5px 3px;text-align:left;width:72px;">COIN</th><th style="color:#666;font-weight:600;font-size:9px;padding:5px 3px;text-align:right;width:48px;">24H%</th><th style="color:#666;font-weight:600;font-size:9px;padding:5px 3px;text-align:right;width:48px;">VOL</th><th style="color:#666;font-weight:600;font-size:9px;padding:5px 3px;text-align:right;width:62px;">TREND</th><th style="color:#666;font-weight:600;font-size:9px;padding:5px 3px;text-align:right;width:44px;">+2/-2</th><th style="color:#666;font-weight:600;font-size:9px;padding:5px 3px;text-align:center;width:38px;">SCR</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+      _renderHitRate();
     }
 
     async function loadTrendSequentialMobile(coins, gen, isRetry) {
@@ -3557,6 +3603,7 @@
           const candles = await r.json();
           if (!Array.isArray(candles) || candles.length < 3) { markFail(c); continue; }
           candles.sort((a, b) => a[0] - b[0]);
+          try { _evalScoreSnaps(c.coin, candles); } catch { } // оцениваем прошлые снапшоты скора
           const closes = candles.map(x => x[4]);
           const n = closes.length;
           const pct1h = closes[n-2] ? (closes[n-1] - closes[n-2]) / closes[n-2] * 100 : null;
@@ -3640,6 +3687,7 @@
         await _sleep(2500);
         return loadTrendSequentialMobile(failed, gen, true);
       }
+      _renderHitRate(); // обновляем точность скора после оценки снапшотов
     }
 
     async function loadDepthSequentialMobile(coins, gen) {
