@@ -1746,6 +1746,22 @@ async function scoreEngineTick() {
 setInterval(scoreEngineTick, 10 * 60 * 1000);
 setTimeout(scoreEngineTick, 15_000); // первый прогон вскоре после старта
 
+// Удалённый деплой: git pull + рестарт процесса (pm2 поднимет заново с новым кодом)
+app.post('/api/deploy', (req, res) => {
+  if ((req.query.key || req.headers['x-deploy-key']) !== (process.env.DEPLOY_KEY || 'trading-deploy-2026')) {
+    return res.status(403).json({ success: false, error: 'bad key' });
+  }
+  try {
+    const { execSync } = require('child_process');
+    const out = execSync('git pull', { cwd: __dirname, timeout: 60000 }).toString();
+    const changed = !/Already up to date/i.test(out);
+    res.json({ success: true, out, restarting: changed });
+    if (changed) setTimeout(() => process.exit(0), 500); // pm2 перезапустит процесс с новым кодом
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
 app.get('/api/score-stats', (req, res) => {
   const done = scoreHist.filter(s => s.r !== undefined);
   const bucket = (lo, hi) => {
