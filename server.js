@@ -1790,6 +1790,38 @@ app.get('/api/score-stats', (req, res) => {
   });
 });
 
+// Калибровка: какие сигналы реально предсказывают +2%. Для каждого сигнала —
+// hit-rate снапшотов, где он присутствовал, против базового hit-rate всех оценённых.
+app.get('/api/score-calibration', (req, res) => {
+  const done = scoreHist.filter(s => s.r !== undefined && Array.isArray(s.pt));
+  const base = done.length ? done.filter(s => s.r).length / done.length : 0;
+  const agg = {};
+  for (const s of done) {
+    const seen = new Set();
+    for (const p of s.pt) {
+      const name = p.split(':')[0].trim(); // «RSI: +1.5» → «RSI»
+      if (seen.has(name)) continue;
+      seen.add(name);
+      const a = agg[name] || (agg[name] = { n: 0, hit: 0 });
+      a.n++; if (s.r) a.hit++;
+    }
+  }
+  const signals = Object.entries(agg)
+    .filter(([, a]) => a.n >= 10) // достаточно данных
+    .map(([name, a]) => ({
+      signal: name, n: a.n,
+      rate: Math.round(a.hit / a.n * 100),
+      lift: Math.round((a.hit / a.n - base) * 100) // +N п.п. к базовому = сигнал работает
+    }))
+    .sort((x, y) => y.lift - x.lift);
+  res.json({
+    success: true,
+    base: Math.round(base * 100), evaluated: done.length,
+    best: signals.slice(0, 8), worst: signals.slice(-8).reverse(),
+    all: signals
+  });
+});
+
 // Single-coin depth (kept for compatibility)
 app.get('/api/coin-depth/:coin', async (req, res) => {
   try {
