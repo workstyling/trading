@@ -11756,10 +11756,17 @@ Requirements:
     const _tvPrevScore = {}, _tvLastScore = {}; // динамика скора между обновлениями
     let _scoreSeries = {};                       // серия скоров по монетам (для спарклайна)
 
-    // Мини-график динамики скора (0..10) → inline SVG
-    function _sparklineSVG(ser) {
-      if (!Array.isArray(ser) || ser.length < 2) return '';
-      const pts = ser.slice(-24).map(x => x[1]);
+    // Эффективная серия: серверные снапшоты + текущий живой скор последней точкой
+    function _effSeries(coin) {
+      const ser = (_scoreSeries[coin] || []).map(x => x[1]);
+      const live = _tvLastScore[coin];
+      if (live != null) { if (!ser.length || ser[ser.length - 1] !== live) ser.push(live); }
+      return ser;
+    }
+    // Мини-график динамики скора (0..10) → inline SVG. Принимает массив чисел.
+    function _sparklineSVG(pts) {
+      if (!Array.isArray(pts) || pts.length < 2) return '';
+      pts = pts.slice(-24);
       const W = 46, H = 13, n = pts.length;
       const x = i => n > 1 ? i / (n - 1) * W : 0;
       const y = v => H - 1 - (Math.max(0, Math.min(10, v)) / 10) * (H - 2);
@@ -11774,7 +11781,7 @@ Requirements:
     function _drawSparklines() {
       for (const coin in _scoreSeries) {
         const el = document.getElementById('tvSpark_' + coin);
-        if (el) el.innerHTML = _sparklineSVG(_scoreSeries[coin]);
+        if (el) el.innerHTML = _sparklineSVG(_effSeries(coin));
       }
     }
 
@@ -12028,16 +12035,16 @@ Requirements:
       const tip = (tvCoinData[coin]?._scoreParts || []).join('\n');
       const scoreTxt = score % 1 ? score.toFixed(1) : score;
       _tvLastScore[coin] = score;
-      // Стрелка = тренд по 6ч серии (та же, что рисует спарклайн) — всегда согласованы
+      // Стрелка = тренд по 6ч серии (включая живой скор) — согласована со спарклайном
       let delta = '';
-      const ser = _scoreSeries[coin];
-      if (Array.isArray(ser) && ser.length >= 2) {
-        const tr = ser[ser.length - 1][1] - ser[0][1];
+      const eff = _effSeries(coin);
+      if (eff.length >= 2) {
+        const tr = eff[eff.length - 1] - eff[0];
         if (tr >= 0.5)       delta = `<span style="font-size:9px;vertical-align:top;color:#00e5a0;" title="скор растёт за 6ч (+${tr.toFixed(1)})">▲</span>`;
         else if (tr <= -0.5) delta = `<span style="font-size:9px;vertical-align:top;color:#f55;" title="скор падает за 6ч (${tr.toFixed(1)})">▼</span>`;
         else                 delta = `<span style="font-size:9px;vertical-align:top;color:#889;" title="скор стабилен за 6ч">▬</span>`;
       }
-      const spark = _scoreSeries[coin] ? _sparklineSVG(_scoreSeries[coin]) : '';
+      const spark = _sparklineSVG(_effSeries(coin));
       el.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;gap:0;">`
         + `<div style="display:inline-flex;align-items:center;gap:1px;"><div title="${tip.replace(/"/g, '&quot;')}" style="display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:50%;background:${bg};color:${tc};font-weight:800;font-size:${score % 1 ? 11 : 13}px;box-shadow:0 0 10px ${glow},0 0 20px ${glow.replace('0.35','0.12')};cursor:help;">${scoreTxt}</div>${delta}</div>`
         + `<span class="tv-spark" id="tvSpark_${coin}">${spark}</span></div>`;
