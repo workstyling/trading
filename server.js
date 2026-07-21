@@ -1782,11 +1782,19 @@ app.get('/api/score-stats', (req, res) => {
     const a = done.filter(s => s.s >= lo && s.s < hi);
     return { n: a.length, rate: a.length ? Math.round(a.filter(s => s.r).length / a.length * 100) : null };
   };
+  // Серия скоров за 6ч по каждой монете — для спарклайна в таблице
+  const series = {};
+  const cutoff = Date.now() - 6 * 3600 * 1000;
+  for (const s of scoreHist) {
+    if (s.t < cutoff) continue;
+    (series[s.c] || (series[s.c] = [])).push([s.t, s.s]);
+  }
+  for (const k in series) if (series[k].length > 24) series[k] = series[k].slice(-24);
   res.json({
     success: true,
     hi: bucket(7.5, 11), mid: bucket(5.5, 7.5), low: bucket(0, 5.5),
     total: scoreHist.length, pending: scoreHist.length - done.length,
-    latest: latestScores
+    latest: latestScores, series
   });
 });
 

@@ -3347,14 +3347,37 @@
     let _btcPct1h = null;                       // режим рынка: 1h тренд BTC
     const _tvPrevScore = {}, _tvLastScore = {}; // динамика скора между обновлениями
 
+    let _scoreSeries = {}; // серия скоров по монетам (для спарклайна)
+    function _sparklineSVG(ser) {
+      if (!Array.isArray(ser) || ser.length < 2) return '';
+      const pts = ser.slice(-24).map(x => x[1]);
+      const W = 40, H = 12, n = pts.length;
+      const x = i => n > 1 ? i / (n - 1) * W : 0;
+      const y = v => H - 1 - (Math.max(0, Math.min(10, v)) / 10) * (H - 2);
+      const d = pts.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(' ');
+      const trend = pts[n - 1] - pts[0];
+      const col = trend > 0.4 ? '#00e5a0' : trend < -0.4 ? '#f55' : '#889';
+      return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="display:block;margin:2px auto 0;">`
+        + `<polyline points="0,${y(6).toFixed(1)} ${W},${y(6).toFixed(1)}" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="1"/>`
+        + `<path d="${d}" fill="none" stroke="${col}" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"/>`
+        + `<circle cx="${x(n-1).toFixed(1)}" cy="${y(pts[n-1]).toFixed(1)}" r="1.6" fill="${col}"/></svg>`;
+    }
+    function _drawSparklines() {
+      for (const coin in _scoreSeries) {
+        const el = document.getElementById('tvSpark_' + coin);
+        if (el) el.innerHTML = _sparklineSVG(_scoreSeries[coin]);
+      }
+    }
+
     // ── Точность скора считает сервер 24/7 (score engine) — клиент только показывает ──
     async function _renderHitRate() {
       const el = document.getElementById('tvHitRate');
-      if (!el) return;
       try {
         const r = await fetch(BASE + '/api/score-stats');
         const j = await r.json();
         if (!j.success) return;
+        if (j.series) { _scoreSeries = j.series; _drawSparklines(); }
+        if (!el) return;
         const f = b => b.n >= 5 && b.rate != null ? b.rate + '%' : '—';
         el.textContent = `hit@8: ${f(j.hi)}(${j.hi.n}) @6: ${f(j.mid)}(${j.mid.n})`;
       } catch { }
@@ -3541,7 +3564,10 @@
       const delta = prev != null && score !== prev
         ? `<span style="font-size:8px;vertical-align:top;color:${score > prev ? '#00e5a0' : '#f55'};">${score > prev ? '▲' : '▼'}</span>`
         : '';
-      el.innerHTML = `<div style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;background:${bg};color:${tc};font-weight:800;font-size:${score % 1 ? 10 : 12}px;box-shadow:0 0 8px ${glow};">${scoreTxt}</div>${delta}`;
+      const spark = _scoreSeries[coin] ? _sparklineSVG(_scoreSeries[coin]) : '';
+      el.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;">`
+        + `<div style="display:inline-flex;align-items:center;gap:1px;"><div style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;background:${bg};color:${tc};font-weight:800;font-size:${score % 1 ? 10 : 12}px;box-shadow:0 0 8px ${glow};">${scoreTxt}</div>${delta}</div>`
+        + `<span class="tv-spark" id="tvSpark_${coin}">${spark}</span></div>`;
       const row = document.getElementById(`tvRow_${coin}`);
       if (row) {
         row.style.borderLeftColor = bg;
