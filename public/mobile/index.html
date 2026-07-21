@@ -3560,20 +3560,15 @@
         : ['#f55353','rgba(255,83,83,0.3)','#fff'];
       const scoreTxt = score % 1 ? score.toFixed(1) : score;
       _tvLastScore[coin] = score;
-      const prev = _tvPrevScore[coin];
-      // Стрелка: мгновенное изменение приоритетно, иначе тренд по 6ч серии
-      let arrow = '';
-      if (prev != null && score !== prev) {
-        arrow = `<span style="font-size:8px;vertical-align:top;color:${score > prev ? '#00e5a0' : '#f55'};">${score > prev ? '▲' : '▼'}</span>`;
-      } else {
-        const ser = _scoreSeries[coin];
-        if (Array.isArray(ser) && ser.length >= 2) {
-          const tr = ser[ser.length - 1][1] - ser[0][1];
-          if (tr >= 0.5)      arrow = `<span style="font-size:8px;vertical-align:top;color:#00e5a0;">▲</span>`;
-          else if (tr <= -0.5) arrow = `<span style="font-size:8px;vertical-align:top;color:#f55;">▼</span>`;
-        }
+      // Стрелка = тренд по 6ч серии (та же, что рисует спарклайн) — всегда согласованы
+      let delta = '';
+      const ser = _scoreSeries[coin];
+      if (Array.isArray(ser) && ser.length >= 2) {
+        const tr = ser[ser.length - 1][1] - ser[0][1];
+        if (tr >= 0.5)       delta = `<span style="font-size:8px;vertical-align:top;color:#00e5a0;">▲</span>`;
+        else if (tr <= -0.5) delta = `<span style="font-size:8px;vertical-align:top;color:#f55;">▼</span>`;
+        else                 delta = `<span style="font-size:8px;vertical-align:top;color:#889;">▬</span>`;
       }
-      const delta = arrow;
       const spark = _scoreSeries[coin] ? _sparklineSVG(_scoreSeries[coin]) : '';
       el.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;">`
         + `<div style="display:inline-flex;align-items:center;gap:1px;"><div style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;background:${bg};color:${tc};font-weight:800;font-size:${score % 1 ? 10 : 12}px;box-shadow:0 0 8px ${glow};">${scoreTxt}</div>${delta}</div>`
