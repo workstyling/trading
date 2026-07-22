@@ -2274,6 +2274,41 @@
     .tg-vol { color: var(--t2); }
     .tg-price { color: var(--t2); font-size: 10px; font-family: 'JetBrains Mono', monospace; }
 
+    /* ── UX improvements ── */
+    /* 1. Вердикт-тег под скором */
+    .tv-verdict { font-size: 8px; font-weight: 800; letter-spacing: 0.04em; margin-top: 1px; padding: 1px 5px; border-radius: 4px; line-height: 1.3; }
+    /* 2. Кликабельные заголовки-сортировка */
+    .tg-table th.srt { cursor: pointer; user-select: none; transition: color 0.15s; }
+    .tg-table th.srt:hover { color: var(--blue); }
+    .tg-table th .arr { font-size: 8px; opacity: 0.9; margin-left: 2px; }
+    /* 3. Липкий заголовок */
+    #tvBody { max-height: 620px; overflow-y: auto; scrollbar-width: thin; }
+    #tvBody::-webkit-scrollbar { width: 6px; }
+    #tvBody::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+    .tg-table thead th { position: sticky; top: 0; background: var(--s1); z-index: 3; }
+    /* 4. Лучший сетап — подсветка строки */
+    .tg-table tr.tv-best td { background: rgba(0,229,160,0.08) !important; box-shadow: inset 3px 0 0 #00e5a0; }
+    .tv-best-tag { font-size: 7px; font-weight: 800; color: #00e5a0; border: 1px solid rgba(0,229,160,0.4); border-radius: 3px; padding: 0 3px; margin-left: 3px; vertical-align: middle; }
+    /* 5. Выбранная для покупки монета */
+    .tg-table tr.tv-selected td { background: rgba(76,201,240,0.07) !important; }
+    .tg-table tr.tv-selected .tg-coin::after { content: '● buy'; font-size: 7px; color: var(--blue); margin-left: 4px; font-weight: 700; vertical-align: middle; }
+    /* 6. Депт-бар */
+    .tv-depthbar { display: inline-flex; width: 58px; height: 6px; border-radius: 3px; overflow: hidden; background: #7a2020; vertical-align: middle; }
+    .tv-depthbar > i { display: block; height: 100%; background: linear-gradient(90deg,#00b478,#00e5a0); }
+    /* 7. Фильтр-чипы */
+    .tv-chip { padding: 2px 8px; border: 1px solid rgba(255,255,255,0.12); border-radius: 11px; background: transparent; color: var(--t2); font-size: 10px; font-weight: 600; cursor: pointer; transition: all 0.15s; margin-right: 3px; }
+    .tv-chip:hover { border-color: var(--blue); color: var(--blue); }
+    .tv-chip.on { background: rgba(76,201,240,0.15); border-color: var(--blue); color: var(--blue); }
+    /* 8. Прогресс-бар обновления */
+    #tvProgBar { height: 2px; background: linear-gradient(90deg,var(--blue),#00e5a0); border-radius: 2px; transition: width 1s linear; width: 100%; margin-top: 6px; opacity: 0.55; }
+    /* 9. RSI-пилюля */
+    .tv-rsi { font-size: 8px; font-weight: 700; padding: 0 4px; border-radius: 6px; margin-left: 3px; vertical-align: middle; }
+    /* 10. Помощь по скору */
+    #tvHelp { display: none; margin: 6px 0 2px; padding: 8px 10px; background: var(--s2); border: 1px solid rgba(255,255,255,0.07); border-radius: 8px; font-size: 10px; line-height: 1.55; color: var(--t1); }
+    #tvHelp b { color: var(--t0); }
+    .tv-help-btn { width: 16px; height: 16px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.15); background: transparent; color: var(--t2); font-size: 10px; font-weight: 700; cursor: pointer; line-height: 1; margin-left: 4px; }
+    .tv-help-btn:hover { border-color: var(--blue); color: var(--blue); }
+
     /* Signal Badges styling */
     .tg-signal-badge {
       display: inline-block;
@@ -5953,7 +5988,7 @@
       <div class="main-right">
         <div id="topVolumePanel">
           <div class="tg-header">
-            <span class="tg-title"><span class="tg-header-title">📊 Top Volume 24h</span></span>
+            <span class="tg-title"><span class="tg-header-title">📊 Top Volume 24h</span><button class="tv-help-btn" onclick="_toggleHelp()" title="Как читать таблицу">?</button></span>
             <span class="tg-meta">
               <button id="tvgChartBtn" onclick="toggleTopVolumeChart()" style="padding:3px 10px;border:1px solid rgba(76,201,240,0.35);border-radius:12px;background:rgba(76,201,240,0.08);color:var(--blue);font-size:11px;font-weight:600;cursor:pointer;transition:all 0.2s;margin-right:4px;">📈 Chart</button>
               <button class="tg-refresh-btn" id="tvRefreshBtn" onclick="loadTopVolume(true)" title="Refresh now"><span class="spin-icon">⟳</span> Refresh</button>
@@ -5961,6 +5996,19 @@
               next: <span class="tg-countdown" id="tvCountdown">—</span>
             </span>
           </div>
+          <div style="display:flex;align-items:center;gap:4px;margin:2px 0;">
+            <span style="font-size:9px;color:#555;margin-right:2px;">фильтр:</span>
+            <button class="tv-chip" id="fltHi" onclick="_toggleFilter('hi')" title="Только скор 7+">7+</button>
+            <button class="tv-chip" id="fltUp" onclick="_toggleFilter('up')" title="Только с растущим скором">растущие ▲</button>
+            <button class="tv-chip" id="fltLiq" onclick="_toggleFilter('liq')" title="Скрыть неликвид">ликвидные</button>
+          </div>
+          <div id="tvHelp">
+            <b>Скор</b> — вероятность дойти до +2% раньше, чем до −2%.
+            <b style="color:#00e5a0;">8+</b> вход · <b style="color:#f5c518;">7</b> ждать · <b style="color:#f5843a;">5.5–6.5</b> следить · <b style="color:#f55;">&lt;5.5</b> мимо.<br>
+            <b>Стрелка/спарклайн</b> — тренд скора за 6ч: ▲ набирает силу (лучший вход), ▬ стабилен, ▼ выдыхается (поздно).<br>
+            <b>Депт-бар</b> — баланс стакана в ±2%: зелёная доля = покупатели, красная = продавцы. Наведи на кружок скора — расшифровка сигналов.
+          </div>
+          <div id="tvProgBar"></div>
           <div id="tvBody"><div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">Loading...</div></div>
         </div>
         <div id="profitPanel">
@@ -11785,6 +11833,88 @@ Requirements:
       }
     }
 
+    // ── Сортировка, фильтры, вердикт, депт-бар ──
+    let _tvSort = { key: 'score', dir: -1 };
+    let _tvFilter = { hi: false, up: false, liq: false };
+    let _tvSelectedCoin = null;
+
+    function _seriesTrend(coin) { const e = _effSeries(coin); return e.length >= 2 ? e[e.length - 1] - e[0] : 0; }
+
+    function _verdict(coin, score) {
+      const d = tvCoinData[coin] || {};
+      const dead = ((d.bidDepth || 0) + (d.askDepth || 0)) < 25000 && (d.bidDepth != null);
+      if (dead) return ['СТОП', '#f55', 'rgba(255,85,85,0.12)'];
+      const tr = _seriesTrend(coin);
+      if (score >= 8 && tr > -0.5) return ['ВХОД', '#00e5a0', 'rgba(0,229,160,0.14)'];
+      if (score >= 7)             return ['ЖДАТЬ', '#f5c518', 'rgba(245,197,24,0.12)'];
+      if (score >= 5.5)           return ['СЛЕДИТЬ', '#f5843a', 'rgba(245,132,58,0.12)'];
+      return ['МИМО', '#f55', 'rgba(255,85,85,0.1)'];
+    }
+
+    function _depthBar(buy, sell) {
+      const tot = buy + sell;
+      if (!tot) return '—';
+      const bp = Math.round(buy / tot * 100);
+      const t = `биды $${fmtVolShort(buy)} vs аски $${fmtVolShort(sell)}`;
+      return `<div title="${t}" style="display:inline-flex;flex-direction:column;align-items:flex-end;gap:2px;">`
+        + `<span class="tv-depthbar"><i style="width:${bp}%"></i></span>`
+        + `<span style="font-size:9px;color:#666;"><span style="color:var(--green)">${fmtVolShort(buy)}</span>/<span style="color:#f55">${fmtVolShort(sell)}</span></span></div>`;
+    }
+
+    function _setSort(key) {
+      if (_tvSort.key === key) _tvSort.dir *= -1;
+      else _tvSort = { key, dir: key === 'coin' ? 1 : -1 };
+      _applyTableView();
+    }
+    function _toggleFilter(k) {
+      _tvFilter[k] = !_tvFilter[k];
+      document.getElementById(k === 'hi' ? 'fltHi' : k === 'up' ? 'fltUp' : 'fltLiq')?.classList.toggle('on', _tvFilter[k]);
+      _applyTableView();
+    }
+    function _toggleHelp() { const h = document.getElementById('tvHelp'); if (h) h.style.display = h.style.display === 'block' ? 'none' : 'block'; }
+
+    function _applyTableView() {
+      const tbody = document.querySelector('#tvBody tbody');
+      if (!tbody) return;
+      const rows = [...tbody.querySelectorAll('tr')];
+      const val = coin => {
+        const d = tvCoinData[coin] || {};
+        if (_tvSort.key === 'score') return _tvLastScore[coin] ?? -1;
+        if (_tvSort.key === 'pct24h') return d.pct24h ?? -999;
+        if (_tvSort.key === 'vol') return d.vol ?? 0;
+        if (_tvSort.key === 'coin') return d.coin || coin;
+        return 0;
+      };
+      rows.sort((a, b) => {
+        const x = val(a.dataset.coin), y = val(b.dataset.coin);
+        return (typeof x === 'string' ? x.localeCompare(y) : x - y) * _tvSort.dir;
+      });
+      let best = null, bestScore = -1, pos = 0;
+      rows.forEach(r => {
+        const coin = r.dataset.coin, sc = _tvLastScore[coin] ?? -1;
+        const d = tvCoinData[coin] || {};
+        const liqDead = ((d.bidDepth || 0) + (d.askDepth || 0)) < 25000 && d.bidDepth != null;
+        let hide = false;
+        if (_tvFilter.hi && sc < 7) hide = true;
+        if (_tvFilter.up && _seriesTrend(coin) < 0.5) hide = true;
+        if (_tvFilter.liq && liqDead) hide = true;
+        r.style.display = hide ? 'none' : '';
+        r.classList.toggle('tv-selected', coin === _tvSelectedCoin);
+        if (!hide) {
+          tbody.appendChild(r);
+          const rankCell = r.querySelector('td');
+          if (rankCell) rankCell.textContent = ++pos;
+          if (sc > bestScore) { bestScore = sc; best = r; }
+        }
+      });
+      rows.forEach(r => r.classList.toggle('tv-best', r === best && bestScore >= 7));
+      // индикаторы сортировки в заголовках
+      ['score', 'pct24h', 'vol', 'coin'].forEach(k => {
+        const el = document.getElementById('srt_' + k);
+        if (el) el.textContent = _tvSort.key === k ? (_tvSort.dir < 0 ? '▼' : '▲') : '';
+      });
+    }
+
     // ── Точность скора считает сервер 24/7 (score engine) — клиент только показывает ──
     async function _renderHitRate() {
       const el = document.getElementById('tvHitRate');
@@ -12045,14 +12175,14 @@ Requirements:
         else                 delta = `<span style="font-size:9px;vertical-align:top;color:#889;" title="скор стабилен за 6ч">▬</span>`;
       }
       const spark = _sparklineSVG(_effSeries(coin));
+      const [vTxt, vCol, vBg] = _verdict(coin, score);
       el.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;gap:0;">`
         + `<div style="display:inline-flex;align-items:center;gap:1px;"><div title="${tip.replace(/"/g, '&quot;')}" style="display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:50%;background:${bg};color:${tc};font-weight:800;font-size:${score % 1 ? 11 : 13}px;box-shadow:0 0 10px ${glow},0 0 20px ${glow.replace('0.35','0.12')};cursor:help;">${scoreTxt}</div>${delta}</div>`
-        + `<span class="tv-spark" id="tvSpark_${coin}">${spark}</span></div>`;
+        + `<span class="tv-spark" id="tvSpark_${coin}">${spark}</span>`
+        + `<span class="tv-verdict" style="color:${vCol};background:${vBg};">${vTxt}</span></div>`;
       const row = document.getElementById(`tvRow_${coin}`);
-      if (row) {
-        row.style.borderLeftColor = bg;
-        row.style.background = score >= 8 ? 'rgba(0,229,160,0.05)' : '';
-      }
+      if (row) row.style.borderLeftColor = bg;
+      _applyTableView();
     }
 
     function renderTopVolume(coins) {
@@ -12062,12 +12192,12 @@ Requirements:
       const rows = coins.map((c, i) => {
         _tvPrevScore[c.coin] = _tvLastScore[c.coin];
         // прошлые метрики оставляем как fallback — свежие данные их перезапишут
-        tvCoinData[c.coin] = { ...(tvCoinData[c.coin] || {}), pct24h: c.pct24h, vol: c.volUsd };
+        tvCoinData[c.coin] = { ...(tvCoinData[c.coin] || {}), pct24h: c.pct24h, vol: c.volUsd, coin: c.coin };
         const pctCls = c.pct24h >= 0 ? 'color:var(--green)' : 'color:#f55';
         const sign = c.pct24h >= 0 ? '+' : '';
         const price = c.price < 0.001 ? c.price.toFixed(6) : c.price < 1 ? c.price.toFixed(4) : c.price < 100 ? c.price.toFixed(3) : c.price.toFixed(2);
         const chartSvg = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>`;
-        return `<tr id="tvRow_${c.coin}" style="cursor:pointer;border-left:3px solid transparent;" onclick="selectCoinForBuy('${c.coin}');if(_tvTGChartVisible)toggleTopVolumeChart('${c.coin}')">
+        return `<tr id="tvRow_${c.coin}" data-coin="${c.coin}" style="cursor:pointer;border-left:3px solid transparent;" onclick="_tvSelectedCoin='${c.coin}';selectCoinForBuy('${c.coin}');_applyTableView();if(_tvTGChartVisible)toggleTopVolumeChart('${c.coin}')">
           <td style="color:#555;font-size:11px;">${i + 1}</td>
           <td class="tg-coin" style="font-size:13px;min-width:80px;">
             <div style="display:flex;align-items:center;gap:5px;">
@@ -12083,26 +12213,30 @@ Requirements:
           <td id="tvScore_${c.coin}" style="text-align:center;color:#444;font-size:11px;">...</td>
         </tr>`;
       }).join('');
-      body.innerHTML = `<table class="tg-table"><thead><tr><th>#</th><th>COIN</th><th>24H%</th><th>TREND 1H</th><th>VOL</th><th>+2%/-2%</th><th>SCORE</th></tr></thead><tbody>${rows}</tbody></table>`;
+      body.innerHTML = `<table class="tg-table"><thead><tr>`
+        + `<th>#</th>`
+        + `<th class="srt" onclick="_setSort('coin')">COIN<span class="arr" id="srt_coin"></span></th>`
+        + `<th class="srt" onclick="_setSort('pct24h')">24H%<span class="arr" id="srt_pct24h"></span></th>`
+        + `<th>TREND 1H</th>`
+        + `<th class="srt" onclick="_setSort('vol')">VOL<span class="arr" id="srt_vol"></span></th>`
+        + `<th>+2%/-2%</th>`
+        + `<th class="srt" onclick="_setSort('score')">SCORE<span class="arr" id="srt_score"></span></th>`
+        + `</tr></thead><tbody>${rows}</tbody></table>`;
       _renderHitRate();
+      _applyTableView();
     }
 
     function applyDepth(coin, buy, sell) {
       const el = document.getElementById(`tvDepth_${coin}`);
       if (!el) return;
-      if (buy || sell) {
-        const askCol = sell >= buy ? 'var(--green)' : '#f55';
-        el.innerHTML = `<span style="color:${askCol}">${fmtVolShort(sell)}</span><span style="color:#444">/</span><span style="color:#f55">${fmtVolShort(buy)}</span>`;
-      } else {
-        el.textContent = '—';
-      }
+      el.innerHTML = _depthBar(buy, sell);
       if (tvCoinData[coin]) { tvCoinData[coin].bidDepth = buy; tvCoinData[coin].askDepth = sell; }
       updateScore(coin);
       // Мёртвый стакан (< $25K в ±2%) — торговать нельзя, приглушаем строку
       const row = document.getElementById(`tvRow_${coin}`);
       if (row) {
         if (buy + sell < 25000) {
-          row.style.opacity = '0.35';
+          row.style.opacity = '0.4';
           el.innerHTML += '<br><span style="color:#f55;font-size:9px;">нет ликв.</span>';
         } else {
           row.style.opacity = '';
@@ -12119,7 +12253,7 @@ Requirements:
       if (pct1h == null) { el.innerHTML = '<span style="color:#444">—</span>'; return; }
       const rsi = tvCoinData[coin]?.rsi;
       const rsiHint = rsi != null
-        ? `<span style="color:${rsi < 35 ? '#00e5a0' : rsi > 65 ? '#f55' : '#555'};font-size:9px;"> RSI:${Math.round(rsi)}</span>`
+        ? `<span class="tv-rsi" title="RSI ${Math.round(rsi)}: <35 перепродан, >65 перегрет" style="color:${rsi < 35 ? '#00e5a0' : rsi > 65 ? '#f55' : '#8b93a7'};background:${rsi < 35 ? 'rgba(0,229,160,0.12)' : rsi > 65 ? 'rgba(255,85,85,0.12)' : 'rgba(255,255,255,0.05)'};">${Math.round(rsi)}</span>`
         : '';
       if (recovering) {
         const hColor = fallingHours >= 8 ? '#ff4444' : fallingHours >= 4 ? '#f55' : '#f88';
@@ -12320,6 +12454,8 @@ Requirements:
         if (!tvPaused) tvCountdownSec--;
         const el = document.getElementById('tvCountdown');
         if (el) el.textContent = tvCountdownSec + 's';
+        const bar = document.getElementById('tvProgBar');
+        if (bar) bar.style.width = Math.max(0, tvCountdownSec / 60 * 100) + '%';
         if (tvCountdownSec <= 0) { tvCountdownSec = 60; loadTopVolume(); }
       }, 1000);
     }
