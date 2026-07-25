@@ -12010,10 +12010,10 @@ Requirements:
       // 7. Крест EMA9/EMA20 ±0.5 — быстрая EMA выше медленной = бычий импульс
       if (d.emaCross != null) add(d.emaCross > 0 ? 0.5 : -0.5, 'EMA крест');
 
-      // 8. Контекст 24h: дип = потенциал (+0.7 max), перегрев = до -3.5, экстрим-памп ещё -1
+      // 8. Контекст 24h: дип = потенциал (+0.7 max), перегрев = до -3, экстрим-памп ещё -1
       if (d.pct24h != null) {
         if (d.pct24h < -2)     add(lerp(-d.pct24h, 2, 0.2, 8, 0.7), '24h дип');
-        else if (d.pct24h > 5) add(-lerp(d.pct24h, 5, 0.5, 30, 3.5), '24h перегрев');
+        else if (d.pct24h > 5) add(-lerp(d.pct24h, 5, 0.5, 30, 3), '24h перегрев');
         if (d.pct24h > 60)     add(-1, 'экстрим-памп');
       }
 
@@ -12023,15 +12023,15 @@ Requirements:
         if (d.riseHours >= 8 || (sevR != null && sevR > 6)) add(-1.2, 'усталость роста');
         else add(-0.6, 'усталость роста');
       }
-      // 8c. Затяжной перегрев 40h — медленный рост, невидимый в 24h%
+      // 8c. Затяжной перегрев 40h — смягчён по калибровке (не предсказывал провал)
       if (d.pct40h != null) {
-        if (d.pct40h > 20)      add(-1, 'перегрев 40h');
-        else if (d.pct40h > 12) add(-0.5, 'перегрев 40h');
+        if (d.pct40h > 20)      add(-0.7, 'перегрев 40h');
+        else if (d.pct40h > 12) add(-0.3, 'перегрев 40h');
       }
-      // 8d. Отрыв от EMA20 вверх — перерастянута, вероятен откат к средней
+      // 8d. Отрыв от EMA20 вверх — смягчён по калибровке
       if (d.priceVsEma != null) {
-        if (d.priceVsEma > 4)        add(-1, 'оторвана от EMA');
-        else if (d.priceVsEma > 2.5) add(-0.5, 'оторвана от EMA');
+        if (d.priceVsEma > 4)        add(-0.7, 'оторвана от EMA');
+        else if (d.priceVsEma > 2.5) add(-0.3, 'оторвана от EMA');
       }
 
       // 9. Позиция в 24h диапазоне ±1 — у дна с разворотом = максимальный апсайд
@@ -12040,9 +12040,9 @@ Requirements:
         else if (d.rangePos > 0.9) add((d.volRatio > 2 && rising) ? 0.5 : -0.5, d.volRatio > 2 && rising ? 'пробой хая' : 'у хая 24h');
       }
 
-      // 10. Стабильность роста ±0.5 — ровный подъём надёжнее одной свечи
+      // 10. Стабильность роста — вес снижен по калибровке
       if (d.greenCount6 != null) {
-        if (d.greenCount6 >= 4 && rising)       add(0.5, 'стабильный рост');
+        if (d.greenCount6 >= 4 && rising)       add(0.2, 'стабильный рост');
         else if (d.greenCount6 <= 1 && !rising) add(-0.5, 'слабая структура');
       }
 
@@ -12094,10 +12094,10 @@ Requirements:
         else if (d.spreadPct > 0.2) add(-0.4, 'спред');
       }
 
-      // 17. Режим рынка — альты идут за BTC
+      // 17. Режим рынка — альты идут за BTC (бонус снижен по калибровке)
       if (coin !== 'BTC' && _btcPct1h != null) {
         if (_btcPct1h < -0.5)      add(-0.7, 'BTC падает');
-        else if (_btcPct1h > 0.3)  add(0.3, 'BTC растёт');
+        else if (_btcPct1h > 0.3)  add(0.1, 'BTC растёт');
       }
 
       // 18. Дистанция до сопротивления — хватит ли места до цели +2%
@@ -12107,10 +12107,10 @@ Requirements:
         else if (d.runwayPct > 3)  add(0.3, 'путь свободен');
       } else if (d.rangePos != null) add(0.3, 'нет сопротивления');
 
-      // 19. MACD — ускорение или затухание импульса
+      // 19. MACD — ускорение или затухание импульса (разворот снижен по калибровке)
       if (d.macdRising != null) {
         if      (d.macdPos && d.macdRising)   add(0.5, 'MACD');
-        else if (!d.macdPos && d.macdRising)  add(0.3, 'MACD разворот');
+        else if (!d.macdPos && d.macdRising)  add(0.1, 'MACD разворот');
         else if (!d.macdPos && !d.macdRising) add(-0.5, 'MACD');
         else                                  add(-0.2, 'MACD слабеет');
       }
@@ -12125,9 +12125,9 @@ Requirements:
         else if (rN < 0.67) add(-0.5, 'стакан у цены');
       }
 
-      // 22. Поддержка снизу — близкая поддержка ограничивает риск падения
+      // 22. Поддержка снизу — порог ужесточён по калибровке (стрелял в 86% случаев)
       if (d.supportPct != null) {
-        if (d.supportPct < 1.2)    add(0.4, 'поддержка рядом');
+        if (d.supportPct < 0.7)    add(0.4, 'поддержка рядом');
         else if (d.supportPct > 4) add(-0.4, 'пусто под ценой');
       }
 
@@ -12138,10 +12138,10 @@ Requirements:
         else if (d.vsVwap > 2.5)         add(-0.5, 'дорого к VWAP');
       }
 
-      // 24. Лента сделок — кто агрессор прямо сейчас (стакан можно спуфить, сделки — факт)
+      // 24. Лента сделок — кто агрессор прямо сейчас (бонус снижен по калибровке)
       if (d.tapeRatio != null) {
-        if (d.tapeRatio > 1.8)       add(0.6, 'покупатели в ленте');
-        else if (d.tapeRatio > 1.3)  add(0.3, 'покупатели в ленте');
+        if (d.tapeRatio > 1.8)       add(0.4, 'покупатели в ленте');
+        else if (d.tapeRatio > 1.3)  add(0.2, 'покупатели в ленте');
         else if (d.tapeRatio < 0.55) add(-0.6, 'продавцы в ленте');
         else if (d.tapeRatio < 0.77) add(-0.3, 'продавцы в ленте');
       }
@@ -12327,19 +12327,19 @@ Requirements:
           const riseStart = n - 1 - riseHours;
           const totalRisePct = riseStart >= 0 && closes[riseStart] ? (closes[n-2] - closes[riseStart]) / closes[riseStart] * 100 : 0;
           const pct40h = closes[0] ? (closes[n-1] - closes[0]) / closes[0] * 100 : null;
-          // Сопротивление: ближайший свинг-хай выше текущей цены
+          // Свинг-уровни с подтверждением 2 свечами с каждой стороны — иначе любой бугорок считался уровнем
           const priceNow = closes[n-1];
           let resist = null;
-          for (let i = 1; i < n - 1; i++) {
-            if (highs[i] > highs[i-1] && highs[i] >= highs[i+1] && highs[i] > priceNow) {
+          for (let i = 2; i < n - 2; i++) {
+            if (highs[i] > highs[i-1] && highs[i] > highs[i-2] && highs[i] >= highs[i+1] && highs[i] >= highs[i+2] && highs[i] > priceNow) {
               if (resist === null || highs[i] < resist) resist = highs[i];
             }
           }
           const runwayPct = resist ? (resist - priceNow) / priceNow * 100 : null; // null = чистое небо
           // Поддержка: ближайший свинг-лоу ниже цены
           let support = null;
-          for (let i = 1; i < n - 1; i++) {
-            if (lows[i] < lows[i-1] && lows[i] <= lows[i+1] && lows[i] < priceNow) {
+          for (let i = 2; i < n - 2; i++) {
+            if (lows[i] < lows[i-1] && lows[i] < lows[i-2] && lows[i] <= lows[i+1] && lows[i] <= lows[i+2] && lows[i] < priceNow) {
               if (support === null || lows[i] > support) support = lows[i];
             }
           }

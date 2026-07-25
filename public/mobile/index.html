@@ -3433,10 +3433,10 @@
       }
       // Крест EMA9/EMA20
       if (d.emaCross != null) score += d.emaCross > 0 ? 0.5 : -0.5;
-      // Контекст 24h: дип = потенциал, перегрев = до -3.5, экстрим-памп ещё -1
+      // Контекст 24h: дип = потенциал, перегрев = до -3, экстрим-памп ещё -1
       if (d.pct24h != null) {
         if (d.pct24h < -2)     score += lerp(-d.pct24h, 2, 0.2, 8, 0.7);
-        else if (d.pct24h > 5) score -= lerp(d.pct24h, 5, 0.5, 30, 3.5);
+        else if (d.pct24h > 5) score -= lerp(d.pct24h, 5, 0.5, 30, 3);
         if (d.pct24h > 60)     score -= 1;
       }
       // Усталость роста — много часов подряд без отката
@@ -3445,24 +3445,24 @@
         if (d.riseHours >= 8 || (sevR != null && sevR > 6)) score -= 1.2;
         else score -= 0.6;
       }
-      // Затяжной перегрев 40h
+      // Затяжной перегрев 40h (смягчён по калибровке)
       if (d.pct40h != null) {
-        if (d.pct40h > 20)      score -= 1;
-        else if (d.pct40h > 12) score -= 0.5;
+        if (d.pct40h > 20)      score -= 0.7;
+        else if (d.pct40h > 12) score -= 0.3;
       }
-      // Отрыв от EMA20 вверх — перерастянута
+      // Отрыв от EMA20 вверх (смягчён по калибровке)
       if (d.priceVsEma != null) {
-        if (d.priceVsEma > 4)        score -= 1;
-        else if (d.priceVsEma > 2.5) score -= 0.5;
+        if (d.priceVsEma > 4)        score -= 0.7;
+        else if (d.priceVsEma > 2.5) score -= 0.3;
       }
       // Позиция в 24h диапазоне
       if (d.rangePos != null) {
         if (d.rangePos < 0.25)     score += rising ? 1 : 0.3;
         else if (d.rangePos > 0.9) score += (d.volRatio > 2 && rising) ? 0.5 : -0.5;
       }
-      // Стабильность роста
+      // Стабильность роста (вес снижен по калибровке)
       if (d.greenCount6 != null) {
-        if (d.greenCount6 >= 4 && rising)       score += 0.5;
+        if (d.greenCount6 >= 4 && rising)       score += 0.2;
         else if (d.greenCount6 <= 1 && !rising) score -= 0.5;
       }
       // Волатильность
@@ -3505,10 +3505,10 @@
         if (d.spreadPct > 0.5)      score -= 1;
         else if (d.spreadPct > 0.2) score -= 0.4;
       }
-      // Режим рынка — альты идут за BTC
+      // Режим рынка — альты идут за BTC (бонус снижен по калибровке)
       if (coin !== 'BTC' && _btcPct1h != null) {
         if (_btcPct1h < -0.5)     score -= 0.7;
-        else if (_btcPct1h > 0.3) score += 0.3;
+        else if (_btcPct1h > 0.3) score += 0.1;
       }
       // Дистанция до сопротивления — хватит ли места до цели +2%
       if (d.runwayPct != null) {
@@ -3516,10 +3516,10 @@
         else if (d.runwayPct < 2)  score -= 0.5;
         else if (d.runwayPct > 3)  score += 0.3;
       } else if (d.rangePos != null) score += 0.3;
-      // MACD — ускорение или затухание импульса
+      // MACD — ускорение или затухание импульса (разворот снижен по калибровке)
       if (d.macdRising != null) {
         if      (d.macdPos && d.macdRising)   score += 0.5;
-        else if (!d.macdPos && d.macdRising)  score += 0.3;
+        else if (!d.macdPos && d.macdRising)  score += 0.1;
         else if (!d.macdPos && !d.macdRising) score -= 0.5;
         else                                  score -= 0.2;
       }
@@ -3531,9 +3531,9 @@
         if      (rN > 1.5)  score += 0.5;
         else if (rN < 0.67) score -= 0.5;
       }
-      // Поддержка снизу
+      // Поддержка снизу (порог ужесточён по калибровке)
       if (d.supportPct != null) {
-        if (d.supportPct < 1.2)    score += 0.4;
+        if (d.supportPct < 0.7)    score += 0.4;
         else if (d.supportPct > 4) score -= 0.4;
       }
       // VWAP 24h
@@ -3542,10 +3542,10 @@
         else if (d.vsVwap < 0 && rising) score += 0.3;
         else if (d.vsVwap > 2.5)         score -= 0.5;
       }
-      // Лента сделок — кто агрессор
+      // Лента сделок — кто агрессор (бонус снижен по калибровке)
       if (d.tapeRatio != null) {
-        if (d.tapeRatio > 1.8)       score += 0.6;
-        else if (d.tapeRatio > 1.3)  score += 0.3;
+        if (d.tapeRatio > 1.8)       score += 0.4;
+        else if (d.tapeRatio > 1.3)  score += 0.2;
         else if (d.tapeRatio < 0.55) score -= 0.6;
         else if (d.tapeRatio < 0.77) score -= 0.3;
       }
@@ -3678,19 +3678,19 @@
           const riseStart = n - 1 - riseHours;
           const totalRisePct = riseStart >= 0 && closes[riseStart] ? (closes[n-2] - closes[riseStart]) / closes[riseStart] * 100 : 0;
           const pct40h = closes[0] ? (closes[n-1] - closes[0]) / closes[0] * 100 : null;
-          // Сопротивление: ближайший свинг-хай выше текущей цены
+          // Свинг-уровни с подтверждением 2 свечами с каждой стороны
           const priceNow = closes[n-1];
           let resist = null;
-          for (let i = 1; i < n - 1; i++) {
-            if (highs[i] > highs[i-1] && highs[i] >= highs[i+1] && highs[i] > priceNow) {
+          for (let i = 2; i < n - 2; i++) {
+            if (highs[i] > highs[i-1] && highs[i] > highs[i-2] && highs[i] >= highs[i+1] && highs[i] >= highs[i+2] && highs[i] > priceNow) {
               if (resist === null || highs[i] < resist) resist = highs[i];
             }
           }
           const runwayPct = resist ? (resist - priceNow) / priceNow * 100 : null;
           // Поддержка: ближайший свинг-лоу ниже цены
           let support = null;
-          for (let i = 1; i < n - 1; i++) {
-            if (lows[i] < lows[i-1] && lows[i] <= lows[i+1] && lows[i] < priceNow) {
+          for (let i = 2; i < n - 2; i++) {
+            if (lows[i] < lows[i-1] && lows[i] < lows[i-2] && lows[i] <= lows[i+1] && lows[i] <= lows[i+2] && lows[i] < priceNow) {
               if (support === null || lows[i] > support) support = lows[i];
             }
           }

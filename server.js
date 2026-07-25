@@ -1489,7 +1489,7 @@ function scoreFromMetrics(d, isBTC, btcPct1h) {
   if (d.emaCross != null) add(d.emaCross > 0 ? 0.5 : -0.5, 'EMA крест');
   if (d.pct24h != null) {
     if (d.pct24h < -2)     add(lerp(-d.pct24h, 2, 0.2, 8, 0.7), '24h дип');
-    else if (d.pct24h > 5) add(-lerp(d.pct24h, 5, 0.5, 30, 3.5), '24h перегрев');
+    else if (d.pct24h > 5) add(-lerp(d.pct24h, 5, 0.5, 30, 3), '24h перегрев');
     if (d.pct24h > 60)     add(-1, 'экстрим-памп');
   }
   if (d.riseHours != null && d.riseHours >= 5) {
@@ -1498,19 +1498,19 @@ function scoreFromMetrics(d, isBTC, btcPct1h) {
     else add(-0.6, 'усталость роста');
   }
   if (d.pct40h != null) {
-    if (d.pct40h > 20)      add(-1, 'перегрев 40h');
-    else if (d.pct40h > 12) add(-0.5, 'перегрев 40h');
+    if (d.pct40h > 20)      add(-0.7, 'перегрев 40h');
+    else if (d.pct40h > 12) add(-0.3, 'перегрев 40h');
   }
   if (d.priceVsEma != null) {
-    if (d.priceVsEma > 4)        add(-1, 'оторвана от EMA');
-    else if (d.priceVsEma > 2.5) add(-0.5, 'оторвана от EMA');
+    if (d.priceVsEma > 4)        add(-0.7, 'оторвана от EMA');
+    else if (d.priceVsEma > 2.5) add(-0.3, 'оторвана от EMA');
   }
   if (d.rangePos != null) {
     if (d.rangePos < 0.25)     add(rising ? 1 : 0.3, 'у дна 24h');
     else if (d.rangePos > 0.9) add((d.volRatio > 2 && rising) ? 0.5 : -0.5, d.volRatio > 2 && rising ? 'пробой хая' : 'у хая 24h');
   }
   if (d.greenCount6 != null) {
-    if (d.greenCount6 >= 4 && rising)       add(0.5, 'стабильный рост');
+    if (d.greenCount6 >= 4 && rising)       add(0.2, 'стабильный рост');
     else if (d.greenCount6 <= 1 && !rising) add(-0.5, 'слабая структура');
   }
   if (d.avgRange != null) {
@@ -1548,7 +1548,7 @@ function scoreFromMetrics(d, isBTC, btcPct1h) {
   }
   if (!isBTC && btcPct1h != null) {
     if (btcPct1h < -0.5)     add(-0.7, 'BTC падает');
-    else if (btcPct1h > 0.3) add(0.3, 'BTC растёт');
+    else if (btcPct1h > 0.3) add(0.1, 'BTC растёт');
   }
   if (d.runwayPct != null) {
     if (d.runwayPct < 1)       add(-1, 'сопротивление рядом');
@@ -1557,7 +1557,7 @@ function scoreFromMetrics(d, isBTC, btcPct1h) {
   } else if (d.rangePos != null) add(0.3, 'нет сопротивления');
   if (d.macdRising != null) {
     if      (d.macdPos && d.macdRising)   add(0.5, 'MACD');
-    else if (!d.macdPos && d.macdRising)  add(0.3, 'MACD разворот');
+    else if (!d.macdPos && d.macdRising)  add(0.1, 'MACD разворот');
     else if (!d.macdPos && !d.macdRising) add(-0.5, 'MACD');
     else                                  add(-0.2, 'MACD слабеет');
   }
@@ -1568,7 +1568,7 @@ function scoreFromMetrics(d, isBTC, btcPct1h) {
     else if (rN < 0.67) add(-0.5, 'стакан у цены');
   }
   if (d.supportPct != null) {
-    if (d.supportPct < 1.2)    add(0.4, 'поддержка рядом');
+    if (d.supportPct < 0.7)    add(0.4, 'поддержка рядом');
     else if (d.supportPct > 4) add(-0.4, 'пусто под ценой');
   }
   if (d.vsVwap != null) {
@@ -1577,8 +1577,8 @@ function scoreFromMetrics(d, isBTC, btcPct1h) {
     else if (d.vsVwap > 2.5)         add(-0.5, 'дорого к VWAP');
   }
   if (d.tapeRatio != null) {
-    if (d.tapeRatio > 1.8)       add(0.6, 'покупатели в ленте');
-    else if (d.tapeRatio > 1.3)  add(0.3, 'покупатели в ленте');
+    if (d.tapeRatio > 1.8)       add(0.4, 'покупатели в ленте');
+    else if (d.tapeRatio > 1.3)  add(0.2, 'покупатели в ленте');
     else if (d.tapeRatio < 0.55) add(-0.6, 'продавцы в ленте');
     else if (d.tapeRatio < 0.77) add(-0.3, 'продавцы в ленте');
   }
@@ -1633,17 +1633,18 @@ async function computeCoinMetrics(coin, price, pct24h) {
   const totalRisePct = riseStart >= 0 && closes[riseStart] ? (closes[n-2] - closes[riseStart]) / closes[riseStart] * 100 : 0;
   const pct40h = closes[0] ? (closes[n-1] - closes[0]) / closes[0] * 100 : null;
   const priceNow = closes[n-1];
+  // Свинг-уровни с подтверждением 2 свечами с каждой стороны — иначе любой бугорок считался уровнем
   let resist = null;
-  for (let i = 1; i < n - 1; i++) {
-    if (highs[i] > highs[i-1] && highs[i] >= highs[i+1] && highs[i] > priceNow) {
+  for (let i = 2; i < n - 2; i++) {
+    if (highs[i] > highs[i-1] && highs[i] > highs[i-2] && highs[i] >= highs[i+1] && highs[i] >= highs[i+2] && highs[i] > priceNow) {
       if (resist === null || highs[i] < resist) resist = highs[i];
     }
   }
   const runwayPct = resist ? (resist - priceNow) / priceNow * 100 : null;
   // Поддержка: ближайший свинг-лоу ниже цены
   let support = null;
-  for (let i = 1; i < n - 1; i++) {
-    if (lows[i] < lows[i-1] && lows[i] <= lows[i+1] && lows[i] < priceNow) {
+  for (let i = 2; i < n - 2; i++) {
+    if (lows[i] < lows[i-1] && lows[i] < lows[i-2] && lows[i] <= lows[i+1] && lows[i] <= lows[i+2] && lows[i] < priceNow) {
       if (support === null || lows[i] > support) support = lows[i];
     }
   }
@@ -1746,8 +1747,8 @@ async function scoreEngineTick() {
             if (up && !dn) { res = 1; break; }
             if (dn) { res = 0; break; }
           }
-          if (res === undefined && nowMs - s.t > 24 * 3600 * 1000) res = 0;
-          if (res !== undefined) { s.r = res; changed = true; }
+          if (res === undefined && nowMs - s.t > 24 * 3600 * 1000) res = 2; // таймаут: ни один уровень не достигнут — НЕ проигрыш
+          if (res !== undefined) { s.r = res; s.v = 2; changed = true; }   // v:2 = новая трёхисходная схема
         }
       } catch (e) { console.error('[score]', c.coin, e.message); }
       await new Promise(r => setTimeout(r, 150));
@@ -1777,10 +1778,12 @@ app.post('/api/deploy', (req, res) => {
 });
 
 app.get('/api/score-stats', (req, res) => {
-  const done = scoreHist.filter(s => s.r !== undefined);
+  // Только снапшоты новой трёхисходной схемы; rate = победы/(победы+проигрыши), таймауты отдельно
+  const done = scoreHist.filter(s => s.r !== undefined && s.v === 2);
   const bucket = (lo, hi) => {
     const a = done.filter(s => s.s >= lo && s.s < hi);
-    return { n: a.length, rate: a.length ? Math.round(a.filter(s => s.r).length / a.length * 100) : null };
+    const w = a.filter(s => s.r === 1).length, l = a.filter(s => s.r === 0).length, t = a.filter(s => s.r === 2).length;
+    return { n: w + l, wins: w, losses: l, timeouts: t, rate: (w + l) ? Math.round(w / (w + l) * 100) : null };
   };
   // Серия скоров за 6ч по каждой монете — для спарклайна в таблице
   const series = {};
@@ -1801,8 +1804,9 @@ app.get('/api/score-stats', (req, res) => {
 // Калибровка: какие сигналы реально предсказывают +2%. Для каждого сигнала —
 // hit-rate снапшотов, где он присутствовал, против базового hit-rate всех оценённых.
 app.get('/api/score-calibration', (req, res) => {
-  const done = scoreHist.filter(s => s.r !== undefined && Array.isArray(s.pt));
-  const base = done.length ? done.filter(s => s.r).length / done.length : 0;
+  // Только решённые исходы новой схемы (победа/проигрыш), таймауты исключены
+  const done = scoreHist.filter(s => s.r !== undefined && s.v === 2 && s.r !== 2 && Array.isArray(s.pt));
+  const base = done.length ? done.filter(s => s.r === 1).length / done.length : 0;
   const agg = {};
   for (const s of done) {
     const seen = new Set();
@@ -1811,7 +1815,7 @@ app.get('/api/score-calibration', (req, res) => {
       if (seen.has(name)) continue;
       seen.add(name);
       const a = agg[name] || (agg[name] = { n: 0, hit: 0 });
-      a.n++; if (s.r) a.hit++;
+      a.n++; if (s.r === 1) a.hit++;
     }
   }
   const signals = Object.entries(agg)
