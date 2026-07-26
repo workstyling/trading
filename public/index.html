@@ -12189,8 +12189,8 @@ Requirements:
       const minDepth = Math.min(dd.bidDepth || 0, dd.askDepth || 0);
       if (minDepth > 0 && score >= 7) {
         let s = minDepth * 0.05;
-        s = s >= 1000 ? Math.round(s / 250) * 250 : Math.round(s / 50) * 50;
-        if (s >= 50) sizeTxt = `<span style="font-size:8px;color:#8b93a7;margin-top:1px;" title="Безопасный размер входа: ~5% глубины стакана в ±2% ($${fmtVolShort(minDepth).slice(1)}) — вход и выход без заметного проскальзывания">${s >= 5000 ? '$5K+' : '≤$' + s}</span>`;
+        const sTxt = s >= 1000 ? (s / 1000 >= 10 ? Math.round(s / 1000) : (Math.round(s / 500) * 500 / 1000)) + 'K' : Math.round(s / 50) * 50;
+        if (s >= 50) sizeTxt = `<span style="font-size:8px;color:#8b93a7;margin-top:1px;" title="Безопасный размер входа: ~5% глубины стакана в ±2% (узкая сторона ${fmtVolShort(minDepth)}) — вход и выход без заметного проскальзывания">≤$${sTxt}</span>`;
       }
       el.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;gap:0;">`
         + `<div style="display:inline-flex;align-items:center;gap:1px;"><div title="${tip.replace(/"/g, '&quot;')}" style="display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:50%;background:${bg};color:${tc};font-weight:800;font-size:${score % 1 ? 11 : 13}px;box-shadow:0 0 10px ${glow},0 0 20px ${glow.replace('0.35','0.12')};cursor:help;">${scoreTxt}</div>${delta}</div>`

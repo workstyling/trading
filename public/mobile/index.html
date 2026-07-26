@@ -3664,8 +3664,8 @@
       const minDepth = Math.min(dd.bidDepth || 0, dd.askDepth || 0);
       if (minDepth > 0 && score >= 7) {
         let s = minDepth * 0.05;
-        s = s >= 1000 ? Math.round(s / 250) * 250 : Math.round(s / 50) * 50;
-        if (s >= 50) sizeTxt = `<span style="font-size:7px;color:#8b93a7;margin-top:1px;">${s >= 5000 ? '$5K+' : '≤$' + s}</span>`;
+        const sTxt = s >= 1000 ? (s / 1000 >= 10 ? Math.round(s / 1000) : (Math.round(s / 500) * 500 / 1000)) + 'K' : Math.round(s / 50) * 50;
+        if (s >= 50) sizeTxt = `<span style="font-size:7px;color:#8b93a7;margin-top:1px;">≤$${sTxt}</span>`;
       }
       el.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;">`
         + `<div style="display:inline-flex;align-items:center;gap:1px;"><div style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;background:${bg};color:${tc};font-weight:800;font-size:${score % 1 ? 10 : 12}px;box-shadow:0 0 8px ${glow};">${scoreTxt}</div>${delta}</div>`
