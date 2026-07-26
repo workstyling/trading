@@ -11845,8 +11845,15 @@ Requirements:
       const dead = ((d.bidDepth || 0) + (d.askDepth || 0)) < 25000 && (d.bidDepth != null);
       if (dead) return ['СТОП', '#f55', 'rgba(255,85,85,0.12)'];
       const tr = _seriesTrend(coin);
-      if (score >= 8 && tr > -0.5) return ['ВХОД', '#00e5a0', 'rgba(0,229,160,0.14)'];
-      if (score >= 7)             return ['ЖДАТЬ', '#f5c518', 'rgba(245,197,24,0.12)'];
+      // ETA до +2%: типичный часовой ход монеты, ~половина хода идёт в направлении тренда
+      const eta = d.avgRange ? 4 / Math.max(d.avgRange, 0.1) : null;
+      const etaTxt = eta != null ? ' ' + (eta > 24 ? '⏳24ч+' : '~' + Math.max(1, Math.round(eta)) + 'ч') : '';
+      if (score >= 8 && tr > -0.5) {
+        // Вязкий сетап: вероятность та же, но капитал залипнет — помечаем жёлтым
+        if (eta != null && eta > 14) return ['ВХОД' + etaTxt, '#f5c518', 'rgba(245,197,24,0.12)'];
+        return ['ВХОД' + etaTxt, '#00e5a0', 'rgba(0,229,160,0.14)'];
+      }
+      if (score >= 7)             return ['ЖДАТЬ' + etaTxt, '#f5c518', 'rgba(245,197,24,0.12)'];
       if (score >= 5.5)           return ['СЛЕДИТЬ', '#f5843a', 'rgba(245,132,58,0.12)'];
       return ['МИМО', '#f55', 'rgba(255,85,85,0.1)'];
     }
