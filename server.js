@@ -1490,7 +1490,7 @@ function scoreFromMetrics(d, isBTC, btcPct1h) {
   if (d.pct24h != null) {
     if (d.pct24h < -2)     add(lerp(-d.pct24h, 2, 0.2, 8, 0.7), '24h дип');
     else if (d.pct24h > 5) add(-lerp(d.pct24h, 5, 0.5, 30, 3), '24h перегрев');
-    if (d.pct24h > 60)     add(-1, 'экстрим-памп');
+    if (d.pct24h > 60)     add(-1.5, 'экстрим-памп'); // калибровка v2: 29% побед
   }
   if (d.riseHours != null && d.riseHours >= 5) {
     const sevR = d.avgRange ? d.totalRisePct / Math.max(d.avgRange, 0.2) : null;
@@ -1498,19 +1498,19 @@ function scoreFromMetrics(d, isBTC, btcPct1h) {
     else add(-0.6, 'усталость роста');
   }
   if (d.pct40h != null) {
-    if (d.pct40h > 20)      add(-0.7, 'перегрев 40h');
-    else if (d.pct40h > 12) add(-0.3, 'перегрев 40h');
+    if (d.pct40h > 20)      add(-1, 'перегрев 40h');
+    else if (d.pct40h > 12) add(-0.5, 'перегрев 40h');
   }
   if (d.priceVsEma != null) {
-    if (d.priceVsEma > 4)        add(-0.7, 'оторвана от EMA');
-    else if (d.priceVsEma > 2.5) add(-0.3, 'оторвана от EMA');
+    if (d.priceVsEma > 4)        add(-1, 'оторвана от EMA');
+    else if (d.priceVsEma > 2.5) add(-0.5, 'оторвана от EMA');
   }
   if (d.rangePos != null) {
     if (d.rangePos < 0.25)     add(rising ? 1 : 0.3, 'у дна 24h');
-    else if (d.rangePos > 0.9) add((d.volRatio > 2 && rising) ? 0.5 : -0.5, d.volRatio > 2 && rising ? 'пробой хая' : 'у хая 24h');
+    else if (d.rangePos > 0.9) add((d.volRatio > 2 && rising) ? 0.5 : -0.2, d.volRatio > 2 && rising ? 'пробой хая' : 'у хая 24h');
   }
   if (d.greenCount6 != null) {
-    if (d.greenCount6 >= 4 && rising)       add(0.2, 'стабильный рост');
+    if (d.greenCount6 >= 4 && rising)       add(0.4, 'стабильный рост');
     else if (d.greenCount6 <= 1 && !rising) add(-0.5, 'слабая структура');
   }
   if (d.avgRange != null) {
@@ -1520,8 +1520,8 @@ function scoreFromMetrics(d, isBTC, btcPct1h) {
   if (d.hlStreak >= 3) add(0.5, 'higher lows');
   const totalDepth = (d.bidDepth || 0) + (d.askDepth || 0);
   if (totalDepth > 0) {
-    if (totalDepth < 30000)       add(-1.5, 'тонкий стакан');
-    else if (totalDepth < 100000) add(-0.5, 'тонкий стакан');
+    if (totalDepth < 30000)       add(-1.8, 'тонкий стакан'); // калибровка v2: 38% побед
+    else if (totalDepth < 100000) add(-0.7, 'тонкий стакан');
   }
   if (d.bidDepth > 0 && d.askDepth > 0) {
     const ratio = d.bidDepth / d.askDepth;
@@ -1543,21 +1543,20 @@ function scoreFromMetrics(d, isBTC, btcPct1h) {
     else if (d.dd15 > 1.2)              add(-0.6, '15m просадка');
   }
   if (d.spreadPct != null) {
-    if (d.spreadPct > 0.5)      add(-1, 'широкий спред');
-    else if (d.spreadPct > 0.2) add(-0.4, 'спред');
+    if (d.spreadPct > 0.5)      add(-1.3, 'широкий спред'); // калибровка v2: 31% побед
+    else if (d.spreadPct > 0.2) add(-0.6, 'спред');
   }
   if (!isBTC && btcPct1h != null) {
     if (btcPct1h < -0.5)     add(-0.7, 'BTC падает');
     else if (btcPct1h > 0.3) add(0.1, 'BTC растёт');
   }
   if (d.runwayPct != null) {
-    if (d.runwayPct < 1)       add(-1, 'сопротивление рядом');
-    else if (d.runwayPct < 2)  add(-0.5, 'сопротивление');
-    else if (d.runwayPct > 3)  add(0.3, 'путь свободен');
-  } else if (d.rangePos != null) add(0.3, 'нет сопротивления');
+    if (d.runwayPct < 1)       add(-0.5, 'сопротивление рядом'); // калибровка v2: смягчено
+    else if (d.runwayPct < 2)  add(-0.2, 'сопротивление');
+  } else if (d.rangePos != null) add(0.1, 'нет сопротивления');
   if (d.macdRising != null) {
     if      (d.macdPos && d.macdRising)   add(0.5, 'MACD');
-    else if (!d.macdPos && d.macdRising)  add(0.1, 'MACD разворот');
+    else if (!d.macdPos && d.macdRising)  add(0.4, 'MACD разворот'); // калибровка v2: 94% побед
     else if (!d.macdPos && !d.macdRising) add(-0.5, 'MACD');
     else                                  add(-0.2, 'MACD слабеет');
   }
@@ -1574,7 +1573,7 @@ function scoreFromMetrics(d, isBTC, btcPct1h) {
   if (d.vsVwap != null) {
     if (d.vsVwap < -1 && rising)     add(0.6, 'ниже VWAP');
     else if (d.vsVwap < 0 && rising) add(0.3, 'ниже VWAP');
-    else if (d.vsVwap > 2.5)         add(-0.5, 'дорого к VWAP');
+    else if (d.vsVwap > 2.5)         add(-0.8, 'дорого к VWAP'); // калибровка v2: 44% побед
   }
   if (d.tapeRatio != null) {
     if (d.tapeRatio > 1.8)       add(0.4, 'покупатели в ленте');
