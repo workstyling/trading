@@ -404,6 +404,18 @@
       display: inline-flex; align-items: center; gap: 8px;
     }
     .tg-countdown { color: #facc15; font-variant-numeric: tabular-nums; }
+    /* ── UX: вердикт, депт-бар, фильтры, лучший сетап, RSI, прогресс, помощь ── */
+    .tv-verdict { font-size: 7px; font-weight: 800; letter-spacing: 0.04em; margin-top: 1px; padding: 1px 4px; border-radius: 4px; line-height: 1.3; display: inline-block; }
+    .tv-depthbar { display: inline-flex; width: 44px; height: 5px; border-radius: 3px; overflow: hidden; background: #7a2020; vertical-align: middle; }
+    .tv-depthbar > i { display: block; height: 100%; background: linear-gradient(90deg,#00b478,#00e5a0); }
+    .tv-chip { padding: 3px 9px; border: 1px solid rgba(255,255,255,0.12); border-radius: 11px; background: transparent; color: var(--t2); font-size: 10px; font-weight: 600; cursor: pointer; margin-right: 3px; }
+    .tv-chip.on { background: rgba(76,201,240,0.15); border-color: var(--blue); color: var(--blue); }
+    tr.tv-best td { background: rgba(0,229,160,0.08) !important; box-shadow: inset 3px 0 0 #00e5a0; }
+    #tvProgBar { height: 2px; background: linear-gradient(90deg,var(--blue),#00e5a0); border-radius: 2px; transition: width 1s linear; width: 100%; margin: 4px 0 6px; opacity: 0.55; }
+    .tv-rsi { font-size: 8px; font-weight: 700; padding: 0 3px; border-radius: 5px; margin-left: 2px; vertical-align: middle; }
+    #tvHelp { display: none; margin: 4px 0 6px; padding: 8px 10px; background: var(--s2); border: 1px solid rgba(255,255,255,0.07); border-radius: 8px; font-size: 10px; line-height: 1.55; color: var(--t1); }
+    #tvHelp b { color: var(--t0); }
+    .tv-help-btn { width: 18px; height: 18px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.15); background: transparent; color: var(--t2); font-size: 10px; font-weight: 700; line-height: 1; margin-left: 5px; }
     .tg-refresh-btn {
       background: transparent;
       border: 1px solid rgba(74,222,128,0.3);
@@ -1392,7 +1404,7 @@
   <!-- Top Gainers Panel -->
   <div class="panel" id="panelVolume" data-tab="volume">
     <div class="tg-header">
-      <span class="tg-title">📊 Top Volume 24h</span>
+      <span class="tg-title">📊 Top Volume 24h<button class="tv-help-btn" onclick="_toggleHelpM()">?</button></span>
       <span class="tg-meta">
         <button id="tvgChartBtnM" onclick="toggleTVChartVolumeMobile()" style="padding:3px 9px;border:1px solid rgba(76,201,240,0.35);border-radius:12px;background:rgba(76,201,240,0.08);color:var(--blue);font-size:10px;font-weight:600;cursor:pointer;margin-right:4px;">📈 Chart</button>
         <button class="tg-refresh-btn" id="tvRefreshBtn" onclick="loadTopVolumeMobile(true)" title="Refresh now"><span class="spin-icon">⟳</span> Refresh</button>
@@ -1400,6 +1412,17 @@
         next: <span class="tg-countdown" id="tvCountdown">—</span>
       </span>
     </div>
+    <div style="display:flex;align-items:center;gap:4px;margin:2px 0 4px;">
+      <button class="tv-chip" id="fltHiM" onclick="_toggleFilterM('hi')">7+</button>
+      <button class="tv-chip" id="fltUpM" onclick="_toggleFilterM('up')">растущие ▲</button>
+      <button class="tv-chip" id="fltLiqM" onclick="_toggleFilterM('liq')">ликвидные</button>
+    </div>
+    <div id="tvHelp">
+      <b>Скор</b> — шанс дойти до +2% раньше −2%. <b style="color:#00e5a0;">8+</b> вход · <b style="color:#f5c518;">7</b> ждать · <b style="color:#f5843a;">5.5–6.5</b> следить · <b style="color:#f55;">&lt;5.5</b> мимо.<br>
+      <b>Стрелка/график</b> — тренд скора за 6ч: ▲ набирает силу, ▬ стабилен, ▼ выдыхается.<br>
+      <b>Полоса в +2/-2</b> — баланс стакана: зелёное = покупатели, красное = продавцы.
+    </div>
+    <div id="tvProgBar"></div>
     <div id="tvChartContainerVolM" style="display:none;margin-bottom:8px;border-radius:var(--r1);overflow:hidden;border:1px solid rgba(76,201,240,0.15);background:var(--s1);">
       <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 12px;border-bottom:1px solid rgba(255,255,255,0.05);">
         <span id="tvChartCoinLabelVolM" style="font-size:13px;color:var(--blue);font-weight:700;">— · 15m</span>
@@ -3375,6 +3398,58 @@
       }
     }
 
+    // ── Вердикт, депт-бар, фильтры, автосортировка по скору ──
+    const _tvFilterM = { hi: false, up: false, liq: false };
+    function _seriesTrend(coin) { const e = _effSeries(coin); return e.length >= 2 ? e[e.length - 1] - e[0] : 0; }
+    function _verdict(coin, score) {
+      const d = tvCoinData[coin] || {};
+      const dead = ((d.bidDepth || 0) + (d.askDepth || 0)) < 25000 && (d.bidDepth != null);
+      if (dead) return ['СТОП', '#f55', 'rgba(255,85,85,0.12)'];
+      if (score >= 8 && _seriesTrend(coin) > -0.5) return ['ВХОД', '#00e5a0', 'rgba(0,229,160,0.14)'];
+      if (score >= 7)   return ['ЖДАТЬ', '#f5c518', 'rgba(245,197,24,0.12)'];
+      if (score >= 5.5) return ['СЛЕДИТЬ', '#f5843a', 'rgba(245,132,58,0.12)'];
+      return ['МИМО', '#f55', 'rgba(255,85,85,0.1)'];
+    }
+    function _depthBarM(buy, sell) {
+      const tot = buy + sell;
+      if (!tot) return '—';
+      const bp = Math.round(buy / tot * 100);
+      return `<div style="display:inline-flex;flex-direction:column;align-items:flex-end;gap:1px;">`
+        + `<span class="tv-depthbar"><i style="width:${bp}%"></i></span>`
+        + `<span style="font-size:8px;color:#666;"><span style="color:var(--green)">${fmtVolShort(buy)}</span>/<span style="color:#f55">${fmtVolShort(sell)}</span></span></div>`;
+    }
+    function _toggleFilterM(k) {
+      _tvFilterM[k] = !_tvFilterM[k];
+      document.getElementById(k === 'hi' ? 'fltHiM' : k === 'up' ? 'fltUpM' : 'fltLiqM')?.classList.toggle('on', _tvFilterM[k]);
+      _applyTableViewM();
+    }
+    function _toggleHelpM() { const h = document.getElementById('tvHelp'); if (h) h.style.display = h.style.display === 'block' ? 'none' : 'block'; }
+    function _applyTableViewM() {
+      const tbody = document.querySelector('#tvBody tbody');
+      if (!tbody) return;
+      const rows = [...tbody.querySelectorAll('tr')];
+      // автосортировка по скору — лучшие сверху (важно на малом экране)
+      rows.sort((a, b) => (_tvLastScore[b.dataset.coin] ?? -1) - (_tvLastScore[a.dataset.coin] ?? -1));
+      let best = null, bestScore = -1, pos = 0;
+      rows.forEach(r => {
+        const coin = r.dataset.coin, sc = _tvLastScore[coin] ?? -1;
+        const d = tvCoinData[coin] || {};
+        const liqDead = ((d.bidDepth || 0) + (d.askDepth || 0)) < 25000 && d.bidDepth != null;
+        let hide = false;
+        if (_tvFilterM.hi && sc < 7) hide = true;
+        if (_tvFilterM.up && _seriesTrend(coin) < 0.5) hide = true;
+        if (_tvFilterM.liq && liqDead) hide = true;
+        r.style.display = hide ? 'none' : '';
+        if (!hide) {
+          tbody.appendChild(r);
+          const rankCell = r.querySelector('td');
+          if (rankCell) rankCell.textContent = ++pos;
+          if (sc > bestScore) { bestScore = sc; best = r; }
+        }
+      });
+      rows.forEach(r => r.classList.toggle('tv-best', r === best && bestScore >= 7));
+    }
+
     // ── Точность скора считает сервер 24/7 (score engine) — клиент только показывает ──
     async function _renderHitRate() {
       const el = document.getElementById('tvHitRate');
@@ -3576,14 +3651,14 @@
         else                 delta = `<span style="font-size:8px;vertical-align:top;color:#889;">▬</span>`;
       }
       const spark = _sparklineSVG(_effSeries(coin));
+      const [vTxt, vCol, vBg] = _verdict(coin, score);
       el.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;">`
         + `<div style="display:inline-flex;align-items:center;gap:1px;"><div style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;background:${bg};color:${tc};font-weight:800;font-size:${score % 1 ? 10 : 12}px;box-shadow:0 0 8px ${glow};">${scoreTxt}</div>${delta}</div>`
-        + `<span class="tv-spark" id="tvSpark_${coin}">${spark}</span></div>`;
+        + `<span class="tv-spark" id="tvSpark_${coin}">${spark}</span>`
+        + `<span class="tv-verdict" style="color:${vCol};background:${vBg};">${vTxt}</span></div>`;
       const row = document.getElementById(`tvRow_${coin}`);
-      if (row) {
-        row.style.borderLeftColor = bg;
-        row.style.background = score >= 8 ? 'rgba(0,229,160,0.05)' : '';
-      }
+      if (row) row.style.borderLeftColor = bg;
+      _applyTableViewM();
     }
 
     function renderTopVolumeMobile(coins) {
@@ -3598,7 +3673,7 @@
         const sign = c.pct24h >= 0 ? '+' : '';
         const price = c.price < 0.001 ? c.price.toFixed(6) : c.price < 1 ? c.price.toFixed(4) : c.price < 100 ? c.price.toFixed(3) : c.price.toFixed(2);
         const cSvg = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>`;
-        return `<tr id="tvRow_${c.coin}" style="border-left:3px solid transparent;" onclick="selectCoin('${c.coin}')">
+        return `<tr id="tvRow_${c.coin}" data-coin="${c.coin}" style="border-left:3px solid transparent;" onclick="selectCoin('${c.coin}')">
           <td style="color:#555;font-size:10px;padding:5px 2px;width:18px;">${i + 1}</td>
           <td style="padding:5px 3px;width:72px;vertical-align:top;">
             <div style="font-weight:700;font-size:11px;">${c.coin}</div>
@@ -3614,6 +3689,7 @@
       }).join('');
       body.innerHTML = `<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;"><table style="width:100%;border-collapse:collapse;font-size:11px;min-width:310px;"><thead><tr style="border-bottom:1px solid #222;"><th style="width:18px;color:#666;font-weight:600;font-size:9px;padding:5px 2px;text-align:left;">#</th><th style="color:#666;font-weight:600;font-size:9px;padding:5px 3px;text-align:left;width:72px;">COIN</th><th style="color:#666;font-weight:600;font-size:9px;padding:5px 3px;text-align:right;width:48px;">24H%</th><th style="color:#666;font-weight:600;font-size:9px;padding:5px 3px;text-align:right;width:48px;">VOL</th><th style="color:#666;font-weight:600;font-size:9px;padding:5px 3px;text-align:right;width:62px;">TREND</th><th style="color:#666;font-weight:600;font-size:9px;padding:5px 3px;text-align:right;width:44px;">+2/-2</th><th style="color:#666;font-weight:600;font-size:9px;padding:5px 3px;text-align:center;width:38px;">SCR</th></tr></thead><tbody>${rows}</tbody></table></div>`;
       _renderHitRate();
+      _applyTableViewM();
     }
 
     async function loadTrendSequentialMobile(coins, gen, isRetry) {
@@ -3728,7 +3804,7 @@
             }
           } catch { }
           updateScoreMobile(c.coin);
-          const rsiHint = rsi != null ? `<span style="color:${rsi < 35 ? '#00e5a0' : rsi > 65 ? '#f55' : '#555'};font-size:9px;"> ${Math.round(rsi)}</span>` : '';
+          const rsiHint = rsi != null ? `<span class="tv-rsi" style="color:${rsi < 35 ? '#00e5a0' : rsi > 65 ? '#f55' : '#8b93a7'};background:${rsi < 35 ? 'rgba(0,229,160,0.12)' : rsi > 65 ? 'rgba(255,85,85,0.12)' : 'rgba(255,255,255,0.05)'};">${Math.round(rsi)}</span>` : '';
           if (pct1h == null) { el.innerHTML = '<span style="color:#444">—</span>'; }
           else if (recovering) {
             const hColor = fallingHours >= 8 ? '#ff4444' : fallingHours >= 4 ? '#f55' : '#f88';
@@ -3781,10 +3857,7 @@
             } catch { }
             updateScoreMobile(c.coin);
             const el = document.getElementById(`tvDepth_${c.coin}`);
-            if (el && (buy || sell)) {
-              const askCol = sell >= buy ? 'var(--green)' : '#f55';
-              el.innerHTML = `<span style="color:${askCol}">${fmtVolShort(sell)}</span><br><span style="color:#f55">${fmtVolShort(buy)}</span>`;
-            } else if (el) { el.textContent = '—'; }
+            if (el) el.innerHTML = _depthBarM(buy, sell);
             // Мёртвый стакан (< $25K в ±2%) — торговать нельзя, приглушаем строку
             const rowM = document.getElementById(`tvRow_${c.coin}`);
             if (rowM) {
@@ -3828,6 +3901,8 @@
         tvCountdownSec--;
         const el = document.getElementById('tvCountdown');
         if (el) el.textContent = tvCountdownSec + 's';
+        const bar = document.getElementById('tvProgBar');
+        if (bar) bar.style.width = Math.max(0, tvCountdownSec / 60 * 100) + '%';
         if (tvCountdownSec <= 0) { tvCountdownSec = 60; loadTopVolumeMobile(); }
       }, 1000);
     }
