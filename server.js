@@ -1731,7 +1731,8 @@ async function scoreEngineTick() {
         // (не чаще раза в 8 минут на монету — защита от спама при рестарт-циклах)
         const lastSnap = [...scoreHist].reverse().find(s => s.c === c.coin);
         if (!lastSnap || Date.now() - lastSnap.t > 8 * 60 * 1000) {
-          scoreHist.push({ c: c.coin, s: score, p: c.price, t: Date.now(), pt: parts });
+          // b = режим рынка (BTC 1h) на момент снапшота — для калибровки по режимам
+          scoreHist.push({ c: c.coin, s: score, p: c.price, t: Date.now(), pt: parts, b: btcPct1h != null ? Math.round(btcPct1h * 10) / 10 : null });
           changed = true;
         }
         // Оценка прошлых снапшотов этой монеты по свежим свечам
@@ -1739,15 +1740,18 @@ async function scoreEngineTick() {
         for (const s of scoreHist) {
           if (s.c !== c.coin || s.r !== undefined) continue;
           if (nowMs - s.t < 30 * 60 * 1000) continue;
-          let res;
+          let res, hitT = null;
           for (const k of m.candles) {
             if (k[0] * 1000 <= s.t) continue;
             const up = k[2] >= s.p * 1.02, dn = k[1] <= s.p * 0.98;
-            if (up && !dn) { res = 1; break; }
-            if (dn) { res = 0; break; }
+            if (up && !dn) { res = 1; hitT = k[0]; break; }
+            if (dn) { res = 0; hitT = k[0]; break; }
           }
           if (res === undefined && nowMs - s.t > 24 * 3600 * 1000) res = 2; // таймаут: ни один уровень не достигнут — НЕ проигрыш
-          if (res !== undefined) { s.r = res; s.v = 2; changed = true; }   // v:2 = новая трёхисходная схема
+          if (res !== undefined) {
+            s.r = res; s.v = 2; changed = true;                            // v:2 = трёхисходная схема
+            if (hitT) s.h = Math.round((hitT * 1000 - s.t) / 360000) / 10; // реальное время до исхода, часов
+          }
         }
       } catch (e) { console.error('[score]', c.coin, e.message); }
       await new Promise(r => setTimeout(r, 150));
@@ -1784,6 +1788,14 @@ app.get('/api/score-stats', (req, res) => {
     const w = a.filter(s => s.r === 1).length, l = a.filter(s => s.r === 0).length, t = a.filter(s => s.r === 2).length;
     return { n: w + l, wins: w, losses: l, timeouts: t, rate: (w + l) ? Math.round(w / (w + l) * 100) : null };
   };
+  // История исходов по монетам: W/L/T + среднее время до цели (для тултипа и характера монеты)
+  const perCoin = {};
+  for (const s of done) {
+    const a = perCoin[s.c] || (perCoin[s.c] = { w: 0, l: 0, to: 0, hs: 0, hn: 0 });
+    if (s.r === 1) { a.w++; if (s.h != null) { a.hs += s.h; a.hn++; } }
+    else if (s.r === 0) a.l++;
+    else a.to++;
+  }
   // Серия скоров за 6ч по каждой монете — для спарклайна в таблице
   const series = {};
   const cutoff = Date.now() - 6 * 3600 * 1000;
@@ -1796,7 +1808,7 @@ app.get('/api/score-stats', (req, res) => {
     success: true,
     hi: bucket(7.5, 11), mid: bucket(5.5, 7.5), low: bucket(0, 5.5),
     total: scoreHist.length, pending: scoreHist.length - done.length,
-    latest: latestScores, series
+    latest: latestScores, series, perCoin
   });
 });
 

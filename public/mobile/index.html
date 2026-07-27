@@ -3410,6 +3410,10 @@
       const eta = d.avgRange ? 4 / Math.max(d.avgRange, 0.1) : null;
       const etaTxt = eta != null ? ' ' + (eta > 24 ? '⏳24ч+' : '~' + Math.max(1, Math.round(eta)) + 'ч') : '';
       if (score >= 8 && _seriesTrend(coin) > -0.5) {
+        // Подтверждение: 8+ должен держаться, а не быть всплеском одного тика
+        const eff = _effSeries(coin);
+        const prevPt = eff.length >= 2 ? eff[eff.length - 2] : null;
+        if (prevPt != null && prevPt < 7.5) return ['ЖДАТЬ' + etaTxt, '#f5c518', 'rgba(245,197,24,0.12)'];
         if (eta != null && eta > 14) return ['ВХОД' + etaTxt, '#f5c518', 'rgba(245,197,24,0.12)']; // вязкий
         return ['ВХОД' + etaTxt, '#00e5a0', 'rgba(0,229,160,0.14)'];
       }

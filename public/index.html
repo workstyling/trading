@@ -11804,6 +11804,7 @@ Requirements:
     let _btcPct1h = null;                       // режим рынка: 1h тренд BTC
     const _tvPrevScore = {}, _tvLastScore = {}; // динамика скора между обновлениями
     let _scoreSeries = {};                       // серия скоров по монетам (для спарклайна)
+    let _svrStats = null;                        // серверная статистика (perCoin история и пр.)
 
     // Эффективная серия: серверные снапшоты + текущий живой скор последней точкой
     function _effSeries(coin) {
@@ -11850,6 +11851,10 @@ Requirements:
       const eta = d.avgRange ? 4 / Math.max(d.avgRange, 0.1) : null;
       const etaTxt = eta != null ? ' ' + (eta > 24 ? '⏳24ч+' : '~' + Math.max(1, Math.round(eta)) + 'ч') : '';
       if (score >= 8 && tr > -0.5) {
+        // Подтверждение: 8+ должен держаться, а не быть всплеском одного тика
+        const eff = _effSeries(coin);
+        const prevPt = eff.length >= 2 ? eff[eff.length - 2] : null;
+        if (prevPt != null && prevPt < 7.5) return ['ЖДАТЬ' + etaTxt, '#f5c518', 'rgba(245,197,24,0.12)'];
         // Вязкий сетап: вероятность та же, но капитал залипнет — помечаем жёлтым
         if (eta != null && eta > 14) return ['ВХОД' + etaTxt, '#f5c518', 'rgba(245,197,24,0.12)'];
         return ['ВХОД' + etaTxt, '#00e5a0', 'rgba(0,229,160,0.14)'];
@@ -11930,6 +11935,7 @@ Requirements:
         const r = await fetch('/api/score-stats');
         const j = await r.json();
         if (!j.success) return;
+        _svrStats = j;
         if (j.series) { _scoreSeries = j.series; _drawSparklines(); }
         if (!el) return;
         const f = b => b.n >= 5 && b.rate != null ? b.rate + '%' : '—';
@@ -12169,7 +12175,10 @@ Requirements:
         : score >= 4
         ? ['#f5843a','rgba(245,132,58,0.3)','#000']
         : ['#f55353','rgba(255,83,83,0.3)','#fff'];
-      const tip = (tvCoinData[coin]?._scoreParts || []).join('\n');
+      let tip = (tvCoinData[coin]?._scoreParts || []).join('\n');
+      // История монеты по реальным исходам с сервера
+      const pcH = _svrStats && _svrStats.perCoin && _svrStats.perCoin[coin];
+      if (pcH) tip += `\n— история: ${pcH.w}W/${pcH.l}L/${pcH.to}T` + (pcH.hn >= 3 ? `, ср. до цели ${(pcH.hs / pcH.hn).toFixed(1)}ч` : '');
       const scoreTxt = score % 1 ? score.toFixed(1) : score;
       _tvLastScore[coin] = score;
       // Стрелка = тренд по 6ч серии (включая живой скор) — согласована со спарклайном
