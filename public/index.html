@@ -5847,6 +5847,12 @@
               <input type="text" class="buy-usd-field" id="buyUsdAmount" value="0" onclick="this.select()" onchange="onUsdAmountChange(this.value)">
               <span class="buy-usd-label">USD</span>
               <button class="buy-btn" id="buyBtn" onclick="executeBuyOrder()">BUY</button>
+              <div class="buy-input-group" title="Уровень стакана для лимитки: 0 = лучший bid, −1 = второй уровень, −2 = третий… Сохраняется в настройках.">
+                <button class="buy-input-btn minus" onclick="adjustBidLevel(-1)">−</button>
+                <input type="number" class="buy-size-input" id="bidLevelInput" step="1" max="0" value="0" style="width:40px;" onchange="onBidLevelChange()">
+                <button class="buy-input-btn plus" onclick="adjustBidLevel(1)">+</button>
+              </div>
+              <span class="buy-pct-label" title="уровень bid в стакане">lvl</span>
               <button onclick="toggleTVChart()" id="tvChartToggleBtn" title="TradingView 15m chart" style="padding:6px 10px;border:1px solid rgba(76,201,240,0.35);border-radius:8px;background:rgba(76,201,240,0.08);color:var(--blue);font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all 0.2s;flex-shrink:0;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align:middle;margin-right:3px;"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>Chart</button>
               <span class="limit-separator" style="display: none !important;">|</span>
               <input type="text" class="limit-price-input" id="limitPriceInput" placeholder="Price" autocomplete="off" style="display: none !important;">
@@ -6268,6 +6274,8 @@
           document.getElementById('sellMarkup').value = tradingSettings.sellMarkup;
           document.getElementById('tradeFee').value = tradingSettings.tradeFee;
           document.getElementById('marketFee').value = tradingSettings.marketFee;
+          const blEl = document.getElementById('bidLevelInput');
+          if (blEl) blEl.value = tradingSettings.bidLevel || 0;
         }
       } catch (e) {
         console.warn('Cannot load settings:', e.message);
@@ -6278,11 +6286,12 @@
       const sellMarkup = parseFloat(document.getElementById('sellMarkup').value) || 1.38;
       const tradeFee = parseFloat(document.getElementById('tradeFee').value) || 0.06;
       const marketFee = parseFloat(document.getElementById('marketFee').value) || 0.125;
+      const bidLevel = Math.min(0, Math.max(-20, parseInt(document.getElementById('bidLevelInput')?.value, 10) || 0));
       try {
         const res = await fetch('/save-settings', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sellMarkup, tradeFee, marketFee })
+          body: JSON.stringify({ sellMarkup, tradeFee, marketFee, bidLevel })
         });
         const data = await res.json();
         if (data.success) {
@@ -6313,6 +6322,22 @@
     });
 
     loadSettings();
+
+    // Уровень стакана для покупки: 0 = best bid, -1 = второй уровень...
+    function adjustBidLevel(d) {
+      const el = document.getElementById('bidLevelInput');
+      let v = Math.min(0, Math.max(-20, (parseInt(el.value, 10) || 0) + d));
+      el.value = v;
+      tradingSettings.bidLevel = v;
+      saveSettingsToServer();
+    }
+    function onBidLevelChange() {
+      const el = document.getElementById('bidLevelInput');
+      const v = Math.min(0, Math.max(-20, parseInt(el.value, 10) || 0));
+      el.value = v;
+      tradingSettings.bidLevel = v;
+      saveSettingsToServer();
+    }
 
     // ========== BUY PANEL ==========
     const SELECTED_COIN_KEY = 'selectedBuyCoin';
@@ -6658,6 +6683,16 @@
         if (ticker.bid) limitPrice = parseFloat(ticker.bid);
       } catch (e) {
         console.log('Using cached bid price');
+      }
+      // Уровень стакана: 0 = best bid, -N = N-й уровень ниже (настройка сохраняется)
+      const bidLvl = Math.abs(Math.min(0, parseInt(tradingSettings.bidLevel, 10) || 0));
+      if (bidLvl > 0) {
+        try {
+          const bookRes = await fetch(`https://api.exchange.coinbase.com/products/${productId}/book?level=2`);
+          const book = await bookRes.json();
+          const lp = parseFloat(book?.bids?.[bidLvl]?.[0]);
+          if (lp > 0) limitPrice = lp;
+        } catch (e) { console.log('book fetch failed, using best bid'); }
       }
 
       if (!limitPrice || limitPrice <= 0) {

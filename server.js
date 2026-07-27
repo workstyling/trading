@@ -117,11 +117,12 @@ app.get('/get-settings', (req, res) => {
 // API: Save settings
 app.post('/save-settings', (req, res) => {
   try {
-    const { sellMarkup, tradeFee, marketFee } = req.body;
+    const { sellMarkup, tradeFee, marketFee, bidLevel } = req.body;
     const settings = {
       sellMarkup: parseFloat(sellMarkup) || defaultSettings.sellMarkup,
       tradeFee: parseFloat(tradeFee) || defaultSettings.tradeFee,
-      marketFee: parseFloat(marketFee) || defaultSettings.marketFee
+      marketFee: parseFloat(marketFee) || defaultSettings.marketFee,
+      bidLevel: Math.min(0, Math.max(-20, parseInt(bidLevel, 10) || 0)) // уровень стакана для покупки: 0 = best bid, -1 = второй...
     };
     saveSettings(settings);
     res.json({ success: true, settings });
