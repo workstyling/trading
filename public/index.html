@@ -1391,10 +1391,12 @@
       display: flex;
       align-items: center;
       gap: 10px;
+      flex-wrap: wrap; /* при нехватке ширины уходим на вторую строку, а не сжимаем поля */
     }
 
     .buy-coin-input {
       width: 85px;
+      flex-shrink: 0;
       padding: 4px 6px;
       background: var(--s3);
       border: 1px solid var(--b1);
@@ -5847,12 +5849,12 @@
               <input type="text" class="buy-usd-field" id="buyUsdAmount" value="0" onclick="this.select()" onchange="onUsdAmountChange(this.value)">
               <span class="buy-usd-label">USD</span>
               <button class="buy-btn" id="buyBtn" onclick="executeBuyOrder()">BUY</button>
-              <div class="buy-input-group" title="Уровень стакана для лимитки: 0 = лучший bid, −1 = второй уровень, −2 = третий… Сохраняется в настройках.">
+              <div class="buy-input-group" style="flex-shrink:0;" title="Уровень стакана для лимитки: 0 = лучший bid, −1 = второй уровень, −2 = третий… Сохраняется в настройках.">
+                <span style="font-size:9px;color:#667;padding:0 2px 0 5px;">lvl</span>
                 <button class="buy-input-btn minus" onclick="adjustBidLevel(-1)">−</button>
-                <input type="number" class="buy-size-input" id="bidLevelInput" step="1" max="0" value="0" style="width:40px;" onchange="onBidLevelChange()">
+                <input type="number" class="buy-size-input" id="bidLevelInput" step="1" max="0" value="0" style="width:26px;" onchange="onBidLevelChange()">
                 <button class="buy-input-btn plus" onclick="adjustBidLevel(1)">+</button>
               </div>
-              <span class="buy-pct-label" title="уровень bid в стакане">lvl</span>
               <button onclick="toggleTVChart()" id="tvChartToggleBtn" title="TradingView 15m chart" style="padding:6px 10px;border:1px solid rgba(76,201,240,0.35);border-radius:8px;background:rgba(76,201,240,0.08);color:var(--blue);font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all 0.2s;flex-shrink:0;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align:middle;margin-right:3px;"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>Chart</button>
               <span class="limit-separator" style="display: none !important;">|</span>
               <input type="text" class="limit-price-input" id="limitPriceInput" placeholder="Price" autocomplete="off" style="display: none !important;">
