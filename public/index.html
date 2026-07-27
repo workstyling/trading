@@ -1392,7 +1392,9 @@
       align-items: center;
       gap: 10px;
       flex-wrap: wrap; /* при нехватке ширины уходим на вторую строку, а не сжимаем поля */
+      justify-content: space-between; /* растягиваем элементы на всю ширину панели */
     }
+    .buy-row .buy-usd-field { flex: 1 1 90px; min-width: 70px; }
 
     .buy-coin-input {
       width: 85px;
