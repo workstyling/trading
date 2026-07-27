@@ -1850,6 +1850,35 @@
       _saveBidLevelM(v);
     }
 
+    // Позиция открытых лимитников в стакане (#1 = лучший bid/ask)
+    async function updateOrderPositionsM() {
+      const els = document.querySelectorAll('.order-pos[data-pair]');
+      if (!els.length) return;
+      const groups = {};
+      els.forEach(el => { (groups[el.dataset.pair] = groups[el.dataset.pair] || []).push(el); });
+      await Promise.all(Object.keys(groups).map(async pair => {
+        try {
+          const r = await fetch(`https://api.exchange.coinbase.com/products/${pair}/book?level=2`);
+          if (!r.ok) return;
+          const book = await r.json();
+          groups[pair].forEach(el => {
+            const lp = parseFloat(el.dataset.limit), side = el.dataset.side;
+            const lv = side === 'SELL' ? (book.asks || []) : (book.bids || []);
+            let pos = 0;
+            for (let i = 0; i < lv.length; i++) {
+              const p = parseFloat(lv[i][0]);
+              if (side === 'SELL' ? p < lp - 1e-9 : p > lp + 1e-9) pos++;
+              else if (Math.abs(p - lp) / lp < 1e-6) { pos++; break; }
+              else break;
+            }
+            el.textContent = pos > 0 ? '#' + (pos > 50 ? '50+' : pos) : '—';
+          });
+        } catch { }
+      }));
+    }
+    setInterval(updateOrderPositionsM, 5000);
+    setTimeout(updateOrderPositionsM, 1500);
+
     // ── Execute trades ──
     async function executeBuy() {
       const coin = document.getElementById('coinInput').value.trim().toUpperCase();
@@ -2138,6 +2167,7 @@
               <span style="color:${sColor};font-weight:700;">${side}</span>
               <span>$${lp}</span>
               <span style="color:var(--t2)">${filled > 0 ? filled.toFixed(filled < 1 ? 6 : 2) : '—'}</span>
+              ${o.status === 'OPEN' && o.limit_price ? `<span class="order-pos" data-pair="${pair}" data-limit="${o.limit_price}" data-side="${side}" style="font-size:10px;color:#f5c518;font-weight:700;" title="позиция в стакане">…</span>` : ''}
             </div>
             <div class="monitor-actions">
               ${isBuy ? `<button class="mon-sell-btn" onclick="createSellAt('${pair}','${exactSize}','${exactTarget}')">+${tradingSettings.sellMarkup}%</button>` : ''}

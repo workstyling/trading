@@ -11461,6 +11461,14 @@ Requirements:
         const actionBtn = status === 'OPEN' ? `<button class="cancel-order-btn" data-order-id="${orderId}">Cancel</button>` : '-';
         const isSelected = selectedOrders.includes(orderId);
 
+        // Позиция открытого лимитника в стакане (#1 = лучший bid/ask) — обновляется каждые 3с
+        let posBadge = '';
+        if (status === 'OPEN' && limitPrice !== '-') {
+          const cKey = `${pair}|${limitPrice}|${side}`;
+          const cch = window.__orderPosCache && window.__orderPosCache[cKey];
+          posBadge = ` <span class="${cch ? cch.cls : 'order-pos'}" data-pair="${pair}" data-limit="${limitPrice}" data-side="${side}" title="Позиция твоего ордера в стакане: #1 = лучший ${side === 'BUY' ? 'bid' : 'ask'}">${cch ? cch.text : '…'}</span>`;
+        }
+
         h += `<tr data-order-id="${orderId}">
           <td><div class="order-selector${isSelected ? ' selected' : ''}" data-order-id="${orderId}"></div></td>
           <td>${i + 1}</td>
@@ -11468,7 +11476,7 @@ Requirements:
           <td><a href="https://www.tradingview.com/chart/?symbol=COINBASE%3A${coin}USD" target="_blank">${pair}</a></td>
           <td class="${sideClass}">${side.toLowerCase()}</td>
           <td>${type}</td>
-          <td class="${statusClass}">${status.toLowerCase()}</td>
+          <td class="${statusClass}">${status.toLowerCase()}${posBadge}</td>
           <td>${date}</td>
           <td>${size}</td>
           <td>${filled}</td>
