@@ -4090,12 +4090,13 @@
             <td style="color:#555;font-size:10px;padding:6px 2px;">${i + 1}</td>
             <td style="padding:6px 3px;"><span style="color:var(--blue);font-weight:700;font-size:11px;">${c.coin}</span><br><span style="color:#555;font-size:9px;">$${price}</span></td>
             <td style="color:#f55;font-weight:700;font-size:11px;text-align:right;padding:6px 3px;">${c.pct30d.toFixed(1)}%</td>
+            <td style="color:#666;font-size:10px;text-align:right;padding:6px 3px;">${c.vol24 ? fmtVolShort(c.vol24) : '—'}</td>
             <td style="color:var(--t2);font-size:10px;text-align:right;padding:6px 3px;">${mc}</td>
             <td style="text-align:right;padding:6px 3px;">${_priceSparkSVG(c.spark || [])}</td>
             <td style="text-align:right;padding:6px 3px;"><button onclick="event.stopPropagation();toggleTVChartVolumeMobile('${c.coin}')" style="padding:3px 7px;border:1px solid rgba(76,201,240,0.3);border-radius:5px;background:rgba(76,201,240,0.07);color:var(--blue);font-size:10px;">📈</button></td>
           </tr>`;
         }).join('');
-        body.innerHTML = `<table style="width:100%;border-collapse:collapse;"><thead><tr style="border-bottom:1px solid #222;"><th style="color:#666;font-size:9px;text-align:left;padding:4px 2px;">#</th><th style="color:#666;font-size:9px;text-align:left;padding:4px 3px;">COIN</th><th style="color:#666;font-size:9px;text-align:right;padding:4px 3px;">30D%</th><th style="color:#666;font-size:9px;text-align:right;padding:4px 3px;">MCAP</th><th style="color:#666;font-size:9px;text-align:right;padding:4px 3px;">MONTH</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+        body.innerHTML = `<table style="width:100%;border-collapse:collapse;"><thead><tr style="border-bottom:1px solid #222;"><th style="color:#666;font-size:9px;text-align:left;padding:4px 2px;">#</th><th style="color:#666;font-size:9px;text-align:left;padding:4px 3px;">COIN</th><th style="color:#666;font-size:9px;text-align:right;padding:4px 3px;">30D%</th><th style="color:#666;font-size:9px;text-align:right;padding:4px 3px;">VOL</th><th style="color:#666;font-size:9px;text-align:right;padding:4px 3px;">MCAP</th><th style="color:#666;font-size:9px;text-align:right;padding:4px 3px;">MONTH</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
         const u = document.getElementById('tlUpdatedM');
         if (u && j.updatedAt) u.textContent = new Date(j.updatedAt).toLocaleTimeString().slice(0, 5);
       } catch { }

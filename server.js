@@ -1190,7 +1190,8 @@ async function rebuildTopLosers() {
         // Коллизия тикеров: если цена Cryptorank отличается от Coinbase в разы — это другой проект, mcap чужой
         const crPx = mcap[sym]?.px;
         if (crPx > 0 && (last / crPx > 2.5 || crPx / last > 2.5)) continue;
-        out.push({ coin: sym, pair: id, price: last, pct30d: (last - first) / first * 100, mcap: mcap[sym].mc, spark: cd.map(x => Math.round(x[4] * 1e8) / 1e8) });
+        const vol24 = (cd[cd.length - 1][5] || 0) * last; // грубо из дневной свечи; уточнится тикером при первом обновлении цен
+        out.push({ coin: sym, pair: id, price: last, pct30d: (last - first) / first * 100, mcap: mcap[sym].mc, vol24, spark: cd.map(x => Math.round(x[4] * 1e8) / 1e8) });
       } catch { keepOld(sym); }
       await new Promise(r2 => setTimeout(r2, 120));
     }
@@ -1218,6 +1219,8 @@ app.get('/api/top-losers', async (req, res) => {
             const base = c.price / (1 + c.pct30d / 100); // цена месяц назад
             c.price = px;
             c.pct30d = base > 0 ? (px - base) / base * 100 : c.pct30d;
+            const bv = parseFloat(t.volume); // rolling 24h объём в монетах
+            if (bv > 0) c.vol24 = bv * px;
           }
         } catch { }
       }));

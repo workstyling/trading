@@ -12637,12 +12637,13 @@ Requirements:
             <td style="color:#555;font-size:11px;">${i + 1}</td>
             <td class="tg-coin" style="font-size:12px;">${c.coin}<br><span style="color:#555;font-size:10px;font-weight:400;">$${price}</span></td>
             <td style="color:#f55;font-weight:700;font-size:12px;">${c.pct30d.toFixed(1)}%</td>
+            <td class="tg-vol" style="font-size:11px;">${c.vol24 ? fmtVolShort(c.vol24) : '—'}</td>
             <td style="color:var(--t2);font-size:11px;">${mc}</td>
             <td>${_priceSparkSVG(c.spark || [])}</td>
             <td><button onclick="event.stopPropagation();toggleTopVolumeChart('${c.coin}')" title="Chart ${c.coin}" style="padding:2px 6px;border:1px solid rgba(76,201,240,0.3);border-radius:5px;background:rgba(76,201,240,0.07);color:var(--blue);font-size:10px;cursor:pointer;">📈</button></td>
           </tr>`;
         }).join('');
-        body.innerHTML = `<table class="tg-table"><thead><tr><th>#</th><th>COIN</th><th>30D%</th><th>MCAP</th><th>MONTH</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+        body.innerHTML = `<table class="tg-table"><thead><tr><th>#</th><th>COIN</th><th>30D%</th><th>VOL 24H</th><th>MCAP</th><th>MONTH</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
         const u = document.getElementById('tlUpdated');
         if (u && j.updatedAt) u.textContent = new Date(j.updatedAt).toLocaleTimeString();
       } catch { }
