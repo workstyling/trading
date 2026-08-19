@@ -12616,11 +12616,14 @@ Requirements:
     }
     async function loadTopLosers(force) {
       const btn = document.getElementById('tlRefreshBtn');
-      if (force && btn) { btn.disabled = true; btn.classList.add('spinning'); }
+      const uEl = document.getElementById('tlUpdated');
+      if (force && btn) { btn.disabled = true; btn.classList.add('spinning'); if (uEl) uEl.textContent = '…'; }
       try {
         const r = await fetch('/api/top-losers' + (force ? '?force=true' : ''));
         const j = await r.json();
         if (btn) { btn.disabled = false; btn.classList.remove('spinning'); }
+        // Явная обратная связь: вспышка зелёным после принудительного обновления
+        if (force && uEl) { uEl.style.transition = 'color 0.2s'; uEl.style.color = '#00e5a0'; setTimeout(() => { uEl.style.color = ''; }, 1600); }
         const body = document.getElementById('tlBody');
         if (!body) return;
         if (!j.success || !j.coins || !j.coins.length) {

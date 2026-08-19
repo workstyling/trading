@@ -4070,11 +4070,13 @@
     }
     async function loadTopLosersM(force) {
       const btn = document.getElementById('tlRefreshBtnM');
-      if (force && btn) btn.disabled = true;
+      const uEl = document.getElementById('tlUpdatedM');
+      if (force && btn) { btn.disabled = true; if (uEl) uEl.textContent = '…'; }
       try {
         const r = await fetch(BASE + '/api/top-losers' + (force ? '?force=true' : ''));
         const j = await r.json();
         if (btn) btn.disabled = false;
+        if (force && uEl) { uEl.style.color = '#00e5a0'; setTimeout(() => { uEl.style.color = ''; }, 1600); }
         const body = document.getElementById('tlBodyM');
         if (!body) return;
         if (!j.success || !j.coins || !j.coins.length) {
