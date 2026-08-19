@@ -117,12 +117,16 @@ app.get('/get-settings', (req, res) => {
 // API: Save settings
 app.post('/save-settings', (req, res) => {
   try {
-    const { sellMarkup, tradeFee, marketFee, bidLevel } = req.body;
+    const { sellMarkup, tradeFee, marketFee, bidLevel, telegramToken, telegramChat } = req.body;
+    const prev = loadSettings();
+    // merge: перезаписываем только присланные поля — чтобы клиент с неполным набором не затирал остальное
     const settings = {
-      sellMarkup: parseFloat(sellMarkup) || defaultSettings.sellMarkup,
-      tradeFee: parseFloat(tradeFee) || defaultSettings.tradeFee,
-      marketFee: parseFloat(marketFee) || defaultSettings.marketFee,
-      bidLevel: Math.min(0, Math.max(-20, parseInt(bidLevel, 10) || 0)) // уровень стакана для покупки: 0 = best bid, -1 = второй...
+      sellMarkup: sellMarkup !== undefined ? (parseFloat(sellMarkup) || defaultSettings.sellMarkup) : (prev.sellMarkup ?? defaultSettings.sellMarkup),
+      tradeFee: tradeFee !== undefined ? (parseFloat(tradeFee) || defaultSettings.tradeFee) : (prev.tradeFee ?? defaultSettings.tradeFee),
+      marketFee: marketFee !== undefined ? (parseFloat(marketFee) || defaultSettings.marketFee) : (prev.marketFee ?? defaultSettings.marketFee),
+      bidLevel: bidLevel !== undefined ? Math.min(0, Math.max(-20, parseInt(bidLevel, 10) || 0)) : (prev.bidLevel || 0),
+      telegramToken: telegramToken !== undefined ? String(telegramToken).trim() : (prev.telegramToken || ''),
+      telegramChat: telegramChat !== undefined ? String(telegramChat).trim() : (prev.telegramChat || '')
     };
     saveSettings(settings);
     res.json({ success: true, settings });
@@ -1764,6 +1768,67 @@ async function scoreEngineTick() {
 }
 setInterval(scoreEngineTick, 10 * 60 * 1000);
 setTimeout(scoreEngineTick, 15_000); // первый прогон вскоре после старта
+
+// ══════════ Telegram + алерт безубытка (Limit P&L → 0) ══════════
+async function sendTelegram(text) {
+  const s = loadSettings();
+  const token = s.telegramToken || process.env.TELEGRAM_BOT_TOKEN;
+  const chat = s.telegramChat || process.env.TELEGRAM_CHAT_ID;
+  if (!token || !chat) return false;
+  try {
+    const r = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chat, text })
+    });
+    return r.ok;
+  } catch (e) { console.error('[telegram]', e.message); return false; }
+}
+
+const BE_WATCH_FILE = path.join(__dirname, 'be-watches.json');
+let beWatches = [];
+try { beWatches = JSON.parse(fs.readFileSync(BE_WATCH_FILE, 'utf8')); } catch { }
+function saveBeWatches() { try { fs.writeFileSync(BE_WATCH_FILE, JSON.stringify(beWatches)); } catch (e) { console.error('[be-watch] save', e.message); } }
+
+app.get('/api/be-watch', (req, res) => res.json({ success: true, watches: beWatches }));
+
+app.post('/api/be-watch', (req, res) => {
+  const { coin, pair, filled, usd, enable } = req.body || {};
+  if (!coin) return res.status(400).json({ success: false, error: 'no coin' });
+  if (enable) {
+    const s = loadSettings();
+    if (!(s.telegramToken && s.telegramChat)) return res.json({ success: false, error: 'Telegram не настроен: укажи Bot Token и Chat ID в настройках' });
+    beWatches = beWatches.filter(w => w.coin !== coin);
+    beWatches.push({ coin, pair: pair || coin + '-USD', filled: parseFloat(filled) || 0, usd: parseFloat(usd) || 0, t: Date.now() });
+  } else {
+    beWatches = beWatches.filter(w => w.coin !== coin);
+  }
+  saveBeWatches();
+  res.json({ success: true, watches: beWatches });
+});
+
+// Чекер раз в 60с: Limit P&L = filled × ask × (1 − marketFee) − usd; при ≥0 шлём алерт и снимаем вотч (одноразовый)
+setInterval(async () => {
+  if (!beWatches.length) return;
+  const s = loadSettings();
+  const fee = (parseFloat(s.marketFee) || 0.5) / 100;
+  for (const w of [...beWatches]) {
+    try {
+      const r = await fetch(`https://api.exchange.coinbase.com/products/${w.pair}/ticker`, { headers: { 'User-Agent': 'trading-app/1.0' } });
+      if (!r.ok) continue;
+      const t = await r.json();
+      const ask = parseFloat(t.ask);
+      if (!ask || !w.filled) continue;
+      const pnl = w.filled * ask * (1 - fee) - w.usd;
+      if (pnl >= 0) {
+        const sent = await sendTelegram(`🔔 ${w.pair}: позиция вышла в безубыток!\nLimit P&L: +$${pnl.toFixed(2)} · Ask: $${ask}\nМожно продавать без убытка. (алерт одноразовый, выключен)`);
+        beWatches = beWatches.filter(x => x.coin !== w.coin);
+        saveBeWatches();
+        console.log(`[be-watch] ${w.pair} fired at ask=${ask}, pnl=${pnl.toFixed(2)}, telegram=${sent}`);
+      }
+    } catch (e) { console.error('[be-watch]', w.pair, e.message); }
+    await new Promise(r2 => setTimeout(r2, 200));
+  }
+}, 60_000);
 
 // Удалённый деплой: git pull + рестарт процесса (pm2 поднимет заново с новым кодом)
 app.post('/api/deploy', (req, res) => {

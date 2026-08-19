@@ -5826,6 +5826,10 @@
               <span class="settings-label">Market Fee:</span>
               <input type="number" id="marketFee" step="0.001" min="0" value="0.125" class="settings-input" readonly style="opacity:0.5;cursor:default;">
               <span class="settings-unit">%</span>
+              <span class="settings-label" title="Токен Telegram-бота для алертов">TG Token:</span>
+              <input type="password" id="tgToken" class="settings-input" style="width:110px;" autocomplete="off">
+              <span class="settings-label" title="Твой Telegram chat id">Chat ID:</span>
+              <input type="text" id="tgChat" class="settings-input" style="width:90px;" autocomplete="off">
             </div>
           </div>
           <div id="buyPanel">
@@ -6280,6 +6284,9 @@
           document.getElementById('marketFee').value = tradingSettings.marketFee;
           const blEl = document.getElementById('bidLevelInput');
           if (blEl) blEl.value = tradingSettings.bidLevel || 0;
+          const tgT = document.getElementById('tgToken'), tgC = document.getElementById('tgChat');
+          if (tgT) tgT.value = tradingSettings.telegramToken || '';
+          if (tgC) tgC.value = tradingSettings.telegramChat || '';
         }
       } catch (e) {
         console.warn('Cannot load settings:', e.message);
@@ -6291,11 +6298,13 @@
       const tradeFee = parseFloat(document.getElementById('tradeFee').value) || 0.06;
       const marketFee = parseFloat(document.getElementById('marketFee').value) || 0.125;
       const bidLevel = Math.min(0, Math.max(-20, parseInt(document.getElementById('bidLevelInput')?.value, 10) || 0));
+      const telegramToken = document.getElementById('tgToken')?.value?.trim() ?? undefined;
+      const telegramChat = document.getElementById('tgChat')?.value?.trim() ?? undefined;
       try {
         const res = await fetch('/save-settings', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sellMarkup, tradeFee, marketFee, bidLevel })
+          body: JSON.stringify({ sellMarkup, tradeFee, marketFee, bidLevel, telegramToken, telegramChat })
         });
         const data = await res.json();
         if (data.success) {
@@ -6326,6 +6335,41 @@
     });
 
     loadSettings();
+    document.getElementById('tgToken')?.addEventListener('change', saveSettingsToServer);
+    document.getElementById('tgChat')?.addEventListener('change', saveSettingsToServer);
+
+    // ── Алерт безубытка: Telegram-сообщение, когда Limit P&L монеты дойдёт до 0 (одноразовый) ──
+    let _beWatches = {};
+    async function loadBeWatches() {
+      try {
+        const r = await fetch('/api/be-watch');
+        const j = await r.json();
+        if (j.success) { _beWatches = {}; (j.watches || []).forEach(w => _beWatches[w.coin] = w); }
+      } catch { }
+    }
+    async function toggleBeWatch(coin, pair, filled, usd) {
+      const enable = !_beWatches[coin];
+      try {
+        const r = await fetch('/api/be-watch', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ coin, pair, filled, usd, enable })
+        });
+        const j = await r.json();
+        if (!j.success) { showCustomAlert(j.error || 'Ошибка', true); return; }
+        _beWatches = {};
+        (j.watches || []).forEach(w => _beWatches[w.coin] = w);
+        const b = document.getElementById('bew_' + coin);
+        if (b) {
+          const on = !!_beWatches[coin];
+          b.textContent = on ? '🔔 BE ON' : '🔔 BE';
+          b.style.borderColor = on ? 'var(--yellow)' : 'rgba(255,255,255,0.25)';
+          b.style.background = on ? 'rgba(245,197,24,0.15)' : 'transparent';
+          b.style.color = on ? 'var(--yellow)' : '#889';
+        }
+        if (enable) showCustomAlert(`Алерт включён: Telegram-сообщение, когда ${coin} выйдет в безубыток`);
+      } catch (e) { showCustomAlert('Ошибка: ' + e.message, true); }
+    }
+    loadBeWatches();
 
     // Уровень стакана для покупки: 0 = best bid, -1 = второй уровень...
     function adjustBidLevel(d) {
@@ -10665,7 +10709,7 @@ Requirements:
         const isFav = favoriteCoins.has(coin);
         h += `<div class="coin-group" data-coin="${coin}" data-coin-pair="${pair}">
           <h4><a href="https://www.tradingview.com/chart/?symbol=COINBASE%3A${coin}USD" target="_blank">${pair}</a>${todayBadge} <span onclick="toggleFavoriteCoin('${coin}')" title="${isFav ? 'Remove from favorites' : 'Add to favorites'}" style="cursor:pointer;font-size:16px;opacity:${isFav ? '1' : '0.25'};padding:0 6px;color:${isFav ? '#f5c518' : 'inherit'};">★</span><button class="select-coin-btn" onclick="selectCoinForBuy('${coin}')" title="Set for Buy">⬆</button></h4>
-          <div class="balance">Selected: ${fmtSize(totalFilled)} ${coin} <span id="realBal_${coin}" style="color:var(--t2);font-size:10px;">(loading real balance...)</span> ${totalFilled > 0 ? `<button class="sell-all-btn" onclick="sellAllCoin('${pair}', '${totalFilled}', ${avgBuyPrice}, ${totalUSD})">SELL ALL</button>` : ''} <button class="${btnClass}" onclick="saveGroupProfit('${coin}', ${groupProfit.toFixed(2)}, '${filledBuys.map(o => o.order_id).join(',')}', '${filledSells.map(o => o.order_id).join(',')}', ${buyCreatedDate ? `'${buyCreatedDate}'` : 'null'})" ${btnDisabled ? 'disabled' : ''}>${btnText}</button>
+          <div class="balance">Selected: ${fmtSize(totalFilled)} ${coin} <span id="realBal_${coin}" style="color:var(--t2);font-size:10px;">(loading real balance...)</span> ${totalFilled > 0 ? `<button class="sell-all-btn" onclick="sellAllCoin('${pair}', '${totalFilled}', ${avgBuyPrice}, ${totalUSD})">SELL ALL</button> <button id="bew_${coin}" onclick="toggleBeWatch('${coin}','${pair}',${totalFilled},${totalUSD})" title="Telegram-алерт, когда Limit P&L дойдёт до 0 (сработает один раз и выключится)" style="padding:3px 8px;border:1px solid ${_beWatches[coin] ? 'var(--yellow)' : 'rgba(255,255,255,0.25)'};border-radius:5px;background:${_beWatches[coin] ? 'rgba(245,197,24,0.15)' : 'transparent'};color:${_beWatches[coin] ? 'var(--yellow)' : '#889'};font-size:10px;font-weight:600;cursor:pointer;">🔔 BE${_beWatches[coin] ? ' ON' : ''}</button>` : ''} <button class="${btnClass}" onclick="saveGroupProfit('${coin}', ${groupProfit.toFixed(2)}, '${filledBuys.map(o => o.order_id).join(',')}', '${filledSells.map(o => o.order_id).join(',')}', ${buyCreatedDate ? `'${buyCreatedDate}'` : 'null'})" ${btnDisabled ? 'disabled' : ''}>${btnText}</button>
           ${totalFilled > 0 ? `<span style="margin-left:10px;display:inline-flex;align-items:center;gap:4px;">
             <input type="text" id="limitSellPrice_${coin}" placeholder="Limit price" style="width:90px;padding:3px 6px;background:var(--s3);border:1px solid var(--b1);border-radius:5px;color:var(--t0);font-family:'JetBrains Mono',monospace;font-size:11px;outline:none;" autocomplete="off">
             <button onclick="sellAllLimit('${pair}','${totalFilled}','${coin}')" style="padding:3px 10px;border:1px solid var(--yellow);border-radius:5px;background:transparent;color:var(--yellow);font-size:10px;font-weight:600;cursor:pointer;">Sell Limit</button>

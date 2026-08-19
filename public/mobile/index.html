@@ -1851,6 +1851,35 @@
       _saveBidLevelM(v);
     }
 
+    // ── Алерт безубытка: Telegram при Limit P&L ≥ 0 (одноразовый) ──
+    let _beWatches = {};
+    async function loadBeWatchesM() {
+      try {
+        const r = await api('/api/be-watch');
+        if (r.success) { _beWatches = {}; (r.watches || []).forEach(w => _beWatches[w.coin] = w); }
+      } catch { }
+    }
+    async function toggleBeWatchM(coin, pair, filled, usd) {
+      const enable = !_beWatches[coin];
+      const r = await api('/api/be-watch', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ coin, pair, filled, usd, enable })
+      });
+      if (!r.success) { toast(r.error || 'Ошибка', 'error'); return; }
+      _beWatches = {};
+      (r.watches || []).forEach(w => _beWatches[w.coin] = w);
+      const b = document.getElementById('bewM_' + coin);
+      if (b) {
+        const on = !!_beWatches[coin];
+        b.textContent = on ? '🔔 ON' : '🔔';
+        b.style.borderColor = on ? 'var(--yellow)' : 'rgba(255,255,255,0.25)';
+        b.style.background = on ? 'rgba(245,197,24,0.15)' : 'transparent';
+        b.style.color = on ? 'var(--yellow)' : '#889';
+      }
+      if (enable) toast(`Алерт включён: ${coin} → Telegram при безубытке`);
+    }
+    loadBeWatchesM();
+
     // Позиция открытых лимитников в стакане (#1 = лучший bid/ask)
     async function updateOrderPositionsM() {
       const els = document.querySelectorAll('.order-pos[data-pair]');
@@ -2136,6 +2165,7 @@
           <div class="monitor-group-header">
             <span class="monitor-coin" style="cursor:pointer" onclick="selectCoin('${coin}')">${pair}</span>
             <span style="display:flex;align-items:center;gap:8px;">
+              <button id="bewM_${coin}" onclick="toggleBeWatchM('${coin}','${pair}',${totalFilled},${totalUSD})" title="Telegram-алерт при выходе в безубыток (одноразовый)" style="padding:3px 8px;border:1px solid ${_beWatches[coin] ? 'var(--yellow)' : 'rgba(255,255,255,0.25)'};border-radius:5px;background:${_beWatches[coin] ? 'rgba(245,197,24,0.15)' : 'transparent'};color:${_beWatches[coin] ? 'var(--yellow)' : '#889'};font-size:11px;font-weight:600;">🔔${_beWatches[coin] ? ' ON' : ''}</button>
               <span data-fav-coin="${coin}" onclick="toggleFavoriteCoin('${coin}')" title="${isFav ? 'Remove from favorites' : 'Add to favorites'}" style="cursor:pointer;font-size:22px;opacity:${isFav ? '1' : '0.25'};padding:0 8px;line-height:1;color:${isFav ? '#f5c518' : 'inherit'};">★</span>
               <span class="monitor-pnl" style="color:${pnlColor}">${limitPnL >= 0 ? '+' : ''}$${Math.abs(limitPnL).toFixed(2)}</span>
             </span>
