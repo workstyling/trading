@@ -1828,7 +1828,7 @@ setInterval(async () => {
     } catch (e) { console.error('[be-watch]', w.pair, e.message); }
     await new Promise(r2 => setTimeout(r2, 200));
   }
-}, 60_000);
+}, 15_000); // каждые 15с — алерт приходит практически сразу после пересечения нуля
 
 // Удалённый деплой: git pull + рестарт процесса (pm2 поднимет заново с новым кодом)
 app.post('/api/deploy', (req, res) => {
