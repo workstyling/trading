@@ -1788,7 +1788,9 @@ async function sendTelegram(text, parseMode) {
 const NOTIFIED_FILE = path.join(__dirname, 'notified-fills.json');
 let notifiedFills = [];
 try { notifiedFills = JSON.parse(fs.readFileSync(NOTIFIED_FILE, 'utf8')); } catch { }
-let fillBaselineDone = false;
+// baseline нужен только при самом первом запуске фичи (файла ещё нет).
+// Если файл есть — продолжаем без баузлайна, иначе фили, случившиеся во время рестарта, глотаются молча.
+let fillBaselineDone = notifiedFills.length > 0;
 
 function fmtNumTg(n, d = 2) { return Number(n).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }); }
 function fmtPxTg(p) { p = parseFloat(p) || 0; return p < 0.001 ? p.toFixed(8) : p < 1 ? p.toFixed(6) : p < 100 ? p.toFixed(4) : p.toFixed(2); }
