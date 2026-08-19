@@ -1148,7 +1148,8 @@ async function getMcapMap() {
   (data.data || []).forEach(c => {
     const sym = (c.symbol || '').toUpperCase();
     const mc = parseFloat(c.marketCap ?? c.values?.USD?.marketCap ?? 0);
-    if (sym && mc && !map[sym]) map[sym] = mc;
+    const px = parseFloat(c.price ?? c.values?.USD?.price ?? 0);
+    if (sym && mc && !map[sym]) map[sym] = { mc, px }; // px нужен для проверки коллизий тикеров
   });
   if (Object.keys(map).length) mcapCache = { map, at: Date.now() };
   return mcapCache.map;
@@ -1166,23 +1167,31 @@ async function rebuildTopLosers() {
     const pairs = (Array.isArray(products) ? products : [])
       .filter(p => p.quote_currency === 'USD' && p.status === 'online' && !p.trading_disabled)
       .map(p => p.id);
-    const cands = pairs.filter(id => (mcap[id.replace('-USD', '')] || 0) >= 30_000_000);
+    const cands = pairs.filter(id => (mcap[id.replace('-USD', '')]?.mc || 0) >= 30_000_000);
     const out = [];
     const now = Date.now();
     const start = new Date(now - 32 * 86400 * 1000).toISOString();
     const end = new Date(now).toISOString();
+    // при сбое запроса не теряем монету — берём прошлую запись из кэша
+    const keepOld = (sym) => {
+      const old = topLosersCache.data.find(x => x.coin === sym);
+      if (old) out.push(old);
+    };
     for (const id of cands) {
+      const sym = id.replace('-USD', '');
       try {
         const r = await fetch(`${CB}/products/${id}/candles?granularity=86400&start=${start}&end=${end}`, H);
-        if (!r.ok) continue;
+        if (!r.ok) { keepOld(sym); continue; }
         const cd = await r.json();
         if (!Array.isArray(cd) || cd.length < 20) continue;
         cd.sort((a, b) => a[0] - b[0]);
         const first = cd[0][4], last = cd[cd.length - 1][4];
         if (!first || !last) continue;
-        const sym = id.replace('-USD', '');
-        out.push({ coin: sym, pair: id, price: last, pct30d: (last - first) / first * 100, mcap: mcap[sym], spark: cd.map(x => Math.round(x[4] * 1e8) / 1e8) });
-      } catch { }
+        // Коллизия тикеров: если цена Cryptorank отличается от Coinbase в разы — это другой проект, mcap чужой
+        const crPx = mcap[sym]?.px;
+        if (crPx > 0 && (last / crPx > 2.5 || crPx / last > 2.5)) continue;
+        out.push({ coin: sym, pair: id, price: last, pct30d: (last - first) / first * 100, mcap: mcap[sym].mc, spark: cd.map(x => Math.round(x[4] * 1e8) / 1e8) });
+      } catch { keepOld(sym); }
       await new Promise(r2 => setTimeout(r2, 120));
     }
     out.sort((a, b) => a.pct30d - b.pct30d);
