@@ -1411,6 +1411,11 @@
   <!-- Top Gainers Panel -->
   <div class="panel" id="panelVolume" data-tab="volume">
     <div class="tg-header">
+      <span class="tg-title">📉 Top Losers 30d</span>
+      <span class="tg-meta" style="font-size:9px;">mcap ≥ $30M · upd: <span id="tlUpdatedM">—</span></span>
+    </div>
+    <div id="tlBodyM" style="margin-bottom:16px;"><div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">Loading...</div></div>
+    <div class="tg-header">
       <span class="tg-title">📊 Top Volume 24h<button class="tv-help-btn" onclick="_toggleHelpM()">?</button></span>
       <span class="tg-meta">
         <button id="tvgChartBtnM" onclick="toggleTVChartVolumeMobile()" style="padding:3px 9px;border:1px solid rgba(76,201,240,0.35);border-radius:12px;background:rgba(76,201,240,0.08);color:var(--blue);font-size:10px;font-weight:600;cursor:pointer;margin-right:4px;">📈 Chart</button>
@@ -1439,11 +1444,6 @@
       <div id="tvChartInnerVolM" style="height:320px;"></div>
     </div>
     <div id="tvBody"><div style="color:var(--t2);font-size:12px;text-align:center;padding:14px;">Loading...</div></div>
-    <div class="tg-header" style="margin-top:16px;">
-      <span class="tg-title">📉 Top Losers 30d</span>
-      <span class="tg-meta" style="font-size:9px;">mcap ≥ $30M · upd: <span id="tlUpdatedM">—</span></span>
-    </div>
-    <div id="tlBodyM"><div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">Loading...</div></div>
   </div>
 
   <!-- Profit Panel -->
