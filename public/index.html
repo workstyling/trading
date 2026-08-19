@@ -6028,7 +6028,7 @@
         </div>
         <div id="profitPanel">
           <div class="profit-header">
-            <span class="profit-title">Total Profit</span>
+            <span class="profit-title">Total Profit <span id="todayProfit" style="margin-left:8px;font-size:11px;font-weight:700;color:#00e5a0;background:rgba(0,229,160,0.1);padding:2px 8px;border-radius:8px;" title="Прибыль за сегодня — по времени продажи (купил вчера, продал сегодня → считается сюда)">today: $0.00</span></span>
             <span class="profit-total" id="totalProfit">$0.00</span>
           </div>
           <div class="profit-list" id="profitList"></div>
@@ -10526,6 +10526,17 @@ Requirements:
       const total = Math.round(profitHistory.reduce((sum, e) => sum + e.profit, 0) * 100) / 100;
       totalEl.textContent = (total >= 0 ? '+' : '') + '$' + total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
       totalEl.className = 'profit-total ' + (total >= 0 ? 'positive' : 'negative');
+
+      // Прибыль за сегодня — по дате продажи (e.date), т.е. «купил вчера, продал сегодня» тоже входит
+      const todayEl = document.getElementById('todayProfit');
+      if (todayEl) {
+        const now = new Date();
+        const isToday = d => { const x = new Date(d); return x.getFullYear() === now.getFullYear() && x.getMonth() === now.getMonth() && x.getDate() === now.getDate(); };
+        const todaySum = Math.round(profitHistory.filter(e => isToday(e.date)).reduce((s, e) => s + e.profit, 0) * 100) / 100;
+        todayEl.textContent = 'today: ' + (todaySum >= 0 ? '+' : '') + '$' + todaySum.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        todayEl.style.color = todaySum >= 0 ? '#00e5a0' : '#f55';
+        todayEl.style.background = todaySum >= 0 ? 'rgba(0,229,160,0.1)' : 'rgba(255,85,85,0.1)';
+      }
 
       if (profitHistory.length === 0) {
         listEl.innerHTML = '<div style="color:#555;font-size:11px;text-align:center;padding:10px;">No profit records yet</div>';

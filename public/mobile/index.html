@@ -1444,7 +1444,7 @@
   <!-- Profit Panel -->
   <div class="panel" id="panelProfit" data-tab="profit">
     <div class="profit-summary">
-      <div class="profit-label">Total Profit</div>
+      <div class="profit-label">Total Profit <span id="profitToday" style="margin-left:6px;font-size:12px;font-weight:700;color:#00e5a0;background:rgba(0,229,160,0.1);padding:2px 8px;border-radius:8px;">today: $0.00</span></div>
       <div class="profit-value profit-positive" id="profitTotal">$0.00</div>
     </div>
     <div id="profitList"><div class="loading"><div class="spinner"></div>Loading...</div></div>
@@ -2308,6 +2308,18 @@
         const el = document.getElementById('profitTotal');
         el.textContent = (total >= 0 ? '+$' : '-$') + Math.abs(total).toFixed(2);
         el.className = 'profit-value ' + (total >= 0 ? 'profit-positive' : 'profit-negative');
+
+        // Прибыль за сегодня — по дате продажи (купил вчера, продал сегодня → тоже сюда)
+        const tEl = document.getElementById('profitToday');
+        if (tEl) {
+          const now = new Date();
+          const isToday = d => { const x = new Date(d); return x.getFullYear() === now.getFullYear() && x.getMonth() === now.getMonth() && x.getDate() === now.getDate(); };
+          let todaySum = 0;
+          history.forEach(h => { if (isToday(h.date)) todaySum += parseFloat(h.profit || 0); });
+          tEl.textContent = 'today: ' + (todaySum >= 0 ? '+$' : '-$') + Math.abs(todaySum).toFixed(2);
+          tEl.style.color = todaySum >= 0 ? '#00e5a0' : '#f55';
+          tEl.style.background = todaySum >= 0 ? 'rgba(0,229,160,0.1)' : 'rgba(255,85,85,0.1)';
+        }
 
         document.getElementById('profitList').innerHTML = history.length
           ? history.sort((a, b) => new Date(b.date) - new Date(a.date)).map(h => {
