@@ -1770,7 +1770,7 @@ setInterval(scoreEngineTick, 10 * 60 * 1000);
 setTimeout(scoreEngineTick, 15_000); // первый прогон вскоре после старта
 
 // ══════════ Telegram + алерт безубытка (Limit P&L → 0) ══════════
-async function sendTelegram(text) {
+async function sendTelegram(text, parseMode) {
   const s = loadSettings();
   const token = s.telegramToken || process.env.TELEGRAM_BOT_TOKEN;
   const chat = s.telegramChat || process.env.TELEGRAM_CHAT_ID;
@@ -1778,11 +1778,65 @@ async function sendTelegram(text) {
   try {
     const r = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: chat, text })
+      body: JSON.stringify({ chat_id: chat, text, ...(parseMode ? { parse_mode: parseMode } : {}) })
     });
     return r.ok;
   } catch (e) { console.error('[telegram]', e.message); return false; }
 }
+
+// ══════════ Telegram: уведомления об исполнении ордеров (100% filled) ══════════
+const NOTIFIED_FILE = path.join(__dirname, 'notified-fills.json');
+let notifiedFills = [];
+try { notifiedFills = JSON.parse(fs.readFileSync(NOTIFIED_FILE, 'utf8')); } catch { }
+let fillBaselineDone = false;
+
+function fmtNumTg(n, d = 2) { return Number(n).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }); }
+function fmtPxTg(p) { p = parseFloat(p) || 0; return p < 0.001 ? p.toFixed(8) : p < 1 ? p.toFixed(6) : p < 100 ? p.toFixed(4) : p.toFixed(2); }
+
+async function checkFilledOrders() {
+  try {
+    let orders;
+    const now = Date.now();
+    if (ordersCache.data && (now - ordersCache.ts) < ORDERS_CACHE_TTL) orders = ordersCache.data;
+    else { orders = await getLatestOrders(); ordersCache = { data: orders, ts: now }; }
+    const filled = orders.filter(o => o.status === 'FILLED');
+    if (!fillBaselineDone) {
+      // первый прогон после старта: существующие FILLED помечаем без уведомлений (не спамим историей)
+      filled.forEach(o => { if (!notifiedFills.includes(o.order_id)) notifiedFills.push(o.order_id); });
+      notifiedFills = notifiedFills.slice(-800);
+      try { fs.writeFileSync(NOTIFIED_FILE, JSON.stringify(notifiedFills)); } catch { }
+      fillBaselineDone = true;
+      return;
+    }
+    let changed = false;
+    for (const o of filled) {
+      if (notifiedFills.includes(o.order_id)) continue;
+      const isBuy = o.side === 'BUY';
+      const size = parseFloat(o.filled_size) || 0;
+      const val = parseFloat(o.total_value) || 0;
+      const fees = parseFloat(o.total_fees) || 0;
+      const coin = (o.product_id || '').replace('-USD', '');
+      const text =
+        `${isBuy ? '🟢 <b>BUY FILLED</b>' : '🔴 <b>SELL FILLED</b>'} — <b>${o.product_id}</b>\n` +
+        `━━━━━━━━━━━━━━━━━━\n` +
+        `📦 Size: <b>${fmtNumTg(size, size < 1 ? 6 : 2)} ${coin}</b>\n` +
+        `💵 Price: <b>$${fmtPxTg(o.average_filled_price)}</b>\n` +
+        `💰 Total: <b>$${fmtNumTg(val)}</b>\n` +
+        `🧾 Fee: $${fmtNumTg(fees)}\n` +
+        `🕒 ${o.created_time ? new Date(o.created_time).toISOString().slice(0, 16).replace('T', ' ') + ' UTC' : '—'}`;
+      const sent = await sendTelegram(text, 'HTML');
+      notifiedFills.push(o.order_id);
+      changed = true;
+      console.log(`[fill-notify] ${o.product_id} ${o.side} filled, telegram=${sent}`);
+    }
+    if (changed) {
+      notifiedFills = notifiedFills.slice(-800);
+      try { fs.writeFileSync(NOTIFIED_FILE, JSON.stringify(notifiedFills)); } catch { }
+    }
+  } catch (e) { console.error('[fill-notify]', e.message); }
+}
+setInterval(checkFilledOrders, 30_000);
+setTimeout(checkFilledOrders, 20_000); // baseline вскоре после старта
 
 const BE_WATCH_FILE = path.join(__dirname, 'be-watches.json');
 let beWatches = [];
