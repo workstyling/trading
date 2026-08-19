@@ -6026,6 +6026,13 @@
           <div id="tvProgBar"></div>
           <div id="tvBody"><div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">Loading...</div></div>
         </div>
+        <div id="topLosersPanel" style="margin-top:14px;">
+          <div class="tg-header">
+            <span class="tg-title"><span class="tg-header-title">📉 Top Losers 30d</span><span style="font-size:9px;color:#666;margin-left:6px;">mcap ≥ $30M · Coinbase</span></span>
+            <span class="tg-meta" style="font-size:10px;">upd: <span id="tlUpdated">—</span></span>
+          </div>
+          <div id="tlBody"><div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">Loading...</div></div>
+        </div>
         <div id="profitPanel">
           <div class="profit-header">
             <span class="profit-title">Total Profit <span id="todayProfit" style="margin-left:8px;font-size:11px;font-weight:700;color:#00e5a0;background:rgba(0,229,160,0.1);padding:2px 8px;border-radius:8px;" title="Прибыль за сегодня — по времени продажи (купил вчера, продал сегодня → считается сюда)">today: $0.00</span></span>
@@ -12591,6 +12598,48 @@ Requirements:
 
     loadTopVolume();
     startTvCountdown();
+
+    // ── Top Losers 30d ──
+    function _priceSparkSVG(pts) {
+      if (!Array.isArray(pts) || pts.length < 2) return '';
+      const W = 64, H = 16, n = pts.length;
+      const mn = Math.min(...pts), mx = Math.max(...pts);
+      const rng = mx - mn || 1;
+      const x = i => i / (n - 1) * W;
+      const y = v => H - 1.5 - (v - mn) / rng * (H - 3);
+      const d = pts.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(' ');
+      const col = pts[n - 1] >= pts[0] ? '#00e5a0' : '#f55';
+      return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><path d="${d}" fill="none" stroke="${col}" stroke-width="1.3" stroke-linejoin="round"/></svg>`;
+    }
+    async function loadTopLosers() {
+      try {
+        const r = await fetch('/api/top-losers');
+        const j = await r.json();
+        const body = document.getElementById('tlBody');
+        if (!body) return;
+        if (!j.success || !j.coins || !j.coins.length) {
+          body.innerHTML = `<div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">${j.building ? 'Собираю данные (первый прогон ~2 мин)…' : 'Нет данных'}</div>`;
+          return;
+        }
+        const rows = j.coins.map((c, i) => {
+          const price = c.price < 0.001 ? c.price.toFixed(6) : c.price < 1 ? c.price.toFixed(4) : c.price < 100 ? c.price.toFixed(3) : c.price.toFixed(2);
+          const mc = c.mcap >= 1e9 ? '$' + (c.mcap / 1e9).toFixed(1) + 'B' : '$' + Math.round(c.mcap / 1e6) + 'M';
+          return `<tr style="cursor:pointer;" onclick="selectCoinForBuy('${c.coin}')" title="Выбрать ${c.coin} для покупки">
+            <td style="color:#555;font-size:11px;">${i + 1}</td>
+            <td class="tg-coin" style="font-size:12px;">${c.coin}<br><span style="color:#555;font-size:10px;font-weight:400;">$${price}</span></td>
+            <td style="color:#f55;font-weight:700;font-size:12px;">${c.pct30d.toFixed(1)}%</td>
+            <td style="color:var(--t2);font-size:11px;">${mc}</td>
+            <td>${_priceSparkSVG(c.spark || [])}</td>
+            <td><button onclick="event.stopPropagation();toggleTopVolumeChart('${c.coin}')" title="Chart ${c.coin}" style="padding:2px 6px;border:1px solid rgba(76,201,240,0.3);border-radius:5px;background:rgba(76,201,240,0.07);color:var(--blue);font-size:10px;cursor:pointer;">📈</button></td>
+          </tr>`;
+        }).join('');
+        body.innerHTML = `<table class="tg-table"><thead><tr><th>#</th><th>COIN</th><th>30D%</th><th>MCAP</th><th>MONTH</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+        const u = document.getElementById('tlUpdated');
+        if (u && j.updatedAt) u.textContent = new Date(j.updatedAt).toLocaleTimeString();
+      } catch { }
+    }
+    setInterval(loadTopLosers, 30_000);
+    loadTopLosers();
 
     document.getElementById('tvBody')?.addEventListener('mouseenter', () => { tvPaused = true; });
     document.getElementById('tvBody')?.addEventListener('mouseleave', () => { tvPaused = false; });

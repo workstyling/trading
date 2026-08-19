@@ -1439,6 +1439,11 @@
       <div id="tvChartInnerVolM" style="height:320px;"></div>
     </div>
     <div id="tvBody"><div style="color:var(--t2);font-size:12px;text-align:center;padding:14px;">Loading...</div></div>
+    <div class="tg-header" style="margin-top:16px;">
+      <span class="tg-title">📉 Top Losers 30d</span>
+      <span class="tg-meta" style="font-size:9px;">mcap ≥ $30M · upd: <span id="tlUpdatedM">—</span></span>
+    </div>
+    <div id="tlBodyM"><div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">Loading...</div></div>
   </div>
 
   <!-- Profit Panel -->
@@ -4048,6 +4053,48 @@
     setInterval(loadVol30dMobile, 5 * 60 * 1000);
     refreshAll();
     connectPriceWs();
+    // ── Top Losers 30d ──
+    function _priceSparkSVG(pts) {
+      if (!Array.isArray(pts) || pts.length < 2) return '';
+      const W = 56, H = 14, n = pts.length;
+      const mn = Math.min(...pts), mx = Math.max(...pts);
+      const rng = mx - mn || 1;
+      const x = i => i / (n - 1) * W;
+      const y = v => H - 1.5 - (v - mn) / rng * (H - 3);
+      const d = pts.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(' ');
+      const col = pts[n - 1] >= pts[0] ? '#00e5a0' : '#f55';
+      return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><path d="${d}" fill="none" stroke="${col}" stroke-width="1.3" stroke-linejoin="round"/></svg>`;
+    }
+    async function loadTopLosersM() {
+      try {
+        const r = await fetch(BASE + '/api/top-losers');
+        const j = await r.json();
+        const body = document.getElementById('tlBodyM');
+        if (!body) return;
+        if (!j.success || !j.coins || !j.coins.length) {
+          body.innerHTML = `<div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">${j.building ? 'Собираю данные (~2 мин)…' : 'Нет данных'}</div>`;
+          return;
+        }
+        const rows = j.coins.map((c, i) => {
+          const price = c.price < 0.001 ? c.price.toFixed(6) : c.price < 1 ? c.price.toFixed(4) : c.price < 100 ? c.price.toFixed(3) : c.price.toFixed(2);
+          const mc = c.mcap >= 1e9 ? '$' + (c.mcap / 1e9).toFixed(1) + 'B' : '$' + Math.round(c.mcap / 1e6) + 'M';
+          return `<tr style="border-bottom:1px solid rgba(255,255,255,0.03);" onclick="selectCoin('${c.coin}')">
+            <td style="color:#555;font-size:10px;padding:6px 2px;">${i + 1}</td>
+            <td style="padding:6px 3px;"><span style="color:var(--blue);font-weight:700;font-size:11px;">${c.coin}</span><br><span style="color:#555;font-size:9px;">$${price}</span></td>
+            <td style="color:#f55;font-weight:700;font-size:11px;text-align:right;padding:6px 3px;">${c.pct30d.toFixed(1)}%</td>
+            <td style="color:var(--t2);font-size:10px;text-align:right;padding:6px 3px;">${mc}</td>
+            <td style="text-align:right;padding:6px 3px;">${_priceSparkSVG(c.spark || [])}</td>
+            <td style="text-align:right;padding:6px 3px;"><button onclick="event.stopPropagation();toggleTVChartVolumeMobile('${c.coin}')" style="padding:3px 7px;border:1px solid rgba(76,201,240,0.3);border-radius:5px;background:rgba(76,201,240,0.07);color:var(--blue);font-size:10px;">📈</button></td>
+          </tr>`;
+        }).join('');
+        body.innerHTML = `<table style="width:100%;border-collapse:collapse;"><thead><tr style="border-bottom:1px solid #222;"><th style="color:#666;font-size:9px;text-align:left;padding:4px 2px;">#</th><th style="color:#666;font-size:9px;text-align:left;padding:4px 3px;">COIN</th><th style="color:#666;font-size:9px;text-align:right;padding:4px 3px;">30D%</th><th style="color:#666;font-size:9px;text-align:right;padding:4px 3px;">MCAP</th><th style="color:#666;font-size:9px;text-align:right;padding:4px 3px;">MONTH</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+        const u = document.getElementById('tlUpdatedM');
+        if (u && j.updatedAt) u.textContent = new Date(j.updatedAt).toLocaleTimeString().slice(0, 5);
+      } catch { }
+    }
+    setInterval(loadTopLosersM, 30_000);
+    loadTopLosersM();
+
     loadTopVolumeMobile();
     startTvCountdown();
 

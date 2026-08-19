@@ -1136,6 +1136,90 @@ app.get('/api/cryptorank/top-movers', async (req, res) => {
   }
 });
 
+// ══════════ TOP LOSERS 30d (mcap ≥ $30M, торгуются на Coinbase) ══════════
+let topLosersCache = { data: [], fullAt: 0, priceAt: 0 };
+let topLosersBuilding = false;
+let mcapCache = { map: {}, at: 0 };
+
+async function getMcapMap() {
+  if (Date.now() - mcapCache.at < 60 * 60 * 1000 && Object.keys(mcapCache.map).length) return mcapCache.map;
+  const data = await cryptorankFetch('/currencies', { limit: 1000, sortBy: 'rank', sortDirection: 'ASC' });
+  const map = {};
+  (data.data || []).forEach(c => {
+    const sym = (c.symbol || '').toUpperCase();
+    const mc = parseFloat(c.marketCap ?? c.values?.USD?.marketCap ?? 0);
+    if (sym && mc && !map[sym]) map[sym] = mc;
+  });
+  if (Object.keys(map).length) mcapCache = { map, at: Date.now() };
+  return mcapCache.map;
+}
+
+async function rebuildTopLosers() {
+  if (topLosersBuilding) return;
+  topLosersBuilding = true;
+  try {
+    const CB = 'https://api.exchange.coinbase.com';
+    const H = { headers: { 'User-Agent': 'trading-app/1.0' } };
+    const mcap = await getMcapMap();
+    const prodRes = await fetch(`${CB}/products`, H);
+    const products = await prodRes.json();
+    const pairs = (Array.isArray(products) ? products : [])
+      .filter(p => p.quote_currency === 'USD' && p.status === 'online' && !p.trading_disabled)
+      .map(p => p.id);
+    const cands = pairs.filter(id => (mcap[id.replace('-USD', '')] || 0) >= 30_000_000);
+    const out = [];
+    const now = Date.now();
+    const start = new Date(now - 32 * 86400 * 1000).toISOString();
+    const end = new Date(now).toISOString();
+    for (const id of cands) {
+      try {
+        const r = await fetch(`${CB}/products/${id}/candles?granularity=86400&start=${start}&end=${end}`, H);
+        if (!r.ok) continue;
+        const cd = await r.json();
+        if (!Array.isArray(cd) || cd.length < 20) continue;
+        cd.sort((a, b) => a[0] - b[0]);
+        const first = cd[0][4], last = cd[cd.length - 1][4];
+        if (!first || !last) continue;
+        const sym = id.replace('-USD', '');
+        out.push({ coin: sym, pair: id, price: last, pct30d: (last - first) / first * 100, mcap: mcap[sym], spark: cd.map(x => Math.round(x[4] * 1e8) / 1e8) });
+      } catch { }
+      await new Promise(r2 => setTimeout(r2, 120));
+    }
+    out.sort((a, b) => a.pct30d - b.pct30d);
+    topLosersCache = { data: out.slice(0, 20), fullAt: Date.now(), priceAt: Date.now() };
+    console.log(`[top-losers] rebuilt: ${cands.length} candidates (mcap≥30M), top20 saved`);
+  } catch (e) { console.error('[top-losers]', e.message); }
+  finally { topLosersBuilding = false; }
+}
+
+app.get('/api/top-losers', async (req, res) => {
+  try {
+    if (!topLosersCache.data.length && !topLosersBuilding) rebuildTopLosers(); // первый прогон в фоне
+    // Освежаем цены списка не чаще раза в 30с — клиенты поллят каждые 30с
+    if (topLosersCache.data.length && Date.now() - topLosersCache.priceAt > 30_000) {
+      const H = { headers: { 'User-Agent': 'trading-app/1.0' } };
+      await Promise.all(topLosersCache.data.map(async c => {
+        try {
+          const r = await fetch(`https://api.exchange.coinbase.com/products/${c.pair}/ticker`, H);
+          if (!r.ok) return;
+          const t = await r.json();
+          const px = parseFloat(t.price || t.ask || t.bid);
+          if (px > 0) {
+            const base = c.price / (1 + c.pct30d / 100); // цена месяц назад
+            c.price = px;
+            c.pct30d = base > 0 ? (px - base) / base * 100 : c.pct30d;
+          }
+        } catch { }
+      }));
+      topLosersCache.data.sort((a, b) => a.pct30d - b.pct30d);
+      topLosersCache.priceAt = Date.now();
+    }
+    res.json({ success: true, coins: topLosersCache.data, updatedAt: topLosersCache.priceAt, building: topLosersBuilding && !topLosersCache.data.length });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+setInterval(rebuildTopLosers, 10 * 60 * 1000);
+setTimeout(rebuildTopLosers, 30_000);
+
 // ========== TOP GAINERS (Coinbase) ==========
 
 let topGainersCache = { data: [], fetchedAt: 0 };
