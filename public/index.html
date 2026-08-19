@@ -10966,7 +10966,9 @@ Requirements:
           const targetSellPrice = pendingSell ? parseFloat(pendingSell.limit_price) : (buyPrice * (1 + tradingSettings.sellMarkup / 100));
           const buyFeeP = tradingSettings.tradeFee / 100;
           const sellFeeP = tradingSettings.marketFee / 100;
-          const breakevenPrice = buyPrice * (1 + buyFeeP) / (1 - sellFeeP);
+          // Безубыток по фактическим затратам (total_value_after_fees) — та же точка, где колонка LIMIT = 0
+          const actualCost = parseFloat(buyOrder.total_value) || (filledSize * buyPrice * (1 + buyFeeP));
+          const breakevenPrice = filledSize > 0 ? actualCost / (filledSize * (1 - sellFeeP)) : buyPrice * (1 + buyFeeP) / (1 - sellFeeP);
           const breakevenPct = ((breakevenPrice - buyPrice) / buyPrice * 100);
 
           if (buyPrice > 0) {
