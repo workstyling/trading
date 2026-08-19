@@ -1203,9 +1203,10 @@ async function rebuildTopLosers() {
 
 app.get('/api/top-losers', async (req, res) => {
   try {
-    if (!topLosersCache.data.length && !topLosersBuilding) rebuildTopLosers(); // первый прогон в фоне
-    // Освежаем цены списка не чаще раза в 30с — клиенты поллят каждые 30с
-    if (topLosersCache.data.length && Date.now() - topLosersCache.priceAt > 30_000) {
+    const force = req.query.force === 'true';
+    if ((force || !topLosersCache.data.length) && !topLosersBuilding) rebuildTopLosers(); // пересборка в фоне
+    // Освежаем цены списка не чаще раза в 30с (force — немедленно)
+    if (topLosersCache.data.length && (force || Date.now() - topLosersCache.priceAt > 30_000)) {
       const H = { headers: { 'User-Agent': 'trading-app/1.0' } };
       await Promise.all(topLosersCache.data.map(async c => {
         try {

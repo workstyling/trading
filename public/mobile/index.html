@@ -1412,7 +1412,10 @@
   <div class="panel" id="panelVolume" data-tab="volume">
     <div class="tg-header">
       <span class="tg-title">📉 Top Losers 30d</span>
-      <span class="tg-meta" style="font-size:9px;">mcap ≥ $30M · upd: <span id="tlUpdatedM">—</span></span>
+      <span class="tg-meta" style="font-size:9px;">
+        <button class="tg-refresh-btn" id="tlRefreshBtnM" onclick="loadTopLosersM(true)" style="height:22px;font-size:10px;padding:0 6px;">⟳</button>
+        mcap ≥ $30M · upd: <span id="tlUpdatedM">—</span>
+      </span>
     </div>
     <div id="tlBodyM" style="margin-bottom:16px;"><div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">Loading...</div></div>
     <div class="tg-header">
@@ -4065,10 +4068,13 @@
       const col = pts[n - 1] >= pts[0] ? '#00e5a0' : '#f55';
       return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><path d="${d}" fill="none" stroke="${col}" stroke-width="1.3" stroke-linejoin="round"/></svg>`;
     }
-    async function loadTopLosersM() {
+    async function loadTopLosersM(force) {
+      const btn = document.getElementById('tlRefreshBtnM');
+      if (force && btn) btn.disabled = true;
       try {
-        const r = await fetch(BASE + '/api/top-losers');
+        const r = await fetch(BASE + '/api/top-losers' + (force ? '?force=true' : ''));
         const j = await r.json();
+        if (btn) btn.disabled = false;
         const body = document.getElementById('tlBodyM');
         if (!body) return;
         if (!j.success || !j.coins || !j.coins.length) {
