@@ -1140,6 +1140,17 @@ app.get('/api/cryptorank/top-movers', async (req, res) => {
 let topLosersCache = { data: [], fullAt: 0, priceAt: 0 };
 let topLosersBuilding = false;
 let mcapCache = { map: {}, at: 0 };
+// Кеш на диске — после рестарта таблица доступна сразу, без ожидания первой сборки
+const TOP_LOSERS_FILE = path.join(__dirname, 'top-losers-cache.json');
+try {
+  const saved = JSON.parse(fs.readFileSync(TOP_LOSERS_FILE, 'utf8'));
+  if (saved.data && saved.data.length) topLosersCache = saved;
+  if (saved.mcap && Object.keys(saved.mcap.map || {}).length) mcapCache = saved.mcap;
+  console.log(`[top-losers] loaded ${topLosersCache.data.length} coins from disk cache`);
+} catch { }
+function saveTopLosersCache() {
+  try { fs.writeFileSync(TOP_LOSERS_FILE, JSON.stringify({ ...topLosersCache, mcap: mcapCache })); } catch { }
+}
 
 async function getMcapMap() {
   if (Date.now() - mcapCache.at < 60 * 60 * 1000 && Object.keys(mcapCache.map).length) return mcapCache.map;
@@ -1197,6 +1208,7 @@ async function rebuildTopLosers() {
     }
     out.sort((a, b) => a.pct30d - b.pct30d);
     topLosersCache = { data: out.slice(0, 20), fullAt: Date.now(), priceAt: Date.now() };
+    saveTopLosersCache();
     console.log(`[top-losers] rebuilt: ${cands.length} candidates (mcap≥30M), top20 saved`);
   } catch (e) { console.error('[top-losers]', e.message); }
   finally { topLosersBuilding = false; }
