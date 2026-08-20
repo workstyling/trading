@@ -1371,6 +1371,7 @@
       <button class="amt-btn" onclick="adjustBidLevelM(1)">+</button>
       <span style="font-size:11px;color:var(--t2);">bid lvl <span style="color:#555;">(0 = лучший)</span></span>
     </div>
+    <div id="buyDepthInfoM" style="font-size:10px;color:var(--t2);margin-top:7px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;"></div>
     <div class="trade-actions">
       <button class="trade-btn btn-buy" id="btnBuy" onclick="executeBuy()">BUY</button>
     </div>
@@ -1888,6 +1889,53 @@
       if (enable) toast(`Алерт включён: ${coin} → Telegram при безубытке`);
     }
     loadBeWatchesM();
+
+    // ── Глубина стакана ±2% + «сколько уровней ask заберёт покупка» ──
+    async function updateBuyDepthM() {
+      const el = document.getElementById('buyDepthInfoM');
+      if (!el) return;
+      const panel = document.getElementById('panelTrade');
+      if (!panel || !panel.classList.contains('active')) return; // не поллим, когда вкладка скрыта
+      const coin = document.getElementById('coinInput')?.value?.trim()?.toUpperCase();
+      if (!coin) return;
+      try {
+        const r = await fetch(`https://api.exchange.coinbase.com/products/${coin}-USD/book?level=2`);
+        if (!r.ok) return;
+        const b = await r.json();
+        const bids = b.bids || [], asks = b.asks || [];
+        if (!asks.length || !bids.length) { el.innerHTML = ''; return; }
+        const ba = parseFloat(asks[0][0]);
+        const mid = (parseFloat(bids[0][0]) + ba) / 2;
+        let dBuy = 0, dSell = 0;
+        for (const e of bids) { const p = +e[0], s = +e[1]; if (p >= mid * 0.98) dBuy += p * s; }
+        for (const e of asks) { const p = +e[0], s = +e[1]; if (p <= mid * 1.02) dSell += p * s; }
+        const tot = dBuy + dSell, bp = tot ? Math.round(dBuy / tot * 100) : 50;
+        const usd = parseFloat(getUsdAmount()) || 0;
+        let impact = '';
+        if (usd > 0) {
+          let left = usd, full = 0, partPct = 0, cost = 0, units = 0;
+          for (let i = 0; i < asks.length && left > 0 && i < 60; i++) {
+            const p = +asks[i][0], lvlUsd = p * (+asks[i][1]);
+            const take = Math.min(left, lvlUsd);
+            cost += take; units += take / p;
+            if (take >= lvlUsd - 1e-9) full++;
+            else partPct = take / lvlUsd * 100;
+            left -= take;
+          }
+          const avgPx = units > 0 ? cost / units : ba;
+          const slip = (avgPx - ba) / ba * 100;
+          if (left > 0) impact = `<span style="color:#f55;">⚠ мало ликвидности: \$${(usd - left).toFixed(0)} из \$${usd.toFixed(0)}</span>`;
+          else if (full === 0) impact = `\$${usd.toFixed(2)} по ask: <b style="color:var(--green);">1-й ур., ${partPct.toFixed(0)}%</b>`;
+          else impact = `\$${usd.toFixed(2)} по ask: <b style="color:${full > 2 ? 'var(--yellow)' : 'var(--green)'};">${full} ур.${partPct > 0 ? ' + ' + partPct.toFixed(0) + '%' : ''}</b> · слип ${slip.toFixed(2)}%`;
+        }
+        el.innerHTML = `<span>±2%: <span style="color:var(--green);font-weight:600;">${fmtVolShort(dBuy)}</span><span style="color:#555;">/</span><span style="color:#f55;font-weight:600;">${fmtVolShort(dSell)}</span></span>`
+          + `<span class="tv-depthbar" style="width:56px;"><i style="width:${bp}%"></i></span>`
+          + (impact ? `<span style="color:#8b93a7;">${impact}</span>` : '');
+      } catch { }
+    }
+    setInterval(updateBuyDepthM, 5000);
+    setTimeout(updateBuyDepthM, 1500);
+    document.getElementById('amtInput')?.addEventListener('input', () => updateBuyDepthM());
 
     // Позиция открытых лимитников в стакане (#1 = лучший bid/ask)
     async function updateOrderPositionsM() {
