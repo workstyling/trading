@@ -6554,8 +6554,8 @@
       if (!el) return;
       const coin = selectedBuyCoin;
       try {
-        // Полный стакан тянем не чаще раза в 10с (или при смене монеты)
-        if (_buyBook.coin !== coin || Date.now() - _buyBook.t > 10_000) {
+        // Обычно стакан уже свежий из updateBuyPanelPrices (каждые 5с); сами тянем только если устарел
+        if (_buyBook.coin !== coin || Date.now() - _buyBook.t > 6_000) {
           const r = await fetch(`https://api.exchange.coinbase.com/products/${coin}-USD/book?level=2`);
           if (!r.ok) return;
           const b = await r.json();
@@ -6599,8 +6599,10 @@
     async function updateBuyPanelPrices() {
       try {
         const pair = selectedBuyCoin + '-USD';
-        const res = await fetch(`https://api.exchange.coinbase.com/products/${pair}/book?level=1`);
+        // level=2: тот же запрос даёт и лучшие цены, и полный стакан для превью глубины
+        const res = await fetch(`https://api.exchange.coinbase.com/products/${pair}/book?level=2`);
         const data = await res.json();
+        _buyBook = { coin: selectedBuyCoin, bids: data.bids || [], asks: data.asks || [], t: Date.now() };
         const bidEl = document.getElementById('buyBestBid');
         const askEl = document.getElementById('buyBestAsk');
         
