@@ -1853,6 +1853,7 @@
       const v = Math.min(0, Math.max(-20, (parseInt(el.value, 10) || 0) + d));
       el.value = v;
       _saveBidLevelM(v);
+      if (typeof updateBuyDepthM === 'function') updateBuyDepthM();
     }
     function onBidLevelChangeM() {
       const el = document.getElementById('bidLevelInputM');
@@ -1928,9 +1929,32 @@
           else if (full === 0) impact = `\$${usd.toFixed(2)} по ask: <b style="color:var(--green);">1-й ур., ${partPct.toFixed(0)}%</b>`;
           else impact = `\$${usd.toFixed(2)} по ask: <b style="color:${full > 2 ? 'var(--yellow)' : 'var(--green)'};">${full} ур.${partPct > 0 ? ' + ' + partPct.toFixed(0) + '%' : ''}</b> · слип ${slip.toFixed(2)}%`;
         }
+        // Маркет vs лимитка (bid lvl) на ту же сумму
+        let cmp = '';
+        if (usd > 0) {
+          const lvlIdx = Math.abs(Math.min(0, parseInt(tradingSettings.bidLevel, 10) || 0));
+          const bidPx = parseFloat((bids[lvlIdx] || bids[0])[0]);
+          const feeL = (parseFloat(tradingSettings.tradeFee) || 0.25) / 100;
+          const feeM = (parseFloat(tradingSettings.marketFee) || 0.5) / 100;
+          if (bidPx > 0) {
+            const unitsLimit = usd * (1 - feeL) / bidPx;
+            let leftN = usd * (1 - feeM), unitsMkt = 0;
+            for (let i = 0; i < asks.length && leftN > 0 && i < 60; i++) {
+              const p = +asks[i][0], lvlUsd = p * (+asks[i][1]);
+              const take = Math.min(leftN, lvlUsd);
+              unitsMkt += take / p; leftN -= take;
+            }
+            if (unitsMkt > 0) {
+              const pctD = (unitsLimit / unitsMkt - 1) * 100;
+              const usdD = usd * (unitsLimit / unitsMkt - 1);
+              cmp = `маркет дороже на <b style="color:${pctD > 0.8 ? '#f55' : 'var(--yellow)'};">${pctD.toFixed(2)}% (~\$${usdD.toFixed(2)})</b> vs lvl ${-lvlIdx}`;
+            }
+          }
+        }
         el.innerHTML = `<span>±2%: <span style="color:var(--green);font-weight:600;">${fmtVolShort(dBuy)}</span><span style="color:#555;">/</span><span style="color:#f55;font-weight:600;">${fmtVolShort(dSell)}</span></span>`
           + `<span class="tv-depthbar" style="width:56px;"><i style="width:${bp}%"></i></span>`
-          + (impact ? `<span style="color:#8b93a7;">${impact}</span>` : '');
+          + (impact ? `<span style="color:#8b93a7;">${impact}</span>` : '')
+          + (cmp ? `<span style="color:#8b93a7;">${cmp}</span>` : '');
       } catch { }
     }
     setInterval(updateBuyDepthM, 5000);

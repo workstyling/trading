@@ -6390,6 +6390,7 @@
       el.value = v;
       tradingSettings.bidLevel = v;
       saveSettingsToServer();
+      if (typeof updateBuyDepth === 'function') updateBuyDepth();
     }
     function onBidLevelChange() {
       const el = document.getElementById('bidLevelInput');
@@ -6397,6 +6398,7 @@
       el.value = v;
       tradingSettings.bidLevel = v;
       saveSettingsToServer();
+      if (typeof updateBuyDepth === 'function') updateBuyDepth();
     }
 
     // ========== BUY PANEL ==========
@@ -6588,9 +6590,33 @@
           else if (full === 0) impact = `покупка $${usd.toFixed(2)} по ask: <b style="color:var(--green);">1-й уровень, ${partPct.toFixed(0)}% его объёма</b>`;
           else impact = `покупка $${usd.toFixed(2)} по ask: <b style="color:${full > 2 ? '#f5c518' : 'var(--green)'};">${full} уровн${full === 1 ? 'ь' : full < 5 ? 'я' : 'ей'} целиком${partPct > 0 ? ' + ' + partPct.toFixed(0) + '% следующего' : ''}</b> · проскальзывание ${slip.toFixed(2)}%`;
         }
+        // Сравнение: маркет (по ask + market fee) vs твоя лимитка (bid lvl + limit fee) — на ту же сумму
+        let cmp = '';
+        if (usd > 0) {
+          const lvlIdx = Math.abs(Math.min(0, parseInt(tradingSettings.bidLevel, 10) || 0));
+          const bidRow = bids[lvlIdx] || bids[0];
+          const bidPx = parseFloat(bidRow[0]);
+          const feeL = (parseFloat(tradingSettings.tradeFee) || 0.25) / 100;
+          const feeM = (parseFloat(tradingSettings.marketFee) || 0.5) / 100;
+          if (bidPx > 0) {
+            const unitsLimit = usd * (1 - feeL) / bidPx;
+            let leftN = usd * (1 - feeM), unitsMkt = 0;
+            for (let i = 0; i < asks.length && leftN > 0 && i < 60; i++) {
+              const p = +asks[i][0], lvlUsd = p * (+asks[i][1]);
+              const take = Math.min(leftN, lvlUsd);
+              unitsMkt += take / p; leftN -= take;
+            }
+            if (unitsMkt > 0) {
+              const pctD = (unitsLimit / unitsMkt - 1) * 100;
+              const usdD = usd * (unitsLimit / unitsMkt - 1);
+              cmp = `<span title="Насколько дороже купить эту сумму маркетом (по ask, комиссия ${(feeM * 100).toFixed(2)}%, с проскальзыванием) по сравнению с твоей лимиткой на bid-уровне ${-lvlIdx || 0} (комиссия ${(feeL * 100).toFixed(2)}%)">маркетом дороже на <b style="color:${pctD > 0.8 ? '#f55' : '#f5c518'};">${pctD.toFixed(2)}% (~$${usdD.toFixed(2)})</b> vs лимитка lvl ${-lvlIdx}</span>`;
+            }
+          }
+        }
         el.innerHTML = `<span title="Глубина стакана в ±2% от цены: биды/аски">стакан ±2%: <span style="color:var(--green);font-weight:600;">${fmtVolShort(dBuy)}</span><span style="color:#555;">/</span><span style="color:#f55;font-weight:600;">${fmtVolShort(dSell)}</span></span>`
           + `<span class="tv-depthbar" style="width:70px;"><i style="width:${bp}%"></i></span>`
-          + (impact ? `<span style="color:#8b93a7;">${impact}</span>` : '');
+          + (impact ? `<span style="color:#8b93a7;">${impact}</span>` : '')
+          + (cmp ? `<span style="color:#8b93a7;">${cmp}</span>` : '');
       } catch { }
     }
     document.getElementById('buyUsdAmount')?.addEventListener('input', () => updateBuyDepth());
