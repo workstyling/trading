@@ -6004,6 +6004,7 @@
           <div class="tg-header">
             <span class="tg-title"><span class="tg-header-title">📉 Top Losers 30d</span><span style="font-size:9px;color:#666;margin-left:6px;">mcap ≥ $30M · Coinbase</span></span>
             <span class="tg-meta" style="font-size:10px;">
+              <span id="tlRebuild" style="display:none;color:var(--yellow);font-size:9px;margin-right:6px;">⟳ пересборка списка…</span>
               <button class="tg-refresh-btn" id="tlRefreshBtn" onclick="loadTopLosers(true)" title="Обновить цены сейчас + пересобрать список"><span class="spin-icon">⟳</span> Refresh</button>
               upd: <span id="tlUpdated">—</span>
             </span>
@@ -12624,6 +12625,20 @@ Requirements:
         if (btn) { btn.disabled = false; btn.classList.remove('spinning'); }
         // Явная обратная связь: вспышка зелёным после принудительного обновления
         if (force && uEl) { uEl.style.transition = 'color 0.2s'; uEl.style.color = '#00e5a0'; setTimeout(() => { uEl.style.color = ''; }, 1600); }
+        // Индикатор фоновой пересборки списка (~1.5 мин): показываем пока идёт, ✓ по завершении
+        const rebEl = document.getElementById('tlRebuild');
+        if (rebEl) {
+          if (j.rebuilding) {
+            rebEl.style.display = '';
+            rebEl.textContent = '⟳ пересборка списка…';
+            rebEl.style.color = 'var(--yellow)';
+            if (!window._tlRebPoll) { window._tlRebPoll = true; setTimeout(() => { window._tlRebPoll = false; loadTopLosers(); }, 12000); }
+          } else if (rebEl.style.display !== 'none') {
+            rebEl.textContent = '✓ список обновлён';
+            rebEl.style.color = '#00e5a0';
+            setTimeout(() => { rebEl.style.display = 'none'; }, 4000);
+          }
+        }
         const body = document.getElementById('tlBody');
         if (!body) return;
         if (!j.success || !j.coins || !j.coins.length) {

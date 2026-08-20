@@ -1413,6 +1413,7 @@
     <div class="tg-header">
       <span class="tg-title">📉 Top Losers 30d</span>
       <span class="tg-meta" style="font-size:9px;">
+        <span id="tlRebuildM" style="display:none;color:var(--yellow);font-size:8px;margin-right:4px;">⟳ пересборка…</span>
         <button class="tg-refresh-btn" id="tlRefreshBtnM" onclick="loadTopLosersM(true)" style="height:22px;font-size:10px;padding:0 6px;">⟳</button>
         mcap ≥ $30M · upd: <span id="tlUpdatedM">—</span>
       </span>
@@ -4077,6 +4078,19 @@
         const j = await r.json();
         if (btn) btn.disabled = false;
         if (force && uEl) { uEl.style.color = '#00e5a0'; setTimeout(() => { uEl.style.color = ''; }, 1600); }
+        const rebEl = document.getElementById('tlRebuildM');
+        if (rebEl) {
+          if (j.rebuilding) {
+            rebEl.style.display = '';
+            rebEl.textContent = '⟳ пересборка…';
+            rebEl.style.color = 'var(--yellow)';
+            if (!window._tlRebPollM) { window._tlRebPollM = true; setTimeout(() => { window._tlRebPollM = false; loadTopLosersM(); }, 12000); }
+          } else if (rebEl.style.display !== 'none') {
+            rebEl.textContent = '✓ обновлён';
+            rebEl.style.color = '#00e5a0';
+            setTimeout(() => { rebEl.style.display = 'none'; }, 4000);
+          }
+        }
         const body = document.getElementById('tlBodyM');
         if (!body) return;
         if (!j.success || !j.coins || !j.coins.length) {

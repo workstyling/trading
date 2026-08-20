@@ -1239,7 +1239,7 @@ app.get('/api/top-losers', async (req, res) => {
       topLosersCache.data.sort((a, b) => a.pct30d - b.pct30d);
       topLosersCache.priceAt = Date.now();
     }
-    res.json({ success: true, coins: topLosersCache.data, updatedAt: topLosersCache.priceAt, building: topLosersBuilding && !topLosersCache.data.length });
+    res.json({ success: true, coins: topLosersCache.data, updatedAt: topLosersCache.priceAt, rebuiltAt: topLosersCache.fullAt, rebuilding: topLosersBuilding, building: topLosersBuilding && !topLosersCache.data.length });
   } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 setInterval(rebuildTopLosers, 10 * 60 * 1000);
