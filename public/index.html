@@ -5867,6 +5867,7 @@
               <button class="buy-limit-btn" id="buyLimitBtn" onclick="executeBuyLimitOrder()" style="display: none !important;">Buy Limit</button>
               <button class="tracker-toggle-btn" id="trackerToggleBtn" onclick="togglePriceTracker()" title="Auto Price Tracker based on trend" style="display: none !important;">⚡ Track</button>
             </div>
+            <div id="buyDepthInfo" style="font-size:10px;color:var(--t2);margin-top:7px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;"></div>
             
             <div id="trackerPanel" class="tracker-panel" style="display: none; max-height: 0px; opacity: 0;">
               <div class="tracker-divider"></div>
@@ -6546,6 +6547,55 @@
     setTimeout(loadVolume30d, 800);
     setInterval(loadVolume30d, 5 * 60 * 1000); // refresh every 5 min
 
+    // ── Глубина стакана ±2% + «сколько уровней ask заберёт покупка» ──
+    let _buyBook = { coin: null, bids: [], asks: [], t: 0 };
+    async function updateBuyDepth() {
+      const el = document.getElementById('buyDepthInfo');
+      if (!el) return;
+      const coin = selectedBuyCoin;
+      try {
+        // Полный стакан тянем не чаще раза в 10с (или при смене монеты)
+        if (_buyBook.coin !== coin || Date.now() - _buyBook.t > 10_000) {
+          const r = await fetch(`https://api.exchange.coinbase.com/products/${coin}-USD/book?level=2`);
+          if (!r.ok) return;
+          const b = await r.json();
+          _buyBook = { coin, bids: b.bids || [], asks: b.asks || [], t: Date.now() };
+        }
+        const bids = _buyBook.bids, asks = _buyBook.asks;
+        if (!asks.length || !bids.length) { el.innerHTML = ''; return; }
+        const ba = parseFloat(asks[0][0]);
+        const mid = (parseFloat(bids[0][0]) + ba) / 2;
+        let dBuy = 0, dSell = 0;
+        for (const e of bids) { const p = +e[0], s = +e[1]; if (p >= mid * 0.98) dBuy += p * s; }
+        for (const e of asks) { const p = +e[0], s = +e[1]; if (p <= mid * 1.02) dSell += p * s; }
+        const tot = dBuy + dSell, bp = tot ? Math.round(dBuy / tot * 100) : 50;
+        // Сколько уровней ask съест покупка на введённую сумму (сценарий taker)
+        const usd = parseFloat((document.getElementById('buyUsdAmount')?.value || '0').replace(/[$,]/g, '')) || 0;
+        let impact = '';
+        if (usd > 0) {
+          let left = usd, full = 0, partPct = 0, cost = 0, units = 0;
+          for (let i = 0; i < asks.length && left > 0 && i < 60; i++) {
+            const p = +asks[i][0], lvlUsd = p * (+asks[i][1]);
+            const take = Math.min(left, lvlUsd);
+            cost += take; units += take / p;
+            if (take >= lvlUsd - 1e-9) full++;
+            else partPct = take / lvlUsd * 100;
+            left -= take;
+          }
+          const avgPx = units > 0 ? cost / units : ba;
+          const slip = (avgPx - ba) / ba * 100;
+          if (left > 0) impact = `<span style="color:#f55;">⚠ ликвидности не хватит: закроется $${(usd - left).toFixed(0)} из $${usd.toFixed(0)}</span>`;
+          else if (full === 0) impact = `покупка $${usd.toFixed(2)} по ask: <b style="color:var(--green);">1-й уровень, ${partPct.toFixed(0)}% его объёма</b>`;
+          else impact = `покупка $${usd.toFixed(2)} по ask: <b style="color:${full > 2 ? '#f5c518' : 'var(--green)'};">${full} уровн${full === 1 ? 'ь' : full < 5 ? 'я' : 'ей'} целиком${partPct > 0 ? ' + ' + partPct.toFixed(0) + '% следующего' : ''}</b> · проскальзывание ${slip.toFixed(2)}%`;
+        }
+        el.innerHTML = `<span title="Глубина стакана в ±2% от цены: биды/аски">стакан ±2%: <span style="color:var(--green);font-weight:600;">${fmtVolShort(dBuy)}</span><span style="color:#555;">/</span><span style="color:#f55;font-weight:600;">${fmtVolShort(dSell)}</span></span>`
+          + `<span class="tv-depthbar" style="width:70px;"><i style="width:${bp}%"></i></span>`
+          + (impact ? `<span style="color:#8b93a7;">${impact}</span>` : '');
+      } catch { }
+    }
+    document.getElementById('buyUsdAmount')?.addEventListener('input', () => updateBuyDepth());
+    setTimeout(updateBuyDepth, 1500);
+
     async function updateBuyPanelPrices() {
       try {
         const pair = selectedBuyCoin + '-USD';
@@ -6573,6 +6623,7 @@
         if (typeof trackerRunning !== 'undefined' && trackerRunning) {
           calculateAndDisplaySuggestedPrice();
         }
+        updateBuyDepth();
       } catch (e) {
         console.warn('Cannot update buy prices:', e.message);
         document.getElementById('buyBestBid')?.classList.remove('loading');
