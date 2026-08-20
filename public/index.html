@@ -6748,6 +6748,8 @@
         usdField.style.background = '#1a3a1a';
         setTimeout(() => usdField.style.background = '#111', 300);
       }
+      // Мгновенный пересчёт превью стакана под новую сумму
+      if (typeof updateBuyDepth === 'function') updateBuyDepth();
 
       // Sync with MultiTracker
       if (typeof MultiTracker !== 'undefined' && MultiTracker.trackers) {

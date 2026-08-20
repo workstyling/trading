@@ -1814,6 +1814,7 @@
       const inp = document.getElementById('amtInput');
       inp.value = Math.min(100, Math.max(1, (parseInt(inp.value) || 99) + delta));
       updateUsd();
+      if (typeof updateBuyDepthM === 'function') updateBuyDepthM(); // мгновенный пересчёт превью стакана
     }
 
     // ── Confirm dialog ──
@@ -1892,6 +1893,7 @@
     loadBeWatchesM();
 
     // ── Глубина стакана ±2% + «сколько уровней ask заберёт покупка» ──
+    let _mDepthBook = { coin: null, bids: [], asks: [], t: 0 };
     async function updateBuyDepthM() {
       const el = document.getElementById('buyDepthInfoM');
       if (!el) return;
@@ -1900,10 +1902,14 @@
       const coin = document.getElementById('coinInput')?.value?.trim()?.toUpperCase();
       if (!coin) return;
       try {
-        const r = await fetch(`https://api.exchange.coinbase.com/products/${coin}-USD/book?level=2`);
-        if (!r.ok) return;
-        const b = await r.json();
-        const bids = b.bids || [], asks = b.asks || [];
+        // Свежий стакан не чаще раза в 4с — быстрые клики ± пересчитывают по кешу мгновенно
+        if (_mDepthBook.coin !== coin || Date.now() - _mDepthBook.t > 4000) {
+          const r = await fetch(`https://api.exchange.coinbase.com/products/${coin}-USD/book?level=2`);
+          if (!r.ok) return;
+          const b = await r.json();
+          _mDepthBook = { coin, bids: b.bids || [], asks: b.asks || [], t: Date.now() };
+        }
+        const bids = _mDepthBook.bids, asks = _mDepthBook.asks;
         if (!asks.length || !bids.length) { el.innerHTML = ''; return; }
         const ba = parseFloat(asks[0][0]);
         const mid = (parseFloat(bids[0][0]) + ba) / 2;
