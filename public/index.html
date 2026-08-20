@@ -11550,9 +11550,9 @@ Requirements:
       });
     }
 
-    // Update selected prices every 5s; positions every 3s + immediately on load
-    setInterval(updateSelectedPrices, 5000);
-    setInterval(updateOrderPositions, 3000);
+    // Интервалы подобраны под rate limit Coinbase (10 req/s c IP): суммарно все циклы должны укладываться
+    setInterval(updateSelectedPrices, 8000);
+    setInterval(updateOrderPositions, 7000);
     setTimeout(updateOrderPositions, 500);
     setTimeout(updateSelectedPrices, 100); // Run immediately on load
 
@@ -12599,7 +12599,7 @@ Requirements:
           } catch { }
           applyTrend(c.coin, pct1h, fallingHours, totalFallPct);
         } catch { markFail(c); }
-        await _sleep(120); // пауза между монетами — не упираемся в rate limit Coinbase
+        await _sleep(200); // пауза между монетами — не упираемся в rate limit Coinbase
       }
       // вторая попытка для несработавших монет
       if (failed.length && !isRetry && (gen === undefined || gen === _tvLoadGen)) {
@@ -12645,7 +12645,7 @@ Requirements:
             ok = true; break;
           } catch { if (attempt === 1) { const dp = tvCoinData[c.coin]; applyDepth(c.coin, dp?.bidDepth || 0, dp?.askDepth || 0); } }
         }
-        await new Promise(res => setTimeout(res, 120)); // пауза — rate limit
+        await new Promise(res => setTimeout(res, 200)); // пауза — rate limit
       }
     }
 

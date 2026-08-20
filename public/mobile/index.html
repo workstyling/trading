@@ -1993,7 +1993,7 @@
         } catch { }
       }));
     }
-    setInterval(updateOrderPositionsM, 5000);
+    setInterval(updateOrderPositionsM, 8000);
     setTimeout(updateOrderPositionsM, 1500);
 
     // ── Execute trades ──
@@ -4034,7 +4034,7 @@
           else if (pct1h >= 0) { el.innerHTML = `<span style="color:var(--green);">↑+${pct1h.toFixed(2)}%</span>${rsiHint}`; }
           else { el.innerHTML = `<span style="color:#f55;">↓${pct1h.toFixed(2)}%</span>${rsiHint}`; }
         } catch { markFail(c); }
-        await _sleep(120); // пауза между монетами — не упираемся в rate limit Coinbase
+        await _sleep(200); // пауза между монетами — не упираемся в rate limit Coinbase
       }
       // вторая попытка для несработавших монет
       if (failed.length && !isRetry && (gen === undefined || gen === _tvLoadGen)) {
@@ -4092,7 +4092,7 @@
             break;
           } catch {}
         }
-        await new Promise(res => setTimeout(res, 120)); // пауза — rate limit
+        await new Promise(res => setTimeout(res, 200)); // пауза — rate limit
       }
     }
 
