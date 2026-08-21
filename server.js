@@ -1166,6 +1166,39 @@ async function getMcapMap() {
   return mcapCache.map;
 }
 
+// Рейтинг отскока (0-10) + вердикт: покупать ли упавшую монету СЕЙЧАС.
+// Логика: дно позади → рост подтверждён → RSI вышел из перепроданности → ликвидность ок → есть микро-откат для входа.
+function calcReboundVerdict(c) {
+  const bounce = c.low30 > 0 ? (c.price - c.low30) / c.low30 * 100 : 0;       // отскок от 30д минимума
+  const pullback = c.hi5 > 0 ? (c.hi5 - c.price) / c.hi5 * 100 : 0;           // откат от 5-дневного хая
+  const volR = c.mcap > 0 ? (c.vol24 || 0) / c.mcap : 0;                       // объём/капитализация
+  let rb = 3;
+  if (c.daysLow >= 2 && bounce > 3)      rb += 2;   // дно позади, отскок держится
+  else if (c.daysLow >= 1 && bounce > 1) rb += 1;
+  else if (c.daysLow === 0)              rb -= 2;   // сегодня новое дно — падающий нож
+  if (c.upDays >= 2) rb += 1;                        // растёт 2+ дня подряд
+  if (c.upDays >= 4) rb += 0.5;
+  if (c.rsiD != null) {
+    if (c.rsiD >= 30 && c.rsiD <= 50) rb += 1.5;    // вышел из перепроданности, не перегрет
+    else if (c.rsiD < 25)             rb -= 1;      // ещё в яме
+    else if (c.rsiD > 60)             rb -= 0.5;    // отскок уже перегрет
+  }
+  if (volR >= 0.02)       rb += 1;                   // живой объём ≥2% капы
+  else if (volR < 0.005)  rb -= 2;                   // мёртвый оборот
+  if (bounce > 3 && pullback >= 1 && pullback <= 5) rb += 1.5; // идеальный вход: разворот + небольшой откат
+  else if (pullback > 8)                             rb -= 1;  // откат слишком глубокий — разворот под вопросом
+  rb = Math.max(0, Math.min(10, Math.round(rb * 2) / 2));
+  let tag;
+  if ((c.vol24 || 0) < 100_000 || volR < 0.003) tag = 'НЕЛИКВИД';
+  else if (c.daysLow === 0 || bounce < 1)       tag = 'ПАДАЕТ';
+  else if (rb >= 7 && pullback >= 1)            tag = 'ПОКУПАТЬ';
+  else if (rb >= 7)                             tag = 'ЖДАТЬ ОТКАТ';
+  else if (rb >= 5)                             tag = 'СЛЕДИТЬ';
+  else                                          tag = 'РАНО';
+  c.rb = rb; c.rbTag = tag;
+  c.rbInfo = { bounce: Math.round(bounce * 10) / 10, pullback: Math.round(pullback * 10) / 10, daysLow: c.daysLow, upDays: c.upDays, rsiD: c.rsiD != null ? Math.round(c.rsiD) : null, volR: Math.round(volR * 1000) / 10 };
+}
+
 async function rebuildTopLosers() {
   if (topLosersBuilding) return;
   topLosersBuilding = true;
@@ -1202,7 +1235,20 @@ async function rebuildTopLosers() {
         const crPx = mcap[sym]?.px;
         if (crPx > 0 && (last / crPx > 2.5 || crPx / last > 2.5)) continue;
         const vol24 = (cd[cd.length - 1][5] || 0) * last; // грубо из дневной свечи; уточнится тикером при первом обновлении цен
-        out.push({ coin: sym, pair: id, price: last, pct30d: (last - first) / first * 100, mcap: mcap[sym].mc, vol24, spark: cd.map(x => Math.round(x[4] * 1e8) / 1e8) });
+        // База для рейтинга отскока
+        const closesD = cd.map(x => x[4]), lowsD = cd.map(x => x[1]);
+        let loIdx = 0;
+        for (let i = 0; i < lowsD.length; i++) if (lowsD[i] < lowsD[loIdx]) loIdx = i;
+        let upDays = 0;
+        for (let i = closesD.length - 1; i > 0 && closesD[i] >= closesD[i - 1]; i--) upDays++;
+        const entry = {
+          coin: sym, pair: id, price: last, pct30d: (last - first) / first * 100, mcap: mcap[sym].mc, vol24,
+          low30: lowsD[loIdx], daysLow: closesD.length - 1 - loIdx, hi5: Math.max(...closesD.slice(-5)), upDays,
+          rsiD: calcRSIsrv(closesD, 14),
+          spark: cd.map(x => Math.round(x[4] * 1e8) / 1e8)
+        };
+        calcReboundVerdict(entry);
+        out.push(entry);
       } catch { keepOld(sym); }
       await new Promise(r2 => setTimeout(r2, 120));
     }
@@ -1233,6 +1279,7 @@ app.get('/api/top-losers', async (req, res) => {
             c.pct30d = base > 0 ? (px - base) / base * 100 : c.pct30d;
             const bv = parseFloat(t.volume); // rolling 24h объём в монетах
             if (bv > 0) c.vol24 = bv * px;
+            calcReboundVerdict(c); // рейтинг отскока живёт вместе с ценой
           }
         } catch { }
       }));

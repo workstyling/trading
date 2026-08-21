@@ -12729,17 +12729,26 @@ Requirements:
         const rows = j.coins.map((c, i) => {
           const price = c.price < 0.001 ? c.price.toFixed(6) : c.price < 1 ? c.price.toFixed(4) : c.price < 100 ? c.price.toFixed(3) : c.price.toFixed(2);
           const mc = c.mcap >= 1e9 ? '$' + (c.mcap / 1e9).toFixed(1) + 'B' : '$' + Math.round(c.mcap / 1e6) + 'M';
-          return `<tr style="cursor:pointer;" onclick="selectCoinForBuy('${c.coin}')" title="Выбрать ${c.coin} для покупки">
+          // Рейтинг отскока: стоит ли покупать сейчас
+          const rbCol = c.rbTag === 'ПОКУПАТЬ' ? '#00e5a0' : c.rbTag === 'ЖДАТЬ ОТКАТ' ? '#f5c518' : c.rbTag === 'СЛЕДИТЬ' ? '#f5843a' : '#f55';
+          const ri = c.rbInfo || {};
+          const rbTip = `отскок от 30д дна: +${ri.bounce ?? '—'}% (дно ${ri.daysLow ?? '—'} дн назад)&#10;рост подряд: ${ri.upDays ?? '—'} дн&#10;RSI дневной: ${ri.rsiD ?? '—'}&#10;откат от 5д хая: ${ri.pullback ?? '—'}% (вход лучше при 1–5%)&#10;объём/капа: ${ri.volR ?? '—'}%`;
+          const isBuy = c.rbTag === 'ПОКУПАТЬ';
+          return `<tr style="cursor:pointer;${isBuy ? 'background:rgba(0,229,160,0.06);box-shadow:inset 3px 0 0 #00e5a0;' : ''}" onclick="selectCoinForBuy('${c.coin}')" title="Выбрать ${c.coin} для покупки">
             <td style="color:#555;font-size:11px;">${i + 1}</td>
             <td class="tg-coin" style="font-size:12px;">${c.coin}<br><span style="color:#555;font-size:10px;font-weight:400;">$${price}</span></td>
             <td style="color:#f55;font-weight:700;font-size:12px;">${c.pct30d.toFixed(1)}%</td>
             <td class="tg-vol" style="font-size:11px;">${c.vol24 ? fmtVolShort(c.vol24) : '—'}</td>
             <td style="color:var(--t2);font-size:11px;">${mc}</td>
+            <td style="text-align:center;"><div title="${rbTip}" style="cursor:help;display:inline-flex;flex-direction:column;align-items:center;gap:1px;">
+              <span style="font-weight:800;color:${rbCol};font-size:13px;">${c.rb ?? '—'}</span>
+              <span style="font-size:7px;font-weight:800;color:${rbCol};background:${rbCol}22;padding:1px 4px;border-radius:4px;letter-spacing:0.03em;">${c.rbTag || ''}</span>
+            </div></td>
             <td>${_priceSparkSVG(c.spark || [])}</td>
             <td><button onclick="event.stopPropagation();toggleTopVolumeChart('${c.coin}')" title="Chart ${c.coin}" style="padding:2px 6px;border:1px solid rgba(76,201,240,0.3);border-radius:5px;background:rgba(76,201,240,0.07);color:var(--blue);font-size:10px;cursor:pointer;">📈</button></td>
           </tr>`;
         }).join('');
-        body.innerHTML = `<table class="tg-table"><thead><tr><th>#</th><th>COIN</th><th>30D%</th><th>VOL 24H</th><th>MCAP</th><th>MONTH</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+        body.innerHTML = `<table class="tg-table"><thead><tr><th>#</th><th>COIN</th><th>30D%</th><th>VOL 24H</th><th>MCAP</th><th title="Рейтинг отскока: подтверждение разворота после 30д падения + микро-откат для входа">BUY</th><th>MONTH</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
         const u = document.getElementById('tlUpdated');
         if (u && j.updatedAt) u.textContent = new Date(j.updatedAt).toLocaleTimeString();
       } catch { }
