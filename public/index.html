@@ -12779,6 +12779,16 @@ Requirements:
     setInterval(loadTopLosers, 30_000);
     loadTopLosers();
 
+    // Браузер душит таймеры фоновых вкладок — при возврате сразу освежаем все данные
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) {
+        loadTopLosers();
+        loadTopVolume();
+        if (typeof updateBuyPanelPrices === 'function') updateBuyPanelPrices();
+        if (typeof updateOrderPositions === 'function') updateOrderPositions();
+      }
+    });
+
     document.getElementById('tvBody')?.addEventListener('mouseenter', () => { tvPaused = true; });
     document.getElementById('tvBody')?.addEventListener('mouseleave', () => { tvPaused = false; });
 

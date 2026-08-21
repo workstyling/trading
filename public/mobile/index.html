@@ -4217,6 +4217,16 @@
     setInterval(loadTopLosersM, 30_000);
     loadTopLosersM();
 
+    // На телефоне фоновые вкладки замораживаются — при возврате сразу освежаем данные
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) {
+        loadTopLosersM();
+        loadTopVolumeMobile();
+        if (typeof updateOrderPositionsM === 'function') updateOrderPositionsM();
+        if (typeof updateBuyDepthM === 'function') updateBuyDepthM();
+      }
+    });
+
     loadTopVolumeMobile();
     startTvCountdown();
 
