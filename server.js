@@ -1169,6 +1169,8 @@ async function getMcapMap() {
 // Рейтинг отскока (0-10) + вердикт: покупать ли упавшую монету СЕЙЧАС.
 // Логика: дно позади → рост подтверждён → RSI вышел из перепроданности → ликвидность ок → есть микро-откат для входа.
 function calcReboundVerdict(c) {
+  // Нет базы (старый кеш без low30/daysLow) — честно не считаем, вместо мусорного вердикта
+  if (!(c.low30 > 0) || c.daysLow == null) { c.rb = null; c.rbTag = ''; c.rbInfo = null; return; }
   const bounce = c.low30 > 0 ? (c.price - c.low30) / c.low30 * 100 : 0;       // отскок от 30д минимума
   const pullback = c.hi5 > 0 ? (c.hi5 - c.price) / c.hi5 * 100 : 0;           // откат от 5-дневного хая
   const volR = c.mcap > 0 ? (c.vol24 || 0) / c.mcap : 0;                       // объём/капитализация
