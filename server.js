@@ -1262,35 +1262,79 @@ async function rebuildTopLosers() {
   finally { topLosersBuilding = false; }
 }
 
+async function refreshTopLosersPrices(force) {
+  if (!topLosersCache.data.length) return;
+  if (!force && Date.now() - topLosersCache.priceAt <= 30_000) return;
+  const H = { headers: { 'User-Agent': 'trading-app/1.0' } };
+  await Promise.all(topLosersCache.data.map(async c => {
+    try {
+      const r = await fetch(`https://api.exchange.coinbase.com/products/${c.pair}/ticker`, H);
+      if (!r.ok) return;
+      const t = await r.json();
+      const px = parseFloat(t.price || t.ask || t.bid);
+      if (px > 0) {
+        const base = c.price / (1 + c.pct30d / 100); // цена месяц назад
+        c.price = px;
+        c.pct30d = base > 0 ? (px - base) / base * 100 : c.pct30d;
+        const bv = parseFloat(t.volume); // rolling 24h объём в монетах
+        if (bv > 0) c.vol24 = bv * px;
+        calcReboundVerdict(c); // рейтинг отскока живёт вместе с ценой
+      }
+    } catch { }
+  }));
+  topLosersCache.data.sort((a, b) => a.pct30d - b.pct30d);
+  topLosersCache.priceAt = Date.now();
+}
+
 app.get('/api/top-losers', async (req, res) => {
   try {
     const force = req.query.force === 'true';
     if ((force || !topLosersCache.data.length) && !topLosersBuilding) rebuildTopLosers(); // пересборка в фоне
-    // Освежаем цены списка не чаще раза в 30с (force — немедленно)
-    if (topLosersCache.data.length && (force || Date.now() - topLosersCache.priceAt > 30_000)) {
-      const H = { headers: { 'User-Agent': 'trading-app/1.0' } };
-      await Promise.all(topLosersCache.data.map(async c => {
-        try {
-          const r = await fetch(`https://api.exchange.coinbase.com/products/${c.pair}/ticker`, H);
-          if (!r.ok) return;
-          const t = await r.json();
-          const px = parseFloat(t.price || t.ask || t.bid);
-          if (px > 0) {
-            const base = c.price / (1 + c.pct30d / 100); // цена месяц назад
-            c.price = px;
-            c.pct30d = base > 0 ? (px - base) / base * 100 : c.pct30d;
-            const bv = parseFloat(t.volume); // rolling 24h объём в монетах
-            if (bv > 0) c.vol24 = bv * px;
-            calcReboundVerdict(c); // рейтинг отскока живёт вместе с ценой
-          }
-        } catch { }
-      }));
-      topLosersCache.data.sort((a, b) => a.pct30d - b.pct30d);
-      topLosersCache.priceAt = Date.now();
-    }
-    res.json({ success: true, coins: topLosersCache.data, updatedAt: topLosersCache.priceAt, rebuiltAt: topLosersCache.fullAt, rebuilding: topLosersBuilding, building: topLosersBuilding && !topLosersCache.data.length });
+    await refreshTopLosersPrices(force);
+    res.json({ success: true, coins: topLosersCache.data, updatedAt: topLosersCache.priceAt, rebuiltAt: topLosersCache.fullAt, rebuilding: topLosersBuilding, building: topLosersBuilding && !topLosersCache.data.length, buyWatch: buyWatchArmed });
   } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
+
+// ── Вотч «появился ПОКУПАТЬ» в Top Losers → Telegram, одноразовый ──
+const BUY_WATCH_FILE = path.join(__dirname, 'buy-watch.json');
+let buyWatchArmed = false;
+try { buyWatchArmed = !!(JSON.parse(fs.readFileSync(BUY_WATCH_FILE, 'utf8')).armed); } catch { }
+function saveBuyWatch() { try { fs.writeFileSync(BUY_WATCH_FILE, JSON.stringify({ armed: buyWatchArmed })); } catch { } }
+
+app.post('/api/buy-watch', (req, res) => {
+  const enable = !!(req.body || {}).enable;
+  if (enable) {
+    const s = loadSettings();
+    if (!(s.telegramToken && s.telegramChat)) return res.json({ success: false, error: 'Telegram не настроен: укажи Bot Token и Chat ID в настройках' });
+  }
+  buyWatchArmed = enable;
+  saveBuyWatch();
+  res.json({ success: true, armed: buyWatchArmed });
+});
+
+// Чекер раз в 60с: сервер сам следит, даже когда все браузеры закрыты
+setInterval(async () => {
+  if (!buyWatchArmed || !topLosersCache.data.length) return;
+  try {
+    await refreshTopLosersPrices(false);
+    const hits = topLosersCache.data.filter(c => c.rbTag === 'ПОКУПАТЬ');
+    if (!hits.length) return;
+    const c = hits.sort((a, b) => (b.rb || 0) - (a.rb || 0))[0]; // лучший кандидат
+    const ri = c.rbInfo || {};
+    const sent = await sendTelegram(
+      `🟢 <b>BUY SIGNAL — Top Losers rebound</b>\n` +
+      `<b>${c.pair}</b> — rating <b>${c.rb}/10</b>\n` +
+      `━━━━━━━━━━━━━━━━━━\n` +
+      `📉 30d change: ${c.pct30d.toFixed(1)}%\n` +
+      `🔄 Bounce from bottom: +${ri.bounce}% (low was ${ri.daysLow}d ago)\n` +
+      `📊 Daily RSI: ${ri.rsiD} · pullback from 5d high: ${ri.pullback}%\n` +
+      `💵 Price: $${c.price}\n` +
+      `(one-shot alert — now OFF)`, 'HTML');
+    buyWatchArmed = false;
+    saveBuyWatch();
+    console.log(`[buy-watch] fired: ${c.pair} rb=${c.rb}, telegram=${sent}`);
+  } catch (e) { console.error('[buy-watch]', e.message); }
+}, 60_000);
 setInterval(rebuildTopLosers, 10 * 60 * 1000);
 setTimeout(rebuildTopLosers, 30_000);
 

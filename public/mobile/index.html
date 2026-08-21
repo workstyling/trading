@@ -1415,6 +1415,7 @@
       <span class="tg-title">📉 Top Losers 30d</span>
       <span class="tg-meta" style="font-size:9px;">
         <span id="tlRebuildM" style="display:none;color:var(--yellow);font-size:8px;margin-right:4px;">⟳ пересборка…</span>
+        <button class="tg-refresh-btn" id="tlBuyWatchBtnM" onclick="toggleBuyWatchM()" style="height:22px;font-size:10px;padding:0 6px;margin-right:3px;">🔔</button>
         <button class="tg-refresh-btn" id="tlRefreshBtnM" onclick="loadTopLosersM(true)" style="height:22px;font-size:10px;padding:0 6px;">⟳</button>
         mcap ≥ $30M · upd: <span id="tlUpdatedM">—</span>
       </span>
@@ -4136,6 +4137,22 @@
     refreshAll();
     connectPriceWs();
     // ── Top Losers 30d ──
+    let _tlBuyWatch = false;
+    function _paintBuyWatchBtnM() {
+      const b = document.getElementById('tlBuyWatchBtnM');
+      if (!b) return;
+      b.textContent = _tlBuyWatch ? '🔔 ON' : '🔔';
+      b.style.borderColor = _tlBuyWatch ? 'var(--yellow)' : '';
+      b.style.color = _tlBuyWatch ? 'var(--yellow)' : '';
+      b.style.background = _tlBuyWatch ? 'rgba(245,197,24,0.12)' : '';
+    }
+    async function toggleBuyWatchM() {
+      const r = await api('/api/buy-watch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enable: !_tlBuyWatch }) });
+      if (!r.success) { toast(r.error || 'Ошибка', 'error'); return; }
+      _tlBuyWatch = r.armed;
+      _paintBuyWatchBtnM();
+      if (_tlBuyWatch) toast('Слежу: Telegram при первом ПОКУПАТЬ (один раз)');
+    }
     function _priceSparkSVG(pts) {
       if (!Array.isArray(pts) || pts.length < 2) return '';
       const W = 56, H = 14, n = pts.length;
@@ -4194,6 +4211,7 @@
         body.innerHTML = `<table style="width:100%;border-collapse:collapse;"><thead><tr style="border-bottom:1px solid #222;"><th style="color:#666;font-size:9px;text-align:left;padding:4px 2px;">#</th><th style="color:#666;font-size:9px;text-align:left;padding:4px 3px;">COIN</th><th style="color:#666;font-size:9px;text-align:right;padding:4px 3px;">30D%</th><th style="color:#666;font-size:9px;text-align:right;padding:4px 3px;">VOL</th><th style="color:#666;font-size:9px;text-align:right;padding:4px 3px;">MCAP</th><th style="color:#666;font-size:9px;text-align:center;padding:4px 2px;">BUY</th><th style="color:#666;font-size:9px;text-align:right;padding:4px 3px;">MONTH</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
         const u = document.getElementById('tlUpdatedM');
         if (u && j.updatedAt) u.textContent = new Date(j.updatedAt).toLocaleTimeString().slice(0, 5);
+        if (typeof j.buyWatch === 'boolean' && j.buyWatch !== _tlBuyWatch) { _tlBuyWatch = j.buyWatch; _paintBuyWatchBtnM(); }
       } catch { }
     }
     setInterval(loadTopLosersM, 30_000);

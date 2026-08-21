@@ -6006,6 +6006,7 @@
             <span class="tg-title"><span class="tg-header-title">📉 Top Losers 30d</span><span style="font-size:9px;color:#666;margin-left:6px;">mcap ≥ $30M · Coinbase</span></span>
             <span class="tg-meta" style="font-size:10px;">
               <span id="tlRebuild" style="display:none;color:var(--yellow);font-size:9px;margin-right:6px;">⟳ пересборка списка…</span>
+              <button class="tg-refresh-btn" id="tlBuyWatchBtn" onclick="toggleBuyWatch()" title="Telegram-алерт, когда в списке появится монета с вердиктом ПОКУПАТЬ. Сработает один раз и выключится." style="margin-right:4px;">🔔 BUY</button>
               <button class="tg-refresh-btn" id="tlRefreshBtn" onclick="loadTopLosers(true)" title="Обновить цены сейчас + пересобрать список"><span class="spin-icon">⟳</span> Refresh</button>
               upd: <span id="tlUpdated">—</span>
             </span>
@@ -12685,6 +12686,26 @@ Requirements:
     startTvCountdown();
 
     // ── Top Losers 30d ──
+    // Вотч «появился ПОКУПАТЬ» → Telegram (одноразовый, живёт на сервере)
+    let _tlBuyWatch = false;
+    function _paintBuyWatchBtn() {
+      const b = document.getElementById('tlBuyWatchBtn');
+      if (!b) return;
+      b.textContent = _tlBuyWatch ? '🔔 BUY ON' : '🔔 BUY';
+      b.style.borderColor = _tlBuyWatch ? 'var(--yellow)' : '';
+      b.style.color = _tlBuyWatch ? 'var(--yellow)' : '';
+      b.style.background = _tlBuyWatch ? 'rgba(245,197,24,0.12)' : '';
+    }
+    async function toggleBuyWatch() {
+      try {
+        const r = await fetch('/api/buy-watch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enable: !_tlBuyWatch }) });
+        const j = await r.json();
+        if (!j.success) { showCustomAlert(j.error || 'Ошибка', true); return; }
+        _tlBuyWatch = j.armed;
+        _paintBuyWatchBtn();
+        if (_tlBuyWatch) showCustomAlert('Слежу за Top Losers: пришлю в Telegram первую монету с вердиктом ПОКУПАТЬ (один раз)');
+      } catch (e) { showCustomAlert('Ошибка: ' + e.message, true); }
+    }
     function _priceSparkSVG(pts) {
       if (!Array.isArray(pts) || pts.length < 2) return '';
       const W = 64, H = 16, n = pts.length;
@@ -12751,6 +12772,8 @@ Requirements:
         body.innerHTML = `<table class="tg-table"><thead><tr><th>#</th><th>COIN</th><th>30D%</th><th>VOL 24H</th><th>MCAP</th><th title="Рейтинг отскока: подтверждение разворота после 30д падения + микро-откат для входа">BUY</th><th>MONTH</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
         const u = document.getElementById('tlUpdated');
         if (u && j.updatedAt) u.textContent = new Date(j.updatedAt).toLocaleTimeString();
+        // Синхронизация вотча (в т.ч. автогашение кнопки после срабатывания на сервере)
+        if (typeof j.buyWatch === 'boolean' && j.buyWatch !== _tlBuyWatch) { _tlBuyWatch = j.buyWatch; _paintBuyWatchBtn(); }
       } catch { }
     }
     setInterval(loadTopLosers, 30_000);
