@@ -1332,10 +1332,14 @@ setInterval(async () => {
   if (!buyWatchArmed || !topLosersCache.data.length) return;
   try {
     await refreshTopLosersPrices(false);
+    // Работаем по REV. Откат на старый вердикт — ТОЛЬКО если reversal вообще ещё
+    // не посчитан (свежий рестарт). Если он посчитан и входов нет — просто ждём
+    // дальше, а не подсовываем старый сигнал: гейт проходит ~23 раза в месяц по
+    // всему рынку, иначе алерт улетал бы почти сразу и мимо цели.
+    const revReady = topLosersCache.data.some(c => c.rv);
     const revHits = topLosersCache.data.filter(c => c.rv && c.rv.pass);
-    const rbHits = topLosersCache.data.filter(c => c.rbTag === 'ПОКУПАТЬ');
-    const byRev = revHits.length > 0;
-    const pool = byRev ? revHits : rbHits;
+    const byRev = revReady;
+    const pool = revReady ? revHits : topLosersCache.data.filter(c => c.rbTag === 'ПОКУПАТЬ');
     if (!pool.length) return;
     const c = byRev
       ? pool.sort((a, b) => (b.rv.score || 0) - (a.rv.score || 0))[0]
@@ -3874,6 +3878,11 @@ function calcReversalScore(d, s, btc) {
   // которой нельзя торговать или которая в худшей по бэктесту группе
   if (!liquid) sc = Math.min(sc, 39);
   if (drop < -50) sc = Math.min(sc, 44);
+  // Шкала должна быть однозначной: любая монета, прошедшая гейт, набирает
+  // минимум 77 (26+25+20+11 −5 за падающий BTC). Поэтому всё, что гейт НЕ
+  // прошло, потолком уводим ниже 77 — иначе 3/4 набирало до 85 и число
+  // противоречило вердикту. Правило простое: 77+ ⇔ ВХОД.
+  if (passed < 4) sc = Math.min(sc, 74);
   sc = Math.max(0, Math.min(100, Math.round(sc)));
 
   let tag;

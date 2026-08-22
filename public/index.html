@@ -12979,7 +12979,8 @@ Requirements:
           const rvTip = rv
             ? `REVERSAL ${rv.score}/100 — гейт ${rv.passed}/4&#10;` +
               rv.checks.map(x => `${x.ok ? '✓' : '✗'} ${x.k}: ${x.v}`).join('&#10;') +
-              `&#10;&#10;Гейт откалиброван бэктестом на 1635 сигналах:&#10;при 4/4 win-rate 44%, PF 1.34 (база 37%).&#10;Просадка глубже −50% — худшая группа (win 32%).`
+              `&#10;&#10;Правило: 77+ = ВХОД (гейт 4/4). Ниже 77 гейт не пройден.&#10;` +
+              `Гейт откалиброван бэктестом на 1635 сигналах:&#10;при 4/4 win-rate 44%, PF 1.34 (база 37%).&#10;Просадка глубже −50% — худшая группа (win 32%).`
             : 'Reversal ещё не посчитан (обновится при пересборке списка)';
           const isBuy = c.rbTag === 'ПОКУПАТЬ';
           const isRvEntry = !!(rv && rv.pass);
@@ -13008,7 +13009,7 @@ Requirements:
             </td>
           </tr>`;
         }).join('');
-        body.innerHTML = `<table class="tg-table"><thead><tr><th>#</th><th>COIN</th><th>30D%</th><th>VOL 24H</th><th>MCAP</th><th title="Старый рейтинг отскока (0–10): подтверждение разворота после 30д падения + микро-откат для входа">BUY</th><th title="Reversal Score (0–100) — веса откалиброваны историческим бэктестом на 1635 сигналах. Гейт входа: просадка −32…−50%, цена выше EMA20 4H, RSI вышел из перепроданности, объём ≥ $500K. При 4/4 win-rate 44% против базовых 37%.">REV</th><th>MONTH</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+        body.innerHTML = `<table class="tg-table"><thead><tr><th>#</th><th>COIN</th><th>30D%</th><th>VOL 24H</th><th>MCAP</th><th title="Старый рейтинг отскока (0–10): подтверждение разворота после 30д падения + микро-откат для входа">BUY</th><th title="Reversal Score (0–100), веса откалиброваны бэктестом на 1635 сигналах. Покупать при 77 и выше — это ровно вердикт ВХОД, гейт 4/4: просадка −32…−50%, цена выше EMA20 4H, RSI вышел из перепроданности, объём ≥ $500K. Ниже 77 гейт не пройден. При 4/4 win-rate 44% против базовых 37%.">REV</th><th>MONTH</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
         const u = document.getElementById('tlUpdated');
         if (u && j.updatedAt) u.textContent = new Date(j.updatedAt).toLocaleTimeString();
         // Синхронизация вотча (в т.ч. автогашение кнопки после срабатывания на сервере)
