@@ -2032,6 +2032,8 @@ async function checkFilledOrders() {
       notifiedFills.push(o.order_id);
       changed = true;
       console.log(`[fill-notify] ${o.product_id} ${o.side} filled, telegram=${sent}`);
+      // Журнал сделок: фиксируем вход/выход с контекстом рынка на момент исполнения
+      try { journalOnFill(o); } catch (e) { console.error('[journal] onFill', e.message); }
     }
     if (changed) {
       notifiedFills = notifiedFills.slice(-800);
@@ -3166,6 +3168,573 @@ app.get('/get-order-status/:orderId', async (req, res) => {
     console.error('Error getting order status:', error);
     res.status(500).json({ success: false, error: error.message });
   }
+});
+
+// ══════════════════════════════════════════════════════════════════
+// ═══ 1. TRADE JOURNAL — реальные сделки + контекст входа ═══
+// ══════════════════════════════════════════════════════════════════
+const JOURNAL_FILE = path.join(__dirname, 'trade-journal.json');
+let journal = { open: {}, closed: [] };
+try { journal = JSON.parse(fs.readFileSync(JOURNAL_FILE, 'utf8')); } catch { }
+if (!journal.open) journal.open = {};
+if (!journal.closed) journal.closed = [];
+function saveJournal() {
+  try { fs.writeFileSync(JOURNAL_FILE, JSON.stringify(journal, null, 2)); }
+  catch (e) { console.error('[journal] save', e.message); }
+}
+
+// Контекст рынка на момент входа — только из уже готовых кешей, без лишних запросов
+function captureEntryContext(coin) {
+  const sc = latestScores[coin];
+  const tl = topLosersCache.data.find(c => c.coin === coin);
+  const tv = topVolumeCache.data.find(c => c.coin === coin);
+  const btc = latestScores['BTC'];
+  return {
+    score: sc ? sc.score : null,
+    scoreParts: sc && Array.isArray(sc.parts) ? sc.parts.slice(0, 15) : null,
+    rb: tl ? tl.rb : null,
+    rbTag: tl ? tl.rbTag : null,
+    rbInfo: tl ? tl.rbInfo : null,
+    pct30d: tl ? Math.round(tl.pct30d * 10) / 10 : null,
+    pct24h: tv ? Math.round(tv.pct24h * 10) / 10 : null,
+    pct1h: tv && tv.pct1h != null ? Math.round(tv.pct1h * 10) / 10 : null,
+    btcScore: btc ? btc.score : null,
+    hour: new Date().getHours()
+  };
+}
+
+// Вызывается из checkFilledOrders для каждого нового FILLED ордера
+function journalOnFill(o) {
+  const coin = (o.product_id || '').replace('-USD', '');
+  if (!coin) return;
+  const size = parseFloat(o.filled_size) || 0;
+  const usd = parseFloat(o.total_value) || 0; // after fees
+  if (size <= 0 || usd <= 0) return;
+  const price = parseFloat(o.average_filled_price) || 0;
+  const t = o.created_time ? new Date(o.created_time).getTime() : Date.now();
+
+  if (o.side === 'BUY') {
+    let pos = journal.open[coin];
+    if (!pos) {
+      pos = journal.open[coin] = {
+        coin, entryAt: t, origSize: 0, totalSize: 0, costTotal: 0, restCost: 0,
+        realized: 0, buys: [], sells: [], ctx: captureEntryContext(coin)
+      };
+    }
+    pos.buys.push({ orderId: o.order_id, price, size, usd, t });
+    pos.origSize += size;
+    pos.totalSize += size;
+    pos.costTotal += usd;
+    pos.restCost += usd;
+    console.log(`[journal] BUY ${coin}: +${size} ($${usd.toFixed(2)}), ctx: score=${pos.ctx.score} rb=${pos.ctx.rb} tag=${pos.ctx.rbTag || '—'}`);
+  } else if (o.side === 'SELL') {
+    const pos = journal.open[coin];
+    if (!pos || pos.totalSize <= 0) return; // продажа монеты, купленной до появления журнала
+    const ratio = Math.min(1, size / pos.totalSize);
+    const costBasis = pos.restCost * ratio;
+    const realized = usd - costBasis;
+    pos.sells.push({ orderId: o.order_id, price, size, usd, pnl: Math.round(realized * 100) / 100, t });
+    pos.realized += realized;
+    pos.totalSize -= size;
+    pos.restCost -= costBasis;
+    // Позиция закрыта, если осталось меньше 0.5% исходного размера (пыль)
+    if (pos.totalSize <= Math.max(1e-9, pos.origSize * 0.005)) {
+      const holdH = Math.round((t - pos.entryAt) / 3600000 * 10) / 10;
+      journal.closed.push({
+        coin, pnl: Math.round(pos.realized * 100) / 100,
+        pnlPct: pos.costTotal > 0 ? Math.round(pos.realized / pos.costTotal * 10000) / 100 : 0,
+        costTotal: Math.round(pos.costTotal * 100) / 100,
+        entryAt: pos.entryAt, closedAt: t, holdH,
+        ctx: pos.ctx, buys: pos.buys, sells: pos.sells
+      });
+      journal.closed = journal.closed.slice(-500);
+      delete journal.open[coin];
+      console.log(`[journal] CLOSED ${coin}: pnl=$${pos.realized.toFixed(2)} hold=${holdH}h`);
+    }
+  }
+  saveJournal();
+}
+
+function journalStats() {
+  const closed = journal.closed;
+  const agg = (arr) => {
+    const wins = arr.filter(x => x.pnl > 0).length;
+    const losses = arr.length - wins;
+    const total = arr.reduce((a, x) => a + x.pnl, 0);
+    return {
+      n: arr.length, wins, losses,
+      winrate: arr.length ? Math.round(wins / arr.length * 100) : null,
+      totalPnl: Math.round(total * 100) / 100,
+      avgPnl: arr.length ? Math.round(total / arr.length * 100) / 100 : null,
+      avgHoldH: arr.length ? Math.round(arr.reduce((a, x) => a + (x.holdH || 0), 0) / arr.length * 10) / 10 : null
+    };
+  };
+  const groupBy = (keyFn) => {
+    const m = {};
+    for (const c of closed) {
+      const k = keyFn(c);
+      (m[k] || (m[k] = [])).push(c);
+    }
+    return Object.fromEntries(Object.entries(m).map(([k, v]) => [k, agg(v)]));
+  };
+  return {
+    overall: agg(closed),
+    byTag: groupBy(c => c.ctx && c.ctx.rbTag ? c.ctx.rbTag : '—'),
+    byScore: groupBy(c => {
+      const s = c.ctx ? c.ctx.score : null;
+      if (s == null) return 'нет скора';
+      return s >= 7.5 ? '7.5+' : s >= 5.5 ? '5.5–7.5' : '<5.5';
+    }),
+    byHour: groupBy(c => {
+      const h = c.ctx && c.ctx.hour != null ? c.ctx.hour : new Date(c.entryAt).getHours();
+      return `${String(Math.floor(h / 4) * 4).padStart(2, '0')}–${String(Math.floor(h / 4) * 4 + 4).padStart(2, '0')}`;
+    })
+  };
+}
+
+app.get('/api/journal', (req, res) => {
+  res.json({ success: true, open: journal.open, closed: journal.closed.slice(-100).reverse(), stats: journalStats() });
+});
+
+app.delete('/api/journal/closed', (req, res) => {
+  journal.closed = [];
+  saveJournal();
+  res.json({ success: true });
+});
+
+// ══════════════════════════════════════════════════════════════════
+// ═══ Общие помощники для реальных ордеров (auto-exit) ═══
+// ══════════════════════════════════════════════════════════════════
+const productIncCache = new Map();
+async function getProductIncrements(productId) {
+  const cached = productIncCache.get(productId);
+  if (cached) return cached;
+  let baseDecimals = 8, quoteDecimals = 2;
+  try {
+    const r = await fetch(`https://api.exchange.coinbase.com/products/${productId}`);
+    if (r.ok) {
+      const prod = await r.json();
+      const dec = inc => inc && inc.includes('.') ? (inc.split('.')[1].replace(/0+$/, '').length || 0) : 0;
+      if (prod.base_increment) baseDecimals = dec(prod.base_increment);
+      if (prod.quote_increment) quoteDecimals = dec(prod.quote_increment);
+    }
+  } catch { }
+  const out = { baseDecimals, quoteDecimals };
+  productIncCache.set(productId, out);
+  return out;
+}
+
+function parseOrderResponse(response) {
+  const parsed = typeof response === 'string' ? JSON.parse(response) : response;
+  if (parsed.success === false || parsed.error_response) {
+    const msg = parsed.error_response?.message || parsed.error_response?.error || parsed.error_response?.preview_failure_reason || 'Order rejected';
+    throw new Error(msg);
+  }
+  const orderId = parsed.success_response?.order_id || parsed.order_id;
+  if (!orderId) throw new Error('No order ID returned');
+  return orderId;
+}
+
+async function placeLimitSell(productId, size, price) {
+  const { baseDecimals, quoteDecimals } = await getProductIncrements(productId);
+  const orderData = {
+    client_order_id: `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`,
+    product_id: productId, side: 'SELL',
+    order_configuration: {
+      limit_limit_gtc: {
+        base_size: parseFloat(size).toFixed(baseDecimals),
+        limit_price: parseFloat(price).toFixed(quoteDecimals),
+        post_only: false
+      }
+    }
+  };
+  const orderId = parseOrderResponse(await client.createOrder(orderData));
+  ordersCache.ts = 0; balanceCache.ts = 0;
+  return orderId;
+}
+
+async function placeMarketSell(productId, size) {
+  const { baseDecimals } = await getProductIncrements(productId);
+  const orderData = {
+    client_order_id: `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`,
+    product_id: productId, side: 'SELL',
+    order_configuration: { market_market_ioc: { base_size: parseFloat(size).toFixed(baseDecimals) } }
+  };
+  const orderId = parseOrderResponse(await client.createOrder(orderData));
+  ordersCache.ts = 0; balanceCache.ts = 0;
+  return orderId;
+}
+
+async function getOrderInfo(orderId) {
+  const result = await client.getOrder({ orderId });
+  const raw = typeof result === 'string' ? JSON.parse(result) : result;
+  const order = raw.order || raw;
+  return {
+    status: order.status,
+    filledSize: parseFloat(order.filled_size) || 0,
+    avgPrice: parseFloat(order.average_filled_price) || 0
+  };
+}
+
+// ══════════════════════════════════════════════════════════════════
+// ═══ 2. AUTO-EXIT — серверная TP/SL-лестница для реальных позиций ═══
+// TP1/TP2/TP3 лимитками сразу, SL следит сервер; после TP1 стоп в безубыток,
+// после TP2 стоп на уровень TP1. SL исполняется маркет-ордером.
+// ══════════════════════════════════════════════════════════════════
+const AUTO_EXIT_FILE = path.join(__dirname, 'auto-exits.json');
+let autoExits = [];
+try { autoExits = JSON.parse(fs.readFileSync(AUTO_EXIT_FILE, 'utf8')); } catch { }
+function saveAutoExits() {
+  try { fs.writeFileSync(AUTO_EXIT_FILE, JSON.stringify(autoExits, null, 2)); }
+  catch (e) { console.error('[auto-exit] save', e.message); }
+}
+const AUTO_EXIT_DEFAULTS = { tp1Pct: 1.5, tp2Pct: 3, tp3Pct: 5, slPct: 3 };
+
+function fmtPxAe(p) { p = parseFloat(p) || 0; return p < 0.001 ? p.toFixed(8) : p < 1 ? p.toFixed(6) : p < 100 ? p.toFixed(4) : p.toFixed(2); }
+
+app.get('/api/auto-exit', (req, res) => {
+  res.json({ success: true, watches: autoExits.filter(w => w.state === 'active'), closed: autoExits.filter(w => w.state !== 'active').slice(-20).reverse() });
+});
+
+app.post('/api/auto-exit', async (req, res) => {
+  try {
+    const { coin, pair, size, entryPrice, costUsd } = req.body || {};
+    const p = (v, d) => { const x = parseFloat(v); return x > 0 ? x : d; };
+    const tp1Pct = p(req.body.tp1Pct, AUTO_EXIT_DEFAULTS.tp1Pct);
+    const tp2Pct = p(req.body.tp2Pct, AUTO_EXIT_DEFAULTS.tp2Pct);
+    const tp3Pct = p(req.body.tp3Pct, AUTO_EXIT_DEFAULTS.tp3Pct);
+    const slPct = p(req.body.slPct, AUTO_EXIT_DEFAULTS.slPct);
+    const sz = parseFloat(size), entry = parseFloat(entryPrice);
+    if (!coin || !sz || sz <= 0 || !entry || entry <= 0) {
+      return res.status(400).json({ success: false, error: 'coin, size, entryPrice required' });
+    }
+    if (autoExits.some(w => w.coin === coin && w.state === 'active')) {
+      return res.json({ success: false, error: `${coin}: auto-exit уже активен` });
+    }
+    const productId = pair || `${coin}-USD`;
+    const { baseDecimals } = await getProductIncrements(productId);
+    const rnd = v => parseFloat(v.toFixed(baseDecimals));
+    const s1 = rnd(sz * 0.40), s2 = rnd(sz * 0.35);
+    const s3 = rnd(sz - s1 - s2);
+    if (s3 <= 0) return res.json({ success: false, error: 'Размер слишком мал для лестницы из 3 частей' });
+    const tps = [
+      { level: 1, pct: tp1Pct, size: s1, price: entry * (1 + tp1Pct / 100), orderId: null, filled: false, cancelled: false },
+      { level: 2, pct: tp2Pct, size: s2, price: entry * (1 + tp2Pct / 100), orderId: null, filled: false, cancelled: false },
+      { level: 3, pct: tp3Pct, size: s3, price: entry * (1 + tp3Pct / 100), orderId: null, filled: false, cancelled: false },
+    ];
+    const placed = [];
+    try {
+      for (const tp of tps) {
+        tp.orderId = await placeLimitSell(productId, tp.size, tp.price);
+        placed.push(tp.orderId);
+      }
+    } catch (e) {
+      // одна из лимиток не встала — откатываем уже выставленные
+      if (placed.length) { try { await client.cancelOrders({ order_ids: placed }); } catch { } }
+      return res.json({ success: false, error: `TP order failed: ${e.message}` });
+    }
+    const watch = {
+      id: `ae_${Date.now()}`, coin, pair: productId,
+      size: sz, entryPrice: entry, costUsd: parseFloat(costUsd) || 0,
+      slPct, sl: entry * (1 - slPct / 100), slStage: 'initial', // initial → breakeven → tp1
+      tps, state: 'active', createdAt: Date.now(), log: []
+    };
+    autoExits.push(watch);
+    saveAutoExits();
+    await sendTelegram(
+      `🎯 <b>AUTO-EXIT ARMED</b> — <b>${productId}</b>\n` +
+      `━━━━━━━━━━━━━━━━━━\n` +
+      `📦 Size: ${sz} ${coin} @ $${fmtPxAe(entry)}\n` +
+      `🎯 TP1 +${tp1Pct}% ($${fmtPxAe(tps[0].price)}) — 40%\n` +
+      `🎯 TP2 +${tp2Pct}% ($${fmtPxAe(tps[1].price)}) — 35%\n` +
+      `🎯 TP3 +${tp3Pct}% ($${fmtPxAe(tps[2].price)}) — 25%\n` +
+      `🛑 SL −${slPct}% ($${fmtPxAe(watch.sl)}) → BE после TP1`, 'HTML');
+    res.json({ success: true, watch });
+  } catch (e) {
+    console.error('[auto-exit] arm', e.message);
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+app.post('/api/auto-exit/disarm', async (req, res) => {
+  try {
+    const { coin } = req.body || {};
+    const w = autoExits.find(x => x.coin === coin && x.state === 'active');
+    if (!w) return res.json({ success: false, error: 'not found' });
+    const openIds = w.tps.filter(t => t.orderId && !t.filled && !t.cancelled).map(t => t.orderId);
+    if (openIds.length) { try { await client.cancelOrders({ order_ids: openIds }); } catch (e) { console.warn('[auto-exit] cancel on disarm:', e.message); } }
+    w.state = 'disarmed';
+    w.closedAt = Date.now();
+    saveAutoExits();
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+let autoExitTickRunning = false;
+async function autoExitTick() {
+  if (autoExitTickRunning) return;
+  const active = autoExits.filter(w => w.state === 'active');
+  if (!active.length) return;
+  autoExitTickRunning = true;
+  try {
+    for (const w of active) {
+      try {
+        let changed = false;
+        // 1) статусы TP-ордеров
+        for (const tp of w.tps) {
+          if (!tp.orderId || tp.filled || tp.cancelled) continue;
+          const info = await getOrderInfo(tp.orderId);
+          if (info.status === 'FILLED') {
+            tp.filled = true; changed = true;
+            w.log.push({ t: Date.now(), ev: `TP${tp.level} filled @ $${fmtPxAe(info.avgPrice || tp.price)}` });
+            await sendTelegram(`✅ <b>TP${tp.level} FILLED</b> — <b>${w.pair}</b>\n${tp.size} ${w.coin} @ $${fmtPxAe(info.avgPrice || tp.price)} (+${tp.pct}%)`, 'HTML');
+          } else if (info.status === 'CANCELLED') {
+            tp.cancelled = true; changed = true;
+            w.log.push({ t: Date.now(), ev: `TP${tp.level} cancelled externally` });
+          }
+        }
+        // 2) подтяжка стопа
+        if (w.tps[0].filled && w.slStage === 'initial') {
+          w.sl = w.entryPrice; w.slStage = 'breakeven'; changed = true;
+          w.log.push({ t: Date.now(), ev: `SL → breakeven $${fmtPxAe(w.sl)}` });
+          await sendTelegram(`🛡 <b>${w.pair}</b>: SL moved to breakeven ($${fmtPxAe(w.sl)})`, 'HTML');
+        }
+        if (w.tps[1].filled && w.slStage === 'breakeven') {
+          w.sl = w.tps[0].price; w.slStage = 'tp1'; changed = true;
+          w.log.push({ t: Date.now(), ev: `SL → TP1 $${fmtPxAe(w.sl)}` });
+          await sendTelegram(`🛡 <b>${w.pair}</b>: SL moved to TP1 level ($${fmtPxAe(w.sl)})`, 'HTML');
+        }
+        // 3) все цели сняты?
+        if (w.tps.every(t => t.filled || t.cancelled)) {
+          if (w.tps.every(t => t.filled)) {
+            w.state = 'closed'; w.closeReason = 'ALL_TP'; w.closedAt = Date.now(); changed = true;
+            const gross = w.tps.reduce((a, t) => a + t.size * t.price, 0);
+            const pnl = w.costUsd > 0 ? gross - w.costUsd : null;
+            await sendTelegram(`🏁 <b>AUTO-EXIT DONE</b> — <b>${w.pair}</b>\nAll 3 TP filled.${pnl != null ? ` PnL ≈ <b>${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}</b>` : ''}`, 'HTML');
+          } else {
+            w.state = 'closed'; w.closeReason = 'ORDERS_GONE'; w.closedAt = Date.now(); changed = true;
+          }
+          if (changed) saveAutoExits();
+          continue;
+        }
+        // 4) проверка SL по текущей цене
+        const r = await fetch(`https://api.exchange.coinbase.com/products/${w.pair}/ticker`, { headers: { 'User-Agent': 'trading-app/1.0' } });
+        if (r.ok) {
+          const t = await r.json();
+          const bid = parseFloat(t.bid || t.price);
+          if (bid > 0 && bid <= w.sl) {
+            const openTps = w.tps.filter(x => x.orderId && !x.filled && !x.cancelled);
+            const ids = openTps.map(x => x.orderId);
+            if (ids.length) { try { await client.cancelOrders({ order_ids: ids }); } catch (e) { console.warn('[auto-exit] SL cancel:', e.message); } }
+            const remaining = w.tps.filter(x => !x.filled).reduce((a, x) => a + x.size, 0);
+            let sellOk = false, sellErr = '';
+            if (remaining > 0) {
+              try { await placeMarketSell(w.pair, remaining); sellOk = true; }
+              catch (e) { sellErr = e.message; console.error('[auto-exit] SL market sell:', e.message); }
+            }
+            w.state = 'closed';
+            w.closeReason = w.slStage === 'initial' ? 'SL' : 'TRAIL_SL';
+            w.closedAt = Date.now(); changed = true;
+            w.log.push({ t: Date.now(), ev: `SL hit @ $${fmtPxAe(bid)}, market sell ${remaining} ${w.coin} ${sellOk ? 'OK' : 'FAILED: ' + sellErr}` });
+            await sendTelegram(
+              `🛑 <b>STOP ${w.slStage === 'initial' ? 'LOSS' : '(protected)'}</b> — <b>${w.pair}</b>\n` +
+              `Price $${fmtPxAe(bid)} ≤ SL $${fmtPxAe(w.sl)}\n` +
+              `Market sell ${remaining} ${w.coin}: ${sellOk ? '✅ done' : '❌ ' + sellErr}`, 'HTML');
+          }
+        }
+        if (changed) saveAutoExits();
+      } catch (e) { console.error('[auto-exit]', w.coin, e.message); }
+      await sleep(250);
+    }
+  } finally { autoExitTickRunning = false; }
+}
+setInterval(autoExitTick, 20_000);
+
+// ══════════════════════════════════════════════════════════════════
+// ═══ 3. PAPER BOT — виртуальная торговля по сигналам «ПОКУПАТЬ» ═══
+// Каждый сигнал Top Losers открывает виртуальную позицию и ведёт её:
+// SL −3%, TP +5%, BE после +2.5%, трейлинг 1.5% после +4%, лимит 72ч.
+// Через 2-3 недели статистика покажет, зарабатывает ли rebound score.
+// ══════════════════════════════════════════════════════════════════
+const PAPER_FILE = path.join(__dirname, 'paper-trades.json');
+let paperBot = { enabled: false, budgetUsd: 100, open: [], closed: [] };
+try {
+  const saved = JSON.parse(fs.readFileSync(PAPER_FILE, 'utf8'));
+  paperBot = { ...paperBot, ...saved };
+} catch { }
+function savePaperBot() {
+  try { fs.writeFileSync(PAPER_FILE, JSON.stringify(paperBot, null, 2)); }
+  catch (e) { console.error('[paper] save', e.message); }
+}
+const PAPER_CFG = { slPct: 3, tpPct: 5, beAfterPct: 2.5, trailAfterPct: 4, trailPct: 1.5, maxHoldH: 72, cooldownH: 12 };
+
+function paperFee() {
+  const s = loadSettings();
+  return (parseFloat(s.marketFee) || 0.125) / 100;
+}
+
+// PnL с учётом комиссий такера на входе и выходе
+function paperPnl(pos, price) {
+  const fee = paperFee();
+  const qty = pos.budget * (1 - fee) / pos.entry; // купили на budget минус комиссия
+  const out = qty * price * (1 - fee);            // продали минус комиссия
+  return Math.round((out - pos.budget) * 100) / 100;
+}
+
+function closePaperPos(pos, price, reason) {
+  pos.closedAt = Date.now();
+  pos.exit = price;
+  pos.reason = reason;
+  pos.pnl = paperPnl(pos, price);
+  pos.pnlPct = Math.round(pos.pnl / pos.budget * 10000) / 100;
+  pos.holdH = Math.round((pos.closedAt - pos.openedAt) / 3600000 * 10) / 10;
+  paperBot.open = paperBot.open.filter(p => p.id !== pos.id);
+  paperBot.closed.push(pos);
+  paperBot.closed = paperBot.closed.slice(-300);
+  console.log(`[paper] CLOSE ${pos.coin} ${reason}: ${pos.pnl >= 0 ? '+' : ''}$${pos.pnl} (${pos.pnlPct}%)`);
+  const emo = pos.pnl >= 0 ? '🟢' : '🔴';
+  sendTelegram(
+    `${emo} <b>PAPER CLOSE</b> — <b>${pos.pair}</b> [${reason}]\n` +
+    `Entry $${fmtPxAe(pos.entry)} → Exit $${fmtPxAe(price)}\n` +
+    `PnL: <b>${pos.pnl >= 0 ? '+' : ''}$${pos.pnl}</b> (${pos.pnlPct >= 0 ? '+' : ''}${pos.pnlPct}%) · hold ${pos.holdH}h\n` +
+    `Signal was: rb ${pos.ctx?.rb ?? '—'}/10`, 'HTML').catch(() => { });
+}
+
+let paperTickRunning = false;
+async function paperBotTick() {
+  if (paperTickRunning) return;
+  paperTickRunning = true;
+  try {
+    let changed = false;
+    // 1) ведём открытые позиции (даже если приём новых сигналов выключен)
+    for (const pos of [...paperBot.open]) {
+      try {
+        const r = await fetch(`https://api.exchange.coinbase.com/products/${pos.pair}/ticker`, { headers: { 'User-Agent': 'trading-app/1.0' } });
+        if (!r.ok) continue;
+        const t = await r.json();
+        const price = parseFloat(t.price || t.bid);
+        if (!(price > 0)) continue;
+        pos.last = price;
+        if (price > pos.peak) pos.peak = price;
+        const g = (price - pos.entry) / pos.entry * 100; // грязное изменение, %
+        // подтяжка стопа: безубыток → трейлинг
+        if (g >= PAPER_CFG.beAfterPct && pos.sl < pos.entry) { pos.sl = pos.entry; pos.slStage = 'BE'; changed = true; }
+        const peakG = (pos.peak - pos.entry) / pos.entry * 100;
+        if (peakG >= PAPER_CFG.trailAfterPct) {
+          const trailSl = pos.peak * (1 - PAPER_CFG.trailPct / 100);
+          if (trailSl > pos.sl) { pos.sl = trailSl; pos.slStage = 'TRAIL'; changed = true; }
+        }
+        const ageH = (Date.now() - pos.openedAt) / 3600000;
+        if (g >= PAPER_CFG.tpPct) { closePaperPos(pos, price, 'TP'); changed = true; }
+        else if (price <= pos.sl) { closePaperPos(pos, price, pos.slStage === 'TRAIL' ? 'TRAIL' : pos.slStage === 'BE' ? 'BE' : 'SL'); changed = true; }
+        else if (ageH >= PAPER_CFG.maxHoldH) { closePaperPos(pos, price, 'TIME'); changed = true; }
+      } catch (e) { console.error('[paper] manage', pos.coin, e.message); }
+      await sleep(150);
+    }
+    // 2) новые сигналы из Top Losers
+    if (paperBot.enabled && topLosersCache.data.length) {
+      await refreshTopLosersPrices(false);
+      const hits = topLosersCache.data.filter(c => c.rbTag === 'ПОКУПАТЬ');
+      for (const c of hits) {
+        if (paperBot.open.some(p => p.coin === c.coin)) continue;
+        // кулдаун: не перезаходим в ту же монету N часов после закрытия
+        const recent = [...paperBot.closed].reverse().find(p => p.coin === c.coin);
+        if (recent && Date.now() - recent.closedAt < PAPER_CFG.cooldownH * 3600000) continue;
+        if (!(c.price > 0)) continue;
+        const pos = {
+          id: `pp_${Date.now()}_${c.coin}`, coin: c.coin, pair: c.pair,
+          entry: c.price, last: c.price, peak: c.price,
+          budget: paperBot.budgetUsd,
+          sl: c.price * (1 - PAPER_CFG.slPct / 100), slStage: 'SL',
+          openedAt: Date.now(),
+          ctx: { rb: c.rb, rbInfo: c.rbInfo, pct30d: Math.round(c.pct30d * 10) / 10 }
+        };
+        paperBot.open.push(pos);
+        changed = true;
+        console.log(`[paper] OPEN ${c.coin} @ $${c.price} (rb=${c.rb})`);
+        sendTelegram(
+          `🤖 <b>PAPER OPEN</b> — <b>${c.pair}</b>\n` +
+          `Signal: ПОКУПАТЬ, rating <b>${c.rb}/10</b>\n` +
+          `Entry $${fmtPxAe(c.price)} · $${paperBot.budgetUsd} virtual\n` +
+          `SL −${PAPER_CFG.slPct}% · TP +${PAPER_CFG.tpPct}% · max ${PAPER_CFG.maxHoldH}h`, 'HTML').catch(() => { });
+      }
+    }
+    if (changed) savePaperBot();
+  } finally { paperTickRunning = false; }
+}
+setInterval(paperBotTick, 60_000);
+setTimeout(paperBotTick, 25_000);
+
+function paperStats() {
+  const closed = paperBot.closed;
+  const agg = (arr) => {
+    const wins = arr.filter(x => x.pnl > 0).length;
+    const total = arr.reduce((a, x) => a + x.pnl, 0);
+    return {
+      n: arr.length, wins, losses: arr.length - wins,
+      winrate: arr.length ? Math.round(wins / arr.length * 100) : null,
+      totalPnl: Math.round(total * 100) / 100,
+      avgPnl: arr.length ? Math.round(total / arr.length * 100) / 100 : null,
+      avgHoldH: arr.length ? Math.round(arr.reduce((a, x) => a + (x.holdH || 0), 0) / arr.length * 10) / 10 : null
+    };
+  };
+  const byRb = {};
+  for (const c of closed) {
+    const rb = c.ctx ? c.ctx.rb : null;
+    const k = rb == null ? '—' : rb >= 8.5 ? '8.5+' : rb >= 8 ? '8' : rb >= 7.5 ? '7.5' : '7';
+    (byRb[k] || (byRb[k] = [])).push(c);
+  }
+  const byReason = {};
+  for (const c of closed) (byReason[c.reason || '—'] || (byReason[c.reason || '—'] = [])).push(c);
+  return {
+    overall: agg(closed),
+    byRb: Object.fromEntries(Object.entries(byRb).map(([k, v]) => [k, agg(v)])),
+    byReason: Object.fromEntries(Object.entries(byReason).map(([k, v]) => [k, agg(v)]))
+  };
+}
+
+app.get('/api/paper', (req, res) => {
+  const open = paperBot.open.map(p => ({
+    ...p,
+    pnl: p.last ? paperPnl(p, p.last) : null,
+    pnlPct: p.last ? Math.round(paperPnl(p, p.last) / p.budget * 10000) / 100 : null
+  }));
+  res.json({
+    success: true, enabled: paperBot.enabled, budgetUsd: paperBot.budgetUsd,
+    cfg: PAPER_CFG, open, closed: paperBot.closed.slice(-100).reverse(), stats: paperStats()
+  });
+});
+
+app.post('/api/paper/config', (req, res) => {
+  const { enabled, budgetUsd } = req.body || {};
+  if (enabled !== undefined) paperBot.enabled = !!enabled;
+  if (budgetUsd !== undefined) {
+    const b = parseFloat(budgetUsd);
+    if (b >= 10 && b <= 100000) paperBot.budgetUsd = b;
+  }
+  savePaperBot();
+  res.json({ success: true, enabled: paperBot.enabled, budgetUsd: paperBot.budgetUsd });
+});
+
+app.post('/api/paper/close', async (req, res) => {
+  try {
+    const pos = paperBot.open.find(p => p.id === req.body?.id);
+    if (!pos) return res.json({ success: false, error: 'not found' });
+    let price = pos.last || pos.entry;
+    try {
+      const r = await fetch(`https://api.exchange.coinbase.com/products/${pos.pair}/ticker`, { headers: { 'User-Agent': 'trading-app/1.0' } });
+      if (r.ok) { const t = await r.json(); const px = parseFloat(t.price || t.bid); if (px > 0) price = px; }
+    } catch { }
+    closePaperPos(pos, price, 'MANUAL');
+    savePaperBot();
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+app.delete('/api/paper/closed', (req, res) => {
+  paperBot.closed = [];
+  savePaperBot();
+  res.json({ success: true });
 });
 
 // Start server — check port first, then listen

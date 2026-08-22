@@ -879,6 +879,16 @@
       letter-spacing: 0.04em;
     }
 
+    .selected-table .side-buy {
+      color: var(--green);
+      font-weight: 600;
+    }
+
+    .selected-table .side-sell {
+      color: var(--loss);
+      font-weight: 600;
+    }
+
     .selected-table td:nth-child(14) {
       white-space: normal;
       min-width: 120px;
@@ -5783,6 +5793,8 @@
     <div class="tab-nav">
       <button class="tab-btn active" data-tab="trading" onclick="switchTab('trading')">Trading</button>
       <button class="tab-btn" data-tab="moonshots" onclick="switchTab('moonshots')">Moonshots 🚀</button>
+      <button class="tab-btn" data-tab="journal" onclick="switchTab('journal')">Journal 📒</button>
+      <button class="tab-btn" data-tab="paper" onclick="switchTab('paper')">Paper Bot 🤖</button>
     </div>
 
     <div id="tab-trading" class="tab-pane active">
@@ -6143,6 +6155,39 @@
     </div>
     </div><!-- /tab-trading -->
 
+    <div id="tab-journal" class="tab-pane">
+      <div class="pred-card">
+        <div class="pred-card-head">
+          <h3>📒 Trade Journal — реальные сделки с контекстом входа</h3>
+          <div class="pred-controls">
+            <button class="tg-refresh-btn" onclick="loadJournal()">Refresh</button>
+          </div>
+        </div>
+        <div style="color:var(--t2);font-size:11px;margin:4px 0 12px;">Каждая покупка автоматически записывается с рыночным контекстом (score, rebound rating, час входа). Продажа закрывает позицию и считает PnL. Статистика показывает, какие сигналы реально зарабатывают.</div>
+        <div id="journalStats" style="margin-bottom:14px;"></div>
+        <div id="journalOpen" style="margin-bottom:14px;"></div>
+        <div id="journalClosed"></div>
+      </div>
+    </div><!-- /tab-journal -->
+
+    <div id="tab-paper" class="tab-pane">
+      <div class="pred-card">
+        <div class="pred-card-head">
+          <h3>🤖 Paper Bot — виртуальная торговля по сигналам «ПОКУПАТЬ»</h3>
+          <div class="pred-controls" style="display:flex;align-items:center;gap:10px;">
+            <span style="font-size:11px;color:var(--t2);">Budget $</span>
+            <input type="number" id="paperBudget" value="100" min="10" step="10" class="settings-input" style="width:70px;" onchange="savePaperConfig()">
+            <button id="paperToggleBtn" class="tg-refresh-btn" onclick="togglePaperBot()">...</button>
+            <button class="tg-refresh-btn" onclick="loadPaper()">Refresh</button>
+          </div>
+        </div>
+        <div style="color:var(--t2);font-size:11px;margin:4px 0 12px;">Сервер сам открывает виртуальную позицию на каждый сигнал «ПОКУПАТЬ» из Top Losers и ведёт её: SL −3% → безубыток после +2.5% → трейлинг 1.5% после +4%, TP +5%, максимум 72 часа. Комиссии учтены. Реальные деньги не используются.</div>
+        <div id="paperStats" style="margin-bottom:14px;"></div>
+        <div id="paperOpen" style="margin-bottom:14px;"></div>
+        <div id="paperClosed"></div>
+      </div>
+    </div><!-- /tab-paper -->
+
     <div id="tab-moonshots" class="tab-pane">
       <div id="moonshotsPanel" style="display:flex;flex-direction:column;gap:14px;">
         <div class="pred-card">
@@ -6383,6 +6428,62 @@
       } catch (e) { showCustomAlert('Ошибка: ' + e.message, true); }
     }
     loadBeWatches();
+
+    // ── Auto-exit: серверная TP/SL-лестница (TP1/2/3 лимитками + SL маркетом) ──
+    let _autoExits = {};
+    async function loadAutoExits() {
+      try {
+        const r = await fetch('/api/auto-exit');
+        const j = await r.json();
+        if (j.success) { _autoExits = {}; (j.watches || []).forEach(w => _autoExits[w.coin] = w); }
+      } catch { }
+    }
+    function _paintAutoExitBtn(coin) {
+      const b = document.getElementById('aex_' + coin);
+      if (!b) return;
+      const on = !!_autoExits[coin];
+      b.textContent = on ? '🎯 AUTO ON' : '🎯 AUTO';
+      b.style.borderColor = on ? 'var(--green)' : 'rgba(255,255,255,0.25)';
+      b.style.background = on ? 'rgba(0,229,160,0.12)' : 'transparent';
+      b.style.color = on ? 'var(--green)' : '#889';
+    }
+    async function toggleAutoExit(coin, pair, filled, avgBuy, usd) {
+      if (_autoExits[coin]) {
+        showConfirmModal('Disarm Auto-Exit', `${coin}: снять авто-выход и отменить оставшиеся TP-ордера?`, async () => {
+          try {
+            const r = await fetch('/api/auto-exit/disarm', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ coin })
+            });
+            const j = await r.json();
+            if (!j.success) { showCustomAlert(j.error || 'Ошибка', true); return; }
+            delete _autoExits[coin];
+            _paintAutoExitBtn(coin);
+            showCustomAlert(`${coin}: авто-выход снят, TP-ордера отменены`);
+          } catch (e) { showCustomAlert('Ошибка: ' + e.message, true); }
+        });
+        return;
+      }
+      const tp1 = avgBuy * 1.015, tp2 = avgBuy * 1.03, tp3 = avgBuy * 1.05, sl = avgBuy * 0.97;
+      showConfirmModal('Arm Auto-Exit',
+        `${coin}: выставить лестницу из <strong>РЕАЛЬНЫХ</strong> ордеров?<br><br>` +
+        `TP1 +1.5% (${fmtPrice(tp1)}) — 40%<br>TP2 +3% (${fmtPrice(tp2)}) — 35%<br>TP3 +5% (${fmtPrice(tp3)}) — 25%<br>` +
+        `SL −3% (${fmtPrice(sl)}) — маркет-продажа, после TP1 стоп в безубыток`,
+        async () => {
+          try {
+            const r = await fetch('/api/auto-exit', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ coin, pair, size: filled, entryPrice: avgBuy, costUsd: usd })
+            });
+            const j = await r.json();
+            if (!j.success) { showCustomAlert(j.error || 'Ошибка', true); return; }
+            _autoExits[coin] = j.watch;
+            _paintAutoExitBtn(coin);
+            showCustomAlert(`${coin}: авто-выход активен — 3 TP-лимитки выставлены, сервер следит за SL`);
+          } catch (e) { showCustomAlert('Ошибка: ' + e.message, true); }
+        });
+    }
+    loadAutoExits();
 
     // Уровень стакана для покупки: 0 = best bid, -1 = второй уровень...
     function adjustBidLevel(d) {
@@ -10813,7 +10914,7 @@ Requirements:
         const isFav = favoriteCoins.has(coin);
         h += `<div class="coin-group" data-coin="${coin}" data-coin-pair="${pair}">
           <h4><a href="https://www.tradingview.com/chart/?symbol=COINBASE%3A${coin}USD" target="_blank">${pair}</a>${todayBadge} <span onclick="toggleFavoriteCoin('${coin}')" title="${isFav ? 'Remove from favorites' : 'Add to favorites'}" style="cursor:pointer;font-size:16px;opacity:${isFav ? '1' : '0.25'};padding:0 6px;color:${isFav ? '#f5c518' : 'inherit'};">★</span><button class="select-coin-btn" onclick="selectCoinForBuy('${coin}')" title="Set for Buy">⬆</button></h4>
-          <div class="balance">Selected: ${fmtSize(totalFilled)} ${coin} <span id="realBal_${coin}" style="color:var(--t2);font-size:10px;">(loading real balance...)</span> ${totalFilled > 0 ? `<button class="sell-all-btn" onclick="sellAllCoin('${pair}', '${totalFilled}', ${avgBuyPrice}, ${totalUSD})">SELL ALL</button> <button id="bew_${coin}" onclick="toggleBeWatch('${coin}','${pair}',${totalFilled},${totalUSD})" title="Telegram-алерт, когда Limit P&L дойдёт до 0 (сработает один раз и выключится)" style="padding:3px 8px;border:1px solid ${_beWatches[coin] ? 'var(--yellow)' : 'rgba(255,255,255,0.25)'};border-radius:5px;background:${_beWatches[coin] ? 'rgba(245,197,24,0.15)' : 'transparent'};color:${_beWatches[coin] ? 'var(--yellow)' : '#889'};font-size:10px;font-weight:600;cursor:pointer;">🔔 BE${_beWatches[coin] ? ' ON' : ''}</button>` : ''} <button class="${btnClass}" onclick="saveGroupProfit('${coin}', ${groupProfit.toFixed(2)}, '${filledBuys.map(o => o.order_id).join(',')}', '${filledSells.map(o => o.order_id).join(',')}', ${buyCreatedDate ? `'${buyCreatedDate}'` : 'null'})" ${btnDisabled ? 'disabled' : ''}>${btnText}</button>
+          <div class="balance">Selected: ${fmtSize(totalFilled)} ${coin} <span id="realBal_${coin}" style="color:var(--t2);font-size:10px;">(loading real balance...)</span> ${totalFilled > 0 ? `<button class="sell-all-btn" onclick="sellAllCoin('${pair}', '${totalFilled}', ${avgBuyPrice}, ${totalUSD})">SELL ALL</button> <button id="bew_${coin}" onclick="toggleBeWatch('${coin}','${pair}',${totalFilled},${totalUSD})" title="Telegram-алерт, когда Limit P&L дойдёт до 0 (сработает один раз и выключится)" style="padding:3px 8px;border:1px solid ${_beWatches[coin] ? 'var(--yellow)' : 'rgba(255,255,255,0.25)'};border-radius:5px;background:${_beWatches[coin] ? 'rgba(245,197,24,0.15)' : 'transparent'};color:${_beWatches[coin] ? 'var(--yellow)' : '#889'};font-size:10px;font-weight:600;cursor:pointer;">🔔 BE${_beWatches[coin] ? ' ON' : ''}</button> <button id="aex_${coin}" onclick="toggleAutoExit('${coin}','${pair}',${totalFilled},${avgBuyPrice},${totalUSD})" title="Авто-выход: TP1 +1.5% (40%) / TP2 +3% (35%) / TP3 +5% (25%) лимитками + серверный SL −3% маркетом; после TP1 стоп в безубыток" style="padding:3px 8px;border:1px solid ${_autoExits[coin] ? 'var(--green)' : 'rgba(255,255,255,0.25)'};border-radius:5px;background:${_autoExits[coin] ? 'rgba(0,229,160,0.12)' : 'transparent'};color:${_autoExits[coin] ? 'var(--green)' : '#889'};font-size:10px;font-weight:600;cursor:pointer;">🎯 AUTO${_autoExits[coin] ? ' ON' : ''}</button>` : ''} <button class="${btnClass}" onclick="saveGroupProfit('${coin}', ${groupProfit.toFixed(2)}, '${filledBuys.map(o => o.order_id).join(',')}', '${filledSells.map(o => o.order_id).join(',')}', ${buyCreatedDate ? `'${buyCreatedDate}'` : 'null'})" ${btnDisabled ? 'disabled' : ''}>${btnText}</button>
           ${totalFilled > 0 ? `<span style="margin-left:10px;display:inline-flex;align-items:center;gap:4px;">
             <input type="text" id="limitSellPrice_${coin}" placeholder="Limit price" style="width:90px;padding:3px 6px;background:var(--s3);border:1px solid var(--b1);border-radius:5px;color:var(--t0);font-family:'JetBrains Mono',monospace;font-size:11px;outline:none;" autocomplete="off">
             <button onclick="sellAllLimit('${pair}','${totalFilled}','${coin}')" style="padding:3px 10px;border:1px solid var(--yellow);border-radius:5px;background:transparent;color:var(--yellow);font-size:10px;font-weight:600;cursor:pointer;">Sell Limit</button>
@@ -13779,17 +13880,209 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
         loadMoonshots();
         fetchServerPositions().then(() => { renderPaperPositions(); updatePaperAsks(); });
       }
+      if (name === 'journal') loadJournal();
+      if (name === 'paper') { loadPaper(); startPaperPoll(); } else stopPaperPoll();
     }
     // Restore last tab on load
     document.addEventListener('DOMContentLoaded', () => {
       try {
         const last = safeStorage.getItem('activeTab');
-        if (last === 'moonshots') switchTab('moonshots');
+        if (last === 'moonshots' || last === 'journal' || last === 'paper') switchTab(last);
         // Pre-fetch paper positions from server so the panel is ready when user
         // navigates to Moonshots — works across devices since data lives on server.
         try { fetchServerPositions().then(renderPaperPositions); } catch {}
       } catch {}
     });
+
+    /* ═══════════════════ TRADE JOURNAL (вкладка Journal) ═══════════════════ */
+    function _jPnlCell(v) {
+      const cls = v >= 0 ? 'profit-pos' : 'profit-neg';
+      return `<span class="${cls}">${v >= 0 ? '+' : '−'}$${Math.abs(v).toFixed(2)}</span>`;
+    }
+    function _jStatCard(label, value, sub) {
+      return `<div style="background:var(--s2,rgba(255,255,255,0.03));border:1px solid var(--b1,rgba(255,255,255,0.08));border-radius:8px;padding:10px 14px;min-width:110px;">
+        <div style="font-size:10px;color:var(--t2);text-transform:uppercase;letter-spacing:0.5px;">${label}</div>
+        <div style="font-size:18px;font-weight:700;margin-top:2px;">${value}</div>
+        ${sub ? `<div style="font-size:10px;color:var(--t2);margin-top:2px;">${sub}</div>` : ''}
+      </div>`;
+    }
+    function _jBreakdownTable(title, obj) {
+      const rows = Object.entries(obj || {}).filter(([, a]) => a.n > 0).sort((x, y) => y[1].n - x[1].n);
+      if (!rows.length) return '';
+      return `<div style="flex:1;min-width:220px;">
+        <div style="font-size:11px;color:var(--t2);font-weight:700;margin-bottom:6px;">${title}</div>
+        <table class="pred-table"><thead><tr><th></th><th>N</th><th>Win%</th><th>PnL</th><th>Avg</th></tr></thead><tbody>
+        ${rows.map(([k, a]) => `<tr><td>${k}</td><td>${a.n}</td><td>${a.winrate != null ? a.winrate + '%' : '—'}</td><td>${_jPnlCell(a.totalPnl)}</td><td>${a.avgPnl != null ? _jPnlCell(a.avgPnl) : '—'}</td></tr>`).join('')}
+        </tbody></table>
+      </div>`;
+    }
+    async function loadJournal() {
+      const sEl = document.getElementById('journalStats');
+      const oEl = document.getElementById('journalOpen');
+      const cEl = document.getElementById('journalClosed');
+      sEl.innerHTML = '<div style="color:var(--t2);font-size:12px;">Loading...</div>';
+      try {
+        const r = await fetch('/api/journal');
+        const j = await r.json();
+        if (!j.success) throw new Error(j.error || 'error');
+        const ov = j.stats.overall;
+        sEl.innerHTML = `
+          <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
+            ${_jStatCard('Закрыто сделок', ov.n, ov.wins + ' win / ' + ov.losses + ' loss')}
+            ${_jStatCard('Winrate', ov.winrate != null ? ov.winrate + '%' : '—')}
+            ${_jStatCard('Total PnL', ov.n ? _jPnlCell(ov.totalPnl) : '—')}
+            ${_jStatCard('Avg PnL', ov.avgPnl != null ? _jPnlCell(ov.avgPnl) : '—')}
+            ${_jStatCard('Avg hold', ov.avgHoldH != null ? ov.avgHoldH + 'h' : '—')}
+          </div>
+          <div style="display:flex;gap:16px;flex-wrap:wrap;">
+            ${_jBreakdownTable('По вердикту Top Losers', j.stats.byTag)}
+            ${_jBreakdownTable('По score на входе', j.stats.byScore)}
+            ${_jBreakdownTable('По времени входа', j.stats.byHour)}
+          </div>`;
+        // Открытые позиции
+        const open = Object.values(j.open || {});
+        oEl.innerHTML = open.length ? `
+          <div style="font-size:11px;color:var(--t2);font-weight:700;margin-bottom:6px;">ОТКРЫТЫЕ ПОЗИЦИИ (${open.length})</div>
+          <table class="pred-table"><thead><tr><th>Coin</th><th>Size</th><th>Cost</th><th>Realized</th><th>Score</th><th>Rebound</th><th>Вердикт</th><th>Куплено</th></tr></thead><tbody>
+          ${open.map(p => `<tr>
+            <td><strong>${p.coin}</strong></td>
+            <td>${fmtSize(p.totalSize)}</td>
+            <td>$${(p.restCost || 0).toFixed(2)}</td>
+            <td>${p.realized ? _jPnlCell(Math.round(p.realized * 100) / 100) : '—'}</td>
+            <td>${p.ctx && p.ctx.score != null ? p.ctx.score : '—'}</td>
+            <td>${p.ctx && p.ctx.rb != null ? p.ctx.rb + '/10' : '—'}</td>
+            <td>${p.ctx && p.ctx.rbTag ? p.ctx.rbTag : '—'}</td>
+            <td style="color:var(--t2);">${new Date(p.entryAt).toLocaleString()}</td>
+          </tr>`).join('')}
+          </tbody></table>` : '<div style="color:var(--t2);font-size:12px;">Открытых позиций в журнале нет — новые покупки появятся здесь автоматически.</div>';
+        // Закрытые сделки
+        const closed = j.closed || [];
+        cEl.innerHTML = closed.length ? `
+          <div style="font-size:11px;color:var(--t2);font-weight:700;margin-bottom:6px;">ЗАКРЫТЫЕ СДЕЛКИ (последние ${closed.length})</div>
+          <table class="pred-table"><thead><tr><th>Coin</th><th>PnL</th><th>%</th><th>Cost</th><th>Hold</th><th>Score</th><th>Rebound</th><th>Вердикт</th><th>Час</th><th>Закрыто</th></tr></thead><tbody>
+          ${closed.map(c => `<tr>
+            <td><strong>${c.coin}</strong></td>
+            <td>${_jPnlCell(c.pnl)}</td>
+            <td class="${c.pnlPct >= 0 ? 'profit-pos' : 'profit-neg'}">${c.pnlPct >= 0 ? '+' : ''}${c.pnlPct}%</td>
+            <td>$${c.costTotal}</td>
+            <td>${c.holdH}h</td>
+            <td>${c.ctx && c.ctx.score != null ? c.ctx.score : '—'}</td>
+            <td>${c.ctx && c.ctx.rb != null ? c.ctx.rb + '/10' : '—'}</td>
+            <td>${c.ctx && c.ctx.rbTag ? c.ctx.rbTag : '—'}</td>
+            <td>${c.ctx && c.ctx.hour != null ? c.ctx.hour + ':00' : '—'}</td>
+            <td style="color:var(--t2);">${new Date(c.closedAt).toLocaleString()}</td>
+          </tr>`).join('')}
+          </tbody></table>` : '<div style="color:var(--t2);font-size:12px;">Закрытых сделок пока нет. Журнал начнёт наполняться после первой пары «купил → продал».</div>';
+      } catch (e) { sEl.innerHTML = `<div style="color:var(--red,#f87171);font-size:12px;">Ошибка: ${e.message}</div>`; }
+    }
+
+    /* ═══════════════════ PAPER BOT (вкладка Paper) ═══════════════════ */
+    let _pbEnabled = false;
+    let _pbPoll = null;
+    function startPaperPoll() { stopPaperPoll(); _pbPoll = setInterval(loadPaper, 20000); }
+    function stopPaperPoll() { if (_pbPoll) { clearInterval(_pbPoll); _pbPoll = null; } }
+    function _pbPaintToggle() {
+      const b = document.getElementById('paperToggleBtn');
+      if (!b) return;
+      b.textContent = _pbEnabled ? '⏸ Bot ON — остановить' : '▶ Bot OFF — запустить';
+      b.style.borderColor = _pbEnabled ? 'var(--green)' : 'rgba(255,255,255,0.25)';
+      b.style.color = _pbEnabled ? 'var(--green)' : '';
+      b.style.background = _pbEnabled ? 'rgba(0,229,160,0.12)' : '';
+    }
+    async function togglePaperBot() {
+      try {
+        const r = await fetch('/api/paper/config', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ enabled: !_pbEnabled })
+        });
+        const j = await r.json();
+        if (j.success) { _pbEnabled = j.enabled; _pbPaintToggle(); loadPaper(); }
+      } catch (e) { showCustomAlert('Ошибка: ' + e.message, true); }
+    }
+    async function savePaperConfig() {
+      const b = parseFloat(document.getElementById('paperBudget').value) || 100;
+      try {
+        await fetch('/api/paper/config', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ budgetUsd: b })
+        });
+      } catch { }
+    }
+    async function pbCloseManual(id) {
+      try {
+        const r = await fetch('/api/paper/close', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id })
+        });
+        const j = await r.json();
+        if (!j.success) showCustomAlert(j.error || 'Ошибка', true);
+        loadPaper();
+      } catch (e) { showCustomAlert('Ошибка: ' + e.message, true); }
+    }
+    async function loadPaper() {
+      const sEl = document.getElementById('paperStats');
+      const oEl = document.getElementById('paperOpen');
+      const cEl = document.getElementById('paperClosed');
+      try {
+        const r = await fetch('/api/paper');
+        const j = await r.json();
+        if (!j.success) throw new Error(j.error || 'error');
+        _pbEnabled = j.enabled;
+        _pbPaintToggle();
+        const bEl = document.getElementById('paperBudget');
+        if (bEl && document.activeElement !== bEl) bEl.value = j.budgetUsd;
+        const ov = j.stats.overall;
+        sEl.innerHTML = `
+          <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
+            ${_jStatCard('Статус', _pbEnabled ? '<span style="color:var(--green);">ACTIVE</span>' : '<span style="color:var(--t2);">OFF</span>', _pbEnabled ? 'ловит сигналы ПОКУПАТЬ' : 'открытые позиции всё равно ведутся')}
+            ${_jStatCard('Сделок', ov.n, ov.n ? ov.wins + ' win / ' + ov.losses + ' loss' : '')}
+            ${_jStatCard('Winrate', ov.winrate != null ? ov.winrate + '%' : '—')}
+            ${_jStatCard('Total PnL', ov.n ? _jPnlCell(ov.totalPnl) : '—')}
+            ${_jStatCard('Avg PnL', ov.avgPnl != null ? _jPnlCell(ov.avgPnl) : '—')}
+            ${_jStatCard('Avg hold', ov.avgHoldH != null ? ov.avgHoldH + 'h' : '—')}
+          </div>
+          <div style="display:flex;gap:16px;flex-wrap:wrap;">
+            ${_jBreakdownTable('По rebound rating на входе', j.stats.byRb)}
+            ${_jBreakdownTable('По причине выхода', j.stats.byReason)}
+          </div>`;
+        const open = j.open || [];
+        oEl.innerHTML = open.length ? `
+          <div style="font-size:11px;color:var(--t2);font-weight:700;margin-bottom:6px;">ОТКРЫТЫЕ ВИРТУАЛЬНЫЕ ПОЗИЦИИ (${open.length})</div>
+          <table class="pred-table"><thead><tr><th>Coin</th><th>Entry</th><th>Now</th><th>PnL</th><th>%</th><th>SL</th><th>Stage</th><th>rb</th><th>Открыта</th><th></th></tr></thead><tbody>
+          ${open.map(p => `<tr>
+            <td><strong>${p.coin}</strong></td>
+            <td>$${fmtPrice(p.entry)}</td>
+            <td>$${p.last ? fmtPrice(p.last) : '—'}</td>
+            <td>${p.pnl != null ? _jPnlCell(p.pnl) : '—'}</td>
+            <td class="${(p.pnlPct || 0) >= 0 ? 'profit-pos' : 'profit-neg'}">${p.pnlPct != null ? (p.pnlPct >= 0 ? '+' : '') + p.pnlPct + '%' : '—'}</td>
+            <td>$${fmtPrice(p.sl)}</td>
+            <td>${p.slStage || 'SL'}</td>
+            <td>${p.ctx && p.ctx.rb != null ? p.ctx.rb : '—'}</td>
+            <td style="color:var(--t2);">${new Date(p.openedAt).toLocaleString()}</td>
+            <td><button class="tg-refresh-btn" style="font-size:10px;padding:2px 8px;" onclick="pbCloseManual('${p.id}')">Close</button></td>
+          </tr>`).join('')}
+          </tbody></table>` : '<div style="color:var(--t2);font-size:12px;">Нет открытых виртуальных позиций.' + (_pbEnabled ? ' Бот ждёт сигнал «ПОКУПАТЬ» в Top Losers (проверка раз в минуту).' : ' Включи бота, чтобы он начал ловить сигналы.') + '</div>';
+        const closed = j.closed || [];
+        cEl.innerHTML = closed.length ? `
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+            <div style="font-size:11px;color:var(--t2);font-weight:700;">ИСТОРИЯ (последние ${closed.length})</div>
+            <button class="tg-refresh-btn" style="font-size:10px;padding:2px 8px;" onclick="if(confirm('Очистить историю paper-сделок?')){fetch('/api/paper/closed',{method:'DELETE'}).then(loadPaper)}">Clear</button>
+          </div>
+          <table class="pred-table"><thead><tr><th>Coin</th><th>Entry</th><th>Exit</th><th>PnL</th><th>%</th><th>Причина</th><th>Hold</th><th>rb</th><th>Закрыта</th></tr></thead><tbody>
+          ${closed.map(p => `<tr>
+            <td><strong>${p.coin}</strong></td>
+            <td>$${fmtPrice(p.entry)}</td>
+            <td>$${fmtPrice(p.exit)}</td>
+            <td>${_jPnlCell(p.pnl)}</td>
+            <td class="${p.pnlPct >= 0 ? 'profit-pos' : 'profit-neg'}">${p.pnlPct >= 0 ? '+' : ''}${p.pnlPct}%</td>
+            <td>${p.reason}</td>
+            <td>${p.holdH}h</td>
+            <td>${p.ctx && p.ctx.rb != null ? p.ctx.rb : '—'}</td>
+            <td style="color:var(--t2);">${new Date(p.closedAt).toLocaleString()}</td>
+          </tr>`).join('')}
+          </tbody></table>` : '<div style="color:var(--t2);font-size:12px;">Закрытых виртуальных сделок пока нет.</div>';
+      } catch (e) { sEl.innerHTML = `<div style="color:var(--red,#f87171);font-size:12px;">Ошибка: ${e.message}</div>`; }
+    }
 
     /* ═══════════════════════════ PREDICTOR ═══════════════════════════ */
     let predictorPolling = null;

@@ -1459,6 +1459,24 @@
       <div class="profit-value profit-positive" id="profitTotal">$0.00</div>
     </div>
     <div id="profitList"><div class="loading"><div class="spinner"></div>Loading...</div></div>
+
+    <!-- Trade Journal summary -->
+    <div style="margin-top:18px;border-top:1px solid var(--b1);padding-top:12px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+        <span style="font-size:13px;font-weight:700;color:var(--t0);">📒 Trade Journal</span>
+        <span id="mjSummary" style="font-size:11px;color:var(--t1);"></span>
+      </div>
+      <div id="mjBody" style="font-size:12px;color:var(--t2);">Loading...</div>
+    </div>
+
+    <!-- Paper Bot summary -->
+    <div style="margin-top:18px;border-top:1px solid var(--b1);padding-top:12px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+        <span style="font-size:13px;font-weight:700;color:var(--t0);">🤖 Paper Bot</span>
+        <button id="mpToggle" onclick="mpTogglePaper()" style="padding:4px 12px;border-radius:8px;border:1px solid var(--b1);background:var(--s2);color:var(--t1);font-size:11px;font-weight:600;">...</button>
+      </div>
+      <div id="mpBody" style="font-size:12px;color:var(--t2);">Loading...</div>
+    </div>
   </div>
 
   <!-- Holdings Panel -->
@@ -1593,8 +1611,66 @@
           refreshTopGainers();
           refreshTopRecoveries();
         }
+        if (tab.dataset.tab === 'profit') loadJournalPaperMobile();
       });
     });
+
+    // ── Journal + Paper Bot: компактные сводки на вкладке Profit ──
+    let _mpEnabled = false;
+    async function loadJournalPaperMobile() {
+      try {
+        const r = await fetch(BASE + '/api/journal');
+        const j = await r.json();
+        if (j.success) {
+          const ov = j.stats.overall;
+          document.getElementById('mjSummary').textContent = ov.n ? `${ov.n} сделок · winrate ${ov.winrate}%` : '';
+          const closed = (j.closed || []).slice(0, 8);
+          const openN = Object.keys(j.open || {}).length;
+          document.getElementById('mjBody').innerHTML = ov.n || openN ? `
+            <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
+              <span style="background:var(--s2);border-radius:8px;padding:4px 10px;">PnL: <b style="color:${ov.totalPnl >= 0 ? 'var(--green)' : 'var(--red)'};">${ov.totalPnl >= 0 ? '+' : ''}$${(ov.totalPnl || 0).toFixed(2)}</b></span>
+              <span style="background:var(--s2);border-radius:8px;padding:4px 10px;">Открыто: <b style="color:var(--t0);">${openN}</b></span>
+              <span style="background:var(--s2);border-radius:8px;padding:4px 10px;">Avg hold: <b style="color:var(--t0);">${ov.avgHoldH != null ? ov.avgHoldH + 'h' : '—'}</b></span>
+            </div>
+            ${closed.map(c => `<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--b0);">
+              <span style="color:var(--t0);font-weight:600;">${c.coin} <span style="color:var(--t2);font-weight:400;font-size:10px;">${c.ctx && c.ctx.rbTag ? c.ctx.rbTag : ''} ${c.holdH}h</span></span>
+              <span style="color:${c.pnl >= 0 ? 'var(--green)' : 'var(--red)'};font-weight:700;">${c.pnl >= 0 ? '+' : '−'}$${Math.abs(c.pnl).toFixed(2)} (${c.pnlPct >= 0 ? '+' : ''}${c.pnlPct}%)</span>
+            </div>`).join('')}` : 'Сделок пока нет — журнал наполняется автоматически при покупках и продажах.';
+        }
+      } catch { }
+      try {
+        const r = await fetch(BASE + '/api/paper');
+        const j = await r.json();
+        if (j.success) {
+          _mpEnabled = j.enabled;
+          const b = document.getElementById('mpToggle');
+          b.textContent = _mpEnabled ? 'ON' : 'OFF';
+          b.style.color = _mpEnabled ? 'var(--green)' : 'var(--t1)';
+          b.style.borderColor = _mpEnabled ? 'var(--green)' : 'var(--b1)';
+          const ov = j.stats.overall;
+          const open = j.open || [];
+          document.getElementById('mpBody').innerHTML = `
+            <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
+              <span style="background:var(--s2);border-radius:8px;padding:4px 10px;">Сделок: <b style="color:var(--t0);">${ov.n}</b>${ov.winrate != null ? ` · <b style="color:var(--t0);">${ov.winrate}%</b> win` : ''}</span>
+              <span style="background:var(--s2);border-radius:8px;padding:4px 10px;">PnL: <b style="color:${(ov.totalPnl || 0) >= 0 ? 'var(--green)' : 'var(--red)'};">${(ov.totalPnl || 0) >= 0 ? '+' : ''}$${(ov.totalPnl || 0).toFixed(2)}</b></span>
+            </div>
+            ${open.length ? open.map(p => `<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--b0);">
+              <span style="color:var(--t0);font-weight:600;">${p.coin} <span style="color:var(--t2);font-weight:400;font-size:10px;">rb ${p.ctx && p.ctx.rb != null ? p.ctx.rb : '—'} · ${p.slStage || 'SL'}</span></span>
+              <span style="color:${(p.pnl || 0) >= 0 ? 'var(--green)' : 'var(--red)'};font-weight:700;">${p.pnl != null ? (p.pnl >= 0 ? '+' : '−') + '$' + Math.abs(p.pnl).toFixed(2) + ' (' + (p.pnlPct >= 0 ? '+' : '') + p.pnlPct + '%)' : '—'}</span>
+            </div>`).join('') : `<div>${_mpEnabled ? 'Бот активен, ждёт сигнал «ПОКУПАТЬ» в Top Losers.' : 'Бот выключен. Открытые позиции всё равно ведутся сервером.'}</div>`}`;
+        }
+      } catch { }
+    }
+    async function mpTogglePaper() {
+      try {
+        const r = await fetch(BASE + '/api/paper/config', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ enabled: !_mpEnabled })
+        });
+        const j = await r.json();
+        if (j.success) { _mpEnabled = j.enabled; toast('Paper Bot: ' + (_mpEnabled ? 'ON' : 'OFF')); loadJournalPaperMobile(); }
+      } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
+    }
     function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
 
     // ── Toast ──
