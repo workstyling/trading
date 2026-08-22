@@ -6018,7 +6018,7 @@
             <span class="tg-title"><span class="tg-header-title">📉 Top Losers 30d</span><span style="font-size:9px;color:#666;margin-left:6px;">mcap ≥ $30M · Coinbase</span></span>
             <span class="tg-meta" style="font-size:10px;">
               <span id="tlRebuild" style="display:none;color:var(--yellow);font-size:9px;margin-right:6px;">⟳ пересборка списка…</span>
-              <button class="tg-refresh-btn" id="tlBuyWatchBtn" onclick="toggleBuyWatch()" title="Telegram-алерт, когда в списке появится монета с вердиктом ПОКУПАТЬ. Сработает один раз и выключится." style="margin-right:4px;">🔔 BUY</button>
+              <button class="tg-refresh-btn" id="tlBuyWatchBtn" onclick="toggleBuyWatch()" title="Единственный источник Telegram-сообщений по этой таблице. Нажми — и сервер пришлёт ОДНО сообщение, когда найдётся монета, прошедшая reversal-гейт (4/4). После этого выключится сам. Работает при закрытом браузере." style="margin-right:4px;">🔔 BUY</button>
               <button class="tg-refresh-btn" id="tlRefreshBtn" onclick="loadTopLosers(true)" title="Обновить цены сейчас + пересобрать список"><span class="spin-icon">⟳</span> Refresh</button>
               upd: <span id="tlUpdated">—</span>
             </span>
@@ -6178,6 +6178,10 @@
           <div class="pred-controls" style="display:flex;align-items:center;gap:10px;">
             <span style="font-size:11px;color:var(--t2);">Budget $</span>
             <input type="number" id="paperBudget" value="100" min="10" step="10" class="settings-input" style="width:70px;" onchange="savePaperConfig()">
+            <span style="font-size:11px;color:var(--t2);" title="Стоп-лосс в процентах. 0 = без стопа: держим до цели или до лимита времени — как ты торгуешь на самом деле.">SL %</span>
+            <input type="number" id="paperSl" value="3" min="0" max="30" step="0.5" class="settings-input" style="width:56px;" onchange="savePaperConfig()">
+            <span style="font-size:11px;color:var(--t2);" title="Максимальное время удержания в часах">Часы</span>
+            <input type="number" id="paperHold" value="72" min="1" max="720" step="12" class="settings-input" style="width:56px;" onchange="savePaperConfig()">
             <span style="font-size:11px;color:var(--t2);" title="По какому сигналу бот открывает виртуальную сделку">Вход:</span>
             <select id="paperEntryMode" class="settings-input" style="width:190px;" onchange="savePaperConfig()">
               <option value="rev">Reversal-гейт (откалиброван)</option>
@@ -12811,39 +12815,11 @@ Requirements:
         if (!j.success) { showCustomAlert(j.error || 'Ошибка', true); return; }
         _tlBuyWatch = j.armed;
         _paintBuyWatchBtn();
-        if (_tlBuyWatch) showCustomAlert('Слежу за Top Losers: пришлю в Telegram первую монету с вердиктом ПОКУПАТЬ (один раз)');
+        if (_tlBuyWatch) showCustomAlert('Слежу за Top Losers: пришлю в Telegram первую монету, прошедшую reversal-гейт (один раз, потом выключусь)');
       } catch (e) { showCustomAlert('Ошибка: ' + e.message, true); }
     }
-    // ── Reversal-вотч: одноразовый Telegram-алерт по каждой монете отдельно ──
-    let _revWatches = new Set();
-    let _paperCoins = new Set();
-    async function toggleRevWatch(coin) {
-      const enable = !_revWatches.has(coin);
-      try {
-        const r = await fetch('/api/rev-watch', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ coin, enable })
-        });
-        const j = await r.json();
-        if (!j.success) { showCustomAlert(j.error || 'Ошибка', true); return; }
-        _revWatches = new Set((j.watches || []).map(w => w.coin));
-        _paintRevWatch(coin);
-        showCustomAlert(enable
-          ? `Слежу за ${coin}: пришлю в Telegram, когда пройдёт гейт входа (один раз)`
-          : `${coin}: слежение снято`);
-      } catch (e) { showCustomAlert('Ошибка: ' + e.message, true); }
-    }
-    function _paintRevWatch(coin) {
-      const b = document.getElementById('rvw_' + coin);
-      if (!b) return;
-      const on = _revWatches.has(coin);
-      b.style.borderColor = on ? 'var(--yellow)' : 'rgba(255,255,255,0.18)';
-      b.style.background = on ? 'rgba(245,197,24,0.15)' : 'transparent';
-      b.style.color = on ? 'var(--yellow)' : '#778';
-      b.title = on ? `${coin}: слежу, пришлю в Telegram один раз при входе` : `Следить за ${coin}: одноразовый Telegram-алерт, когда пройдёт гейт входа`;
-    }
-
     // ── Paper trading прямо из таблицы ──
+    let _paperCoins = new Set();
     async function openPaperFromList(coin, pair) {
       try {
         const r = await fetch('/api/paper/open', {
@@ -12852,7 +12828,8 @@ Requirements:
         });
         const j = await r.json();
         if (!j.success) { showCustomAlert(j.error || 'Ошибка', true); return; }
-        showCustomAlert(`${coin}: paper-сделка открыта на $${j.position.budget} — ведётся сервером`);
+        const p = j.position;
+        showCustomAlert(`${coin}: куплено лимиткой по ask $${fmtPrice(p.entry)} на $${p.budget} · цель +${p.targetPct}%`);
         loadTopLosers();
       } catch (e) { showCustomAlert('Ошибка: ' + e.message, true); }
     }
@@ -12885,25 +12862,59 @@ Requirements:
       if (!el) return;
       if (!list || !list.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
       el.style.display = '';
+      const px = v => v == null ? '—' : v < 0.001 ? v.toFixed(8) : v < 1 ? v.toFixed(5) : v < 100 ? v.toFixed(4) : v.toFixed(2);
+      const totalPnl = list.reduce((a, p) => a + (p.pnl || 0), 0);
+      const tCol = totalPnl >= 0 ? '#00e5a0' : '#f55';
+
       const cards = list.map(p => {
         const up = (p.pnl || 0) >= 0;
         const col = up ? '#00e5a0' : '#f55';
         const held = Math.round((Date.now() - p.openedAt) / 60000);
         const heldTxt = held < 60 ? held + 'м' : (held / 60).toFixed(1) + 'ч';
-        return `<div style="display:flex;align-items:center;gap:6px;background:var(--s3,rgba(36,37,56,0.6));border:1px solid ${col}44;border-left:2px solid ${col};border-radius:5px;padding:4px 6px;">
-          <span style="font-weight:700;font-size:11px;color:var(--blue);">${p.coin}</span>
-          <span style="font-size:10px;color:#889;">$${p.entry < 1 ? p.entry.toFixed(5) : p.entry.toFixed(3)}</span>
-          <span style="font-weight:700;font-size:11px;color:${col};">${p.pnl != null ? (up ? '+' : '−') + '$' + Math.abs(p.pnl).toFixed(2) : '—'}</span>
-          <span style="font-size:10px;color:${col};">${p.pnlPct != null ? (p.pnlPct >= 0 ? '+' : '') + p.pnlPct + '%' : ''}</span>
-          <span style="font-size:9px;color:#667;" title="в позиции ${heldTxt} · стоп ${p.slStage}">${heldTxt}·${p.slStage}</span>
-          ${p.source === 'manual' ? '' : '<span style="font-size:8px;color:#667;border:1px solid #445;border-radius:3px;padding:0 3px;" title="открыта ботом автоматически">bot</span>'}
-          <button onclick="closePaperFromStrip('${p.id}','${p.coin}')" title="Закрыть по текущей цене и записать результат в историю" style="border:1px solid rgba(255,255,255,0.18);background:transparent;color:#9aa;border-radius:4px;font-size:9px;padding:1px 5px;cursor:pointer;">закрыть</button>
-          <button onclick="deletePaperFromStrip('${p.id}','${p.coin}')" title="Удалить совсем, без записи в историю" style="border:1px solid rgba(255,90,90,0.3);background:transparent;color:#f77;border-radius:4px;font-size:10px;padding:1px 5px;cursor:pointer;line-height:1.2;">✕</button>
+        // Прогресс от стопа к цели — видно, куда сделка едет
+        const lo = p.sl, hi = p.target || p.entry * 1.0138, cur = p.last || p.entry;
+        const prog = hi > lo ? Math.max(0, Math.min(100, (cur - lo) / (hi - lo) * 100)) : 50;
+        const entryMark = hi > lo ? Math.max(0, Math.min(100, (p.entry - lo) / (hi - lo) * 100)) : 50;
+        const toTarget = p.target ? (p.target / cur - 1) * 100 : null;
+        return `<div style="background:var(--s2,rgba(26,27,40,0.75));border:1px solid ${col}33;border-left:3px solid ${col};border-radius:7px;padding:8px 10px;display:flex;flex-direction:column;gap:6px;min-width:212px;flex:1 1 212px;">
+          <div style="display:flex;align-items:center;gap:6px;">
+            <span style="font-weight:800;font-size:13px;color:var(--blue);">${p.coin}</span>
+            ${p.source === 'manual'
+              ? '<span style="font-size:8px;color:#8a8;border:1px solid #3a5a4a;border-radius:3px;padding:0 4px;" title="открыта тобой вручную">ручная</span>'
+              : '<span style="font-size:8px;color:#88a;border:1px solid #445;border-radius:3px;padding:0 4px;" title="открыта ботом автоматически">бот</span>'}
+            <span style="margin-left:auto;font-weight:800;font-size:14px;color:${col};">${p.pnl != null ? (up ? '+' : '−') + '$' + Math.abs(p.pnl).toFixed(2) : '—'}</span>
+            <span style="font-size:11px;font-weight:700;color:${col};">${p.pnlPct != null ? (p.pnlPct >= 0 ? '+' : '') + p.pnlPct + '%' : ''}</span>
+          </div>
+          <div style="display:flex;gap:10px;font-size:9.5px;color:#8a94a6;font-family:'JetBrains Mono',monospace;">
+            <span title="Вход: лимитка по лучшему ask на момент нажатия">ask <span style="color:#c3cddb;">$${px(p.entry)}</span></span>
+            <span title="Текущая цена">сейчас <span style="color:#c3cddb;">$${px(p.last)}</span></span>
+          </div>
+          <div style="display:flex;gap:10px;font-size:9.5px;color:#8a94a6;font-family:'JetBrains Mono',monospace;">
+            <span title="Цель = твой Sell Markup ${p.targetPct}%">цель <span style="color:#00e5a0;">$${px(p.target)}</span>${toTarget != null ? ` <span style="color:#667;">(${toTarget >= 0 ? '+' : ''}${toTarget.toFixed(2)}%)</span>` : ''}</span>
+            <span title="Стоп-лосс, стадия: ${p.slStage}">стоп <span style="color:#f77;">$${px(p.sl)}</span></span>
+          </div>
+          <div style="position:relative;background:#1a1f2b;height:5px;border-radius:3px;overflow:hidden;" title="Путь от стопа до цели">
+            <div style="position:absolute;left:0;top:0;bottom:0;width:${prog.toFixed(1)}%;background:linear-gradient(90deg,${col}66,${col});"></div>
+            <div style="position:absolute;left:${entryMark.toFixed(1)}%;top:-1px;bottom:-1px;width:1px;background:#c3cddb;opacity:0.85;" title="точка входа"></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:5px;">
+            <span style="font-size:9px;color:#667;">$${p.budget} · ${heldTxt} · ${p.slStage}</span>
+            <span style="margin-left:auto;display:flex;gap:4px;">
+              <button onclick="closePaperFromStrip('${p.id}','${p.coin}')" title="Закрыть по текущей цене и записать результат в историю Paper Bot" style="border:1px solid rgba(255,255,255,0.2);background:transparent;color:#9aa;border-radius:4px;font-size:9.5px;padding:2px 8px;cursor:pointer;">закрыть</button>
+              <button onclick="deletePaperFromStrip('${p.id}','${p.coin}')" title="Удалить совсем, без записи в историю" style="border:1px solid rgba(255,90,90,0.3);background:transparent;color:#f77;border-radius:4px;font-size:11px;padding:2px 7px;cursor:pointer;line-height:1.2;">✕</button>
+            </span>
+          </div>
         </div>`;
       }).join('');
-      el.innerHTML = `<div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;">
-        <span style="font-size:9px;color:#667;font-weight:700;letter-spacing:0.04em;">📝 PAPER (${list.length})</span>
-        ${cards}
+
+      el.innerHTML = `<div style="border:1px solid rgba(255,255,255,0.07);border-radius:9px;padding:8px 10px 10px;background:rgba(255,255,255,0.015);">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:7px;">
+          <span style="font-size:10.5px;color:#9aa5b5;font-weight:700;letter-spacing:0.05em;">📝 PAPER TRADING</span>
+          <span style="font-size:9px;color:#667;">${list.length} ${list.length === 1 ? 'сделка' : 'сделок'} · вход лимиткой по ask</span>
+          <span style="margin-left:auto;font-size:9px;color:#667;">итого</span>
+          <span style="font-weight:800;font-size:13px;color:${tCol};">${totalPnl >= 0 ? '+' : '−'}$${Math.abs(totalPnl).toFixed(2)}</span>
+        </div>
+        <div style="display:flex;gap:7px;flex-wrap:wrap;">${cards}</div>
       </div>`;
     }
 
@@ -12948,8 +12959,7 @@ Requirements:
           body.innerHTML = `<div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">${j.building ? 'Собираю данные (первый прогон ~2 мин)…' : 'Нет данных'}</div>`;
           return;
         }
-        // Состояние вотчей и paper-сделок приходит вместе со списком — рисуем до строк
-        _revWatches = new Set(j.revWatches || []);
+        // Состояние paper-сделок приходит вместе со списком — рисуем до строк
         _paperCoins = new Set((j.paperOpen || []).map(p => p.coin));
         _renderPaperStrip(j.paperOpen || []);
         const rows = j.coins.map((c, i) => {
@@ -12975,7 +12985,6 @@ Requirements:
           const isRvEntry = !!(rv && rv.pass);
           const rowHi = isRvEntry ? 'background:rgba(0,229,160,0.10);box-shadow:inset 3px 0 0 #00e5a0;'
             : isBuy ? 'background:rgba(0,229,160,0.06);box-shadow:inset 3px 0 0 rgba(0,229,160,0.45);' : '';
-          const watching = _revWatches.has(c.coin);
           const inPaper = _paperCoins.has(c.coin);
           return `<tr style="cursor:pointer;${rowHi}" onclick="selectCoinForBuy('${c.coin}')" title="Выбрать ${c.coin} для покупки">
             <td style="color:#555;font-size:11px;">${i + 1}</td>
@@ -12994,8 +13003,7 @@ Requirements:
             </div></td>
             <td>${_priceSparkSVG(c.spark || [])}</td>
             <td style="white-space:nowrap;">
-              <button id="rvw_${c.coin}" onclick="event.stopPropagation();toggleRevWatch('${c.coin}')" title="${watching ? `${c.coin}: слежу, пришлю в Telegram один раз при входе` : `Следить за ${c.coin}: одноразовый Telegram-алерт, когда пройдёт гейт входа`}" style="padding:2px 5px;border:1px solid ${watching ? 'var(--yellow)' : 'rgba(255,255,255,0.18)'};border-radius:5px;background:${watching ? 'rgba(245,197,24,0.15)' : 'transparent'};color:${watching ? 'var(--yellow)' : '#778'};font-size:10px;cursor:pointer;">🔔</button>
-              <button onclick="event.stopPropagation();openPaperFromList('${c.coin}','${c.pair}')" ${inPaper ? 'disabled' : ''} title="${inPaper ? `${c.coin} уже в paper-портфеле (см. блок сверху)` : `Открыть виртуальную сделку по ${c.coin} — появится в блоке над таблицей`}" style="padding:2px 5px;border:1px solid ${inPaper ? 'rgba(0,229,160,0.5)' : 'rgba(255,255,255,0.18)'};border-radius:5px;background:${inPaper ? 'rgba(0,229,160,0.15)' : 'transparent'};color:${inPaper ? '#00e5a0' : '#778'};font-size:10px;cursor:${inPaper ? 'default' : 'pointer'};opacity:${inPaper ? '0.75' : '1'};">📝</button>
+              <button onclick="event.stopPropagation();openPaperFromList('${c.coin}','${c.pair}')" ${inPaper ? 'disabled' : ''} title="${inPaper ? `${c.coin} уже в paper-портфеле (см. блок сверху)` : `Paper trade по ${c.coin}: как будто купил лимиткой по лучшему ask, цель — твой Sell Markup`}" style="padding:2px 5px;border:1px solid ${inPaper ? 'rgba(0,229,160,0.5)' : 'rgba(255,255,255,0.18)'};border-radius:5px;background:${inPaper ? 'rgba(0,229,160,0.15)' : 'transparent'};color:${inPaper ? '#00e5a0' : '#778'};font-size:10px;cursor:${inPaper ? 'default' : 'pointer'};opacity:${inPaper ? '0.75' : '1'};">📝</button>
               <button onclick="event.stopPropagation();toggleTopVolumeChart('${c.coin}')" title="Chart ${c.coin}" style="padding:2px 5px;border:1px solid rgba(76,201,240,0.3);border-radius:5px;background:rgba(76,201,240,0.07);color:var(--blue);font-size:10px;cursor:pointer;">📈</button>
             </td>
           </tr>`;
@@ -14132,11 +14140,14 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
     async function savePaperConfig() {
       const b = parseFloat(document.getElementById('paperBudget').value) || 100;
       const m = document.getElementById('paperEntryMode')?.value || 'rev';
+      const sl = parseFloat(document.getElementById('paperSl')?.value);
+      const hh = parseFloat(document.getElementById('paperHold')?.value);
       try {
         await fetch('/api/paper/config', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ budgetUsd: b, entryMode: m })
+          body: JSON.stringify({ budgetUsd: b, entryMode: m, slPct: isNaN(sl) ? undefined : sl, maxHoldH: isNaN(hh) ? undefined : hh })
         });
+        loadPaper();
       } catch { }
     }
     async function pbCloseManual(id) {
@@ -14164,8 +14175,22 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
         if (bEl && document.activeElement !== bEl) bEl.value = j.budgetUsd;
         const mEl = document.getElementById('paperEntryMode');
         if (mEl && document.activeElement !== mEl && j.entryMode) mEl.value = j.entryMode;
+        const slEl = document.getElementById('paperSl');
+        if (slEl && document.activeElement !== slEl && j.slPct != null) slEl.value = j.slPct;
+        const hhEl = document.getElementById('paperHold');
+        if (hhEl && document.activeElement !== hhEl && j.maxHoldH != null) hhEl.value = j.maxHoldH;
+        // Экономика сделки: цель и стоп из настроек, комиссия лимитки с обеих сторон
+        const feeRt = (j.feePct || 0) * 2;
+        const netWin = (j.targetPct || 0) - feeRt;
+        const netLoss = (j.slPct || 0) + feeRt;
+        const needWin = (j.slPct > 0 && netWin > 0) ? Math.ceil(netLoss / (netWin + netLoss) * 100) : null;
+        const econ = `<div style="background:${needWin != null && needWin > 60 ? 'rgba(245,197,24,0.07)' : 'rgba(255,255,255,0.02)'};border:1px solid ${needWin != null && needWin > 60 ? 'rgba(245,197,24,0.3)' : 'rgba(255,255,255,0.07)'};border-radius:7px;padding:9px 12px;margin-bottom:12px;font-size:12px;color:var(--t2);">
+          Сделка эмулирует твою реальную: покупка лимиткой по лучшему ask, продажа по <b style="color:var(--t0);">+${j.targetPct}%</b> (Sell Markup), комиссия <b style="color:var(--t0);">${j.feePct}%</b> с каждой стороны.
+          Выигрыш чистыми <b style="color:var(--green);">+${netWin.toFixed(2)}%</b>${j.slPct > 0 ? `, проигрыш <b style="color:var(--red,#f87171);">−${netLoss.toFixed(2)}%</b> (стоп ${j.slPct}%)` : ', стоп выключен — держим до цели или до лимита времени'}.
+          ${needWin != null ? `<br>Чтобы не терять, нужно <b style="color:${needWin > 60 ? 'var(--yellow)' : 'var(--green)'};">${needWin}% побед</b>. По бэктесту reversal-гейт даёт 44% — ${needWin > 44 ? 'при таком стопе этого <b>не хватит</b>: либо увеличь цель, либо убери стоп (SL = 0)' : 'этого достаточно'}.` : ''}
+        </div>`;
         const ov = j.stats.overall;
-        sEl.innerHTML = `
+        sEl.innerHTML = econ + `
           <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
             ${_jStatCard('Статус', _pbEnabled ? '<span style="color:var(--green);">ACTIVE</span>' : '<span style="color:var(--t2);">OFF</span>', _pbEnabled ? 'ловит сигналы ПОКУПАТЬ' : 'открытые позиции всё равно ведутся')}
             ${_jStatCard('Сделок', ov.n, ov.n ? ov.wins + ' win / ' + ov.losses + ' loss' : '')}

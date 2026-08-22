@@ -1296,10 +1296,10 @@ app.get('/api/top-losers', async (req, res) => {
     res.json({
       success: true, coins: topLosersCache.data, updatedAt: topLosersCache.priceAt, rebuiltAt: topLosersCache.fullAt,
       rebuilding: topLosersBuilding, building: topLosersBuilding && !topLosersCache.data.length, buyWatch: buyWatchArmed,
-      revWatches: revWatches.map(w => w.coin),
       paperOpen: paperBot.open.map(p => ({
         id: p.id, coin: p.coin, pair: p.pair, entry: p.entry, last: p.last, sl: p.sl, slStage: p.slStage,
         openedAt: p.openedAt, budget: p.budget, source: p.source || 'auto',
+        qty: p.qty, feePct: p.feePct, targetPct: p.targetPct, target: paperTargetPrice(p),
         pnl: p.last ? paperPnl(p, p.last) : null,
         pnlPct: p.last ? Math.round(paperPnl(p, p.last) / p.budget * 10000) / 100 : null
       }))
@@ -1324,27 +1324,46 @@ app.post('/api/buy-watch', (req, res) => {
   res.json({ success: true, armed: buyWatchArmed });
 });
 
-// Чекер раз в 60с: сервер сам следит, даже когда все браузеры закрыты
+// Чекер раз в 60с: сервер сам следит, даже когда все браузеры закрыты.
+// Единственный источник Telegram-сообщений по Top Losers — эта кнопка.
+// Ищем монету, прошедшую откалиброванный reversal-гейт (4/4); если reversal
+// ещё не посчитан — откатываемся на старый вердикт ПОКУПАТЬ.
 setInterval(async () => {
   if (!buyWatchArmed || !topLosersCache.data.length) return;
   try {
     await refreshTopLosersPrices(false);
-    const hits = topLosersCache.data.filter(c => c.rbTag === 'ПОКУПАТЬ');
-    if (!hits.length) return;
-    const c = hits.sort((a, b) => (b.rb || 0) - (a.rb || 0))[0]; // лучший кандидат
+    const revHits = topLosersCache.data.filter(c => c.rv && c.rv.pass);
+    const rbHits = topLosersCache.data.filter(c => c.rbTag === 'ПОКУПАТЬ');
+    const byRev = revHits.length > 0;
+    const pool = byRev ? revHits : rbHits;
+    if (!pool.length) return;
+    const c = byRev
+      ? pool.sort((a, b) => (b.rv.score || 0) - (a.rv.score || 0))[0]
+      : pool.sort((a, b) => (b.rb || 0) - (a.rb || 0))[0];
     const ri = c.rbInfo || {};
-    const sent = await sendTelegram(
-      `🟢 <b>BUY SIGNAL — Top Losers rebound</b>\n` +
-      `<b>${c.pair}</b> — rating <b>${c.rb}/10</b>\n` +
-      `━━━━━━━━━━━━━━━━━━\n` +
-      `📉 30d change: ${c.pct30d.toFixed(1)}%\n` +
-      `🔄 Bounce from bottom: +${ri.bounce}% (low was ${ri.daysLow}d ago)\n` +
-      `📊 Daily RSI: ${ri.rsiD} · pullback from 5d high: ${ri.pullback}%\n` +
-      `💵 Price: $${c.price}\n` +
-      `(one-shot alert — now OFF)`, 'HTML');
+    const text = byRev
+      ? `🎯 <b>REVERSAL ВХОД</b> — <b>${c.pair}</b>\n` +
+        `Рейтинг <b>${c.rv.score}/100</b> · гейт 4/4\n` +
+        `━━━━━━━━━━━━━━━━━━\n` +
+        c.rv.checks.map(x => `✅ ${x.k}: ${x.v}`).join('\n') + '\n' +
+        `💵 Цена: $${fmtPxAe(c.price)}\n` +
+        `📉 30d: ${c.pct30d.toFixed(1)}%\n\n` +
+        `<i>Гейт откалиброван бэктестом: 44% побед, PF 1.34 (база 37%).\n` +
+        `Ожидание ≈ +0.27% на сделку — входи лимиткой, не по рынку.</i>\n` +
+        `(одноразовый алерт — выключен)`
+      : `🟢 <b>BUY SIGNAL — Top Losers rebound</b>\n` +
+        `<b>${c.pair}</b> — рейтинг <b>${c.rb}/10</b>\n` +
+        `━━━━━━━━━━━━━━━━━━\n` +
+        `📉 30d: ${c.pct30d.toFixed(1)}%\n` +
+        `🔄 Отскок от дна: +${ri.bounce}% (дно ${ri.daysLow} дн назад)\n` +
+        `📊 Дневной RSI: ${ri.rsiD} · откат от 5д хая: ${ri.pullback}%\n` +
+        `💵 Цена: $${fmtPxAe(c.price)}\n` +
+        `<i>(reversal-гейт ещё не посчитан — сработал старый вердикт)</i>\n` +
+        `(одноразовый алерт — выключен)`;
+    const sent = await sendTelegram(text, 'HTML');
     buyWatchArmed = false;
     saveBuyWatch();
-    console.log(`[buy-watch] fired: ${c.pair} rb=${c.rb}, telegram=${sent}`);
+    console.log(`[buy-watch] сработал: ${c.pair} ${byRev ? 'rv=' + c.rv.score : 'rb=' + c.rb}, telegram=${sent}`);
   } catch (e) { console.error('[buy-watch]', e.message); }
 }, 60_000);
 setInterval(rebuildTopLosers, 10 * 60 * 1000);
@@ -3580,17 +3599,57 @@ function savePaperBot() {
 }
 const PAPER_CFG = { slPct: 3, tpPct: 5, beAfterPct: 2.5, trailAfterPct: 4, trailPct: 1.5, maxHoldH: 72, cooldownH: 12 };
 
-function paperFee() {
+// Комиссия лимитного ордера из настроек — paper эмулирует лимитку, а не рынок
+function paperLimitFee() {
   const s = loadSettings();
-  return (parseFloat(s.marketFee) || 0.125) / 100;
+  return (parseFloat(s.tradeFee) || 0.06) / 100;
+}
+function paperTargetPct() {
+  const s = loadSettings();
+  return parseFloat(s.sellMarkup) || 1.38;
 }
 
-// PnL с учётом комиссий такера на входе и выходе
+// PnL как в реальной сделке: купили лимиткой по ask, продаём лимиткой — комиссия с обеих сторон
 function paperPnl(pos, price) {
-  const fee = paperFee();
-  const qty = pos.budget * (1 - fee) / pos.entry; // купили на budget минус комиссия
-  const out = qty * price * (1 - fee);            // продали минус комиссия
+  const fee = pos.feePct != null ? pos.feePct : paperLimitFee();
+  const qty = pos.qty != null ? pos.qty : (pos.budget * (1 - fee) / pos.entry);
+  const out = qty * price * (1 - fee);
   return Math.round((out - pos.budget) * 100) / 100;
+}
+
+// Цена, при которой сделка закроется по твоему марк-апу (с учётом обеих комиссий)
+function paperTargetPrice(pos) {
+  return pos.entry * (1 + (pos.targetPct != null ? pos.targetPct : paperTargetPct()) / 100);
+}
+
+// Лучший ask — вход эмулируем так, будто сразу купил лимиткой по лучшему предложению
+async function fetchBestAsk(productId) {
+  try {
+    const r = await fetch(`https://api.exchange.coinbase.com/products/${productId}/ticker`, { headers: { 'User-Agent': 'trading-app/1.0' } });
+    if (!r.ok) return 0;
+    const t = await r.json();
+    return parseFloat(t.ask || t.price || t.bid) || 0;
+  } catch { return 0; }
+}
+
+// Собрать позицию по текущим настройкам — общий код для ручного и автоматического входа
+function buildPaperPos(coin, pair, ask, ctx, source) {
+  const fee = paperLimitFee();
+  const targetPct = paperTargetPct();
+  const budget = paperBot.budgetUsd;
+  // Стоп настраивается: 0 = без стопа (как в реальной торговле — держим до цели)
+  const slPct = paperBot.slPct != null ? paperBot.slPct : PAPER_CFG.slPct;
+  return {
+    id: `p${source === 'manual' ? 'm' : 'p'}_${Date.now()}_${coin}`,
+    coin, pair, source,
+    entry: ask,                       // лучший ask на момент входа
+    qty: budget * (1 - fee) / ask,    // сколько монет реально получили после комиссии
+    feePct: fee, targetPct, slPct,
+    last: ask, peak: ask, budget,
+    sl: slPct > 0 ? ask * (1 - slPct / 100) : 0,
+    slStage: slPct > 0 ? 'SL' : 'без стопа',
+    openedAt: Date.now(), ctx: ctx || {}
+  };
 }
 
 function closePaperPos(pos, price, reason) {
@@ -3604,12 +3663,7 @@ function closePaperPos(pos, price, reason) {
   paperBot.closed.push(pos);
   paperBot.closed = paperBot.closed.slice(-300);
   console.log(`[paper] CLOSE ${pos.coin} ${reason}: ${pos.pnl >= 0 ? '+' : ''}$${pos.pnl} (${pos.pnlPct}%)`);
-  const emo = pos.pnl >= 0 ? '🟢' : '🔴';
-  sendTelegram(
-    `${emo} <b>PAPER CLOSE</b> — <b>${pos.pair}</b> [${reason}]\n` +
-    `Entry $${fmtPxAe(pos.entry)} → Exit $${fmtPxAe(price)}\n` +
-    `PnL: <b>${pos.pnl >= 0 ? '+' : ''}$${pos.pnl}</b> (${pos.pnlPct >= 0 ? '+' : ''}${pos.pnlPct}%) · hold ${pos.holdH}h\n` +
-    `Signal was: rb ${pos.ctx?.rb ?? '—'}/10`, 'HTML').catch(() => { });
+  // Telegram намеренно молчит: единственный источник сообщений — кнопка BUY (одноразовый вотч)
 }
 
 let paperTickRunning = false;
@@ -3629,17 +3683,26 @@ async function paperBotTick() {
         pos.last = price;
         if (price > pos.peak) pos.peak = price;
         const g = (price - pos.entry) / pos.entry * 100; // грязное изменение, %
-        // подтяжка стопа: безубыток → трейлинг
-        if (g >= PAPER_CFG.beAfterPct && pos.sl < pos.entry) { pos.sl = pos.entry; pos.slStage = 'BE'; changed = true; }
-        const peakG = (pos.peak - pos.entry) / pos.entry * 100;
-        if (peakG >= PAPER_CFG.trailAfterPct) {
-          const trailSl = pos.peak * (1 - PAPER_CFG.trailPct / 100);
-          if (trailSl > pos.sl) { pos.sl = trailSl; pos.slStage = 'TRAIL'; changed = true; }
+        const hasSl = (pos.slPct == null ? PAPER_CFG.slPct : pos.slPct) > 0;
+        // Подтяжка стопа имеет смысл только если стоп вообще включён.
+        // При цели 1.38% трейлинг не нужен — цель ближе, чем порог трейлинга.
+        if (hasSl) {
+          const tgtPct = pos.targetPct != null ? pos.targetPct : PAPER_CFG.tpPct;
+          if (tgtPct > PAPER_CFG.beAfterPct) {
+            if (g >= PAPER_CFG.beAfterPct && pos.sl < pos.entry) { pos.sl = pos.entry; pos.slStage = 'BE'; changed = true; }
+            const peakG = (pos.peak - pos.entry) / pos.entry * 100;
+            if (peakG >= PAPER_CFG.trailAfterPct) {
+              const trailSl = pos.peak * (1 - PAPER_CFG.trailPct / 100);
+              if (trailSl > pos.sl) { pos.sl = trailSl; pos.slStage = 'TRAIL'; changed = true; }
+            }
+          }
         }
         const ageH = (Date.now() - pos.openedAt) / 3600000;
-        if (g >= PAPER_CFG.tpPct) { closePaperPos(pos, price, 'TP'); changed = true; }
-        else if (price <= pos.sl) { closePaperPos(pos, price, pos.slStage === 'TRAIL' ? 'TRAIL' : pos.slStage === 'BE' ? 'BE' : 'SL'); changed = true; }
-        else if (ageH >= PAPER_CFG.maxHoldH) { closePaperPos(pos, price, 'TIME'); changed = true; }
+        // Цель — твой Sell Markup из настроек (как в реальной торговле), а не фиксированные 5%
+        const tgt = pos.targetPct != null ? pos.targetPct : PAPER_CFG.tpPct;
+        if (g >= tgt) { closePaperPos(pos, price, 'TP'); changed = true; }
+        else if (hasSl && price <= pos.sl) { closePaperPos(pos, price, pos.slStage === 'TRAIL' ? 'TRAIL' : pos.slStage === 'BE' ? 'BE' : 'SL'); changed = true; }
+        else if (ageH >= (paperBot.maxHoldH || PAPER_CFG.maxHoldH)) { closePaperPos(pos, price, 'TIME'); changed = true; }
       } catch (e) { console.error('[paper] manage', pos.coin, e.message); }
       await sleep(150);
     }
@@ -3659,23 +3722,17 @@ async function paperBotTick() {
         // кулдаун: не перезаходим в ту же монету N часов после закрытия
         const recent = [...paperBot.closed].reverse().find(p => p.coin === c.coin);
         if (recent && Date.now() - recent.closedAt < PAPER_CFG.cooldownH * 3600000) continue;
-        if (!(c.price > 0)) continue;
-        const pos = {
-          id: `pp_${Date.now()}_${c.coin}`, coin: c.coin, pair: c.pair,
-          entry: c.price, last: c.price, peak: c.price,
-          budget: paperBot.budgetUsd,
-          sl: c.price * (1 - PAPER_CFG.slPct / 100), slStage: 'SL',
-          openedAt: Date.now(), source: 'auto',
-          ctx: { rb: c.rb, rbInfo: c.rbInfo, rv: c.rv ? c.rv.score : null, rvTag: c.rv ? c.rv.tag : null, pct30d: Math.round(c.pct30d * 10) / 10 }
-        };
+        // Вход как в реальной сделке — лимиткой по лучшему ask
+        const ask = await fetchBestAsk(c.pair);
+        if (!(ask > 0)) continue;
+        const pos = buildPaperPos(c.coin, c.pair, ask, {
+          rb: c.rb, rbInfo: c.rbInfo, rv: c.rv ? c.rv.score : null,
+          rvTag: c.rv ? c.rv.tag : null, pct30d: Math.round(c.pct30d * 10) / 10
+        }, 'auto');
         paperBot.open.push(pos);
         changed = true;
-        console.log(`[paper] OPEN ${c.coin} @ $${c.price} (rb=${c.rb}, rv=${c.rv ? c.rv.score : '—'}, режим ${mode})`);
-        sendTelegram(
-          `🤖 <b>PAPER OPEN</b> — <b>${c.pair}</b>\n` +
-          `Сигнал: ${c.rv && c.rv.pass ? `REVERSAL вход <b>${c.rv.score}/100</b> (гейт 4/4)` : `ПОКУПАТЬ, rating <b>${c.rb}/10</b>`}\n` +
-          `Entry $${fmtPxAe(c.price)} · $${paperBot.budgetUsd} virtual\n` +
-          `SL −${PAPER_CFG.slPct}% · TP +${PAPER_CFG.tpPct}% · max ${PAPER_CFG.maxHoldH}h`, 'HTML').catch(() => { });
+        console.log(`[paper] OPEN ${c.coin} ask=$${ask} target +${pos.targetPct}% (rb=${c.rb}, rv=${c.rv ? c.rv.score : '—'}, режим ${mode})`);
+        // Telegram здесь молчит намеренно — алерты только через кнопку BUY
       }
     }
     if (changed) savePaperBot();
@@ -3714,12 +3771,15 @@ function paperStats() {
 
 app.get('/api/paper', (req, res) => {
   const open = paperBot.open.map(p => ({
-    ...p,
+    ...p, target: paperTargetPrice(p),
     pnl: p.last ? paperPnl(p, p.last) : null,
     pnlPct: p.last ? Math.round(paperPnl(p, p.last) / p.budget * 10000) / 100 : null
   }));
   res.json({
     success: true, enabled: paperBot.enabled, budgetUsd: paperBot.budgetUsd, entryMode: paperBot.entryMode || 'rev',
+    slPct: paperBot.slPct != null ? paperBot.slPct : PAPER_CFG.slPct,
+    maxHoldH: paperBot.maxHoldH || PAPER_CFG.maxHoldH,
+    targetPct: paperTargetPct(), feePct: paperLimitFee() * 100,
     cfg: PAPER_CFG, open, closed: paperBot.closed.slice(-100).reverse(), stats: paperStats()
   });
 });
@@ -3732,8 +3792,21 @@ app.post('/api/paper/config', (req, res) => {
     if (b >= 10 && b <= 100000) paperBot.budgetUsd = b;
   }
   if (entryMode !== undefined && ['rev', 'rb', 'both'].includes(entryMode)) paperBot.entryMode = entryMode;
+  if (req.body.slPct !== undefined) {
+    const v = parseFloat(req.body.slPct);
+    if (v >= 0 && v <= 30) paperBot.slPct = v;   // 0 = без стопа, держим до цели
+  }
+  if (req.body.maxHoldH !== undefined) {
+    const v = parseFloat(req.body.maxHoldH);
+    if (v >= 1 && v <= 720) paperBot.maxHoldH = v;
+  }
   savePaperBot();
-  res.json({ success: true, enabled: paperBot.enabled, budgetUsd: paperBot.budgetUsd, entryMode: paperBot.entryMode || 'rev' });
+  res.json({
+    success: true, enabled: paperBot.enabled, budgetUsd: paperBot.budgetUsd,
+    entryMode: paperBot.entryMode || 'rev',
+    slPct: paperBot.slPct != null ? paperBot.slPct : PAPER_CFG.slPct,
+    maxHoldH: paperBot.maxHoldH || PAPER_CFG.maxHoldH
+  });
 });
 
 app.post('/api/paper/close', async (req, res) => {
@@ -3829,51 +3902,6 @@ async function attachReversal(list) {
   console.log(`[reversal] пересчитано ${list.filter(c => c.rv).length}/${list.length}, входов: ${list.filter(c => c.rv && c.rv.pass).length}`);
 }
 
-// ── Одноразовый Telegram-алерт по reversal-гейту, отдельно на каждую монету ──
-const REV_WATCH_FILE = path.join(__dirname, 'rev-watches.json');
-let revWatches = [];
-try { revWatches = JSON.parse(fs.readFileSync(REV_WATCH_FILE, 'utf8')); } catch { }
-function saveRevWatches() { try { fs.writeFileSync(REV_WATCH_FILE, JSON.stringify(revWatches)); } catch { } }
-
-app.get('/api/rev-watch', (req, res) => res.json({ success: true, watches: revWatches }));
-
-app.post('/api/rev-watch', (req, res) => {
-  const { coin, enable } = req.body || {};
-  if (!coin) return res.status(400).json({ success: false, error: 'no coin' });
-  if (enable) {
-    const s = loadSettings();
-    if (!(s.telegramToken && s.telegramChat)) return res.json({ success: false, error: 'Telegram не настроен: укажи Bot Token и Chat ID в настройках' });
-    if (!revWatches.some(w => w.coin === coin)) revWatches.push({ coin, t: Date.now() });
-  } else {
-    revWatches = revWatches.filter(w => w.coin !== coin);
-  }
-  saveRevWatches();
-  res.json({ success: true, watches: revWatches });
-});
-
-// Чекер: как только монета проходит гейт — одно сообщение и вотч снимается
-setInterval(async () => {
-  if (!revWatches.length) return;
-  for (const w of [...revWatches]) {
-    const c = topLosersCache.data.find(x => x.coin === w.coin);
-    if (!c || !c.rv || !c.rv.pass) continue;
-    const rv = c.rv;
-    const sent = await sendTelegram(
-      `🎯 <b>REVERSAL ВХОД</b> — <b>${c.pair}</b>\n` +
-      `Рейтинг <b>${rv.score}/100</b> · гейт пройден 4/4\n` +
-      `━━━━━━━━━━━━━━━━━━\n` +
-      rv.checks.map(x => `✅ ${x.k}: ${x.v}`).join('\n') + '\n' +
-      `💵 Цена: $${fmtPxAe(c.price)}\n` +
-      `📉 30d: ${c.pct30d.toFixed(1)}%\n\n` +
-      `<i>Гейт откалиброван бэктестом: 44% побед, PF 1.34.\n` +
-      `Ожидание ≈ +0.27% на сделку — входи лимиткой, не по рынку.</i>\n` +
-      `(одноразовый алерт — снят)`, 'HTML');
-    revWatches = revWatches.filter(x => x.coin !== w.coin);
-    saveRevWatches();
-    console.log(`[rev-watch] сработал ${c.pair}, score=${rv.score}, telegram=${sent}`);
-  }
-}, 60_000);
-
 // ── Ручное открытие paper-сделки из таблицы (ведётся тем же движком) ──
 app.post('/api/paper/open', async (req, res) => {
   try {
@@ -3883,29 +3911,19 @@ app.post('/api/paper/open', async (req, res) => {
       return res.json({ success: false, error: `${coin} уже в paper-портфеле` });
     }
     const productId = pair || `${coin}-USD`;
-    let price = 0;
-    try {
-      const r = await fetch(`https://api.exchange.coinbase.com/products/${productId}/ticker`, { headers: { 'User-Agent': 'trading-app/1.0' } });
-      if (r.ok) { const t = await r.json(); price = parseFloat(t.price || t.ask || t.bid) || 0; }
-    } catch { }
-    if (!(price > 0)) return res.json({ success: false, error: 'Не удалось получить цену' });
+    // Эмулируем то же, что делаешь руками: лимитка по лучшему ask, комиссия limit-ордера
+    const ask = await fetchBestAsk(productId);
+    if (!(ask > 0)) return res.json({ success: false, error: 'Не удалось получить ask' });
 
     const src = topLosersCache.data.find(x => x.coin === coin);
-    const pos = {
-      id: `pm_${Date.now()}_${coin}`, coin, pair: productId,
-      entry: price, last: price, peak: price,
-      budget: paperBot.budgetUsd,
-      sl: price * (1 - PAPER_CFG.slPct / 100), slStage: 'SL',
-      openedAt: Date.now(), source: 'manual',
-      ctx: src ? { rb: src.rb, rbTag: src.rbTag, rv: src.rv ? src.rv.score : null, rvTag: src.rv ? src.rv.tag : null, pct30d: Math.round(src.pct30d * 10) / 10 } : {}
-    };
+    const pos = buildPaperPos(coin, productId, ask, src ? {
+      rb: src.rb, rbTag: src.rbTag, rv: src.rv ? src.rv.score : null,
+      rvTag: src.rv ? src.rv.tag : null, pct30d: Math.round(src.pct30d * 10) / 10
+    } : {}, 'manual');
     paperBot.open.push(pos);
     savePaperBot();
-    console.log(`[paper] РУЧНОЕ открытие ${coin} @ $${price}`);
-    sendTelegram(
-      `📝 <b>PAPER OPEN (вручную)</b> — <b>${productId}</b>\n` +
-      `Entry $${fmtPxAe(price)} · $${paperBot.budgetUsd} виртуальных\n` +
-      `SL −${PAPER_CFG.slPct}% · TP +${PAPER_CFG.tpPct}% · макс ${PAPER_CFG.maxHoldH}ч`, 'HTML').catch(() => { });
+    console.log(`[paper] РУЧНОЕ открытие ${coin} ask=$${ask} target +${pos.targetPct}%`);
+    // Telegram молчит — сообщения только через кнопку BUY
     res.json({ success: true, position: pos });
   } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
