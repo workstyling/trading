@@ -2292,6 +2292,10 @@
     /* 1. Вердикт-тег под скором */
     .tv-verdict { font-size: 8px; font-weight: 800; letter-spacing: 0.04em; margin-top: 1px; padding: 1px 5px; border-radius: 4px; line-height: 1.3; }
     /* 2. Кликабельные заголовки-сортировка */
+    /* Top Losers: заголовки по центру над своими колонками (не трогаем Top Volume) */
+    #tlBody .tg-table th,
+    #tlBody .tg-table th:not(:first-child) { text-align: center; }
+    #tlBody .tg-table th:nth-child(2) { text-align: left; }
     .tg-table th.srt { cursor: pointer; user-select: none; transition: color 0.15s; }
     .tg-table th.srt:hover { color: var(--blue); }
     .tg-table th .arr { font-size: 8px; opacity: 0.9; margin-left: 2px; }
@@ -12818,6 +12822,11 @@ Requirements:
         if (_tlBuyWatch) showCustomAlert('Слежу за Top Losers: пришлю в Telegram первую монету, прошедшую reversal-гейт (один раз, потом выключусь)');
       } catch (e) { showCustomAlert('Ошибка: ' + e.message, true); }
     }
+    // Старый рейтинг отскока (0–10) скрыт из таблицы — считается на сервере
+    // и пишется в журнал сделок, чтобы позже сравнить его с REV по фактам.
+    // Поставь true, чтобы вернуть колонку BUY.
+    const SHOW_OLD_BUY = false;
+
     // ── Paper trading прямо из таблицы ──
     let _paperCoins = new Set();
     async function openPaperFromList(coin, pair) {
@@ -12993,10 +13002,10 @@ Requirements:
             <td style="color:#f55;font-weight:700;font-size:12px;">${c.pct30d.toFixed(1)}%</td>
             <td class="tg-vol" style="font-size:11px;">${c.vol24 ? fmtVolShort(c.vol24) : '—'}</td>
             <td style="color:var(--t2);font-size:11px;">${mc}</td>
-            <td style="text-align:center;"><div title="${rbTip}" style="cursor:help;display:inline-flex;flex-direction:column;align-items:center;gap:1px;">
+            ${SHOW_OLD_BUY ? `<td style="text-align:center;"><div title="${rbTip}" style="cursor:help;display:inline-flex;flex-direction:column;align-items:center;gap:1px;">
               <span style="font-weight:800;color:${rbCol};font-size:13px;">${c.rb ?? '—'}</span>
               <span style="font-size:7px;font-weight:800;color:${rbCol};background:${rbCol}22;padding:1px 4px;border-radius:4px;letter-spacing:0.03em;">${c.rbTag || ''}</span>
-            </div></td>
+            </div></td>` : ''}
             <td style="text-align:center;"><div title="${rvTip}" style="cursor:help;display:inline-flex;flex-direction:column;align-items:center;gap:1px;">
               <span style="font-weight:800;color:${rvCol};font-size:13px;">${rv ? rv.score : '—'}</span>
               <span style="font-size:7px;font-weight:800;color:${rvCol};background:${rvCol}22;padding:1px 4px;border-radius:4px;letter-spacing:0.03em;white-space:nowrap;">${rv ? rv.tag : '…'}</span>
@@ -13009,7 +13018,7 @@ Requirements:
             </td>
           </tr>`;
         }).join('');
-        body.innerHTML = `<table class="tg-table"><thead><tr><th>#</th><th>COIN</th><th>30D%</th><th>VOL 24H</th><th>MCAP</th><th title="Старый рейтинг отскока (0–10): подтверждение разворота после 30д падения + микро-откат для входа">BUY</th><th title="Reversal Score (0–100), веса откалиброваны бэктестом на 1635 сигналах. Покупать при 77 и выше — это ровно вердикт ВХОД, гейт 4/4: просадка −32…−50%, цена выше EMA20 4H, RSI вышел из перепроданности, объём ≥ $500K. Ниже 77 гейт не пройден. При 4/4 win-rate 44% против базовых 37%.">REV</th><th>MONTH</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+        body.innerHTML = `<table class="tg-table"><thead><tr><th>#</th><th>COIN</th><th>30D%</th><th>VOL 24H</th><th>MCAP</th>${SHOW_OLD_BUY ? '<th title="Старый рейтинг отскока (0–10): подтверждение разворота после 30д падения + микро-откат для входа">BUY</th>' : ''}<th title="Reversal Score (0–100), веса откалиброваны бэктестом на 1635 сигналах. Покупать при 77 и выше — это ровно вердикт ВХОД, гейт 4/4: просадка −32…−50%, цена выше EMA20 4H, RSI вышел из перепроданности, объём ≥ $500K. Ниже 77 гейт не пройден. При 4/4 win-rate 44% против базовых 37%.">REV</th><th>MONTH</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
         const u = document.getElementById('tlUpdated');
         if (u && j.updatedAt) u.textContent = new Date(j.updatedAt).toLocaleTimeString();
         // Синхронизация вотча (в т.ч. автогашение кнопки после срабатывания на сервере)

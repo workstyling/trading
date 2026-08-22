@@ -4231,6 +4231,10 @@
       if (_tlBuyWatch) toast('Слежу: Telegram при первом ПОКУПАТЬ (один раз)');
     }
 
+    // Старый рейтинг отскока скрыт из таблицы (сервер его по-прежнему считает).
+    // true — вернуть колонку BUY.
+    const SHOW_OLD_BUY_M = false;
+
     // ── Paper-сделки по монете ──
     let _paperCoinsM = new Set();
     async function openPaperFromListM(coin, pair) {
@@ -4358,7 +4362,7 @@
             <td style="color:#f55;font-weight:700;font-size:11px;text-align:right;padding:6px 3px;">${c.pct30d.toFixed(1)}%</td>
             <td style="color:#666;font-size:10px;text-align:right;padding:6px 3px;">${c.vol24 ? fmtVolShort(c.vol24) : '—'}</td>
             <td style="color:var(--t2);font-size:10px;text-align:right;padding:6px 3px;">${mc}</td>
-            <td style="text-align:center;padding:6px 2px;"><span style="font-weight:800;color:${rbCol};font-size:12px;">${c.rb ?? '—'}</span><br><span style="font-size:6.5px;font-weight:800;color:${rbCol};background:${rbCol}22;padding:1px 3px;border-radius:3px;">${c.rbTag || ''}</span></td>
+            ${SHOW_OLD_BUY_M ? `<td style="text-align:center;padding:6px 2px;"><span style="font-weight:800;color:${rbCol};font-size:12px;">${c.rb ?? '—'}</span><br><span style="font-size:6.5px;font-weight:800;color:${rbCol};background:${rbCol}22;padding:1px 3px;border-radius:3px;">${c.rbTag || ''}</span></td>` : ''}
             <td style="text-align:center;padding:6px 2px;"><span style="font-weight:800;color:${rvCol};font-size:12px;">${rv ? rv.score : '—'}</span><br><span style="font-size:6.5px;font-weight:800;color:${rvCol};background:${rvCol}22;padding:1px 3px;border-radius:3px;white-space:nowrap;">${rv ? rv.tag : '…'}</span></td>
             <td style="text-align:right;padding:6px 3px;">${_priceSparkSVG(c.spark || [])}</td>
             <td style="text-align:right;padding:6px 2px;white-space:nowrap;">
@@ -4367,7 +4371,7 @@
             </td>
           </tr>`;
         }).join('');
-        body.innerHTML = `<table style="width:100%;border-collapse:collapse;"><thead><tr style="border-bottom:1px solid #222;"><th style="color:#666;font-size:9px;text-align:left;padding:4px 2px;">#</th><th style="color:#666;font-size:9px;text-align:left;padding:4px 3px;">COIN</th><th style="color:#666;font-size:9px;text-align:right;padding:4px 3px;">30D%</th><th style="color:#666;font-size:9px;text-align:right;padding:4px 3px;">VOL</th><th style="color:#666;font-size:9px;text-align:right;padding:4px 3px;">MCAP</th><th style="color:#666;font-size:9px;text-align:center;padding:4px 2px;">BUY</th><th style="color:#666;font-size:9px;text-align:center;padding:4px 2px;">REV</th><th style="color:#666;font-size:9px;text-align:right;padding:4px 3px;">MONTH</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+        body.innerHTML = `<table style="width:100%;border-collapse:collapse;"><thead><tr style="border-bottom:1px solid #222;"><th style="color:#666;font-size:9px;text-align:left;padding:4px 2px;">#</th><th style="color:#666;font-size:9px;text-align:left;padding:4px 3px;">COIN</th><th style="color:#666;font-size:9px;text-align:center;padding:4px 3px;">30D%</th><th style="color:#666;font-size:9px;text-align:center;padding:4px 3px;">VOL</th><th style="color:#666;font-size:9px;text-align:center;padding:4px 3px;">MCAP</th>${SHOW_OLD_BUY_M ? '<th style="color:#666;font-size:9px;text-align:center;padding:4px 2px;">BUY</th>' : ''}<th style="color:#666;font-size:9px;text-align:center;padding:4px 2px;">REV</th><th style="color:#666;font-size:9px;text-align:center;padding:4px 3px;">MONTH</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
         const u = document.getElementById('tlUpdatedM');
         if (u && j.updatedAt) u.textContent = new Date(j.updatedAt).toLocaleTimeString().slice(0, 5);
         if (typeof j.buyWatch === 'boolean' && j.buyWatch !== _tlBuyWatch) { _tlBuyWatch = j.buyWatch; _paintBuyWatchBtnM(); }
