@@ -1258,6 +1258,8 @@ async function rebuildTopLosers() {
     topLosersCache = { data: out.slice(0, 20), fullAt: Date.now(), priceAt: Date.now() };
     saveTopLosersCache();
     console.log(`[top-losers] rebuilt: ${cands.length} candidates (mcap≥30M), top20 saved`);
+    // Reversal Score считаем после сборки списка — нужны часовые свечи по каждой монете
+    try { await attachReversal(topLosersCache.data); saveTopLosersCache(); } catch (e) { console.error('[reversal]', e.message); }
   } catch (e) { console.error('[top-losers]', e.message); }
   finally { topLosersBuilding = false; }
 }
@@ -1291,7 +1293,17 @@ app.get('/api/top-losers', async (req, res) => {
     const force = req.query.force === 'true';
     if ((force || !topLosersCache.data.length) && !topLosersBuilding) rebuildTopLosers(); // пересборка в фоне
     await refreshTopLosersPrices(force);
-    res.json({ success: true, coins: topLosersCache.data, updatedAt: topLosersCache.priceAt, rebuiltAt: topLosersCache.fullAt, rebuilding: topLosersBuilding, building: topLosersBuilding && !topLosersCache.data.length, buyWatch: buyWatchArmed });
+    res.json({
+      success: true, coins: topLosersCache.data, updatedAt: topLosersCache.priceAt, rebuiltAt: topLosersCache.fullAt,
+      rebuilding: topLosersBuilding, building: topLosersBuilding && !topLosersCache.data.length, buyWatch: buyWatchArmed,
+      revWatches: revWatches.map(w => w.coin),
+      paperOpen: paperBot.open.map(p => ({
+        id: p.id, coin: p.coin, pair: p.pair, entry: p.entry, last: p.last, sl: p.sl, slStage: p.slStage,
+        openedAt: p.openedAt, budget: p.budget, source: p.source || 'auto',
+        pnl: p.last ? paperPnl(p, p.last) : null,
+        pnlPct: p.last ? Math.round(paperPnl(p, p.last) / p.budget * 10000) / 100 : null
+      }))
+    });
   } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
@@ -3634,7 +3646,14 @@ async function paperBotTick() {
     // 2) новые сигналы из Top Losers
     if (paperBot.enabled && topLosersCache.data.length) {
       await refreshTopLosersPrices(false);
-      const hits = topLosersCache.data.filter(c => c.rbTag === 'ПОКУПАТЬ');
+      // Режим входа: 'rev' — откалиброванный бэктестом гейт (по умолчанию),
+      // 'rb' — старый вердикт ПОКУПАТЬ, 'both' — любой из двух.
+      const mode = paperBot.entryMode || 'rev';
+      const hits = topLosersCache.data.filter(c => {
+        const rev = !!(c.rv && c.rv.pass);
+        const rb = c.rbTag === 'ПОКУПАТЬ';
+        return mode === 'rb' ? rb : mode === 'both' ? (rev || rb) : rev;
+      });
       for (const c of hits) {
         if (paperBot.open.some(p => p.coin === c.coin)) continue;
         // кулдаун: не перезаходим в ту же монету N часов после закрытия
@@ -3646,15 +3665,15 @@ async function paperBotTick() {
           entry: c.price, last: c.price, peak: c.price,
           budget: paperBot.budgetUsd,
           sl: c.price * (1 - PAPER_CFG.slPct / 100), slStage: 'SL',
-          openedAt: Date.now(),
-          ctx: { rb: c.rb, rbInfo: c.rbInfo, pct30d: Math.round(c.pct30d * 10) / 10 }
+          openedAt: Date.now(), source: 'auto',
+          ctx: { rb: c.rb, rbInfo: c.rbInfo, rv: c.rv ? c.rv.score : null, rvTag: c.rv ? c.rv.tag : null, pct30d: Math.round(c.pct30d * 10) / 10 }
         };
         paperBot.open.push(pos);
         changed = true;
-        console.log(`[paper] OPEN ${c.coin} @ $${c.price} (rb=${c.rb})`);
+        console.log(`[paper] OPEN ${c.coin} @ $${c.price} (rb=${c.rb}, rv=${c.rv ? c.rv.score : '—'}, режим ${mode})`);
         sendTelegram(
           `🤖 <b>PAPER OPEN</b> — <b>${c.pair}</b>\n` +
-          `Signal: ПОКУПАТЬ, rating <b>${c.rb}/10</b>\n` +
+          `Сигнал: ${c.rv && c.rv.pass ? `REVERSAL вход <b>${c.rv.score}/100</b> (гейт 4/4)` : `ПОКУПАТЬ, rating <b>${c.rb}/10</b>`}\n` +
           `Entry $${fmtPxAe(c.price)} · $${paperBot.budgetUsd} virtual\n` +
           `SL −${PAPER_CFG.slPct}% · TP +${PAPER_CFG.tpPct}% · max ${PAPER_CFG.maxHoldH}h`, 'HTML').catch(() => { });
       }
@@ -3700,20 +3719,21 @@ app.get('/api/paper', (req, res) => {
     pnlPct: p.last ? Math.round(paperPnl(p, p.last) / p.budget * 10000) / 100 : null
   }));
   res.json({
-    success: true, enabled: paperBot.enabled, budgetUsd: paperBot.budgetUsd,
+    success: true, enabled: paperBot.enabled, budgetUsd: paperBot.budgetUsd, entryMode: paperBot.entryMode || 'rev',
     cfg: PAPER_CFG, open, closed: paperBot.closed.slice(-100).reverse(), stats: paperStats()
   });
 });
 
 app.post('/api/paper/config', (req, res) => {
-  const { enabled, budgetUsd } = req.body || {};
+  const { enabled, budgetUsd, entryMode } = req.body || {};
   if (enabled !== undefined) paperBot.enabled = !!enabled;
   if (budgetUsd !== undefined) {
     const b = parseFloat(budgetUsd);
     if (b >= 10 && b <= 100000) paperBot.budgetUsd = b;
   }
+  if (entryMode !== undefined && ['rev', 'rb', 'both'].includes(entryMode)) paperBot.entryMode = entryMode;
   savePaperBot();
-  res.json({ success: true, enabled: paperBot.enabled, budgetUsd: paperBot.budgetUsd });
+  res.json({ success: true, enabled: paperBot.enabled, budgetUsd: paperBot.budgetUsd, entryMode: paperBot.entryMode || 'rev' });
 });
 
 app.post('/api/paper/close', async (req, res) => {
@@ -3733,6 +3753,168 @@ app.post('/api/paper/close', async (req, res) => {
 
 app.delete('/api/paper/closed', (req, res) => {
   paperBot.closed = [];
+  savePaperBot();
+  res.json({ success: true });
+});
+
+// ══════════════════════════════════════════════════════════════════
+// ═══ REVERSAL SCORE — откалиброван историческим бэктестом ═══
+// Бэктест (1635 сигналов, 144 монеты, апр–авг 2026) показал:
+//   • просто «упала на 30%» → 37% побед при безубытке 37.5% — нет преимущества
+//   • RSI<35, volume spike, капитуляция, divergence — нулевой или минусовой lift
+//   • единственная связка, устойчивая на всех 3 отрезках времени:
+//     цена выше EMA20(4H) + RSI вышел из перепроданности → 44% побед, PF 1.34
+//   • глубина падения работает окном: −32…−50% лучшая зона, глубже −50% худшая
+// Отсюда веса ниже: они измерены, а не придуманы.
+// ══════════════════════════════════════════════════════════════════
+const reversal = require('./src/reversal');
+
+function calcReversalScore(d, s, btc) {
+  const rsiRecovering = s.rsiMin7d != null && s.rsi4h != null && s.rsiMin7d < 30 && s.rsi4h > s.rsiMin7d + 4;
+  const drop = d.pct30d;
+  const liquid = d.vol24 >= 500e3;
+
+  // Гейт входа — только то, что подтвердилось на истории
+  const checks = [
+    { k: 'Просадка в окне −32…−50%', ok: drop <= -32 && drop >= -50, v: drop.toFixed(1) + '%' },
+    { k: 'Цена выше EMA20 (4H)', ok: !!s.aboveEma20_4h, v: s.aboveEma20_4h ? 'да' : 'нет' },
+    { k: 'RSI вышел из перепроданности', ok: rsiRecovering, v: `${s.rsi4h ?? '—'} (мин 7д ${s.rsiMin7d ?? '—'})` },
+    { k: 'Ликвидность ≥ $500K', ok: liquid, v: '$' + Math.round(d.vol24 / 1e3) + 'K' },
+  ];
+  const passed = checks.filter(c => c.ok).length;
+
+  let sc = 0;
+  // Окно просадки (макс 30) — немонотонно, по замеренным win-rate
+  if (drop <= -60) sc += 4;               // win 32%, PF 0.78 — сломанный проект
+  else if (drop <= -50) sc += 10;
+  else if (drop <= -40) sc += 30;         // win 44%, PF 1.30 — оптимум
+  else if (drop <= -32) sc += 26;         // win 41%, PF 1.18
+  else if (drop <= -25) sc += 12;         // win 35%, PF 0.89
+  else sc += 5;
+  if (s.aboveEma20_4h) sc += 25;          // ядро связки
+  if (rsiRecovering) sc += 20;            // ядро связки
+  if (d.vol24 >= 2e6) sc += 15; else if (d.vol24 >= 1e6) sc += 13; else if (d.vol24 >= 500e3) sc += 11; else if (d.vol24 >= 250e3) sc += 6;
+  if (s.higherLow && s.higherLow.found) sc += 6;
+  if (s.breakout && s.breakout.found) sc += 4;   // неустойчив — минимальный вес
+  if (btc) { if (btc.aboveEma20) sc += 5; if (btc.pct4h < -1.5) sc -= 5; }
+  // Потолок при блокирующих условиях: рейтинг не должен быть высоким у монеты,
+  // которой нельзя торговать или которая в худшей по бэктесту группе
+  if (!liquid) sc = Math.min(sc, 39);
+  if (drop < -50) sc = Math.min(sc, 44);
+  sc = Math.max(0, Math.min(100, Math.round(sc)));
+
+  let tag;
+  if (!liquid) tag = 'НЕЛИКВИД';
+  else if (drop < -50) tag = 'СЛИШКОМ ГЛУБОКО';
+  else if (passed === 4) tag = 'ВХОД';
+  else if (passed === 3) tag = 'БЛИЗКО';
+  else tag = 'ЖДАТЬ';
+
+  return { score: sc, tag, pass: passed === 4, passed, checks, rsiRecovering, rsi: s.rsi4h, rsiMin: s.rsiMin7d, aboveEma: !!s.aboveEma20_4h, hl: !!(s.higherLow && s.higherLow.found), bo: !!(s.breakout && s.breakout.found) };
+}
+
+// Досчитываем reversal по монетам Top Losers (~20 шт) — вызывается после пересборки
+let rvBtcRegime = null;
+async function attachReversal(list) {
+  try { rvBtcRegime = await reversal.getBtcRegime(); } catch { }
+  for (const c of list) {
+    try {
+      const s = await reversal.fetchReversalSignals(c.coin);
+      if (!s) { c.rv = null; continue; }
+      const d = { pct30d: c.pct30d, vol24: c.vol24 || 0 };
+      c.rv = calcReversalScore(d, s, rvBtcRegime);
+    } catch { c.rv = null; }
+    await sleep(180);
+  }
+  console.log(`[reversal] пересчитано ${list.filter(c => c.rv).length}/${list.length}, входов: ${list.filter(c => c.rv && c.rv.pass).length}`);
+}
+
+// ── Одноразовый Telegram-алерт по reversal-гейту, отдельно на каждую монету ──
+const REV_WATCH_FILE = path.join(__dirname, 'rev-watches.json');
+let revWatches = [];
+try { revWatches = JSON.parse(fs.readFileSync(REV_WATCH_FILE, 'utf8')); } catch { }
+function saveRevWatches() { try { fs.writeFileSync(REV_WATCH_FILE, JSON.stringify(revWatches)); } catch { } }
+
+app.get('/api/rev-watch', (req, res) => res.json({ success: true, watches: revWatches }));
+
+app.post('/api/rev-watch', (req, res) => {
+  const { coin, enable } = req.body || {};
+  if (!coin) return res.status(400).json({ success: false, error: 'no coin' });
+  if (enable) {
+    const s = loadSettings();
+    if (!(s.telegramToken && s.telegramChat)) return res.json({ success: false, error: 'Telegram не настроен: укажи Bot Token и Chat ID в настройках' });
+    if (!revWatches.some(w => w.coin === coin)) revWatches.push({ coin, t: Date.now() });
+  } else {
+    revWatches = revWatches.filter(w => w.coin !== coin);
+  }
+  saveRevWatches();
+  res.json({ success: true, watches: revWatches });
+});
+
+// Чекер: как только монета проходит гейт — одно сообщение и вотч снимается
+setInterval(async () => {
+  if (!revWatches.length) return;
+  for (const w of [...revWatches]) {
+    const c = topLosersCache.data.find(x => x.coin === w.coin);
+    if (!c || !c.rv || !c.rv.pass) continue;
+    const rv = c.rv;
+    const sent = await sendTelegram(
+      `🎯 <b>REVERSAL ВХОД</b> — <b>${c.pair}</b>\n` +
+      `Рейтинг <b>${rv.score}/100</b> · гейт пройден 4/4\n` +
+      `━━━━━━━━━━━━━━━━━━\n` +
+      rv.checks.map(x => `✅ ${x.k}: ${x.v}`).join('\n') + '\n' +
+      `💵 Цена: $${fmtPxAe(c.price)}\n` +
+      `📉 30d: ${c.pct30d.toFixed(1)}%\n\n` +
+      `<i>Гейт откалиброван бэктестом: 44% побед, PF 1.34.\n` +
+      `Ожидание ≈ +0.27% на сделку — входи лимиткой, не по рынку.</i>\n` +
+      `(одноразовый алерт — снят)`, 'HTML');
+    revWatches = revWatches.filter(x => x.coin !== w.coin);
+    saveRevWatches();
+    console.log(`[rev-watch] сработал ${c.pair}, score=${rv.score}, telegram=${sent}`);
+  }
+}, 60_000);
+
+// ── Ручное открытие paper-сделки из таблицы (ведётся тем же движком) ──
+app.post('/api/paper/open', async (req, res) => {
+  try {
+    const { coin, pair } = req.body || {};
+    if (!coin) return res.status(400).json({ success: false, error: 'no coin' });
+    if (paperBot.open.some(p => p.coin === coin)) {
+      return res.json({ success: false, error: `${coin} уже в paper-портфеле` });
+    }
+    const productId = pair || `${coin}-USD`;
+    let price = 0;
+    try {
+      const r = await fetch(`https://api.exchange.coinbase.com/products/${productId}/ticker`, { headers: { 'User-Agent': 'trading-app/1.0' } });
+      if (r.ok) { const t = await r.json(); price = parseFloat(t.price || t.ask || t.bid) || 0; }
+    } catch { }
+    if (!(price > 0)) return res.json({ success: false, error: 'Не удалось получить цену' });
+
+    const src = topLosersCache.data.find(x => x.coin === coin);
+    const pos = {
+      id: `pm_${Date.now()}_${coin}`, coin, pair: productId,
+      entry: price, last: price, peak: price,
+      budget: paperBot.budgetUsd,
+      sl: price * (1 - PAPER_CFG.slPct / 100), slStage: 'SL',
+      openedAt: Date.now(), source: 'manual',
+      ctx: src ? { rb: src.rb, rbTag: src.rbTag, rv: src.rv ? src.rv.score : null, rvTag: src.rv ? src.rv.tag : null, pct30d: Math.round(src.pct30d * 10) / 10 } : {}
+    };
+    paperBot.open.push(pos);
+    savePaperBot();
+    console.log(`[paper] РУЧНОЕ открытие ${coin} @ $${price}`);
+    sendTelegram(
+      `📝 <b>PAPER OPEN (вручную)</b> — <b>${productId}</b>\n` +
+      `Entry $${fmtPxAe(price)} · $${paperBot.budgetUsd} виртуальных\n` +
+      `SL −${PAPER_CFG.slPct}% · TP +${PAPER_CFG.tpPct}% · макс ${PAPER_CFG.maxHoldH}ч`, 'HTML').catch(() => { });
+    res.json({ success: true, position: pos });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+// Удалить paper-сделку БЕЗ записи в историю (ошибочно открыл)
+app.delete('/api/paper/open/:id', (req, res) => {
+  const before = paperBot.open.length;
+  paperBot.open = paperBot.open.filter(p => p.id !== req.params.id);
+  if (paperBot.open.length === before) return res.json({ success: false, error: 'not found' });
   savePaperBot();
   res.json({ success: true });
 });

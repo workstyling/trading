@@ -6023,6 +6023,7 @@
               upd: <span id="tlUpdated">—</span>
             </span>
           </div>
+          <div id="tlPaperStrip" style="display:none;margin-bottom:6px;"></div>
           <div id="tlBody"><div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">Loading...</div></div>
         </div>
         <div id="topVolumePanel">
@@ -6177,6 +6178,12 @@
           <div class="pred-controls" style="display:flex;align-items:center;gap:10px;">
             <span style="font-size:11px;color:var(--t2);">Budget $</span>
             <input type="number" id="paperBudget" value="100" min="10" step="10" class="settings-input" style="width:70px;" onchange="savePaperConfig()">
+            <span style="font-size:11px;color:var(--t2);" title="По какому сигналу бот открывает виртуальную сделку">Вход:</span>
+            <select id="paperEntryMode" class="settings-input" style="width:190px;" onchange="savePaperConfig()">
+              <option value="rev">Reversal-гейт (откалиброван)</option>
+              <option value="rb">Старый вердикт ПОКУПАТЬ</option>
+              <option value="both">Любой из двух</option>
+            </select>
             <button id="paperToggleBtn" class="tg-refresh-btn" onclick="togglePaperBot()">...</button>
             <button class="tg-refresh-btn" onclick="loadPaper()">Refresh</button>
           </div>
@@ -12807,6 +12814,99 @@ Requirements:
         if (_tlBuyWatch) showCustomAlert('Слежу за Top Losers: пришлю в Telegram первую монету с вердиктом ПОКУПАТЬ (один раз)');
       } catch (e) { showCustomAlert('Ошибка: ' + e.message, true); }
     }
+    // ── Reversal-вотч: одноразовый Telegram-алерт по каждой монете отдельно ──
+    let _revWatches = new Set();
+    let _paperCoins = new Set();
+    async function toggleRevWatch(coin) {
+      const enable = !_revWatches.has(coin);
+      try {
+        const r = await fetch('/api/rev-watch', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ coin, enable })
+        });
+        const j = await r.json();
+        if (!j.success) { showCustomAlert(j.error || 'Ошибка', true); return; }
+        _revWatches = new Set((j.watches || []).map(w => w.coin));
+        _paintRevWatch(coin);
+        showCustomAlert(enable
+          ? `Слежу за ${coin}: пришлю в Telegram, когда пройдёт гейт входа (один раз)`
+          : `${coin}: слежение снято`);
+      } catch (e) { showCustomAlert('Ошибка: ' + e.message, true); }
+    }
+    function _paintRevWatch(coin) {
+      const b = document.getElementById('rvw_' + coin);
+      if (!b) return;
+      const on = _revWatches.has(coin);
+      b.style.borderColor = on ? 'var(--yellow)' : 'rgba(255,255,255,0.18)';
+      b.style.background = on ? 'rgba(245,197,24,0.15)' : 'transparent';
+      b.style.color = on ? 'var(--yellow)' : '#778';
+      b.title = on ? `${coin}: слежу, пришлю в Telegram один раз при входе` : `Следить за ${coin}: одноразовый Telegram-алерт, когда пройдёт гейт входа`;
+    }
+
+    // ── Paper trading прямо из таблицы ──
+    async function openPaperFromList(coin, pair) {
+      try {
+        const r = await fetch('/api/paper/open', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ coin, pair })
+        });
+        const j = await r.json();
+        if (!j.success) { showCustomAlert(j.error || 'Ошибка', true); return; }
+        showCustomAlert(`${coin}: paper-сделка открыта на $${j.position.budget} — ведётся сервером`);
+        loadTopLosers();
+      } catch (e) { showCustomAlert('Ошибка: ' + e.message, true); }
+    }
+    async function closePaperFromStrip(id, coin) {
+      showConfirmModal('Закрыть paper-сделку', `${coin}: закрыть по текущей цене и записать результат в историю Paper Bot?`, async () => {
+        try {
+          const r = await fetch('/api/paper/close', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id })
+          });
+          const j = await r.json();
+          if (!j.success) { showCustomAlert(j.error || 'Ошибка', true); return; }
+          showCustomAlert(`${coin}: сделка закрыта, результат записан`);
+          loadTopLosers();
+        } catch (e) { showCustomAlert('Ошибка: ' + e.message, true); }
+      });
+    }
+    async function deletePaperFromStrip(id, coin) {
+      showConfirmModal('Удалить без записи', `${coin}: удалить paper-сделку совсем? Результат НЕ попадёт в историю.`, async () => {
+        try {
+          const r = await fetch('/api/paper/open/' + encodeURIComponent(id), { method: 'DELETE' });
+          const j = await r.json();
+          if (!j.success) { showCustomAlert(j.error || 'Ошибка', true); return; }
+          showCustomAlert(`${coin}: удалена`);
+          loadTopLosers();
+        } catch (e) { showCustomAlert('Ошибка: ' + e.message, true); }
+      });
+    }
+    function _renderPaperStrip(list) {
+      const el = document.getElementById('tlPaperStrip');
+      if (!el) return;
+      if (!list || !list.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
+      el.style.display = '';
+      const cards = list.map(p => {
+        const up = (p.pnl || 0) >= 0;
+        const col = up ? '#00e5a0' : '#f55';
+        const held = Math.round((Date.now() - p.openedAt) / 60000);
+        const heldTxt = held < 60 ? held + 'м' : (held / 60).toFixed(1) + 'ч';
+        return `<div style="display:flex;align-items:center;gap:6px;background:var(--s3,rgba(36,37,56,0.6));border:1px solid ${col}44;border-left:2px solid ${col};border-radius:5px;padding:4px 6px;">
+          <span style="font-weight:700;font-size:11px;color:var(--blue);">${p.coin}</span>
+          <span style="font-size:10px;color:#889;">$${p.entry < 1 ? p.entry.toFixed(5) : p.entry.toFixed(3)}</span>
+          <span style="font-weight:700;font-size:11px;color:${col};">${p.pnl != null ? (up ? '+' : '−') + '$' + Math.abs(p.pnl).toFixed(2) : '—'}</span>
+          <span style="font-size:10px;color:${col};">${p.pnlPct != null ? (p.pnlPct >= 0 ? '+' : '') + p.pnlPct + '%' : ''}</span>
+          <span style="font-size:9px;color:#667;" title="в позиции ${heldTxt} · стоп ${p.slStage}">${heldTxt}·${p.slStage}</span>
+          ${p.source === 'manual' ? '' : '<span style="font-size:8px;color:#667;border:1px solid #445;border-radius:3px;padding:0 3px;" title="открыта ботом автоматически">bot</span>'}
+          <button onclick="closePaperFromStrip('${p.id}','${p.coin}')" title="Закрыть по текущей цене и записать результат в историю" style="border:1px solid rgba(255,255,255,0.18);background:transparent;color:#9aa;border-radius:4px;font-size:9px;padding:1px 5px;cursor:pointer;">закрыть</button>
+          <button onclick="deletePaperFromStrip('${p.id}','${p.coin}')" title="Удалить совсем, без записи в историю" style="border:1px solid rgba(255,90,90,0.3);background:transparent;color:#f77;border-radius:4px;font-size:10px;padding:1px 5px;cursor:pointer;line-height:1.2;">✕</button>
+        </div>`;
+      }).join('');
+      el.innerHTML = `<div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;">
+        <span style="font-size:9px;color:#667;font-weight:700;letter-spacing:0.04em;">📝 PAPER (${list.length})</span>
+        ${cards}
+      </div>`;
+    }
+
     function _priceSparkSVG(pts) {
       if (!Array.isArray(pts) || pts.length < 2) return '';
       const W = 64, H = 16, n = pts.length;
@@ -12848,6 +12948,10 @@ Requirements:
           body.innerHTML = `<div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">${j.building ? 'Собираю данные (первый прогон ~2 мин)…' : 'Нет данных'}</div>`;
           return;
         }
+        // Состояние вотчей и paper-сделок приходит вместе со списком — рисуем до строк
+        _revWatches = new Set(j.revWatches || []);
+        _paperCoins = new Set((j.paperOpen || []).map(p => p.coin));
+        _renderPaperStrip(j.paperOpen || []);
         const rows = j.coins.map((c, i) => {
           const price = c.price < 0.001 ? c.price.toFixed(6) : c.price < 1 ? c.price.toFixed(4) : c.price < 100 ? c.price.toFixed(3) : c.price.toFixed(2);
           const mc = c.mcap >= 1e9 ? '$' + (c.mcap / 1e9).toFixed(1) + 'B' : '$' + Math.round(c.mcap / 1e6) + 'M';
@@ -12855,8 +12959,25 @@ Requirements:
           const rbCol = c.rbTag === 'ПОКУПАТЬ' ? '#00e5a0' : c.rbTag === 'ЖДАТЬ ОТКАТ' ? '#f5c518' : c.rbTag === 'СЛЕДИТЬ' ? '#f5843a' : '#f55';
           const ri = c.rbInfo || {};
           const rbTip = `отскок от 30д дна: +${ri.bounce ?? '—'}% (дно ${ri.daysLow ?? '—'} дн назад)&#10;рост подряд: ${ri.upDays ?? '—'} дн&#10;RSI дневной: ${ri.rsiD ?? '—'}&#10;откат от 5д хая: ${ri.pullback ?? '—'}% (вход лучше при 1–5%)&#10;объём/капа: ${ri.volR ?? '—'}%`;
+          // Reversal Score — веса откалиброваны историческим бэктестом
+          const rv = c.rv;
+          const rvCol = !rv ? '#667'
+            : rv.tag === 'ВХОД' ? '#00e5a0'
+            : rv.tag === 'БЛИЗКО' ? '#f5c518'
+            : rv.tag === 'СЛИШКОМ ГЛУБОКО' ? '#f55'
+            : '#8892a0';
+          const rvTip = rv
+            ? `REVERSAL ${rv.score}/100 — гейт ${rv.passed}/4&#10;` +
+              rv.checks.map(x => `${x.ok ? '✓' : '✗'} ${x.k}: ${x.v}`).join('&#10;') +
+              `&#10;&#10;Гейт откалиброван бэктестом на 1635 сигналах:&#10;при 4/4 win-rate 44%, PF 1.34 (база 37%).&#10;Просадка глубже −50% — худшая группа (win 32%).`
+            : 'Reversal ещё не посчитан (обновится при пересборке списка)';
           const isBuy = c.rbTag === 'ПОКУПАТЬ';
-          return `<tr style="cursor:pointer;${isBuy ? 'background:rgba(0,229,160,0.06);box-shadow:inset 3px 0 0 #00e5a0;' : ''}" onclick="selectCoinForBuy('${c.coin}')" title="Выбрать ${c.coin} для покупки">
+          const isRvEntry = !!(rv && rv.pass);
+          const rowHi = isRvEntry ? 'background:rgba(0,229,160,0.10);box-shadow:inset 3px 0 0 #00e5a0;'
+            : isBuy ? 'background:rgba(0,229,160,0.06);box-shadow:inset 3px 0 0 rgba(0,229,160,0.45);' : '';
+          const watching = _revWatches.has(c.coin);
+          const inPaper = _paperCoins.has(c.coin);
+          return `<tr style="cursor:pointer;${rowHi}" onclick="selectCoinForBuy('${c.coin}')" title="Выбрать ${c.coin} для покупки">
             <td style="color:#555;font-size:11px;">${i + 1}</td>
             <td class="tg-coin" style="font-size:12px;">${c.coin}<br><span style="color:#555;font-size:10px;font-weight:400;">$${price}</span></td>
             <td style="color:#f55;font-weight:700;font-size:12px;">${c.pct30d.toFixed(1)}%</td>
@@ -12866,11 +12987,20 @@ Requirements:
               <span style="font-weight:800;color:${rbCol};font-size:13px;">${c.rb ?? '—'}</span>
               <span style="font-size:7px;font-weight:800;color:${rbCol};background:${rbCol}22;padding:1px 4px;border-radius:4px;letter-spacing:0.03em;">${c.rbTag || ''}</span>
             </div></td>
+            <td style="text-align:center;"><div title="${rvTip}" style="cursor:help;display:inline-flex;flex-direction:column;align-items:center;gap:1px;">
+              <span style="font-weight:800;color:${rvCol};font-size:13px;">${rv ? rv.score : '—'}</span>
+              <span style="font-size:7px;font-weight:800;color:${rvCol};background:${rvCol}22;padding:1px 4px;border-radius:4px;letter-spacing:0.03em;white-space:nowrap;">${rv ? rv.tag : '…'}</span>
+              ${rv ? `<span style="font-size:7px;color:#667;letter-spacing:0.06em;">${rv.checks.map(x => x.ok ? '●' : '○').join('')}</span>` : ''}
+            </div></td>
             <td>${_priceSparkSVG(c.spark || [])}</td>
-            <td><button onclick="event.stopPropagation();toggleTopVolumeChart('${c.coin}')" title="Chart ${c.coin}" style="padding:2px 6px;border:1px solid rgba(76,201,240,0.3);border-radius:5px;background:rgba(76,201,240,0.07);color:var(--blue);font-size:10px;cursor:pointer;">📈</button></td>
+            <td style="white-space:nowrap;">
+              <button id="rvw_${c.coin}" onclick="event.stopPropagation();toggleRevWatch('${c.coin}')" title="${watching ? `${c.coin}: слежу, пришлю в Telegram один раз при входе` : `Следить за ${c.coin}: одноразовый Telegram-алерт, когда пройдёт гейт входа`}" style="padding:2px 5px;border:1px solid ${watching ? 'var(--yellow)' : 'rgba(255,255,255,0.18)'};border-radius:5px;background:${watching ? 'rgba(245,197,24,0.15)' : 'transparent'};color:${watching ? 'var(--yellow)' : '#778'};font-size:10px;cursor:pointer;">🔔</button>
+              <button onclick="event.stopPropagation();openPaperFromList('${c.coin}','${c.pair}')" ${inPaper ? 'disabled' : ''} title="${inPaper ? `${c.coin} уже в paper-портфеле (см. блок сверху)` : `Открыть виртуальную сделку по ${c.coin} — появится в блоке над таблицей`}" style="padding:2px 5px;border:1px solid ${inPaper ? 'rgba(0,229,160,0.5)' : 'rgba(255,255,255,0.18)'};border-radius:5px;background:${inPaper ? 'rgba(0,229,160,0.15)' : 'transparent'};color:${inPaper ? '#00e5a0' : '#778'};font-size:10px;cursor:${inPaper ? 'default' : 'pointer'};opacity:${inPaper ? '0.75' : '1'};">📝</button>
+              <button onclick="event.stopPropagation();toggleTopVolumeChart('${c.coin}')" title="Chart ${c.coin}" style="padding:2px 5px;border:1px solid rgba(76,201,240,0.3);border-radius:5px;background:rgba(76,201,240,0.07);color:var(--blue);font-size:10px;cursor:pointer;">📈</button>
+            </td>
           </tr>`;
         }).join('');
-        body.innerHTML = `<table class="tg-table"><thead><tr><th>#</th><th>COIN</th><th>30D%</th><th>VOL 24H</th><th>MCAP</th><th title="Рейтинг отскока: подтверждение разворота после 30д падения + микро-откат для входа">BUY</th><th>MONTH</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+        body.innerHTML = `<table class="tg-table"><thead><tr><th>#</th><th>COIN</th><th>30D%</th><th>VOL 24H</th><th>MCAP</th><th title="Старый рейтинг отскока (0–10): подтверждение разворота после 30д падения + микро-откат для входа">BUY</th><th title="Reversal Score (0–100) — веса откалиброваны историческим бэктестом на 1635 сигналах. Гейт входа: просадка −32…−50%, цена выше EMA20 4H, RSI вышел из перепроданности, объём ≥ $500K. При 4/4 win-rate 44% против базовых 37%.">REV</th><th>MONTH</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
         const u = document.getElementById('tlUpdated');
         if (u && j.updatedAt) u.textContent = new Date(j.updatedAt).toLocaleTimeString();
         // Синхронизация вотча (в т.ч. автогашение кнопки после срабатывания на сервере)
@@ -14001,10 +14131,11 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
     }
     async function savePaperConfig() {
       const b = parseFloat(document.getElementById('paperBudget').value) || 100;
+      const m = document.getElementById('paperEntryMode')?.value || 'rev';
       try {
         await fetch('/api/paper/config', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ budgetUsd: b })
+          body: JSON.stringify({ budgetUsd: b, entryMode: m })
         });
       } catch { }
     }
@@ -14031,6 +14162,8 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
         _pbPaintToggle();
         const bEl = document.getElementById('paperBudget');
         if (bEl && document.activeElement !== bEl) bEl.value = j.budgetUsd;
+        const mEl = document.getElementById('paperEntryMode');
+        if (mEl && document.activeElement !== mEl && j.entryMode) mEl.value = j.entryMode;
         const ov = j.stats.overall;
         sEl.innerHTML = `
           <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;">

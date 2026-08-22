@@ -10,3 +10,6 @@ volume-cache.json
 trade-journal.json
 auto-exits.json
 paper-trades.json
+rev-watches.json
+top-losers-cache.json
+reversal-*.json
