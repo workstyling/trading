@@ -6022,6 +6022,12 @@
             <span class="tg-title"><span class="tg-header-title">📉 Top Losers 30d</span><span style="font-size:9px;color:#666;margin-left:6px;">mcap ≥ $30M · Coinbase</span></span>
             <span class="tg-meta" style="font-size:10px;">
               <span id="tlRebuild" style="display:none;color:var(--yellow);font-size:9px;margin-right:6px;">⟳ пересборка списка…</span>
+              <span style="font-size:9px;color:#667;margin-right:2px;" title="Сумма, на которую открывается paper-сделка по кнопке 📝. Сохраняется автоматически.">📝 $</span>
+              <input type="number" id="tlPaperBudget" value="100" min="10" max="100000" step="10"
+                title="Сумма paper-сделки в долларах. Сохраняется сразу при вводе, применяется ко всем новым сделкам."
+                oninput="onPaperBudgetInput(this.value)"
+                style="width:58px;padding:2px 5px;margin-right:6px;background:var(--s3,rgba(36,37,56,0.85));border:1px solid rgba(255,255,255,0.14);border-radius:5px;color:var(--t0);font-family:'JetBrains Mono',monospace;font-size:10px;outline:none;transition:border-color .2s;">
+              <span id="tlPaperBudgetOk" style="font-size:9px;color:#00e5a0;opacity:0;transition:opacity .25s;margin-right:6px;">✓</span>
               <button class="tg-refresh-btn" id="tlBuyWatchBtn" onclick="toggleBuyWatch()" title="Единственный источник Telegram-сообщений по этой таблице. Нажми — и сервер пришлёт ОДНО сообщение, когда найдётся монета, прошедшая reversal-гейт (4/4). После этого выключится сам. Работает при закрытом браузере." style="margin-right:4px;">🔔 BUY</button>
               <button class="tg-refresh-btn" id="tlRefreshBtn" onclick="loadTopLosers(true)" title="Обновить цены сейчас + пересобрать список"><span class="spin-icon">⟳</span> Refresh</button>
               upd: <span id="tlUpdated">—</span>
@@ -12829,6 +12835,32 @@ Requirements:
 
     // ── Paper trading прямо из таблицы ──
     let _paperCoins = new Set();
+
+    // Сумма paper-сделки: сохраняется на сервер при вводе (с задержкой, чтобы не
+    // слать запрос на каждую цифру). Значение общее с полем Budget во вкладке Paper Bot.
+    let _pbSaveTimer = null;
+    function onPaperBudgetInput(val) {
+      const el = document.getElementById('tlPaperBudget');
+      const ok = document.getElementById('tlPaperBudgetOk');
+      const v = parseFloat(val);
+      const valid = v >= 10 && v <= 100000;
+      if (el) el.style.borderColor = valid ? 'rgba(255,255,255,0.14)' : 'rgba(255,90,90,0.6)';
+      if (!valid) return;
+      clearTimeout(_pbSaveTimer);
+      _pbSaveTimer = setTimeout(async () => {
+        try {
+          const r = await fetch('/api/paper/config', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ budgetUsd: v })
+          });
+          const j = await r.json();
+          if (j.success && ok) { ok.style.opacity = '1'; setTimeout(() => { ok.style.opacity = '0'; }, 1200); }
+          // держим второе поле (вкладка Paper Bot) в согласии
+          const pb = document.getElementById('paperBudget');
+          if (pb && document.activeElement !== pb) pb.value = j.budgetUsd;
+        } catch { }
+      }, 500);
+    }
     async function openPaperFromList(coin, pair) {
       try {
         const r = await fetch('/api/paper/open', {
@@ -12970,6 +13002,8 @@ Requirements:
         }
         // Состояние paper-сделок приходит вместе со списком — рисуем до строк
         _paperCoins = new Set((j.paperOpen || []).map(p => p.coin));
+        const pbEl = document.getElementById('tlPaperBudget');
+        if (pbEl && document.activeElement !== pbEl && j.paperBudget != null) pbEl.value = j.paperBudget;
         _renderPaperStrip(j.paperOpen || []);
         const rows = j.coins.map((c, i) => {
           const price = c.price < 0.001 ? c.price.toFixed(6) : c.price < 1 ? c.price.toFixed(4) : c.price < 100 ? c.price.toFixed(3) : c.price.toFixed(2);

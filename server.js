@@ -1296,6 +1296,7 @@ app.get('/api/top-losers', async (req, res) => {
     res.json({
       success: true, coins: topLosersCache.data, updatedAt: topLosersCache.priceAt, rebuiltAt: topLosersCache.fullAt,
       rebuilding: topLosersBuilding, building: topLosersBuilding && !topLosersCache.data.length, buyWatch: buyWatchArmed,
+      paperBudget: paperBot.budgetUsd,
       paperOpen: paperBot.open.map(p => ({
         id: p.id, coin: p.coin, pair: p.pair, entry: p.entry, last: p.last, sl: p.sl, slStage: p.slStage,
         openedAt: p.openedAt, budget: p.budget, source: p.source || 'auto',

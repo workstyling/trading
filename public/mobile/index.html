@@ -1415,6 +1415,11 @@
       <span class="tg-title">📉 Top Losers 30d</span>
       <span class="tg-meta" style="font-size:9px;">
         <span id="tlRebuildM" style="display:none;color:var(--yellow);font-size:8px;margin-right:4px;">⟳ пересборка…</span>
+        <span style="font-size:9px;color:#667;">📝 $</span>
+        <input type="number" id="tlPaperBudgetM" value="100" min="10" max="100000" step="10" inputmode="decimal"
+          oninput="onPaperBudgetInputM(this.value)"
+          style="width:52px;height:22px;padding:0 4px;margin:0 4px 0 2px;background:var(--s3);border:1px solid rgba(255,255,255,0.14);border-radius:5px;color:var(--t0);font-size:10px;outline:none;">
+        <span id="tlPaperBudgetOkM" style="font-size:9px;color:#00e5a0;opacity:0;transition:opacity .25s;margin-right:3px;">✓</span>
         <button class="tg-refresh-btn" id="tlBuyWatchBtnM" onclick="toggleBuyWatchM()" style="height:22px;font-size:10px;padding:0 6px;margin-right:3px;">🔔</button>
         <button class="tg-refresh-btn" id="tlRefreshBtnM" onclick="loadTopLosersM(true)" style="height:22px;font-size:10px;padding:0 6px;">⟳</button>
         mcap ≥ $30M · upd: <span id="tlUpdatedM">—</span>
@@ -4237,6 +4242,25 @@
 
     // ── Paper-сделки по монете ──
     let _paperCoinsM = new Set();
+
+    // Сумма paper-сделки — сохраняется на сервер при вводе, общая с десктопом
+    let _pbSaveTimerM = null;
+    function onPaperBudgetInputM(val) {
+      const el = document.getElementById('tlPaperBudgetM');
+      const ok = document.getElementById('tlPaperBudgetOkM');
+      const v = parseFloat(val);
+      const valid = v >= 10 && v <= 100000;
+      if (el) el.style.borderColor = valid ? 'rgba(255,255,255,0.14)' : 'rgba(255,90,90,0.6)';
+      if (!valid) return;
+      clearTimeout(_pbSaveTimerM);
+      _pbSaveTimerM = setTimeout(async () => {
+        const r = await api('/api/paper/config', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ budgetUsd: v })
+        });
+        if (r.success && ok) { ok.style.opacity = '1'; setTimeout(() => { ok.style.opacity = '0'; }, 1200); }
+      }, 500);
+    }
     async function openPaperFromListM(coin, pair) {
       const r = await api('/api/paper/open', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ coin, pair }) });
       if (!r.success) { toast(r.error || 'Ошибка', 'error'); return; }
@@ -4346,6 +4370,8 @@
           return;
         }
         _paperCoinsM = new Set((j.paperOpen || []).map(p => p.coin));
+        const pbElM = document.getElementById('tlPaperBudgetM');
+        if (pbElM && document.activeElement !== pbElM && j.paperBudget != null) pbElM.value = j.paperBudget;
         _renderPaperStripM(j.paperOpen || []);
         const rows = j.coins.map((c, i) => {
           const price = c.price < 0.001 ? c.price.toFixed(6) : c.price < 1 ? c.price.toFixed(4) : c.price < 100 ? c.price.toFixed(3) : c.price.toFixed(2);
