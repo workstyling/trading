@@ -457,6 +457,14 @@
       border: 1px solid rgba(255,255,255,0.10);
       color: #8a94a6; transition: all .18s ease; white-space: nowrap;
     }
+    .ss-regime {
+      display: inline-flex; align-items: center; height: 28px; padding: 0 10px;
+      border-radius: 8px; font-size: 10px; font-weight: 600; white-space: nowrap;
+      border: 1px solid rgba(255,255,255,0.10);
+      background: rgba(255,255,255,0.04); color: #8a94a6;
+    }
+    .ss-regime.ok { border-color: rgba(0,229,160,0.45); background: rgba(0,229,160,0.11); color: #00e5a0; }
+    .ss-regime.bad { border-color: rgba(255,90,90,0.45); background: rgba(255,90,90,0.10); color: #ff6b6b; }
     .tl-btn.on-swing { border-color: rgba(245,197,24,0.55); background: rgba(245,197,24,0.14); color: #f5c518; }
     .tl-btn.on-scalp { border-color: rgba(76,201,240,0.55); background: rgba(76,201,240,0.14); color: #4cc9f0; }
     .tl-btn.tl-refresh { margin-left: auto; }
@@ -1490,6 +1498,24 @@
     </div>
     <div id="tlPaperStripM" style="display:none;margin-bottom:6px;"></div>
     <div id="tlBodyM" style="margin-bottom:16px;"><div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">Loading...</div></div>
+
+    <!-- ⚡ Скальп по всему рынку -->
+    <div class="tl-head">
+      <div class="tl-head-top">
+        <span class="tl-name" style="color:#4cc9f0;">⚡ Скальп по рынку</span>
+        <span class="tl-sub">2–6 ч</span>
+        <span class="tl-status">
+          <span id="ssScanningM" class="tl-rebuild" style="display:none;">⟳ <span id="ssProgressM">0</span>%</span>
+          <span id="ssAgoM">—</span>
+        </span>
+      </div>
+      <div class="tl-bar">
+        <span id="ssRegimeM" class="ss-regime">режим —</span>
+        <span id="ssFoundM" style="font-size:9px;color:#7c8698;"></span>
+        <button class="tl-btn tl-refresh" id="ssRefreshBtnM" onclick="loadScalpScanM(true)">⟳</button>
+      </div>
+    </div>
+    <div id="ssBodyM" style="margin-bottom:16px;"><div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">Первый скан через минуту…</div></div>
     <div class="tg-header">
       <span class="tg-title">📊 Top Volume 24h<button class="tv-help-btn" onclick="_toggleHelpM()">?</button></span>
       <span class="tg-meta">
@@ -4484,6 +4510,62 @@
     }
     setInterval(loadTopLosersM, 30_000);
     loadTopLosersM();
+
+    /* ═══════════ Скальп по всему рынку ═══════════ */
+    async function loadScalpScanM(force) {
+      try {
+        const j = await api('/api/scalp-scan' + (force ? '?refresh=1' : ''));
+        if (!j.success) return;
+        const rg = document.getElementById('ssRegimeM');
+        if (rg) {
+          const m = j.regime;
+          rg.className = 'ss-regime' + (m ? (m.above ? ' ok' : ' bad') : '');
+          rg.textContent = m ? (m.above ? `режим: за нас` : `режим: против`) : 'режим —';
+        }
+        const scEl = document.getElementById('ssScanningM');
+        if (scEl) {
+          scEl.style.display = j.scanning ? '' : 'none';
+          const p = document.getElementById('ssProgressM');
+          if (p) p.textContent = j.progress;
+          if (j.scanning && !window._ssPollM) { window._ssPollM = true; setTimeout(() => { window._ssPollM = false; loadScalpScanM(); }, 6000); }
+        }
+        const ago = document.getElementById('ssAgoM');
+        if (ago) ago.textContent = j.agoSec == null ? '—' : j.agoSec < 60 ? `${j.agoSec}с` : `${Math.round(j.agoSec / 60)}м`;
+        const found = document.getElementById('ssFoundM');
+        if (found) found.textContent = j.total ? `${j.total} пар · вх. ${j.entries}` : '';
+
+        const body = document.getElementById('ssBodyM');
+        if (!body) return;
+        const rows = (j.results || []).filter(x => x.score >= 40).slice(0, 10);
+        if (!rows.length) {
+          body.innerHTML = `<div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">${j.scanning ? 'Сканирую…' : 'Кандидатов нет'}</div>`;
+          return;
+        }
+        const px = v => v == null ? '—' : v < 0.001 ? v.toFixed(8) : v < 1 ? v.toFixed(5) : v < 100 ? v.toFixed(3) : v.toFixed(2);
+        body.innerHTML = `<table style="width:100%;border-collapse:collapse;">
+          <thead><tr style="border-bottom:1px solid #222;">
+            <th style="color:#666;font-size:9px;text-align:left;padding:4px 3px;">COIN</th>
+            <th style="color:#666;font-size:9px;text-align:center;padding:4px 2px;">SCORE</th>
+            <th style="color:#666;font-size:9px;text-align:center;padding:4px 2px;">У ДНА</th>
+            <th style="color:#666;font-size:9px;text-align:center;padding:4px 2px;">RSI</th>
+            <th style="color:#666;font-size:9px;text-align:center;padding:4px 2px;">VOL</th><th></th>
+          </tr></thead><tbody>${rows.map(x => {
+            const col = x.tag === 'ВХОД' ? '#4cc9f0' : x.tag === 'БЛИЗКО' ? '#f5c518'
+              : x.tag === 'РЫНОК ПРОТИВ' ? '#ff6b6b' : '#8892a0';
+            const inP = _paperCoinsM.has(x.coin);
+            return `<tr style="border-bottom:1px solid rgba(255,255,255,0.03);${x.pass ? 'background:rgba(76,201,240,0.12);' : ''}" onclick="selectCoin('${x.coin}')">
+              <td style="padding:6px 3px;"><span style="color:var(--blue);font-weight:700;font-size:11px;">${x.coin}</span><br><span style="color:#555;font-size:9px;">$${px(x.price)}</span></td>
+              <td style="text-align:center;padding:6px 2px;"><span style="font-weight:800;color:${col};font-size:12px;">${x.score}</span><br><span style="font-size:6.5px;font-weight:800;color:${col};background:${col}22;padding:1px 3px;border-radius:3px;white-space:nowrap;">${x.tag}</span></td>
+              <td style="text-align:center;font-size:11px;color:${x.rangePos < 0.25 ? '#00e5a0' : '#889'};">${Math.round(x.rangePos * 100)}%</td>
+              <td style="text-align:center;font-size:11px;color:#889;">${x.rsi ?? '—'}</td>
+              <td style="text-align:center;font-size:10px;color:#666;">${fmtVolShort(x.vol24)}</td>
+              <td style="text-align:right;padding:6px 2px;"><button onclick="event.stopPropagation();openPaperFromListM('${x.coin}','${x.pair}')" ${inP ? 'disabled' : ''} style="padding:3px 5px;border:1px solid ${inP ? 'rgba(0,229,160,0.5)' : 'rgba(255,255,255,0.18)'};border-radius:5px;background:${inP ? 'rgba(0,229,160,0.15)' : 'transparent'};color:${inP ? '#00e5a0' : '#778'};font-size:10px;">📝</button></td>
+            </tr>`;
+          }).join('')}</tbody></table>`;
+      } catch { }
+    }
+    setInterval(loadScalpScanM, 45_000);
+    loadScalpScanM();
 
     // На телефоне фоновые вкладки замораживаются — при возврате сразу освежаем данные
     document.addEventListener('visibilitychange', () => {

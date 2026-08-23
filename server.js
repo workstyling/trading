@@ -3988,6 +3988,8 @@ async function attachScalp() {
           }
         } catch { }
         c.sc = scalp.calcScalpScore(s, c.vol24 || 0, spread);
+        // Режим рынка — то же жёсткое условие, что в рыночном сканере
+        if (c.sc) scalpScanner.applyRegime(c.sc, scalpScan.regime);
       } catch { c.sc = null; }
       await sleep(160);
     }
@@ -3999,6 +4001,59 @@ async function attachScalp() {
 }
 setInterval(attachScalp, 3 * 60 * 1000);
 setTimeout(attachScalp, 50_000);
+
+// ══════════════════════════════════════════════════════════════════
+// ═══ СКАНЕР СКАЛЬПА ПО ВСЕМУ ЛИКВИДНОМУ РЫНКУ ═══
+// Скальп-гейт не связан с падением за 30 дней — держать его только на
+// Top Losers было ошибкой. Сканируем все ликвидные пары.
+// ══════════════════════════════════════════════════════════════════
+const scalpScanner = require('./src/scalp/scanner');
+
+const scalpScan = { running: false, progress: 0, scanned: 0, total: 0, at: 0, results: [], regime: null };
+
+async function runScalpScan() {
+  if (scalpScan.running) return;
+  if (!cbVolumeCache.size) return;      // ждём общий кеш объёмов
+  scalpScan.running = true;
+  scalpScan.progress = 0;
+  try {
+    const out = await scalpScanner.scanMarket(cbVolumeCache, {
+      minVol: 500e3, maxCoins: 160,
+      onProgress: (done, total) => {
+        scalpScan.scanned = done; scalpScan.total = total;
+        scalpScan.progress = total ? Math.round(done / total * 100) : 0;
+      },
+    });
+    scalpScan.results = out.results;
+    scalpScan.regime = out.regime;
+    scalpScan.at = out.at;
+    const entries = out.results.filter(r => r.pass);
+    console.log(`[scalp-scan] ${out.results.length}/${out.total} монет, входов: ${entries.length}` +
+      (out.regime ? ` · BTC ${out.regime.above ? 'выше' : 'НИЖЕ'} EMA20 (${out.regime.distPct}%)` : ''));
+  } catch (e) { console.error('[scalp-scan]', e.message); }
+  finally { scalpScan.running = false; scalpScan.progress = 100; }
+}
+setInterval(runScalpScan, 4 * 60 * 1000);
+setTimeout(runScalpScan, 75_000);
+
+app.get('/api/scalp-scan', (req, res) => {
+  if (req.query.refresh === '1' && !scalpScan.running) runScalpScan();
+  const minScore = parseFloat(req.query.minScore) || 0;
+  const onlyPass = req.query.pass === '1';
+  let results = scalpScan.results;
+  if (onlyPass) results = results.filter(r => r.pass);
+  else if (minScore > 0) results = results.filter(r => r.score >= minScore);
+  res.json({
+    success: true,
+    scanning: scalpScan.running, progress: scalpScan.progress,
+    scanned: scalpScan.scanned, total: scalpScan.total,
+    at: scalpScan.at, agoSec: scalpScan.at ? Math.round((Date.now() - scalpScan.at) / 1000) : null,
+    regime: scalpScan.regime,
+    entries: scalpScan.results.filter(r => r.pass).length,
+    results: results.slice(0, 40),
+    watch: scalpWatchArmed,
+  });
+});
 
 // ── Одноразовый Telegram-алерт по scalp-гейту (отдельная кнопка) ──
 const SCALP_WATCH_FILE = path.join(__dirname, 'scalp-watch.json');
@@ -4018,24 +4073,32 @@ app.post('/api/scalp-watch', (req, res) => {
 });
 
 setInterval(async () => {
-  if (!scalpWatchArmed || !topLosersCache.data.length) return;
+  if (!scalpWatchArmed) return;
   try {
-    const hits = topLosersCache.data.filter(c => c.sc && c.sc.pass);
-    if (!hits.length) return;
-    const c = hits.sort((a, b) => (b.sc.score || 0) - (a.sc.score || 0))[0];
+    // Ищем по всему рынку, а не только в Top Losers — гейт к ним не привязан
+    const pool = [
+      ...scalpScan.results.filter(r => r.pass),
+      ...topLosersCache.data.filter(c => c.sc && c.sc.pass).map(c => ({ ...c.sc, coin: c.coin, pair: c.pair, price: c.price, vol24: c.vol24 })),
+    ];
+    if (!pool.length) return;
+    // дубликаты одной монеты убираем, оставляя лучший балл
+    const best = new Map();
+    for (const r of pool) if (!best.has(r.coin) || best.get(r.coin).score < r.score) best.set(r.coin, r);
+    const c = [...best.values()].sort((a, b) => b.score - a.score)[0];
     const sent = await sendTelegram(
       `⚡ <b>SCALP ВХОД</b> — <b>${c.pair}</b>\n` +
-      `Рейтинг <b>${c.sc.score}/100</b> · гейт 4/4 · горизонт 2–6 часов\n` +
+      `Рейтинг <b>${c.score}/100</b> · гейт пройден · горизонт 2–6 часов\n` +
       `━━━━━━━━━━━━━━━━━━\n` +
-      c.sc.checks.map(x => `✅ ${x.k}: ${x.v}`).join('\n') + '\n' +
-      `💵 Цена: $${fmtPxAe(c.price)}` + (c.sc.spreadPct != null ? ` · спред ${c.sc.spreadPct}%` : '') + '\n\n' +
-      `<i>Гейт откалиброван бэктестом на 28 тыс. сэмплов: 68% побед,\n` +
-      `ожидание +0.2% на сделку при цели +1.38%. Вход только лимиткой —\n` +
-      `на этом горизонте комиссия съедает больше половины сигнала.</i>\n` +
+      c.checks.map(x => `${x.ok ? '✅' : '❌'} ${x.k}: ${x.v}`).join('\n') + '\n' +
+      `💵 Цена: $${fmtPxAe(c.price)}` + (c.spreadPct != null ? ` · спред ${c.spreadPct}%` : '') +
+      (c.vol24 ? ` · объём $${Math.round(c.vol24 / 1e3)}K` : '') + '\n\n' +
+      `<i>Гейт откалиброван на 28 тыс. сэмплов: 68% побед, ожидание +0.2%\n` +
+      `на сделку при цели +1.38%. Режим рынка учтён: ниже EMA20 по BTC\n` +
+      `сигналы не выдаются, там ожидание отрицательное. Вход лимиткой.</i>\n` +
       `(одноразовый алерт — выключен)`, 'HTML');
     scalpWatchArmed = false;
     saveScalpWatch();
-    console.log(`[scalp-watch] сработал ${c.pair}, score=${c.sc.score}, telegram=${sent}`);
+    console.log(`[scalp-watch] сработал ${c.pair}, score=${c.score}, telegram=${sent}`);
   } catch (e) { console.error('[scalp-watch]', e.message); }
 }, 60_000);
 
@@ -4072,6 +4135,212 @@ app.delete('/api/paper/open/:id', (req, res) => {
   if (paperBot.open.length === before) return res.json({ success: false, error: 'not found' });
   savePaperBot();
   res.json({ success: true });
+});
+
+// ══════════════════════════════════════════════════════════════════
+// ═══ РАЗМЕЩЕНИЕ ЛИМИТКИ: где ставить заявку ═══
+// Всё преимущество стратегии ≈ +0.2% на сделку, а круг комиссий 0.25%
+// и спред на неликвиде ещё столько же. Считаем компромисс между ценой
+// и вероятностью исполнения по реальному стакану и ленте сделок.
+// ══════════════════════════════════════════════════════════════════
+app.get('/api/limit-advice/:coin', async (req, res) => {
+  try {
+    const coin = req.params.coin.toUpperCase();
+    const pair = `${coin}-USD`;
+    const usd = parseFloat(req.query.usd) || 100;
+    const H2 = { headers: { 'User-Agent': 'trading-app/1.0' } };
+
+    const [bookRes, tradesRes, statsRes] = await Promise.all([
+      fetch(`https://api.exchange.coinbase.com/products/${pair}/book?level=2`, H2),
+      fetch(`https://api.exchange.coinbase.com/products/${pair}/trades?limit=100`, H2),
+      fetch(`https://api.exchange.coinbase.com/products/${pair}/stats`, H2),
+    ]);
+    if (!bookRes.ok) return res.json({ success: false, error: 'нет стакана' });
+    const book = await bookRes.json();
+    const bids = (book.bids || []).map(b => [parseFloat(b[0]), parseFloat(b[1])]);
+    const asks = (book.asks || []).map(a => [parseFloat(a[0]), parseFloat(a[1])]);
+    if (!bids.length || !asks.length) return res.json({ success: false, error: 'пустой стакан' });
+
+    const bestBid = bids[0][0], bestAsk = asks[0][0];
+    const mid = (bestBid + bestAsk) / 2;
+    const spreadPct = (bestAsk - bestBid) / mid * 100;
+
+    // Насколько активно торгуется: сделок в минуту и медианный размер
+    let tradesPerMin = null, downTradesPerMin = null;
+    try {
+      const tr = await tradesRes.json();
+      if (Array.isArray(tr) && tr.length > 1) {
+        const now = Date.now();
+        const times = tr.map(t => new Date(t.time).getTime()).filter(x => x > 0);
+        const spanMin = times.length ? (now - Math.min(...times)) / 60000 : null;
+        if (spanMin > 0) {
+          tradesPerMin = Math.round(times.length / spanMin * 10) / 10;
+          // side='buy' у Coinbase = агрессивный продавец, цена идёт вниз к нашей лимитке
+          const down = tr.filter(t => t.side === 'buy').length;
+          downTradesPerMin = Math.round(down / spanMin * 10) / 10;
+        }
+      }
+    } catch { }
+
+    const s = statsRes.ok ? await statsRes.json() : null;
+    const vol24 = s ? (parseFloat(s.volume) || 0) * (parseFloat(s.last) || 0) : 0;
+
+    const settings = loadSettings();
+    const limitFee = (parseFloat(settings.tradeFee) || 0.06) / 100;
+    const marketFee = (parseFloat(settings.marketFee) || 0.125) / 100;
+    const target = parseFloat(settings.sellMarkup) || 1.38;
+
+    // Варианты размещения: по ask (мгновенно), по bid, и глубже по стакану
+    const levels = [];
+    const pushLevel = (price, label, note, instant) => {
+      // сколько объёма надо съесть встречной стороне, чтобы дойти до нас
+      let ahead = 0;
+      for (const [p, sz] of bids) { if (p > price) ahead += p * sz; else break; }
+      const costVsMid = (price / mid - 1) * 100;
+      // чистая прибыль, если продать по цели с той же лимитной комиссией
+      const net = target - (limitFee * 2 * 100) - costVsMid;
+      levels.push({
+        label, price: Math.round(price * 1e10) / 1e10, note,
+        vsMidPct: Math.round(costVsMid * 1000) / 1000,
+        queueAheadUsd: Math.round(ahead),
+        instant: !!instant,
+        netIfTargetPct: Math.round(net * 1000) / 1000,
+        // грубая оценка времени в очереди по темпу нисходящих сделок
+        etaMin: instant ? 0 : (downTradesPerMin > 0 && vol24 > 0
+          ? Math.round(Math.min(600, ahead / Math.max(1, vol24 / 1440)) )
+          : null),
+      });
+    };
+    pushLevel(bestAsk, 'По ask (сразу)', 'Исполнится немедленно, но платишь весь спред', true);
+    pushLevel(bestBid, 'По bid (1-й уровень)', 'Встаёшь первым в очередь покупателей', false);
+    if (bids[1]) pushLevel(bids[1][0], 'Bid −1 уровень', 'Дешевле, но ждать дольше', false);
+    if (bids[3]) pushLevel(bids[3][0], 'Bid −3 уровня', 'Заметно дешевле, исполнение не гарантировано', false);
+
+    // Рекомендация: если спред мал относительно цели — брать по ask и не ждать
+    const spreadShare = spreadPct / target * 100;   // какую долю цели съедает спред
+    let advice, why;
+    if (spreadShare < 8) {
+      advice = 'По ask';
+      why = `Спред ${spreadPct.toFixed(2)}% — это лишь ${Math.round(spreadShare)}% от цели ${target}%. Ждать очередь невыгодно: риск упустить движение больше экономии.`;
+    } else if (spreadShare < 25) {
+      advice = 'По bid';
+      why = `Спред ${spreadPct.toFixed(2)}% съедает ${Math.round(spreadShare)}% цели. Ставь лимитку по bid: сэкономишь ${(spreadPct).toFixed(2)}%, обычно исполняется за минуты.`;
+    } else {
+      advice = 'По bid, и подумать дважды';
+      why = `Спред ${spreadPct.toFixed(2)}% — это ${Math.round(spreadShare)}% от цели ${target}%. Вход и выход съедят почти всё преимущество. Такую монету лучше пропустить.`;
+    }
+
+    res.json({
+      success: true, coin, pair,
+      bestBid, bestAsk, mid: Math.round(mid * 1e10) / 1e10,
+      spreadPct: Math.round(spreadPct * 1000) / 1000,
+      spreadShareOfTarget: Math.round(spreadShare),
+      vol24: Math.round(vol24), tradesPerMin, downTradesPerMin,
+      targetPct: target, limitFeePct: limitFee * 100, marketFeePct: marketFee * 100,
+      roundTripFeePct: Math.round(limitFee * 2 * 100 * 1000) / 1000,
+      usd, levels, advice, why,
+    });
+  } catch (e) {
+    console.error('[limit-advice]', e.message);
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// ══════════════════════════════════════════════════════════════════
+// ═══ АВТОПЕРЕПРОВЕРКА КАЛИБРОВКИ ═══
+// Обе системы откалиброваны на одном эпизоде рынка. Раз в неделю сверяем
+// заявленное ожидание с тем, что реально дали paper-сделки и журнал,
+// и присылаем отчёт. Плохая новость приходит раньше убытков.
+// ══════════════════════════════════════════════════════════════════
+const CALIB_FILE = path.join(__dirname, 'calibration-log.json');
+let calibLog = [];
+try { calibLog = JSON.parse(fs.readFileSync(CALIB_FILE, 'utf8')); } catch { }
+
+// Ожидания из бэктестов — с чем сравниваем факт
+const CALIB_BASELINE = {
+  swing: { winRate: 44, expPct: 0.27, note: 'гейт REV 4/4, горизонт 1–3 дня, 1635 сэмплов' },
+  scalp: { winRate: 68, expPct: 0.20, note: 'гейт SCALP 4/4 + BTC выше EMA20, 28 252 сэмпла' },
+};
+
+function buildCalibrationReport() {
+  const closed = paperBot.closed || [];
+  const since = Date.now() - 30 * 86400 * 1000;
+  const recent = closed.filter(p => p.closedAt >= since);
+  const group = (arr) => {
+    if (!arr.length) return null;
+    const wins = arr.filter(p => p.pnl > 0).length;
+    const totalPct = arr.reduce((a, p) => a + (p.pnlPct || 0), 0);
+    return {
+      n: arr.length, wins, losses: arr.length - wins,
+      winRate: Math.round(wins / arr.length * 100),
+      expPct: Math.round(totalPct / arr.length * 1000) / 1000,
+      totalUsd: Math.round(arr.reduce((a, p) => a + p.pnl, 0) * 100) / 100,
+    };
+  };
+  // Отделяем сделки по reversal-сигналу от прочих
+  const bySignal = {
+    swing: group(recent.filter(p => p.ctx && p.ctx.rv != null && p.ctx.rv >= 77)),
+    all: group(recent),
+  };
+  const journalClosed = (journal.closed || []).filter(t => t.closedAt >= since);
+  return {
+    at: Date.now(),
+    windowDays: 30,
+    paper: bySignal,
+    realTrades: journalClosed.length
+      ? { n: journalClosed.length, winRate: Math.round(journalClosed.filter(t => t.pnl > 0).length / journalClosed.length * 100), totalUsd: Math.round(journalClosed.reduce((a, t) => a + t.pnl, 0) * 100) / 100 }
+      : null,
+    baseline: CALIB_BASELINE,
+    regime: scalpScan.regime ? { btcAbove: scalpScan.regime.above, distPct: scalpScan.regime.distPct } : null,
+  };
+}
+
+async function runCalibrationCheck(silent) {
+  const rep = buildCalibrationReport();
+  calibLog.push(rep);
+  calibLog = calibLog.slice(-52);
+  try { fs.writeFileSync(CALIB_FILE, JSON.stringify(calibLog, null, 2)); } catch { }
+
+  const p = rep.paper.all, sw = rep.paper.swing;
+  if (!p || p.n < 10) {
+    console.log(`[calibration] сделок мало (${p ? p.n : 0}), отчёт пропущен`);
+    if (!silent) return rep;
+    return rep;
+  }
+  const base = CALIB_BASELINE.swing;
+  const drift = sw ? sw.winRate - base.winRate : null;
+  const verdict = drift == null ? 'нет данных по гейту'
+    : drift >= -5 ? '✅ держится'
+    : drift >= -12 ? '⚠️ просело'
+    : '🔴 не работает';
+  const text =
+    `📐 <b>ПРОВЕРКА КАЛИБРОВКИ</b> — за 30 дней\n` +
+    `━━━━━━━━━━━━━━━━━━\n` +
+    `<b>Paper, все сделки:</b> ${p.n} шт · ${p.winRate}% побед · ${p.expPct >= 0 ? '+' : ''}${p.expPct}% на сделку · итого ${p.totalUsd >= 0 ? '+' : ''}$${p.totalUsd}\n` +
+    (sw ? `<b>Только по гейту (77+):</b> ${sw.n} шт · ${sw.winRate}% побед · ${sw.expPct >= 0 ? '+' : ''}${sw.expPct}%\n` : '') +
+    `\n<b>Ожидалось по бэктесту:</b> ${base.winRate}% побед, +${base.expPct}% на сделку\n` +
+    `<b>Вердикт:</b> ${verdict}${drift != null ? ` (${drift >= 0 ? '+' : ''}${drift} п.п. к ожиданию)` : ''}\n` +
+    (rep.realTrades ? `\n<b>Реальные сделки:</b> ${rep.realTrades.n} шт · ${rep.realTrades.winRate}% · ${rep.realTrades.totalUsd >= 0 ? '+' : ''}$${rep.realTrades.totalUsd}\n` : '') +
+    `\n<i>Калибровка сделана на одном рыночном эпизоде. Если вердикт\nне «держится» два отчёта подряд — пороги пора пересчитывать.</i>`;
+  if (!silent) {
+    const sent = await sendTelegram(text, 'HTML');
+    console.log(`[calibration] отчёт отправлен: ${verdict}, telegram=${sent}`);
+  }
+  return rep;
+}
+
+// Раз в неделю; первый прогон через 3 минуты после старта — молча, только в лог
+setInterval(() => runCalibrationCheck(false), 7 * 24 * 3600 * 1000);
+setTimeout(() => runCalibrationCheck(true), 180_000);
+
+app.get('/api/calibration', (req, res) => {
+  const fresh = buildCalibrationReport();
+  res.json({ success: true, current: fresh, history: calibLog.slice(-12).reverse() });
+});
+
+app.post('/api/calibration/run', async (req, res) => {
+  const rep = await runCalibrationCheck(false);
+  res.json({ success: true, report: rep });
 });
 
 // Start server — check port first, then listen
