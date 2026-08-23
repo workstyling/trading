@@ -1281,6 +1281,7 @@ async function refreshTopLosersPrices(force) {
         const bv = parseFloat(t.volume); // rolling 24h объём в монетах
         if (bv > 0) c.vol24 = bv * px;
         calcReboundVerdict(c); // рейтинг отскока живёт вместе с ценой
+        recomputeReversal(c);  // и REV тоже — на свежих цене и объёме
       }
     } catch { }
   }));
@@ -3896,17 +3897,33 @@ function calcReversalScore(d, s, btc) {
   return { score: sc, tag, pass: passed === 4, passed, checks, rsiRecovering, rsi: s.rsi4h, rsiMin: s.rsiMin7d, aboveEma: !!s.aboveEma20_4h, hl: !!(s.higherLow && s.higherLow.found), bo: !!(s.breakout && s.breakout.found) };
 }
 
-// Досчитываем reversal по монетам Top Losers (~20 шт) — вызывается после пересборки
+// Пересчёт рейтинга из уже загруженных сигналов + СВЕЖИХ цены и объёма.
+// Дешёвый: без запросов. Вызывается на каждом обновлении цен, поэтому REV
+// живёт вместе с ценой, а не застревает на состоянии момента пересборки.
+function recomputeReversal(c) {
+  if (!c.rvSig) return;
+  const s = {
+    ...c.rvSig,
+    // EMA20 фиксирована до следующей пересборки, а цена живая — сравниваем с ней
+    aboveEma20_4h: c.rvSig.ema20_4h != null ? c.price > c.rvSig.ema20_4h : c.rvSig.aboveEma20_4h
+  };
+  c.rv = calcReversalScore({ pct30d: c.pct30d, vol24: c.vol24 || 0 }, s, rvBtcRegime);
+}
+
+// Досчитываем reversal по монетам Top Losers (~20 шт) — вызывается после пересборки.
+// ВАЖНО: перед расчётом обновляем цены, иначе vol24 берётся из текущей дневной
+// свечи (в начале UTC-суток она почти пустая) и всё уезжает в НЕЛИКВИД.
 let rvBtcRegime = null;
 async function attachReversal(list) {
   try { rvBtcRegime = await reversal.getBtcRegime(); } catch { }
+  try { await refreshTopLosersPrices(true); } catch { }
   for (const c of list) {
     try {
       const s = await reversal.fetchReversalSignals(c.coin);
-      if (!s) { c.rv = null; continue; }
-      const d = { pct30d: c.pct30d, vol24: c.vol24 || 0 };
-      c.rv = calcReversalScore(d, s, rvBtcRegime);
-    } catch { c.rv = null; }
+      if (!s) { c.rv = null; c.rvSig = null; continue; }
+      c.rvSig = s;              // сырые сигналы храним — по ним идёт живой пересчёт
+      recomputeReversal(c);
+    } catch { c.rv = null; c.rvSig = null; }
     await sleep(180);
   }
   console.log(`[reversal] пересчитано ${list.filter(c => c.rv).length}/${list.length}, входов: ${list.filter(c => c.rv && c.rv.pass).length}`);
