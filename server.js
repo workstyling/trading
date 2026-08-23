@@ -1236,7 +1236,11 @@ async function rebuildTopLosers() {
         // Коллизия тикеров: если цена Cryptorank отличается от Coinbase в разы — это другой проект, mcap чужой
         const crPx = mcap[sym]?.px;
         if (crPx > 0 && (last / crPx > 2.5 || crPx / last > 2.5)) continue;
-        const vol24 = (cd[cd.length - 1][5] || 0) * last; // грубо из дневной свечи; уточнится тикером при первом обновлении цен
+        // Объём: сперва общий кеш (он собирается с /stats — честный rolling 24h).
+        // Иначе — ПРЕДЫДУЩАЯ полная дневная свеча. Текущую брать нельзя: в начале
+        // UTC-суток в ней доля оборота, и монета ложно выглядит неликвидной.
+        const prevDay = cd.length >= 2 ? cd[cd.length - 2] : null;
+        const vol24 = cbVolumeCache.get(sym) || (prevDay ? (prevDay[5] || 0) * last : (cd[cd.length - 1][5] || 0) * last);
         // База для рейтинга отскока
         const closesD = cd.map(x => x[4]), lowsD = cd.map(x => x[1]);
         let loIdx = 0;
@@ -1268,23 +1272,34 @@ async function refreshTopLosersPrices(force) {
   if (!topLosersCache.data.length) return;
   if (!force && Date.now() - topLosersCache.priceAt <= 30_000) return;
   const H = { headers: { 'User-Agent': 'trading-app/1.0' } };
-  await Promise.all(topLosersCache.data.map(async c => {
-    try {
-      const r = await fetch(`https://api.exchange.coinbase.com/products/${c.pair}/ticker`, H);
-      if (!r.ok) return;
-      const t = await r.json();
-      const px = parseFloat(t.price || t.ask || t.bid);
-      if (px > 0) {
-        const base = c.price / (1 + c.pct30d / 100); // цена месяц назад
-        c.price = px;
-        c.pct30d = base > 0 ? (px - base) / base * 100 : c.pct30d;
-        const bv = parseFloat(t.volume); // rolling 24h объём в монетах
-        if (bv > 0) c.vol24 = bv * px;
-        calcReboundVerdict(c); // рейтинг отскока живёт вместе с ценой
-        recomputeReversal(c);  // и REV тоже — на свежих цене и объёме
+  // Пачка из 20 одновременных тикеров ловила 429, и объём оставался чёрновым
+  // из дневной свечи → монеты ложно уезжали в НЕЛИКВИД. Идём партиями с ретраем.
+  const list = topLosersCache.data;
+  let volOk = 0;
+  for (let i = 0; i < list.length; i += 5) {
+    await Promise.all(list.slice(i, i + 5).map(async c => {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          const r = await fetch(`https://api.exchange.coinbase.com/products/${c.pair}/ticker`, H);
+          if (r.status === 429) { await sleep(400 * (attempt + 1)); continue; }
+          if (!r.ok) return;
+          const t = await r.json();
+          const px = parseFloat(t.price || t.ask || t.bid);
+          if (!(px > 0)) return;
+          const base = c.price / (1 + c.pct30d / 100); // цена месяц назад
+          c.price = px;
+          c.pct30d = base > 0 ? (px - base) / base * 100 : c.pct30d;
+          const bv = parseFloat(t.volume); // rolling 24h объём в монетах
+          if (bv > 0) { c.vol24 = bv * px; c.volAt = Date.now(); volOk++; }
+          calcReboundVerdict(c); // рейтинг отскока живёт вместе с ценой
+          recomputeReversal(c);  // и REV тоже — на свежих цене и объёме
+          return;
+        } catch { return; }
       }
-    } catch { }
-  }));
+    }));
+    if (i + 5 < list.length) await sleep(120);
+  }
+  if (volOk < list.length) console.log(`[top-losers] объём обновлён у ${volOk}/${list.length} (остальные — из общего кеша объёмов)`);
   topLosersCache.data.sort((a, b) => a.pct30d - b.pct30d);
   topLosersCache.priceAt = Date.now();
 }
