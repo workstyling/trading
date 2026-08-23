@@ -2204,6 +2204,73 @@
     .tg-title { font-size: 12px; font-weight: 600; color: #4ade80; letter-spacing: .04em; }
     .tg-meta { font-size: 10px; color: var(--t2); display: inline-flex; align-items: center; gap: 6px; }
     .tg-countdown { color: #facc15; font-variant-numeric: tabular-nums; }
+
+    /* ── Шапка Top Losers: две строки вместо одной перегруженной ── */
+    .tl-head {
+      display: flex; flex-direction: column; gap: 8px;
+      padding-bottom: 9px; margin-bottom: 9px;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+    .tl-head-top { display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap; }
+    .tl-name {
+      font-size: 12.5px; font-weight: 700; color: #4ade80;
+      letter-spacing: .03em; white-space: nowrap;
+    }
+    .tl-sub { font-size: 9.5px; color: #5c6674; white-space: nowrap; }
+    .tl-status {
+      margin-left: auto; display: inline-flex; align-items: center; gap: 6px;
+      font-size: 9.5px; color: #5c6674; white-space: nowrap;
+    }
+    .tl-upd { color: #8a94a6; font-variant-numeric: tabular-nums; transition: color .25s; }
+
+    .tl-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    /* Поле суммы: подпись и ввод в одной капсуле, чтобы не рассыпались */
+    .tl-money {
+      display: inline-flex; align-items: stretch; height: 24px;
+      border: 1px solid rgba(255,255,255,0.10); border-radius: 7px;
+      background: rgba(255,255,255,0.035); overflow: hidden;
+      transition: border-color .2s;
+    }
+    .tl-money:focus-within { border-color: rgba(76,201,240,0.45); }
+    .tl-money.bad { border-color: rgba(255,90,90,0.6); }
+    .tl-money-lbl {
+      display: inline-flex; align-items: center; gap: 3px;
+      padding: 0 6px 0 8px; font-size: 9.5px; color: #7c8698;
+      border-right: 1px solid rgba(255,255,255,0.07);
+    }
+    .tl-money input {
+      width: 62px; padding: 0 7px; border: none; outline: none; background: transparent;
+      color: var(--t0); font-family: 'JetBrains Mono', monospace;
+      font-size: 11px; font-weight: 600; text-align: right;
+    }
+    .tl-money input::-webkit-outer-spin-button,
+    .tl-money input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    .tl-ok { font-size: 10px; color: #00e5a0; opacity: 0; transition: opacity .25s; width: 8px; }
+    .tl-ok.show { opacity: 1; }
+
+    .tl-btn {
+      height: 24px; padding: 0 10px; border-radius: 7px; cursor: pointer;
+      display: inline-flex; align-items: center; gap: 4px;
+      font-size: 10px; font-weight: 600; letter-spacing: .02em;
+      background: rgba(255,255,255,0.035);
+      border: 1px solid rgba(255,255,255,0.10);
+      color: #8a94a6;
+      transition: all .18s ease;
+      white-space: nowrap;
+    }
+    .tl-btn:hover { background: rgba(255,255,255,0.07); color: var(--t0); }
+    .tl-btn.on-swing {
+      border-color: rgba(245,197,24,0.55); background: rgba(245,197,24,0.13); color: #f5c518;
+    }
+    .tl-btn.on-scalp {
+      border-color: rgba(76,201,240,0.55); background: rgba(76,201,240,0.13); color: #4cc9f0;
+    }
+    .tl-btn.tl-refresh { margin-left: auto; }
+    .tl-btn.spinning .spin-icon { animation: spin 0.8s linear infinite; }
+    .tl-rebuild {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-size: 9px; color: var(--yellow);
+    }
     .tg-refresh-btn {
       background: transparent;
       border: 1px solid rgba(74,222,128,0.3);
@@ -6018,21 +6085,29 @@
       </div>
       <div class="main-right">
         <div id="topLosersPanel" style="margin-bottom:14px;">
-          <div class="tg-header">
-            <span class="tg-title"><span class="tg-header-title">📉 Top Losers 30d</span><span style="font-size:9px;color:#666;margin-left:6px;">mcap ≥ $30M · Coinbase</span></span>
-            <span class="tg-meta" style="font-size:10px;">
-              <span id="tlRebuild" style="display:none;color:var(--yellow);font-size:9px;margin-right:6px;">⟳ пересборка списка…</span>
-              <span style="font-size:9px;color:#667;margin-right:2px;" title="Сумма, на которую открывается paper-сделка по кнопке 📝. Сохраняется автоматически.">📝 $</span>
-              <input type="number" id="tlPaperBudget" value="100" min="10" max="100000" step="10"
-                title="Сумма paper-сделки в долларах. Сохраняется сразу при вводе, применяется ко всем новым сделкам."
-                oninput="onPaperBudgetInput(this.value)"
-                style="width:58px;padding:2px 5px;margin-right:6px;background:var(--s3,rgba(36,37,56,0.85));border:1px solid rgba(255,255,255,0.14);border-radius:5px;color:var(--t0);font-family:'JetBrains Mono',monospace;font-size:10px;outline:none;transition:border-color .2s;">
-              <span id="tlPaperBudgetOk" style="font-size:9px;color:#00e5a0;opacity:0;transition:opacity .25s;margin-right:6px;">✓</span>
-              <button class="tg-refresh-btn" id="tlBuyWatchBtn" onclick="toggleBuyWatch()" title="Одноразовый Telegram-алерт по колонке СВИНГ (горизонт 1–3 дня). Нажми — сервер пришлёт ОДНО сообщение, когда монета пройдёт гейт 4/4, и выключится сам. Работает при закрытом браузере." style="margin-right:3px;">🔔 СВИНГ</button>
-              <button class="tg-refresh-btn" id="tlScalpWatchBtn" onclick="toggleScalpWatch()" title="Одноразовый Telegram-алерт по колонке СКАЛЬП (горизонт 2–6 часов). Работает так же: одно сообщение и выключается." style="margin-right:4px;">⚡ СКАЛЬП</button>
-              <button class="tg-refresh-btn" id="tlRefreshBtn" onclick="loadTopLosers(true)" title="Обновить цены сейчас + пересобрать список"><span class="spin-icon">⟳</span> Refresh</button>
-              upd: <span id="tlUpdated">—</span>
-            </span>
+          <div class="tl-head">
+            <div class="tl-head-top">
+              <span class="tl-name">📉 Top Losers 30d</span>
+              <span class="tl-sub">mcap ≥ $30M · Coinbase</span>
+              <span class="tl-status">
+                <span id="tlRebuild" class="tl-rebuild" style="display:none;">⟳ пересборка…</span>
+                upd <span id="tlUpdated" class="tl-upd">—</span>
+              </span>
+            </div>
+            <div class="tl-bar">
+              <label class="tl-money" id="tlMoneyBox" title="Сумма paper-сделки в долларах. Сохраняется сразу при вводе, применяется ко всем новым сделкам.">
+                <span class="tl-money-lbl">📝 $</span>
+                <input type="number" id="tlPaperBudget" value="100" min="10" max="100000" step="10"
+                  oninput="onPaperBudgetInput(this.value)">
+              </label>
+              <span id="tlPaperBudgetOk" class="tl-ok">✓</span>
+              <button class="tl-btn" id="tlBuyWatchBtn" onclick="toggleBuyWatch()"
+                title="Одноразовый Telegram-алерт по колонке СВИНГ (горизонт 1–3 дня). Нажми — сервер пришлёт ОДНО сообщение, когда монета пройдёт гейт 4/4, и выключится сам. Работает при закрытом браузере.">🔔 Свинг</button>
+              <button class="tl-btn" id="tlScalpWatchBtn" onclick="toggleScalpWatch()"
+                title="Одноразовый Telegram-алерт по колонке СКАЛЬП (горизонт 2–6 часов). Работает так же: одно сообщение и выключается.">⚡ Скальп</button>
+              <button class="tl-btn tl-refresh" id="tlRefreshBtn" onclick="loadTopLosers(true)"
+                title="Обновить цены сейчас + пересобрать список"><span class="spin-icon">⟳</span> Обновить</button>
+            </div>
           </div>
           <div id="tlPaperStrip" style="display:none;margin-bottom:6px;"></div>
           <div id="tlBody"><div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">Loading...</div></div>
@@ -12814,20 +12889,16 @@ Requirements:
     function _paintBuyWatchBtn() {
       const b = document.getElementById('tlBuyWatchBtn');
       if (!b) return;
-      b.textContent = _tlBuyWatch ? '🔔 СВИНГ ON' : '🔔 СВИНГ';
-      b.style.borderColor = _tlBuyWatch ? 'var(--yellow)' : '';
-      b.style.color = _tlBuyWatch ? 'var(--yellow)' : '';
-      b.style.background = _tlBuyWatch ? 'rgba(245,197,24,0.12)' : '';
+      b.textContent = _tlBuyWatch ? '🔔 Свинг · вкл' : '🔔 Свинг';
+      b.classList.toggle('on-swing', _tlBuyWatch);
     }
     // Второй вотч — по краткосрочной колонке, живёт на сервере отдельно
     let _tlScalpWatch = false;
     function _paintScalpWatchBtn() {
       const b = document.getElementById('tlScalpWatchBtn');
       if (!b) return;
-      b.textContent = _tlScalpWatch ? '⚡ СКАЛЬП ON' : '⚡ СКАЛЬП';
-      b.style.borderColor = _tlScalpWatch ? 'var(--blue)' : '';
-      b.style.color = _tlScalpWatch ? 'var(--blue)' : '';
-      b.style.background = _tlScalpWatch ? 'rgba(76,201,240,0.12)' : '';
+      b.textContent = _tlScalpWatch ? '⚡ Скальп · вкл' : '⚡ Скальп';
+      b.classList.toggle('on-scalp', _tlScalpWatch);
     }
     async function toggleScalpWatch() {
       try {
@@ -12864,11 +12935,11 @@ Requirements:
     // слать запрос на каждую цифру). Значение общее с полем Budget во вкладке Paper Bot.
     let _pbSaveTimer = null;
     function onPaperBudgetInput(val) {
-      const el = document.getElementById('tlPaperBudget');
+      const box = document.getElementById('tlMoneyBox');
       const ok = document.getElementById('tlPaperBudgetOk');
       const v = parseFloat(val);
       const valid = v >= 10 && v <= 100000;
-      if (el) el.style.borderColor = valid ? 'rgba(255,255,255,0.14)' : 'rgba(255,90,90,0.6)';
+      if (box) box.classList.toggle('bad', !valid);
       if (!valid) return;
       clearTimeout(_pbSaveTimer);
       _pbSaveTimer = setTimeout(async () => {
@@ -12878,7 +12949,7 @@ Requirements:
             body: JSON.stringify({ budgetUsd: v })
           });
           const j = await r.json();
-          if (j.success && ok) { ok.style.opacity = '1'; setTimeout(() => { ok.style.opacity = '0'; }, 1200); }
+          if (j.success && ok) { ok.classList.add('show'); setTimeout(() => ok.classList.remove('show'), 1200); }
           // держим второе поле (вкладка Paper Bot) в согласии
           const pb = document.getElementById('paperBudget');
           if (pb && document.activeElement !== pb) pb.value = j.budgetUsd;
@@ -12899,7 +12970,7 @@ Requirements:
       } catch (e) { showCustomAlert('Ошибка: ' + e.message, true); }
     }
     async function closePaperFromStrip(id, coin) {
-      showConfirmModal('Закрыть paper-сделку', `${coin}: закрыть по текущей цене и записать результат в историю Paper Bot?`, async () => {
+      showConfirmModal('Удалить paper-сделку', `${coin}: удалить из списка?<br><br>Сделка закроется по текущей цене, результат запишется в историю Paper Bot — там копится статистика по сигналам.`, async () => {
         try {
           const r = await fetch('/api/paper/close', {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id })
@@ -12907,17 +12978,6 @@ Requirements:
           const j = await r.json();
           if (!j.success) { showCustomAlert(j.error || 'Ошибка', true); return; }
           showCustomAlert(`${coin}: сделка закрыта, результат записан`);
-          loadTopLosers();
-        } catch (e) { showCustomAlert('Ошибка: ' + e.message, true); }
-      });
-    }
-    async function deletePaperFromStrip(id, coin) {
-      showConfirmModal('Удалить без записи', `${coin}: удалить paper-сделку совсем? Результат НЕ попадёт в историю.`, async () => {
-        try {
-          const r = await fetch('/api/paper/open/' + encodeURIComponent(id), { method: 'DELETE' });
-          const j = await r.json();
-          if (!j.success) { showCustomAlert(j.error || 'Ошибка', true); return; }
-          showCustomAlert(`${coin}: удалена`);
           loadTopLosers();
         } catch (e) { showCustomAlert('Ошибка: ' + e.message, true); }
       });
@@ -12964,10 +13024,7 @@ Requirements:
           </div>
           <div style="display:flex;align-items:center;gap:5px;">
             <span style="font-size:9px;color:#667;">$${p.budget} · ${heldTxt} · ${p.slStage}</span>
-            <span style="margin-left:auto;display:flex;gap:4px;">
-              <button onclick="closePaperFromStrip('${p.id}','${p.coin}')" title="Закрыть по текущей цене и записать результат в историю Paper Bot" style="border:1px solid rgba(255,255,255,0.2);background:transparent;color:#9aa;border-radius:4px;font-size:9.5px;padding:2px 8px;cursor:pointer;">закрыть</button>
-              <button onclick="deletePaperFromStrip('${p.id}','${p.coin}')" title="Удалить совсем, без записи в историю" style="border:1px solid rgba(255,90,90,0.3);background:transparent;color:#f77;border-radius:4px;font-size:11px;padding:2px 7px;cursor:pointer;line-height:1.2;">✕</button>
-            </span>
+            <button onclick="closePaperFromStrip('${p.id}','${p.coin}')" title="Удалить сделку: закроется по текущей цене, результат попадёт в историю Paper Bot" style="margin-left:auto;border:1px solid rgba(255,90,90,0.3);background:transparent;color:#f77;border-radius:5px;font-size:11px;padding:2px 8px;cursor:pointer;line-height:1.2;">✕</button>
           </div>
         </div>`;
       }).join('');
@@ -13009,7 +13066,7 @@ Requirements:
         if (rebEl) {
           if (j.rebuilding) {
             rebEl.style.display = '';
-            rebEl.textContent = '⟳ пересборка списка…';
+            rebEl.textContent = '⟳ пересборка…';
             rebEl.style.color = 'var(--yellow)';
             if (!window._tlRebPoll) { window._tlRebPoll = true; setTimeout(() => { window._tlRebPoll = false; loadTopLosers(); }, 12000); }
           } else if (rebEl.style.display !== 'none') {

@@ -4285,17 +4285,10 @@
       loadTopLosersM();
     }
     async function closePaperM(id, coin) {
-      if (!confirm(`${coin}: закрыть по текущей цене и записать результат?`)) return;
+      if (!confirm(`${coin}: удалить сделку? Закроется по текущей цене, результат попадёт в историю Paper Bot.`)) return;
       const r = await api('/api/paper/close', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
       if (!r.success) { toast(r.error || 'Ошибка', 'error'); return; }
       toast(`${coin}: закрыта`);
-      loadTopLosersM();
-    }
-    async function deletePaperM(id, coin) {
-      if (!confirm(`${coin}: удалить совсем, без записи в историю?`)) return;
-      const r = await api('/api/paper/open/' + encodeURIComponent(id), { method: 'DELETE' });
-      if (!r.success) { toast(r.error || 'Ошибка', 'error'); return; }
-      toast(`${coin}: удалена`);
       loadTopLosersM();
     }
     function _renderPaperStripM(list) {
@@ -4336,10 +4329,7 @@
             </div>
             <div style="display:flex;align-items:center;gap:5px;">
               <span style="font-size:8.5px;color:#667;">$${p.budget} · ${heldTxt} · ${p.slStage}</span>
-              <span style="margin-left:auto;display:flex;gap:4px;">
-                <button onclick="closePaperM('${p.id}','${p.coin}')" style="border:1px solid rgba(255,255,255,0.2);background:transparent;color:#9aa;border-radius:4px;font-size:9px;padding:3px 8px;">закрыть</button>
-                <button onclick="deletePaperM('${p.id}','${p.coin}')" style="border:1px solid rgba(255,90,90,0.3);background:transparent;color:#f77;border-radius:4px;font-size:10px;padding:3px 8px;">✕</button>
-              </span>
+              <button onclick="closePaperM('${p.id}','${p.coin}')" style="margin-left:auto;border:1px solid rgba(255,90,90,0.3);background:transparent;color:#f77;border-radius:5px;font-size:11px;padding:3px 10px;">✕</button>
             </div>
           </div>`;
         }).join('')}
