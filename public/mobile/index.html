@@ -405,6 +405,62 @@
       display: inline-flex; align-items: center; gap: 8px;
     }
     .tg-countdown { color: #facc15; font-variant-numeric: tabular-nums; }
+
+    /* ── Шапка Top Losers на телефоне: два ряда, иначе всё сминается ── */
+    .tl-head {
+      display: flex; flex-direction: column; gap: 8px;
+      padding-bottom: 9px; margin-bottom: 10px;
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+    }
+    .tl-head-top { display: flex; align-items: baseline; gap: 7px; }
+    .tl-name {
+      font-size: 13px; font-weight: 700; color: #4ade80;
+      letter-spacing: .02em; white-space: nowrap;
+    }
+    .tl-sub { font-size: 9px; color: #5c6674; white-space: nowrap; }
+    .tl-status {
+      margin-left: auto; display: inline-flex; align-items: center; gap: 5px;
+      font-size: 9px; color: #5c6674; white-space: nowrap;
+    }
+    .tl-upd { color: #8a94a6; font-variant-numeric: tabular-nums; }
+    .tl-rebuild { font-size: 8.5px; color: var(--yellow); white-space: nowrap; }
+
+    .tl-bar { display: flex; align-items: center; gap: 6px; }
+    .tl-money {
+      display: inline-flex; align-items: stretch; height: 28px;
+      border: 1px solid rgba(255,255,255,0.10); border-radius: 8px;
+      background: rgba(255,255,255,0.04); overflow: hidden;
+      transition: border-color .2s;
+    }
+    .tl-money:focus-within { border-color: rgba(76,201,240,0.45); }
+    .tl-money.bad { border-color: rgba(255,90,90,0.6); }
+    .tl-money-lbl {
+      display: inline-flex; align-items: center; padding: 0 6px 0 8px;
+      font-size: 10px; color: #7c8698;
+      border-right: 1px solid rgba(255,255,255,0.07);
+    }
+    .tl-money input {
+      width: 66px; padding: 0 8px; border: none; outline: none; background: transparent;
+      color: var(--t0); font-size: 12px; font-weight: 600; text-align: right;
+      -moz-appearance: textfield;
+    }
+    .tl-money input::-webkit-outer-spin-button,
+    .tl-money input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    .tl-ok { font-size: 11px; color: #00e5a0; opacity: 0; transition: opacity .25s; width: 9px; }
+    .tl-ok.show { opacity: 1; }
+
+    .tl-btn {
+      height: 28px; min-width: 34px; padding: 0 9px; border-radius: 8px;
+      display: inline-flex; align-items: center; justify-content: center; gap: 3px;
+      font-size: 11px; font-weight: 600;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.10);
+      color: #8a94a6; transition: all .18s ease; white-space: nowrap;
+    }
+    .tl-btn.on-swing { border-color: rgba(245,197,24,0.55); background: rgba(245,197,24,0.14); color: #f5c518; }
+    .tl-btn.on-scalp { border-color: rgba(76,201,240,0.55); background: rgba(76,201,240,0.14); color: #4cc9f0; }
+    .tl-btn.tl-refresh { margin-left: auto; }
+
     /* ── UX: вердикт, депт-бар, фильтры, лучший сетап, RSI, прогресс, помощь ── */
     .tv-verdict { font-size: 7px; font-weight: 800; letter-spacing: 0.04em; margin-top: 1px; padding: 1px 4px; border-radius: 4px; line-height: 1.3; display: inline-block; }
     .tv-depthbar { display: inline-flex; width: 44px; height: 5px; border-radius: 3px; overflow: hidden; background: #7a2020; vertical-align: middle; }
@@ -1411,20 +1467,26 @@
 
   <!-- Top Gainers Panel -->
   <div class="panel" id="panelVolume" data-tab="volume">
-    <div class="tg-header">
-      <span class="tg-title">📉 Top Losers 30d</span>
-      <span class="tg-meta" style="font-size:9px;">
-        <span id="tlRebuildM" style="display:none;color:var(--yellow);font-size:8px;margin-right:4px;">⟳ пересборка…</span>
-        <span style="font-size:9px;color:#667;">📝 $</span>
-        <input type="number" id="tlPaperBudgetM" value="100" min="10" max="100000" step="10" inputmode="decimal"
-          oninput="onPaperBudgetInputM(this.value)"
-          style="width:52px;height:22px;padding:0 4px;margin:0 4px 0 2px;background:var(--s3);border:1px solid rgba(255,255,255,0.14);border-radius:5px;color:var(--t0);font-size:10px;outline:none;">
-        <span id="tlPaperBudgetOkM" style="font-size:9px;color:#00e5a0;opacity:0;transition:opacity .25s;margin-right:3px;">✓</span>
-        <button class="tg-refresh-btn" id="tlBuyWatchBtnM" onclick="toggleBuyWatchM()" title="Алерт по колонке СВИНГ (1–3 дня), одноразовый" style="height:22px;font-size:10px;padding:0 5px;margin-right:2px;">🔔</button>
-        <button class="tg-refresh-btn" id="tlScalpWatchBtnM" onclick="toggleScalpWatchM()" title="Алерт по колонке СКАЛЬП (2–6 часов), одноразовый" style="height:22px;font-size:10px;padding:0 5px;margin-right:3px;">⚡</button>
-        <button class="tg-refresh-btn" id="tlRefreshBtnM" onclick="loadTopLosersM(true)" style="height:22px;font-size:10px;padding:0 6px;">⟳</button>
-        mcap ≥ $30M · upd: <span id="tlUpdatedM">—</span>
-      </span>
+    <div class="tl-head">
+      <div class="tl-head-top">
+        <span class="tl-name">📉 Top Losers 30d</span>
+        <span class="tl-sub">mcap ≥ $30M</span>
+        <span class="tl-status">
+          <span id="tlRebuildM" class="tl-rebuild" style="display:none;">⟳ пересборка…</span>
+          upd <span id="tlUpdatedM" class="tl-upd">—</span>
+        </span>
+      </div>
+      <div class="tl-bar">
+        <label class="tl-money" id="tlMoneyBoxM" title="Сумма paper-сделки. Сохраняется при вводе.">
+          <span class="tl-money-lbl">📝 $</span>
+          <input type="number" id="tlPaperBudgetM" value="100" min="10" max="100000" step="10" inputmode="decimal"
+            oninput="onPaperBudgetInputM(this.value)">
+        </label>
+        <span id="tlPaperBudgetOkM" class="tl-ok">✓</span>
+        <button class="tl-btn" id="tlBuyWatchBtnM" onclick="toggleBuyWatchM()" title="Алерт по колонке СВИНГ (1–3 дня), одноразовый">🔔</button>
+        <button class="tl-btn" id="tlScalpWatchBtnM" onclick="toggleScalpWatchM()" title="Алерт по колонке СКАЛЬП (2–6 часов), одноразовый">⚡</button>
+        <button class="tl-btn tl-refresh" id="tlRefreshBtnM" onclick="loadTopLosersM(true)" title="Обновить">⟳</button>
+      </div>
     </div>
     <div id="tlPaperStripM" style="display:none;margin-bottom:6px;"></div>
     <div id="tlBodyM" style="margin-bottom:16px;"><div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">Loading...</div></div>
@@ -4224,10 +4286,8 @@
     function _paintBuyWatchBtnM() {
       const b = document.getElementById('tlBuyWatchBtnM');
       if (!b) return;
-      b.textContent = _tlBuyWatch ? '🔔 ON' : '🔔';
-      b.style.borderColor = _tlBuyWatch ? 'var(--yellow)' : '';
-      b.style.color = _tlBuyWatch ? 'var(--yellow)' : '';
-      b.style.background = _tlBuyWatch ? 'rgba(245,197,24,0.12)' : '';
+      b.textContent = _tlBuyWatch ? '🔔вкл' : '🔔';
+      b.classList.toggle('on-swing', _tlBuyWatch);
     }
     async function toggleBuyWatchM() {
       const r = await api('/api/buy-watch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enable: !_tlBuyWatch }) });
@@ -4240,10 +4300,8 @@
     function _paintScalpWatchBtnM() {
       const b = document.getElementById('tlScalpWatchBtnM');
       if (!b) return;
-      b.textContent = _tlScalpWatch ? '⚡ON' : '⚡';
-      b.style.borderColor = _tlScalpWatch ? 'var(--blue)' : '';
-      b.style.color = _tlScalpWatch ? 'var(--blue)' : '';
-      b.style.background = _tlScalpWatch ? 'rgba(76,201,240,0.12)' : '';
+      b.textContent = _tlScalpWatch ? '⚡вкл' : '⚡';
+      b.classList.toggle('on-scalp', _tlScalpWatch);
     }
     async function toggleScalpWatchM() {
       const r = await api('/api/scalp-watch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enable: !_tlScalpWatch }) });
@@ -4263,11 +4321,11 @@
     // Сумма paper-сделки — сохраняется на сервер при вводе, общая с десктопом
     let _pbSaveTimerM = null;
     function onPaperBudgetInputM(val) {
-      const el = document.getElementById('tlPaperBudgetM');
+      const box = document.getElementById('tlMoneyBoxM');
       const ok = document.getElementById('tlPaperBudgetOkM');
       const v = parseFloat(val);
       const valid = v >= 10 && v <= 100000;
-      if (el) el.style.borderColor = valid ? 'rgba(255,255,255,0.14)' : 'rgba(255,90,90,0.6)';
+      if (box) box.classList.toggle('bad', !valid);
       if (!valid) return;
       clearTimeout(_pbSaveTimerM);
       _pbSaveTimerM = setTimeout(async () => {
@@ -4275,7 +4333,7 @@
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ budgetUsd: v })
         });
-        if (r.success && ok) { ok.style.opacity = '1'; setTimeout(() => { ok.style.opacity = '0'; }, 1200); }
+        if (r.success && ok) { ok.classList.add('show'); setTimeout(() => ok.classList.remove('show'), 1200); }
       }, 500);
     }
     async function openPaperFromListM(coin, pair) {
@@ -4418,7 +4476,8 @@
             ${th('СВИНГ', '1–3д')}${th('СКАЛЬП', '2–6ч')}${th('', '')}
           </tr></thead><tbody>${rows}</tbody></table></div>`;
         const u = document.getElementById('tlUpdatedM');
-        if (u && j.updatedAt) u.textContent = new Date(j.updatedAt).toLocaleTimeString().slice(0, 5);
+        // slice(0,5) ломался на однозначном часе и давал «6:43:» — форматируем явно
+        if (u && j.updatedAt) u.textContent = new Date(j.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
         if (typeof j.buyWatch === 'boolean' && j.buyWatch !== _tlBuyWatch) { _tlBuyWatch = j.buyWatch; _paintBuyWatchBtnM(); }
         if (typeof j.scalpWatch === 'boolean' && j.scalpWatch !== _tlScalpWatch) { _tlScalpWatch = j.scalpWatch; _paintScalpWatchBtnM(); }
       } catch { }
