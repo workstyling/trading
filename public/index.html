@@ -7181,6 +7181,28 @@
     }
 
     // Confirmation modal
+    /* Информационное окно: одна кнопка «Закрыть» и никакого действия.
+       Раньше для справки переиспользовался showConfirmModal, и красная
+       кнопка Confirm выглядела так, будто выставляет ордера. */
+    function showInfoModal(title, html) {
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay';
+      overlay.innerHTML = `
+        <div class="modal-box">
+          <div class="modal-title">${title}</div>
+          <div class="modal-body">${html}</div>
+          <div class="modal-buttons">
+            <button class="modal-btn modal-btn-cancel" id="modalCloseBtn">Закрыть</button>
+          </div>
+        </div>`;
+      document.body.appendChild(overlay);
+      const close = () => overlay.remove();
+      overlay.querySelector('#modalCloseBtn').onclick = close;
+      overlay.onclick = (e) => { if (e.target === overlay) close(); };
+      const onEsc = (e) => { if (e.key === 'Escape') { close(); document.removeEventListener('keydown', onEsc); } };
+      document.addEventListener('keydown', onEsc);
+    }
+
     function showConfirmModal(title, message, onConfirm, onCancel) {
       const overlay = document.createElement('div');
       overlay.className = 'modal-overlay';
@@ -13284,7 +13306,7 @@ Requirements:
           <td style="padding:4px 8px;text-align:right;color:#889;">${l.vsMidPct >= 0 ? '+' : ''}${l.vsMidPct}%</td>
           <td style="padding:4px 8px;text-align:right;color:${l.netIfTargetPct > 0 ? '#00e5a0' : '#f55'};font-weight:600;">${l.netIfTargetPct >= 0 ? '+' : ''}${l.netIfTargetPct}%</td>
         </tr>`).join('');
-        showConfirmModal(`${coin}: где ставить лимитку`,
+        showInfoModal(`🎯 ${coin}: где ставить лимитку`,
           `<div style="text-align:left;font-size:12.5px;">
             <div style="padding:9px 12px;border-radius:7px;margin-bottom:10px;background:${warn ? 'rgba(255,90,90,0.10)' : 'rgba(0,229,160,0.08)'};border:1px solid ${warn ? 'rgba(255,90,90,0.35)' : 'rgba(0,229,160,0.3)'};">
               <b style="color:${warn ? '#ff6b6b' : '#00e5a0'};">${j.advice}</b><br>
@@ -13302,8 +13324,8 @@ Requirements:
               </tr></thead><tbody>${rows}</tbody>
             </table>
             <div style="color:#667;font-size:10.5px;margin-top:9px;">«Чистыми у цели» — сколько останется, если продать по Sell Markup ${j.targetPct}% с учётом обеих комиссий.</div>
-          </div>`,
-          () => { }, () => { });
+            <div style="color:#667;font-size:10.5px;margin-top:4px;">Это справка. Ордера отсюда не выставляются — цену впиши в панель покупки вручную.</div>
+          </div>`);
       } catch (e) { showCustomAlert('Ошибка: ' + e.message, true); }
     }
 
