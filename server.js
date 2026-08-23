@@ -1311,7 +1311,8 @@ app.get('/api/top-losers', async (req, res) => {
     await refreshTopLosersPrices(force);
     res.json({
       success: true, coins: topLosersCache.data, updatedAt: topLosersCache.priceAt, rebuiltAt: topLosersCache.fullAt,
-      rebuilding: topLosersBuilding, building: topLosersBuilding && !topLosersCache.data.length, buyWatch: buyWatchArmed,
+      rebuilding: topLosersBuilding, building: topLosersBuilding && !topLosersCache.data.length,
+      buyWatch: buyWatchArmed, scalpWatch: scalpWatchArmed,
       paperBudget: paperBot.budgetUsd,
       paperOpen: paperBot.open.map(p => ({
         id: p.id, coin: p.coin, pair: p.pair, entry: p.entry, last: p.last, sl: p.sl, slStage: p.slStage,
@@ -3943,6 +3944,86 @@ async function attachReversal(list) {
   }
   console.log(`[reversal] пересчитано ${list.filter(c => c.rv).length}/${list.length}, входов: ${list.filter(c => c.rv && c.rv.pass).length}`);
 }
+
+// ══════════════════════════════════════════════════════════════════
+// ═══ SCALP SCORE — краткосрочный сигнал, горизонт 2-6 часов ═══
+// Бэктест (28 252 сэмпла, 109 монет, свечи 5m): горизонт 20-60 минут
+// невозможен — средний ход за час 0.177% против комиссии круга 0.25%.
+// Первый плюс появляется на 6 часах. Лучшая связка: у дна 4ч диапазона
+// + RSI вышел из перепроданности + цена выше EMA9 → 68% побед.
+// ══════════════════════════════════════════════════════════════════
+const scalp = require('./src/scalp');
+
+let scalpRunning = false;
+async function attachScalp() {
+  if (scalpRunning || !topLosersCache.data.length) return;
+  scalpRunning = true;
+  try {
+    for (const c of topLosersCache.data) {
+      try {
+        const s = await scalp.fetchScalpSignals(c.coin);
+        if (!s) { c.sc = null; continue; }
+        // Спред берём из уже кешированного стакана, если он свежий
+        let spread = null;
+        try {
+          const r = await fetch(`https://api.exchange.coinbase.com/products/${c.pair}/ticker`, { headers: { 'User-Agent': 'trading-app/1.0' } });
+          if (r.ok) {
+            const t = await r.json();
+            const bid = parseFloat(t.bid), ask = parseFloat(t.ask);
+            if (bid > 0 && ask > 0) spread = (ask - bid) / ((ask + bid) / 2) * 100;
+          }
+        } catch { }
+        c.sc = scalp.calcScalpScore(s, c.vol24 || 0, spread);
+      } catch { c.sc = null; }
+      await sleep(160);
+    }
+    const entries = topLosersCache.data.filter(c => c.sc && c.sc.pass);
+    console.log(`[scalp] пересчитано ${topLosersCache.data.filter(c => c.sc).length}/${topLosersCache.data.length}, входов: ${entries.length}`);
+    saveTopLosersCache();
+  } catch (e) { console.error('[scalp]', e.message); }
+  finally { scalpRunning = false; }
+}
+setInterval(attachScalp, 3 * 60 * 1000);
+setTimeout(attachScalp, 50_000);
+
+// ── Одноразовый Telegram-алерт по scalp-гейту (отдельная кнопка) ──
+const SCALP_WATCH_FILE = path.join(__dirname, 'scalp-watch.json');
+let scalpWatchArmed = false;
+try { scalpWatchArmed = !!(JSON.parse(fs.readFileSync(SCALP_WATCH_FILE, 'utf8')).armed); } catch { }
+function saveScalpWatch() { try { fs.writeFileSync(SCALP_WATCH_FILE, JSON.stringify({ armed: scalpWatchArmed })); } catch { } }
+
+app.post('/api/scalp-watch', (req, res) => {
+  const enable = !!(req.body || {}).enable;
+  if (enable) {
+    const s = loadSettings();
+    if (!(s.telegramToken && s.telegramChat)) return res.json({ success: false, error: 'Telegram не настроен: укажи Bot Token и Chat ID в настройках' });
+  }
+  scalpWatchArmed = enable;
+  saveScalpWatch();
+  res.json({ success: true, armed: scalpWatchArmed });
+});
+
+setInterval(async () => {
+  if (!scalpWatchArmed || !topLosersCache.data.length) return;
+  try {
+    const hits = topLosersCache.data.filter(c => c.sc && c.sc.pass);
+    if (!hits.length) return;
+    const c = hits.sort((a, b) => (b.sc.score || 0) - (a.sc.score || 0))[0];
+    const sent = await sendTelegram(
+      `⚡ <b>SCALP ВХОД</b> — <b>${c.pair}</b>\n` +
+      `Рейтинг <b>${c.sc.score}/100</b> · гейт 4/4 · горизонт 2–6 часов\n` +
+      `━━━━━━━━━━━━━━━━━━\n` +
+      c.sc.checks.map(x => `✅ ${x.k}: ${x.v}`).join('\n') + '\n' +
+      `💵 Цена: $${fmtPxAe(c.price)}` + (c.sc.spreadPct != null ? ` · спред ${c.sc.spreadPct}%` : '') + '\n\n' +
+      `<i>Гейт откалиброван бэктестом на 28 тыс. сэмплов: 68% побед,\n` +
+      `ожидание +0.2% на сделку при цели +1.38%. Вход только лимиткой —\n` +
+      `на этом горизонте комиссия съедает больше половины сигнала.</i>\n` +
+      `(одноразовый алерт — выключен)`, 'HTML');
+    scalpWatchArmed = false;
+    saveScalpWatch();
+    console.log(`[scalp-watch] сработал ${c.pair}, score=${c.sc.score}, telegram=${sent}`);
+  } catch (e) { console.error('[scalp-watch]', e.message); }
+}, 60_000);
 
 // ── Ручное открытие paper-сделки из таблицы (ведётся тем же движком) ──
 app.post('/api/paper/open', async (req, res) => {

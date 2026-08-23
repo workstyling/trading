@@ -13,3 +13,5 @@ paper-trades.json
 rev-watches.json
 top-losers-cache.json
 reversal-*.json
+scalp-watch.json
+scalp-*.json

@@ -1420,7 +1420,8 @@
           oninput="onPaperBudgetInputM(this.value)"
           style="width:52px;height:22px;padding:0 4px;margin:0 4px 0 2px;background:var(--s3);border:1px solid rgba(255,255,255,0.14);border-radius:5px;color:var(--t0);font-size:10px;outline:none;">
         <span id="tlPaperBudgetOkM" style="font-size:9px;color:#00e5a0;opacity:0;transition:opacity .25s;margin-right:3px;">✓</span>
-        <button class="tg-refresh-btn" id="tlBuyWatchBtnM" onclick="toggleBuyWatchM()" style="height:22px;font-size:10px;padding:0 6px;margin-right:3px;">🔔</button>
+        <button class="tg-refresh-btn" id="tlBuyWatchBtnM" onclick="toggleBuyWatchM()" title="Алерт по колонке СВИНГ (1–3 дня), одноразовый" style="height:22px;font-size:10px;padding:0 5px;margin-right:2px;">🔔</button>
+        <button class="tg-refresh-btn" id="tlScalpWatchBtnM" onclick="toggleScalpWatchM()" title="Алерт по колонке СКАЛЬП (2–6 часов), одноразовый" style="height:22px;font-size:10px;padding:0 5px;margin-right:3px;">⚡</button>
         <button class="tg-refresh-btn" id="tlRefreshBtnM" onclick="loadTopLosersM(true)" style="height:22px;font-size:10px;padding:0 6px;">⟳</button>
         mcap ≥ $30M · upd: <span id="tlUpdatedM">—</span>
       </span>
@@ -4233,7 +4234,23 @@
       if (!r.success) { toast(r.error || 'Ошибка', 'error'); return; }
       _tlBuyWatch = r.armed;
       _paintBuyWatchBtnM();
-      if (_tlBuyWatch) toast('Слежу: Telegram при первом ПОКУПАТЬ (один раз)');
+      if (_tlBuyWatch) toast('Слежу за свингом: Telegram при первом входе (один раз)');
+    }
+    let _tlScalpWatch = false;
+    function _paintScalpWatchBtnM() {
+      const b = document.getElementById('tlScalpWatchBtnM');
+      if (!b) return;
+      b.textContent = _tlScalpWatch ? '⚡ON' : '⚡';
+      b.style.borderColor = _tlScalpWatch ? 'var(--blue)' : '';
+      b.style.color = _tlScalpWatch ? 'var(--blue)' : '';
+      b.style.background = _tlScalpWatch ? 'rgba(76,201,240,0.12)' : '';
+    }
+    async function toggleScalpWatchM() {
+      const r = await api('/api/scalp-watch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enable: !_tlScalpWatch }) });
+      if (!r.success) { toast(r.error || 'Ошибка', 'error'); return; }
+      _tlScalpWatch = r.armed;
+      _paintScalpWatchBtnM();
+      if (_tlScalpWatch) toast('Слежу за краткосроком: Telegram при первом входе (один раз)');
     }
 
     // Старый рейтинг отскока скрыт из таблицы (сервер его по-прежнему считает).
@@ -4390,6 +4407,10 @@
             <td style="color:var(--t2);font-size:10px;text-align:right;padding:6px 3px;">${mc}</td>
             ${SHOW_OLD_BUY_M ? `<td style="text-align:center;padding:6px 2px;"><span style="font-weight:800;color:${rbCol};font-size:12px;">${c.rb ?? '—'}</span><br><span style="font-size:6.5px;font-weight:800;color:${rbCol};background:${rbCol}22;padding:1px 3px;border-radius:3px;">${c.rbTag || ''}</span></td>` : ''}
             <td style="text-align:center;padding:6px 2px;"><span style="font-weight:800;color:${rvCol};font-size:12px;">${rv ? rv.score : '—'}</span><br><span style="font-size:6.5px;font-weight:800;color:${rvCol};background:${rvCol}22;padding:1px 3px;border-radius:3px;white-space:nowrap;">${rv ? rv.tag : '…'}</span></td>
+            ${(() => { const x = c.sc;
+              const col = !x ? '#667' : x.tag === 'ВХОД' ? '#4cc9f0' : x.tag === 'БЛИЗКО' ? '#f5c518' : x.tag === 'ШИРОКИЙ СПРЕД' ? '#f55' : '#8892a0';
+              return `<td style="text-align:center;padding:6px 2px;"><span style="font-weight:800;color:${col};font-size:12px;">${x ? x.score : '—'}</span><br><span style="font-size:6.5px;font-weight:800;color:${col};background:${col}22;padding:1px 3px;border-radius:3px;white-space:nowrap;">${x ? x.tag : '…'}</span></td>`;
+            })()}
             <td style="text-align:right;padding:6px 3px;">${_priceSparkSVG(c.spark || [])}</td>
             <td style="text-align:right;padding:6px 2px;white-space:nowrap;">
               <button onclick="event.stopPropagation();openPaperFromListM('${c.coin}','${c.pair}')" ${inPaper ? 'disabled' : ''} style="padding:3px 5px;border:1px solid ${inPaper ? 'rgba(0,229,160,0.5)' : 'rgba(255,255,255,0.18)'};border-radius:5px;background:${inPaper ? 'rgba(0,229,160,0.15)' : 'transparent'};color:${inPaper ? '#00e5a0' : '#778'};font-size:10px;">📝</button>
@@ -4397,10 +4418,11 @@
             </td>
           </tr>`;
         }).join('');
-        body.innerHTML = `<table style="width:100%;border-collapse:collapse;"><thead><tr style="border-bottom:1px solid #222;"><th style="color:#666;font-size:9px;text-align:left;padding:4px 2px;">#</th><th style="color:#666;font-size:9px;text-align:left;padding:4px 3px;">COIN</th><th style="color:#666;font-size:9px;text-align:center;padding:4px 3px;">30D%</th><th style="color:#666;font-size:9px;text-align:center;padding:4px 3px;">VOL</th><th style="color:#666;font-size:9px;text-align:center;padding:4px 3px;">MCAP</th>${SHOW_OLD_BUY_M ? '<th style="color:#666;font-size:9px;text-align:center;padding:4px 2px;">BUY</th>' : ''}<th style="color:#666;font-size:9px;text-align:center;padding:4px 2px;">REV</th><th style="color:#666;font-size:9px;text-align:center;padding:4px 3px;">MONTH</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+        body.innerHTML = `<table style="width:100%;border-collapse:collapse;"><thead><tr style="border-bottom:1px solid #222;"><th style="color:#666;font-size:9px;text-align:left;padding:4px 2px;">#</th><th style="color:#666;font-size:9px;text-align:left;padding:4px 3px;">COIN</th><th style="color:#666;font-size:9px;text-align:center;padding:4px 3px;">30D%</th><th style="color:#666;font-size:9px;text-align:center;padding:4px 3px;">VOL</th><th style="color:#666;font-size:9px;text-align:center;padding:4px 3px;">MCAP</th>${SHOW_OLD_BUY_M ? '<th style="color:#666;font-size:9px;text-align:center;padding:4px 2px;">BUY</th>' : ''}<th style="color:#666;font-size:9px;text-align:center;padding:4px 2px;">СВИНГ<br><span style="font-size:7px;color:#555;">1–3д</span></th><th style="color:#666;font-size:9px;text-align:center;padding:4px 2px;">СКАЛЬП<br><span style="font-size:7px;color:#555;">2–6ч</span></th><th style="color:#666;font-size:9px;text-align:center;padding:4px 3px;">MONTH</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
         const u = document.getElementById('tlUpdatedM');
         if (u && j.updatedAt) u.textContent = new Date(j.updatedAt).toLocaleTimeString().slice(0, 5);
         if (typeof j.buyWatch === 'boolean' && j.buyWatch !== _tlBuyWatch) { _tlBuyWatch = j.buyWatch; _paintBuyWatchBtnM(); }
+        if (typeof j.scalpWatch === 'boolean' && j.scalpWatch !== _tlScalpWatch) { _tlScalpWatch = j.scalpWatch; _paintScalpWatchBtnM(); }
       } catch { }
     }
     setInterval(loadTopLosersM, 30_000);
