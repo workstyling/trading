@@ -1254,6 +1254,14 @@ async function rebuildTopLosers() {
           spark: cd.map(x => Math.round(x[4] * 1e8) / 1e8)
         };
         calcReboundVerdict(entry);
+        // Переносим оценки из прошлого кэша, чтобы таблица не была пустой,
+        // пока идёт свежий расчёт. Они перезапишутся через несколько секунд.
+        const prevEntry = topLosersCache.data.find(x => x.coin === sym);
+        if (prevEntry) {
+          if (prevEntry.rvSig) entry.rvSig = prevEntry.rvSig;
+          if (prevEntry.rv) entry.rv = prevEntry.rv;
+          if (prevEntry.sc) entry.sc = prevEntry.sc;
+        }
         out.push(entry);
       } catch { keepOld(sym); }
       await new Promise(r2 => setTimeout(r2, 120));
@@ -1264,6 +1272,8 @@ async function rebuildTopLosers() {
     console.log(`[top-losers] rebuilt: ${cands.length} candidates (mcap≥30M), top20 saved`);
     // Reversal Score считаем после сборки списка — нужны часовые свечи по каждой монете
     try { await attachReversal(topLosersCache.data); saveTopLosersCache(); } catch (e) { console.error('[reversal]', e.message); }
+    // Скальп сразу следом — иначе после пересборки колонка пустует до своего интервала
+    try { await attachScalp(); } catch (e) { console.error('[scalp]', e.message); }
   } catch (e) { console.error('[top-losers]', e.message); }
   finally { topLosersBuilding = false; }
 }
@@ -3933,7 +3943,10 @@ let rvBtcRegime = null;
 async function attachReversal(list) {
   try { rvBtcRegime = await reversal.getBtcRegime(); } catch { }
   try { await refreshTopLosersPrices(true); } catch { }
-  for (const c of list) {
+  // Снимок массива: refreshTopLosersPrices сортирует его на месте каждые 30с,
+  // и обход «живого» массива перескакивал элементы — часть монет оставалась без оценки.
+  // Объекты те же, поэтому проставленные поля попадают в кэш.
+  for (const c of [...list]) {
     try {
       const s = await reversal.fetchReversalSignals(c.coin);
       if (!s) { c.rv = null; c.rvSig = null; continue; }
@@ -3959,7 +3972,8 @@ async function attachScalp() {
   if (scalpRunning || !topLosersCache.data.length) return;
   scalpRunning = true;
   try {
-    for (const c of topLosersCache.data) {
+    // Снимок — по той же причине, что и в attachReversal (массив сортируется на месте)
+    for (const c of [...topLosersCache.data]) {
       try {
         const s = await scalp.fetchScalpSignals(c.coin);
         if (!s) { c.sc = null; continue; }
