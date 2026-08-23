@@ -12931,8 +12931,8 @@ Requirements:
             <span title="Текущая цена">сейчас <span style="color:#c3cddb;">$${px(p.last)}</span></span>
           </div>
           <div style="display:flex;gap:10px;font-size:9.5px;color:#8a94a6;font-family:'JetBrains Mono',monospace;">
-            <span title="Цель = твой Sell Markup ${p.targetPct}%">цель <span style="color:#00e5a0;">$${px(p.target)}</span>${toTarget != null ? ` <span style="color:#667;">(${toTarget >= 0 ? '+' : ''}${toTarget.toFixed(2)}%)</span>` : ''}</span>
-            <span title="Стоп-лосс, стадия: ${p.slStage}">стоп <span style="color:#f77;">$${px(p.sl)}</span></span>
+            <span title="Цель = вход +${p.targetPct}% (твой Sell Markup). В скобках — сколько ещё должна пройти цена от текущей.">цель <span style="color:#00e5a0;">$${px(p.target)}</span> <span style="color:#556;">+${p.targetPct}%</span>${toTarget != null ? ` <span style="color:#667;">(ещё ${toTarget >= 0 ? '+' : ''}${toTarget.toFixed(2)}%)</span>` : ''}</span>
+            ${p.sl > 0 ? `<span title="Стоп = вход −${p.slPct}%. В скобках — сколько ещё падения до него. Стадия: ${p.slStage}">стоп <span style="color:#f77;">$${px(p.sl)}</span> <span style="color:#667;">(ещё ${((p.sl / cur - 1) * 100).toFixed(2)}%)</span></span>` : '<span style="color:#667;">без стопа</span>'}
           </div>
           <div style="position:relative;background:#1a1f2b;height:5px;border-radius:3px;overflow:hidden;" title="Путь от стопа до цели">
             <div style="position:absolute;left:0;top:0;bottom:0;width:${prog.toFixed(1)}%;background:linear-gradient(90deg,${col}66,${col});"></div>

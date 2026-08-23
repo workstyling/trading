@@ -4312,7 +4312,7 @@
             <div style="display:flex;gap:8px;font-size:9px;color:#8a94a6;">
               <span>ask <span style="color:#c3cddb;">$${px(p.entry)}</span></span>
               <span>сейчас <span style="color:#c3cddb;">$${px(p.last)}</span></span>
-              <span>цель <span style="color:#00e5a0;">$${px(p.target)}</span></span>
+              <span>цель <span style="color:#00e5a0;">$${px(p.target)}</span> <span style="color:#667;">(ещё ${((p.target / cur - 1) * 100).toFixed(2)}%)</span></span>
             </div>
             <div style="background:#1a1f2b;height:4px;border-radius:2px;overflow:hidden;">
               <div style="width:${prog.toFixed(1)}%;height:100%;background:${col};"></div>
