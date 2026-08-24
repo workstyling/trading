@@ -5876,9 +5876,7 @@
 
     <div class="tab-nav">
       <button class="tab-btn active" data-tab="trading" onclick="switchTab('trading')">Trading</button>
-      <button class="tab-btn" data-tab="moonshots" onclick="switchTab('moonshots')">Moonshots 🚀</button>
       <button class="tab-btn" data-tab="journal" onclick="switchTab('journal')">Journal 📒</button>
-      <button class="tab-btn" data-tab="paper" onclick="switchTab('paper')">Paper Bot 🤖</button>
     </div>
 
     <div id="tab-trading" class="tab-pane active">
@@ -6267,12 +6265,9 @@
         <div id="journalOpen" style="margin-bottom:14px;"></div>
         <div id="journalClosed"></div>
       </div>
-    </div><!-- /tab-journal -->
-
-    <div id="tab-paper" class="tab-pane">
       <div class="pred-card">
         <div class="pred-card-head">
-          <h3>🤖 Paper Bot — виртуальная торговля по сигналам «ПОКУПАТЬ»</h3>
+          <h3>🤖 Paper Bot — ручные виртуальные сделки и настройки</h3>
           <div class="pred-controls" style="display:flex;align-items:center;gap:10px;">
             <span style="font-size:11px;color:var(--t2);">Budget $</span>
             <input type="number" id="paperBudget" value="100" min="10" step="10" class="settings-input" style="width:70px;" onchange="savePaperConfig()">
@@ -6290,84 +6285,12 @@
             <button class="tg-refresh-btn" onclick="loadPaper()">Refresh</button>
           </div>
         </div>
-        <div style="color:var(--t2);font-size:11px;margin:4px 0 12px;">Сервер сам открывает виртуальную позицию на каждый сигнал «ПОКУПАТЬ» из Top Losers и ведёт её: SL −3% → безубыток после +2.5% → трейлинг 1.5% после +4%, TP +5%, максимум 72 часа. Комиссии учтены. Реальные деньги не используются.</div>
+        <div style="color:var(--t2);font-size:11px;margin:4px 0 12px;max-width:82ch;">Сюда попадают сделки, открытые вручную кнопкой 📝 из таблицы скальпа. Настройки общие и для лаборатории: цель берётся из Sell Markup, вход эмулируется лимиткой по лучшему ask, комиссии считаются с обеих сторон. Реальные деньги не используются. Тумблер запускает автоматический вход по сигналам — для эксперимента лучше пользоваться лабораторией выше.</div>
         <div id="paperStats" style="margin-bottom:14px;"></div>
         <div id="paperOpen" style="margin-bottom:14px;"></div>
         <div id="paperClosed"></div>
       </div>
-    </div><!-- /tab-paper -->
-
-    <div id="tab-moonshots" class="tab-pane">
-      <div id="moonshotsPanel" style="display:flex;flex-direction:column;gap:14px;">
-        <div class="pred-card">
-          <div class="pred-card-head">
-            <h3>🚀 Moonshots — coins ready to fly</h3>
-            <div class="pred-controls">
-              <div class="moon-mode-toggle">
-                <button class="moon-mode-btn active" data-mode="swing" onclick="setMoonMode('swing')">
-                  <span class="mm-title">Swing</span>
-                  <span class="mm-sub">30d · days-weeks</span>
-                </button>
-                <button class="moon-mode-btn" data-mode="quick" onclick="setMoonMode('quick')">
-                  <span class="mm-title">Quick</span>
-                  <span class="mm-sub">72h · hours-1day</span>
-                </button>
-                <button class="moon-mode-btn" data-mode="intra" onclick="setMoonMode('intra')">
-                  <span class="mm-title">Intra</span>
-                  <span class="mm-sub">24h · 1-3h</span>
-                </button>
-                <button class="moon-mode-btn" data-mode="scalp" onclick="setMoonMode('scalp')">
-                  <span class="mm-title">Scalp</span>
-                  <span class="mm-sub">12h · 20m-1h</span>
-                </button>
-              </div>
-              <label>Min score</label>
-              <input type="number" class="pred-input" id="moonMinScore" value="50" step="5" min="0" max="100" style="width:70px;">
-              <label>Min vol $</label>
-              <input type="number" class="pred-input" id="moonMinVol" value="200000" step="50000" min="0" style="width:100px;">
-              <label style="display:flex;align-items:center;gap:4px;cursor:pointer;min-width:155px;">
-                <input type="checkbox" id="moonFreshOnly" style="margin:0;"> <span id="moonFreshLabel" style="display:inline-block;">Fresh bottom (≤7d)</span>
-              </label>
-              <button class="pred-btn primary" id="moonRefreshAllBtn" onclick="refreshMoonshotsAll()" title="Rescan all 4 modes in parallel">Refresh</button>
-              <span id="moonStatus" style="font-size:10px;color:var(--t2);">Idle</span>
-            </div>
-          </div>
-          <div class="pred-card-body" style="font-size:11px;color:var(--t2);line-height:1.5;">
-            <b style="color:var(--t1);">Four modes — pick by intended hold time:</b>
-            <b style="color:var(--blue);">Swing</b> 30d → days-weeks ·
-            <b style="color:var(--green);">Quick</b> 72h → hours-1day ·
-            <b style="color:var(--purple);">Intra</b> 24h → 1-3h ·
-            <b style="color:var(--yellow);">Scalp</b> 12h → 20m-1h.
-            All combine recovery + structure (higher-lows, lower-wicks, up/down volume) + technical (RSI/MACD/EMA) + BTC-relative strength into a 0-100 score.
-            <b>Refresh</b> rescans all four modes in parallel — switch between them with the tabs above.
-          </div>
-        </div>
-        <!-- Paper positions — test buys with live PnL -->
-        <div class="pred-card" id="moonPaperCard" style="display:none;">
-          <div class="pred-card-head">
-            <h3>📒 Paper Positions <span style="color:var(--t2);font-size:10px;font-weight:400;">(live PnL · saved across reloads)</span></h3>
-            <div class="pred-controls">
-              <span id="moonPaperTotal" style="font-size:11px;color:var(--t2);"></span>
-              <button class="pred-btn" onclick="clearAllPaperPositions()" style="border-color:var(--loss);color:var(--loss);">Close all</button>
-            </div>
-          </div>
-          <div id="moonPositionsList" style="max-height:340px;overflow-y:auto;"></div>
-        </div>
-
-        <div class="pred-card">
-          <div class="pred-card-head" style="gap:10px;">
-            <h3>Scan results</h3>
-            <div class="pred-controls">
-              <label>Test buy $</label>
-              <input type="number" class="pred-input" id="moonBuySize" value="" min="1" step="10" style="width:80px;" placeholder="loading...">
-            </div>
-          </div>
-          <div id="moonTable" style="max-height:700px;overflow-y:auto;">
-            <div style="text-align:center;padding:30px;color:var(--t2);font-size:12px;">Click Refresh to start the first scan.</div>
-          </div>
-        </div>
-      </div>
-    </div><!-- /tab-moonshots -->
+    </div><!-- /tab-journal -->
   </div>
 
   <script>
@@ -14349,22 +14272,15 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
       document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
       document.querySelectorAll('.tab-pane').forEach(p => p.classList.toggle('active', p.id === 'tab-' + name));
       try { safeStorage.setItem('activeTab', name); } catch {}
-      if (name === 'moonshots') {
-        applyMoonPrefsToInputs();
-        loadMoonshots();
-        fetchServerPositions().then(() => { renderPaperPositions(); updatePaperAsks(); });
-      }
-      if (name === 'journal') { loadJournal(); loadLab(); }
-      if (name === 'paper') { loadPaper(); startPaperPoll(); } else stopPaperPoll();
+      // Вкладки Moonshots и Paper Bot убраны; их содержимое переехало в Journal
+      if (name === 'journal') { loadJournal(); loadLab(); loadPaper(); startPaperPoll(); }
+      else stopPaperPoll();
     }
     // Restore last tab on load
     document.addEventListener('DOMContentLoaded', () => {
       try {
         const last = safeStorage.getItem('activeTab');
-        if (last === 'moonshots' || last === 'journal' || last === 'paper') switchTab(last);
-        // Pre-fetch paper positions from server so the panel is ready when user
-        // navigates to Moonshots — works across devices since data lives on server.
-        try { fetchServerPositions().then(renderPaperPositions); } catch {}
+        if (last === 'journal') switchTab('journal');
       } catch {}
     });
 
