@@ -13015,10 +13015,23 @@ Requirements:
         } catch (e) { showCustomAlert('Ошибка: ' + e.message, true); }
       });
     }
+    // Прячем список только что закрытых. Сделки остаются в истории Paper Bot.
+    let _paperRecentCache = [];
+    function dismissPaperRecent() {
+      const newest = _paperRecentCache.reduce((m, p) => Math.max(m, p.closedAt || 0), 0);
+      try { safeStorage.setItem('paperRecentDismissed', String(newest || Date.now())); } catch { }
+      loadTopLosers();
+    }
+
     function _renderPaperStrip(list, recent) {
       const el = document.getElementById('tlPaperStrip');
       if (!el) return;
-      recent = recent || [];
+      // Скрытые вручную: помним время последнего «очистить» и не показываем
+      // всё, что закрылось до него. Живёт в браузере, серверу знать не нужно.
+      _paperRecentCache = recent || [];
+      let dismissedTs = 0;
+      try { dismissedTs = parseInt(safeStorage.getItem('paperRecentDismissed') || '0', 10) || 0; } catch { }
+      recent = _paperRecentCache.filter(p => p.closedAt > dismissedTs);
       if ((!list || !list.length) && !recent.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
       list = list || [];
       el.style.display = '';
@@ -13070,6 +13083,7 @@ Requirements:
       const recentHtml = recent.length ? `
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:7px;padding-top:7px;border-top:1px dashed rgba(255,255,255,0.08);">
           <span style="font-size:9px;color:#667;align-self:center;">только что закрыты:</span>
+          <button onclick="dismissPaperRecent()" title="Убрать эти записи из блока. Сами сделки останутся в истории Paper Bot." style="align-self:center;border:1px solid rgba(255,255,255,0.16);background:transparent;color:#889;border-radius:5px;font-size:9px;padding:2px 7px;cursor:pointer;">очистить</button>
           ${recent.map(p => {
             const up = p.pnl >= 0, col = up ? '#00e5a0' : '#f55';
             const mins = Math.max(1, Math.round((Date.now() - p.closedAt) / 60000));

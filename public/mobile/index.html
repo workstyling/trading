@@ -4375,10 +4375,21 @@
       toast(`${coin}: закрыта`);
       loadTopLosersM();
     }
+    // Прячем список только что закрытых. Сделки остаются в истории Paper Bot.
+    let _paperRecentCacheM = [];
+    function dismissPaperRecentM() {
+      const newest = _paperRecentCacheM.reduce((m, p) => Math.max(m, p.closedAt || 0), 0);
+      try { localStorage.setItem('paperRecentDismissed', String(newest || Date.now())); } catch { }
+      loadTopLosersM();
+    }
+
     function _renderPaperStripM(list, recent) {
       const el = document.getElementById('tlPaperStripM');
       if (!el) return;
-      recent = recent || [];
+      _paperRecentCacheM = recent || [];
+      let dismissedTsM = 0;
+      try { dismissedTsM = parseInt(localStorage.getItem('paperRecentDismissed') || '0', 10) || 0; } catch { }
+      recent = _paperRecentCacheM.filter(p => p.closedAt > dismissedTsM);
       if ((!list || !list.length) && !recent.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
       list = list || [];
       el.style.display = '';
@@ -4389,6 +4400,7 @@
       const recentHtml = recent.length ? `
         <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:6px;padding-top:6px;border-top:1px dashed rgba(255,255,255,0.08);">
           <span style="font-size:8.5px;color:#667;align-self:center;">закрыты:</span>
+          <button onclick="dismissPaperRecentM()" style="align-self:center;border:1px solid rgba(255,255,255,0.16);background:transparent;color:#889;border-radius:5px;font-size:9px;padding:3px 8px;">очистить</button>
           ${recent.map(p => { const up = p.pnl >= 0, col = up ? '#00e5a0' : '#f55';
             const mins = Math.max(1, Math.round((Date.now() - p.closedAt) / 60000));
             return `<span style="display:inline-flex;align-items:center;gap:4px;background:${col}14;border:1px solid ${col}44;border-radius:5px;padding:3px 7px;font-size:9.5px;">
