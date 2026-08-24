@@ -1501,35 +1501,6 @@
       </div>
     </div>
     <div id="ssBodyM" style="margin-bottom:16px;"><div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">Первый скан через минуту…</div></div>
-    <div class="tg-header">
-      <span class="tg-title">📊 Top Volume 24h<button class="tv-help-btn" onclick="_toggleHelpM()">?</button></span>
-      <span class="tg-meta">
-        <button id="tvgChartBtnM" onclick="toggleTVChartVolumeMobile()" style="padding:3px 9px;border:1px solid rgba(76,201,240,0.35);border-radius:12px;background:rgba(76,201,240,0.08);color:var(--blue);font-size:10px;font-weight:600;cursor:pointer;margin-right:4px;">📈 Chart</button>
-        <button class="tg-refresh-btn" id="tvRefreshBtn" onclick="loadTopVolumeMobile(true)" title="Refresh now"><span class="spin-icon">⟳</span> Refresh</button>
-        <span id="tvHitRate" style="color:#666;font-size:9px;margin:0 4px;" title="Точность скора: доля случаев, когда цена дошла до +2% раньше −2%"></span>
-        next: <span class="tg-countdown" id="tvCountdown">—</span>
-      </span>
-    </div>
-    <div style="display:flex;align-items:center;gap:4px;margin:2px 0 4px;">
-      <button class="tv-chip" id="fltHiM" onclick="_toggleFilterM('hi')">7+</button>
-      <button class="tv-chip" id="fltUpM" onclick="_toggleFilterM('up')">растущие ▲</button>
-      <button class="tv-chip" id="fltLiqM" onclick="_toggleFilterM('liq')">ликвидные</button>
-    </div>
-    <div id="tvHelp">
-      <b>Скор</b> — шанс дойти до +2% раньше −2%. <b style="color:#00e5a0;">8+</b> вход · <b style="color:#f5c518;">7</b> ждать · <b style="color:#f5843a;">5.5–6.5</b> следить · <b style="color:#f55;">&lt;5.5</b> мимо.<br>
-      <b>Стрелка/график</b> — тренд скора за 6ч: ▲ набирает силу, ▬ стабилен, ▼ выдыхается.<br>
-      <b>Полоса в +2/-2</b> — баланс стакана: зелёное = покупатели, красное = продавцы.<br>
-      <b>≤$N</b> — безопасный размер входа (~5% глубины стакана), больше — проскальзывание.
-    </div>
-    <div id="tvProgBar"></div>
-    <div id="tvChartContainerVolM" style="display:none;margin-bottom:8px;border-radius:var(--r1);overflow:hidden;border:1px solid rgba(76,201,240,0.15);background:var(--s1);">
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 12px;border-bottom:1px solid rgba(255,255,255,0.05);">
-        <span id="tvChartCoinLabelVolM" style="font-size:13px;color:var(--blue);font-weight:700;">— · 15m</span>
-        <button onclick="closeTVChartVolumeMobile()" style="background:none;border:none;color:#94a3b8;cursor:pointer;font-size:20px;line-height:1;padding:0 4px;" title="Close">✕</button>
-      </div>
-      <div id="tvChartInnerVolM" style="height:320px;"></div>
-    </div>
-    <div id="tvBody"><div style="color:var(--t2);font-size:12px;text-align:center;padding:14px;">Loading...</div></div>
   </div>
 
   <!-- Profit Panel -->
@@ -4254,6 +4225,9 @@
     }
 
     async function loadTopVolumeMobile(force = false) {
+      // Панель Top Volume удалена. Функции оставлены — на них ссылаются
+      // трекеры и обработчик возврата на вкладку; без панели просто выходим.
+      if (!document.getElementById('tvBody')) return;
       try {
         const btn = document.getElementById('tvRefreshBtn');
         if (btn) { btn.disabled = true; btn.classList.add('spinning'); }
@@ -4274,6 +4248,7 @@
     }
 
     function startTvCountdown() {
+      if (!document.getElementById('tvBody')) return;   // панели нет — таймер не нужен
       clearInterval(tvTimer);
       tvTimer = setInterval(() => {
         tvCountdownSec--;
