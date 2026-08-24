@@ -3658,10 +3658,17 @@ function savePaperBot() {
   try { fs.writeFileSync(PAPER_FILE, JSON.stringify(paperBot, null, 2)); }
   catch (e) { console.error('[paper] save', e.message); }
 }
-// slPct 0 и maxHoldH 0 = сделка живёт до цели или до ручного закрытия.
-// Так paper повторяет реальную схему: купил лимиткой, поставил продажу
-// по марк-апу и ждёшь. Стоп −3% при цели +1.38% требовал бы 75% побед.
-const PAPER_CFG = { slPct: 0, tpPct: 5, beAfterPct: 2.5, trailAfterPct: 4, trailPct: 1.5, maxHoldH: 0, cooldownH: 12 };
+// Стоп по умолчанию −6% — это АВАРИЙНЫЙ, а не рабочий стоп.
+// Замер на 289 входах гейта (7 дней, свечи 5m, цель +1.38%):
+//   без защиты      +1.029% на сделку, худшая сделка −8.0%
+//   стоп −6%        +0.914%,           худшая −6.3%   ← берём
+//   стоп −3%        +0.717%,           худшая −3.3%
+//   стоп −1.5%      +0.469%
+//   выход по EMA9   −0.095% и хуже (режет будущих победителей)
+// 98% сделок доходят до цели за сутки, поэтому близкий стоп превращает
+// победителей в убытки. Дальний стоит 11% преимущества и обрезает хвост.
+// maxHoldH 0 = без лимита времени: держим до цели.
+const PAPER_CFG = { slPct: 6, tpPct: 5, beAfterPct: 2.5, trailAfterPct: 4, trailPct: 1.5, maxHoldH: 0, cooldownH: 12, warnPct: 4 };
 
 // Комиссия лимитного ордера из настроек — paper эмулирует лимитку, а не рынок
 function paperLimitFee() {
@@ -3711,7 +3718,7 @@ function buildPaperPos(coin, pair, ask, ctx, source) {
     feePct: fee, targetPct, slPct,
     last: ask, peak: ask, budget,
     sl: slPct > 0 ? ask * (1 - slPct / 100) : 0,
-    slStage: slPct > 0 ? 'SL' : 'без стопа',
+    slStage: slPct > 0 ? (slPct >= 5 ? 'аварийный' : 'SL') : 'без стопа',
     openedAt: Date.now(), ctx: ctx || {}
   };
 }
@@ -3748,6 +3755,20 @@ async function paperBotTick() {
         if (price > pos.peak) pos.peak = price;
         const g = (price - pos.entry) / pos.entry * 100; // грязное изменение, %
         const hasSl = (pos.slPct == null ? PAPER_CFG.slPct : pos.slPct) > 0;
+        // Предупреждение до стопа: даёт шанс решить самому, пока не сработала
+        // страховка. Шлём один раз на позицию.
+        const warnAt = paperBot.warnPct != null ? paperBot.warnPct : PAPER_CFG.warnPct;
+        if (warnAt > 0 && !pos.warned && g <= -warnAt) {
+          pos.warned = true; changed = true;
+          const slTxt = hasSl ? `аварийный стоп −${pos.slPct ?? PAPER_CFG.slPct}% на $${fmtPxAe(pos.sl)}` : 'стоп выключен';
+          sendTelegram(
+            `⚠️ <b>PAPER: позиция глубоко в минусе</b> — <b>${pos.pair}</b>\n` +
+            `Вход $${fmtPxAe(pos.entry)} → сейчас $${fmtPxAe(price)} (${g.toFixed(1)}%)\n` +
+            `${slTxt}\n` +
+            `<i>Замер: 98% сделок доходят до цели за сутки, поэтому спешить\n` +
+            `с выходом обычно не стоит. Но если это уже слом — закрой вручную.</i>`, 'HTML').catch(() => { });
+          console.log(`[paper] предупреждение ${pos.coin}: ${g.toFixed(1)}%`);
+        }
         // Подтяжка стопа имеет смысл только если стоп вообще включён.
         // При цели 1.38% трейлинг не нужен — цель ближе, чем порог трейлинга.
         if (hasSl) {
@@ -3868,7 +3889,7 @@ app.post('/api/paper/config', (req, res) => {
       for (const p of paperBot.open) {
         p.slPct = v;
         p.sl = v > 0 ? p.entry * (1 - v / 100) : 0;
-        p.slStage = v > 0 ? 'SL' : 'без стопа';
+        p.slStage = v > 0 ? (v >= 5 ? 'аварийный' : 'SL') : 'без стопа';
       }
     }
   }

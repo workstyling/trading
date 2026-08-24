@@ -6270,8 +6270,8 @@
           <div class="pred-controls" style="display:flex;align-items:center;gap:10px;">
             <span style="font-size:11px;color:var(--t2);">Budget $</span>
             <input type="number" id="paperBudget" value="100" min="10" step="10" class="settings-input" style="width:70px;" onchange="savePaperConfig()">
-            <span style="font-size:11px;color:var(--t2);" title="Стоп-лосс в процентах. 0 = без стопа: сделка висит до цели или до ручного закрытия — как ты торгуешь на самом деле.">SL %</span>
-            <input type="number" id="paperSl" value="0" min="0" max="30" step="0.5" class="settings-input" style="width:56px;" onchange="savePaperConfig()">
+            <span style="font-size:11px;color:var(--t2);" title="Аварийный стоп. Замер на 289 входах: без стопа +1.029% на сделку (худшая −8.0%), стоп −6% даёт +0.914% и обрезает худшую до −6.3%, стоп −3% уже только +0.717%. Близкий стоп режет будущих победителей — 98% сделок доходят до цели за сутки. 0 = выключить.">Аварийный стоп %</span>
+            <input type="number" id="paperSl" value="6" min="0" max="30" step="0.5" class="settings-input" style="width:56px;" onchange="savePaperConfig()">
             <span style="font-size:11px;color:var(--t2);" title="Максимальное время удержания в часах. 0 = без ограничения, сделка не закроется сама по времени.">Часы</span>
             <input type="number" id="paperHold" value="0" min="0" max="8760" step="12" class="settings-input" style="width:56px;" onchange="savePaperConfig()">
             <span style="font-size:11px;color:var(--t2);" title="По какому сигналу бот открывает виртуальную сделку">Вход:</span>
@@ -14501,7 +14501,8 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
           Сделка эмулирует твою реальную: покупка лимиткой по лучшему ask, продажа по <b style="color:var(--t0);">+${j.targetPct}%</b> (Sell Markup), комиссия <b style="color:var(--t0);">${j.feePct}%</b> с каждой стороны.
           Выигрыш чистыми <b style="color:var(--green);">+${netWin.toFixed(2)}%</b>${j.slPct > 0 ? `, проигрыш <b style="color:var(--red,#f87171);">−${netLoss.toFixed(2)}%</b> (стоп ${j.slPct}%)` : ''}.
           ${j.slPct > 0 ? '' : `<br>Стоп выключен${(j.maxHoldH || 0) > 0 ? `, лимит удержания ${j.maxHoldH} ч` : ' и лимита времени нет'} — сделка закроется только по цели или по кнопке ✕. Риск здесь не в стопе, а в зависшей позиции.`}
-          ${needWin != null ? `<br>Чтобы не терять, нужно <b style="color:${needWin > 60 ? 'var(--yellow)' : 'var(--green)'};">${needWin}% побед</b>. По бэктесту reversal-гейт даёт 44% — ${needWin > 44 ? 'при таком стопе этого <b>не хватит</b>: либо увеличь цель, либо убери стоп (SL = 0)' : 'этого достаточно'}.` : ''}
+          ${j.slPct >= 5 ? `<br>Стоп −${j.slPct}% работает как <b>страховка от катастрофы</b>, а не как рабочий выход: 98% сделок доходят до цели за сутки, и близкий стоп резал бы будущих победителей. Замер на 289 входах: без стопа +1.029% на сделку при худшей −8.0%, со стопом −6% это +0.914% при худшей −6.3%. Страховка стоит примерно 11% преимущества.` : ''}
+          ${j.slPct > 0 && j.slPct < 5 && needWin != null ? `<br>Чтобы не терять, нужно <b style="color:${needWin > 60 ? 'var(--yellow)' : 'var(--green)'};">${needWin}% побед</b>. Такой близкий стоп измеренно вредит: при −3% ожидание падает с +1.029% до +0.717%. Поставь 6% или 0.` : ''}
         </div>`;
         const ov = j.stats.overall;
         sEl.innerHTML = econ + `
