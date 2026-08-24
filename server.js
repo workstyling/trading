@@ -1330,7 +1330,16 @@ app.get('/api/top-losers', async (req, res) => {
         qty: p.qty, feePct: p.feePct, targetPct: p.targetPct, target: paperTargetPrice(p),
         pnl: p.last ? paperPnl(p, p.last) : null,
         pnlPct: p.last ? Math.round(paperPnl(p, p.last) / p.budget * 10000) / 100 : null
-      }))
+      })),
+      // Недавно закрытые — чтобы сделка не исчезала с экрана бесследно.
+      // Цель +1.38% берётся за минуты, и результат легко пропустить.
+      paperRecent: (paperBot.closed || [])
+        .filter(p => Date.now() - p.closedAt < 30 * 60 * 1000)
+        .slice(-6).reverse()
+        .map(p => ({
+          id: p.id, coin: p.coin, reason: p.reason, pnl: p.pnl, pnlPct: p.pnlPct,
+          entry: p.entry, exit: p.exit, holdH: p.holdH, closedAt: p.closedAt
+        }))
     });
   } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });

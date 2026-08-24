@@ -13036,10 +13036,12 @@ Requirements:
         } catch (e) { showCustomAlert('Ошибка: ' + e.message, true); }
       });
     }
-    function _renderPaperStrip(list) {
+    function _renderPaperStrip(list, recent) {
       const el = document.getElementById('tlPaperStrip');
       if (!el) return;
-      if (!list || !list.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
+      recent = recent || [];
+      if ((!list || !list.length) && !recent.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
+      list = list || [];
       el.style.display = '';
       const px = v => v == null ? '—' : v < 0.001 ? v.toFixed(8) : v < 1 ? v.toFixed(5) : v < 100 ? v.toFixed(4) : v.toFixed(2);
       const totalPnl = list.reduce((a, p) => a + (p.pnl || 0), 0);
@@ -13083,14 +13085,33 @@ Requirements:
         </div>`;
       }).join('');
 
+      // Только что закрытые: показываем результат ещё полчаса, иначе сделка
+      // просто исчезает с экрана — а цель +1.38% часто берётся за минуты
+      const reasonWord = { TP: 'цель взята', SL: 'стоп', BE: 'в безубыток', TRAIL: 'трейлинг', TIME: 'по времени', MANUAL: 'закрыта вручную' };
+      const recentHtml = recent.length ? `
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:7px;padding-top:7px;border-top:1px dashed rgba(255,255,255,0.08);">
+          <span style="font-size:9px;color:#667;align-self:center;">только что закрыты:</span>
+          ${recent.map(p => {
+            const up = p.pnl >= 0, col = up ? '#00e5a0' : '#f55';
+            const mins = Math.max(1, Math.round((Date.now() - p.closedAt) / 60000));
+            return `<span title="${p.coin}: вход $${p.entry}, выход $${p.exit}, держалась ${p.holdH}ч. Запись в истории Paper Bot." style="display:inline-flex;align-items:center;gap:5px;background:${col}14;border:1px solid ${col}44;border-radius:5px;padding:3px 8px;font-size:10px;cursor:help;">
+              <span style="font-weight:700;color:var(--blue);">${p.coin}</span>
+              <span style="color:#889;font-size:9px;">${reasonWord[p.reason] || p.reason}</span>
+              <span style="font-weight:700;color:${col};">${up ? '+' : '−'}$${Math.abs(p.pnl).toFixed(2)}</span>
+              <span style="color:#667;font-size:9px;">${mins}м назад</span>
+            </span>`;
+          }).join('')}
+        </div>` : '';
+
       el.innerHTML = `<div style="border:1px solid rgba(255,255,255,0.07);border-radius:9px;padding:8px 10px 10px;background:rgba(255,255,255,0.015);">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:7px;">
           <span style="font-size:10.5px;color:#9aa5b5;font-weight:700;letter-spacing:0.05em;">📝 PAPER TRADING</span>
-          <span style="font-size:9px;color:#667;">${list.length} ${list.length === 1 ? 'сделка' : 'сделок'} · вход лимиткой по ask</span>
-          <span style="margin-left:auto;font-size:9px;color:#667;">итого</span>
-          <span style="font-weight:800;font-size:13px;color:${tCol};">${totalPnl >= 0 ? '+' : '−'}$${Math.abs(totalPnl).toFixed(2)}</span>
+          <span style="font-size:9px;color:#667;">${list.length ? `${list.length} ${list.length === 1 ? 'сделка' : 'сделок'} · вход лимиткой по ask` : 'открытых нет'}</span>
+          ${list.length ? `<span style="margin-left:auto;font-size:9px;color:#667;">итого</span>
+          <span style="font-weight:800;font-size:13px;color:${tCol};">${totalPnl >= 0 ? '+' : '−'}$${Math.abs(totalPnl).toFixed(2)}</span>` : ''}
         </div>
         <div style="display:flex;gap:7px;flex-wrap:wrap;">${cards}</div>
+        ${recentHtml}
       </div>`;
     }
 
@@ -13137,9 +13158,9 @@ Requirements:
         }
         // Состояние paper-сделок приходит вместе со списком — рисуем до строк
         _paperCoins = new Set((j.paperOpen || []).map(p => p.coin));
+        _renderPaperStrip(j.paperOpen || [], j.paperRecent || []);
         const pbEl = document.getElementById('tlPaperBudget');
         if (pbEl && document.activeElement !== pbEl && j.paperBudget != null) pbEl.value = j.paperBudget;
-        _renderPaperStrip(j.paperOpen || []);
         const rows = j.coins.map((c, i) => {
           const price = c.price < 0.001 ? c.price.toFixed(6) : c.price < 1 ? c.price.toFixed(4) : c.price < 100 ? c.price.toFixed(3) : c.price.toFixed(2);
           const mc = c.mcap >= 1e9 ? '$' + (c.mcap / 1e9).toFixed(1) + 'B' : '$' + Math.round(c.mcap / 1e6) + 'M';
