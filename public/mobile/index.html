@@ -1475,29 +1475,7 @@
 
   <!-- Top Gainers Panel -->
   <div class="panel" id="panelVolume" data-tab="volume">
-    <div class="tl-head">
-      <div class="tl-head-top">
-        <span class="tl-name">📉 Top Losers 30d</span>
-        <span class="tl-sub">mcap ≥ $30M</span>
-        <span class="tl-status">
-          <span id="tlRebuildM" class="tl-rebuild" style="display:none;">⟳ пересборка…</span>
-          upd <span id="tlUpdatedM" class="tl-upd">—</span>
-        </span>
-      </div>
-      <div class="tl-bar">
-        <label class="tl-money" id="tlMoneyBoxM" title="Сумма paper-сделки. Сохраняется при вводе.">
-          <span class="tl-money-lbl">📝 $</span>
-          <input type="number" id="tlPaperBudgetM" value="100" min="10" max="100000" step="10" inputmode="decimal"
-            oninput="onPaperBudgetInputM(this.value)">
-        </label>
-        <span id="tlPaperBudgetOkM" class="tl-ok">✓</span>
-        <button class="tl-btn" id="tlBuyWatchBtnM" onclick="toggleBuyWatchM()" title="Алерт по колонке СВИНГ (1–3 дня), одноразовый">🔔</button>
-        <button class="tl-btn" id="tlScalpWatchBtnM" onclick="toggleScalpWatchM()" title="Алерт по колонке СКАЛЬП (2–6 часов), одноразовый">⚡</button>
-        <button class="tl-btn tl-refresh" id="tlRefreshBtnM" onclick="loadTopLosersM(true)" title="Обновить">⟳</button>
-      </div>
-    </div>
-    <div id="tlPaperStripM" style="display:none;margin-bottom:6px;"></div>
-    <div id="tlBodyM" style="margin-bottom:16px;"><div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">Loading...</div></div>
+    <div id="tlPaperStripM" style="display:none;margin-bottom:10px;"></div>
 
     <!-- ⚡ Скальп по всему рынку -->
     <div class="tl-head">
@@ -1510,6 +1488,13 @@
         </span>
       </div>
       <div class="tl-bar">
+        <label class="tl-money" id="tlMoneyBoxM" title="Сумма paper-сделки. Сохраняется при вводе.">
+          <span class="tl-money-lbl">📝 $</span>
+          <input type="number" id="tlPaperBudgetM" value="100" min="10" max="100000" step="10" inputmode="decimal"
+            oninput="onPaperBudgetInputM(this.value)">
+        </label>
+        <span id="tlPaperBudgetOkM" class="tl-ok">✓</span>
+        <button class="tl-btn" id="tlScalpWatchBtnM" onclick="toggleScalpWatchM()" title="Одноразовый Telegram-алерт: одно сообщение при входе, потом выключится">⚡ Алерт</button>
         <span id="ssRegimeM" class="ss-regime">режим —</span>
         <span id="ssFoundM" style="font-size:9px;color:#7c8698;"></span>
         <button class="tl-btn tl-refresh" id="ssRefreshBtnM" onclick="loadScalpScanM(true)">⟳</button>
@@ -4326,7 +4311,7 @@
     function _paintScalpWatchBtnM() {
       const b = document.getElementById('tlScalpWatchBtnM');
       if (!b) return;
-      b.textContent = _tlScalpWatch ? '⚡вкл' : '⚡';
+      b.textContent = _tlScalpWatch ? '⚡ Алерт вкл' : '⚡ Алерт';
       b.classList.toggle('on-scalp', _tlScalpWatch);
     }
     async function toggleScalpWatchM() {
@@ -4482,16 +4467,20 @@
             setTimeout(() => { rebEl.style.display = 'none'; }, 4000);
           }
         }
+        // Панель Top Losers удалена, но эндпоинт остаётся источником
+        // состояния paper-сделок и суммы — рисуем их до выхода.
+        _paperCoinsM = new Set((j.paperOpen || []).map(p => p.coin));
+        const pbElM = document.getElementById('tlPaperBudgetM');
+        if (pbElM && document.activeElement !== pbElM && j.paperBudget != null) pbElM.value = j.paperBudget;
+        _renderPaperStripM(j.paperOpen || [], j.paperRecent || []);
+        if (typeof j.scalpWatch === 'boolean' && j.scalpWatch !== _tlScalpWatch) { _tlScalpWatch = j.scalpWatch; _paintScalpWatchBtnM(); }
+
         const body = document.getElementById('tlBodyM');
         if (!body) return;
         if (!j.success || !j.coins || !j.coins.length) {
           body.innerHTML = `<div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">${j.building ? 'Собираю данные (~2 мин)…' : 'Нет данных'}</div>`;
           return;
         }
-        _paperCoinsM = new Set((j.paperOpen || []).map(p => p.coin));
-        const pbElM = document.getElementById('tlPaperBudgetM');
-        if (pbElM && document.activeElement !== pbElM && j.paperBudget != null) pbElM.value = j.paperBudget;
-        _renderPaperStripM(j.paperOpen || [], j.paperRecent || []);
         const rows = j.coins.map((c, i) => {
           const price = c.price < 0.001 ? c.price.toFixed(6) : c.price < 1 ? c.price.toFixed(4) : c.price < 100 ? c.price.toFixed(3) : c.price.toFixed(2);
           const mc = c.mcap >= 1e9 ? '$' + (c.mcap / 1e9).toFixed(1) + 'B' : '$' + Math.round(c.mcap / 1e6) + 'M';

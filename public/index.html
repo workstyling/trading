@@ -6111,38 +6111,19 @@
             </div>
             <div class="tl-bar">
               <span id="ssRegime" class="ss-regime" title="Режим рынка. Замерено на 1119 сигналах: при BTC выше EMA20 (1ч) — 72% побед и +0.239% на сделку, ниже — 54% и −0.211%. Ниже EMA20 входы не выдаются.">режим —</span>
-              <span id="ssFound" style="font-size:10px;color:#7c8698;"></span>
-              <button class="tl-btn tl-refresh" id="ssRefreshBtn" onclick="loadScalpScan(true)" title="Пересканировать рынок сейчас (~30 сек)"><span class="spin-icon">⟳</span> Скан</button>
-            </div>
-          </div>
-          <div id="ssBody"><div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">Первый скан через минуту после старта…</div></div>
-        </div>
-        <div id="topLosersPanel" style="margin-bottom:14px;">
-          <div class="tl-head">
-            <div class="tl-head-top">
-              <span class="tl-name">📉 Top Losers 30d</span>
-              <span class="tl-sub">mcap ≥ $30M · Coinbase</span>
-              <span class="tl-status">
-                <span id="tlRebuild" class="tl-rebuild" style="display:none;">⟳ пересборка…</span>
-                upd <span id="tlUpdated" class="tl-upd">—</span>
-              </span>
-            </div>
-            <div class="tl-bar">
               <label class="tl-money" id="tlMoneyBox" title="Сумма paper-сделки в долларах. Сохраняется сразу при вводе, применяется ко всем новым сделкам.">
                 <span class="tl-money-lbl">📝 $</span>
                 <input type="number" id="tlPaperBudget" value="100" min="10" max="100000" step="10"
                   oninput="onPaperBudgetInput(this.value)">
               </label>
               <span id="tlPaperBudgetOk" class="tl-ok">✓</span>
-              <button class="tl-btn" id="tlBuyWatchBtn" onclick="toggleBuyWatch()"
-                title="Одноразовый Telegram-алерт по колонке СВИНГ (горизонт 1–3 дня). Нажми — сервер пришлёт ОДНО сообщение, когда монета пройдёт гейт 4/4, и выключится сам. Работает при закрытом браузере.">🔔 Свинг</button>
               <button class="tl-btn" id="tlScalpWatchBtn" onclick="toggleScalpWatch()"
-                title="Одноразовый Telegram-алерт по колонке СКАЛЬП (горизонт 2–6 часов). Работает так же: одно сообщение и выключается.">⚡ Скальп</button>
-              <button class="tl-btn tl-refresh" id="tlRefreshBtn" onclick="loadTopLosers(true)"
-                title="Обновить цены сейчас + пересобрать список"><span class="spin-icon">⟳</span> Обновить</button>
+                title="Одноразовый Telegram-алерт. Нажми — сервер пришлёт ОДНО сообщение, когда монета пройдёт гейт входа, и выключится сам. Работает при закрытом браузере. Чтобы следить дальше, включи снова.">⚡ Алерт</button>
+              <span id="ssFound" style="font-size:10px;color:#7c8698;"></span>
+              <button class="tl-btn tl-refresh" id="ssRefreshBtn" onclick="loadScalpScan(true)" title="Пересканировать рынок сейчас (~30 сек)"><span class="spin-icon">⟳</span> Скан</button>
             </div>
           </div>
-          <div id="tlBody"><div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">Loading...</div></div>
+          <div id="ssBody"><div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">Первый скан через минуту после старта…</div></div>
         </div>
         <div id="profitPanel">
           <div class="profit-header">
@@ -12930,7 +12911,7 @@ Requirements:
     function _paintScalpWatchBtn() {
       const b = document.getElementById('tlScalpWatchBtn');
       if (!b) return;
-      b.textContent = _tlScalpWatch ? '⚡ Скальп · вкл' : '⚡ Скальп';
+      b.textContent = _tlScalpWatch ? '⚡ Алерт · вкл' : '⚡ Алерт';
       b.classList.toggle('on-scalp', _tlScalpWatch);
     }
     async function toggleScalpWatch() {
@@ -13145,17 +13126,20 @@ Requirements:
             setTimeout(() => { rebEl.style.display = 'none'; }, 4000);
           }
         }
-        const body = document.getElementById('tlBody');
-        if (!body) return;
-        if (!j.success || !j.coins || !j.coins.length) {
-          body.innerHTML = `<div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">${j.building ? 'Собираю данные (первый прогон ~2 мин)…' : 'Нет данных'}</div>`;
-          return;
-        }
-        // Состояние paper-сделок приходит вместе со списком — рисуем до строк
+        // Paper-блок и настройки живут вне таблицы Top Losers: панель удалена,
+        // но эндпоинт остаётся источником состояния сделок и суммы.
         _paperCoins = new Set((j.paperOpen || []).map(p => p.coin));
         _renderPaperStrip(j.paperOpen || [], j.paperRecent || []);
         const pbEl = document.getElementById('tlPaperBudget');
         if (pbEl && document.activeElement !== pbEl && j.paperBudget != null) pbEl.value = j.paperBudget;
+        if (typeof j.scalpWatch === 'boolean' && j.scalpWatch !== _tlScalpWatch) { _tlScalpWatch = j.scalpWatch; _paintScalpWatchBtn(); }
+
+        const body = document.getElementById('tlBody');
+        if (!body) return;                       // таблицы нет — остальное не рисуем
+        if (!j.success || !j.coins || !j.coins.length) {
+          body.innerHTML = `<div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">${j.building ? 'Собираю данные (первый прогон ~2 мин)…' : 'Нет данных'}</div>`;
+          return;
+        }
         const rows = j.coins.map((c, i) => {
           const price = c.price < 0.001 ? c.price.toFixed(6) : c.price < 1 ? c.price.toFixed(4) : c.price < 100 ? c.price.toFixed(3) : c.price.toFixed(2);
           const mc = c.mcap >= 1e9 ? '$' + (c.mcap / 1e9).toFixed(1) + 'B' : '$' + Math.round(c.mcap / 1e6) + 'M';
