@@ -4225,7 +4225,8 @@ app.get('/api/lab', (req, res) => {
     open, closedCount: closed.length,
     closed: closed.slice(-40).reverse(),
     stats: base, observations, enough,
-    brief: lab.buildBrief(closed, { since: since ? `${since} ч` : null }),
+    generations: (labState.generations || []).slice(-10).reverse(),
+    brief: lab.buildBrief(closed, { since: since ? `${since} ч` : null, generations: labState.generations || [] }),
   });
 });
 
@@ -4249,6 +4250,31 @@ app.delete('/api/lab/trades', (req, res) => {
   labState.startedAt = labState.enabled ? Date.now() : 0;
   saveLab();
   res.json({ success: true });
+});
+
+// Правки внедрены → фиксируем поколение. Накопленные сделки уходят в архив
+// вместе с наблюдениями, сбор начинается заново. Иначе следующее задание
+// повторяло бы то, что уже сделано, на старых данных.
+app.post('/api/lab/applied', (req, res) => {
+  const note = String((req.body || {}).note || '').slice(0, 2000);
+  const closed = labState.trades.filter(t => t.closedAt);
+  const { base, observations } = lab.findObservations(closed);
+  labState.generations = labState.generations || [];
+  labState.generations.push({
+    at: Date.now(),
+    note,
+    trades: closed.length,
+    stats: base,
+    observations: (observations || []).slice(0, 10),
+  });
+  labState.generations = labState.generations.slice(-20);
+  // Открытые оставляем: они ещё не завершились, но они уже по старой версии —
+  // помечаем, чтобы не смешивать поколения в статистике
+  labState.trades = labState.trades.filter(t => !t.closedAt).map(t => ({ ...t, gen: 'old' }));
+  labState.startedAt = Date.now();
+  saveLab();
+  console.log(`[lab] зафиксировано поколение #${labState.generations.length}: ${closed.length} сделок`);
+  res.json({ success: true, generation: labState.generations.length });
 });
 
 // ── Одноразовый Telegram-алерт по scalp-гейту (отдельная кнопка) ──

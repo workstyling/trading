@@ -141,6 +141,28 @@ function buildBrief(trades, meta) {
   lines.push('(минимум за час < 30 и текущий выше минимума на 3+), цена выше EMA9 (5m),');
   lines.push('объём ≥ $500K, BTC выше EMA20 (1ч). Цель +1.38%, аварийный стоп −6%.');
   lines.push('');
+
+  // История поколений: что уже внедрено — чтобы не предлагать то же самое
+  const gens = (meta && meta.generations) || [];
+  if (gens.length) {
+    lines.push('## Что уже внедрено (не предлагать повторно)');
+    lines.push('');
+    gens.slice(-6).forEach((g, k) => {
+      const dt = new Date(g.at).toISOString().slice(0, 16).replace('T', ' ');
+      lines.push(`**${dt} UTC** — поколение ${gens.length - Math.min(6, gens.length) + k + 1}, собрано ${g.trades} сделок` +
+        (g.stats ? `, win ${g.stats.winRate}%, ${g.stats.avgPct >= 0 ? '+' : ''}${g.stats.avgPct}% на сделку` : ''));
+      if (g.note) {
+        g.note.split('\n').filter(Boolean).forEach(l => lines.push(`  - ${l}`));
+      } else if (g.observations && g.observations.length) {
+        g.observations.slice(0, 3).forEach(o =>
+          lines.push(`  - было найдено: ${o.dim} «${o.group}» ${o.delta >= 0 ? '+' : ''}${o.delta} п.п.`));
+      }
+      lines.push('');
+    });
+    lines.push('Цифры ниже собраны УЖЕ ПОСЛЕ последней правки — это проверка того,');
+    lines.push('что она дала, а не повторение прошлого анализа.');
+    lines.push('');
+  }
   lines.push('## Что дали живые сделки');
   lines.push('');
   if (!base) {
