@@ -3861,7 +3861,16 @@ app.post('/api/paper/config', (req, res) => {
   if (entryMode !== undefined && ['rev', 'rb', 'both'].includes(entryMode)) paperBot.entryMode = entryMode;
   if (req.body.slPct !== undefined) {
     const v = parseFloat(req.body.slPct);
-    if (v >= 0 && v <= 30) paperBot.slPct = v;   // 0 = без стопа, держим до цели
+    if (v >= 0 && v <= 30) {
+      paperBot.slPct = v;   // 0 = без стопа, держим до цели
+      // Применяем и к уже открытым: иначе выключаешь стоп, а позиции всё
+      // равно закрываются по старому — настройка выглядит неработающей.
+      for (const p of paperBot.open) {
+        p.slPct = v;
+        p.sl = v > 0 ? p.entry * (1 - v / 100) : 0;
+        p.slStage = v > 0 ? 'SL' : 'без стопа';
+      }
+    }
   }
   if (req.body.maxHoldH !== undefined) {
     const v = parseFloat(req.body.maxHoldH);
