@@ -3658,7 +3658,10 @@ function savePaperBot() {
   try { fs.writeFileSync(PAPER_FILE, JSON.stringify(paperBot, null, 2)); }
   catch (e) { console.error('[paper] save', e.message); }
 }
-const PAPER_CFG = { slPct: 3, tpPct: 5, beAfterPct: 2.5, trailAfterPct: 4, trailPct: 1.5, maxHoldH: 72, cooldownH: 12 };
+// slPct 0 и maxHoldH 0 = сделка живёт до цели или до ручного закрытия.
+// Так paper повторяет реальную схему: купил лимиткой, поставил продажу
+// по марк-апу и ждёшь. Стоп −3% при цели +1.38% требовал бы 75% побед.
+const PAPER_CFG = { slPct: 0, tpPct: 5, beAfterPct: 2.5, trailAfterPct: 4, trailPct: 1.5, maxHoldH: 0, cooldownH: 12 };
 
 // Комиссия лимитного ордера из настроек — paper эмулирует лимитку, а не рынок
 function paperLimitFee() {
@@ -3761,9 +3764,12 @@ async function paperBotTick() {
         const ageH = (Date.now() - pos.openedAt) / 3600000;
         // Цель — твой Sell Markup из настроек (как в реальной торговле), а не фиксированные 5%
         const tgt = pos.targetPct != null ? pos.targetPct : PAPER_CFG.tpPct;
+        // Закрываем только по цели. Стоп и лимит времени — опциональные:
+        // 0 в настройках выключает их, и позиция висит до цели или до ручного ✕.
+        const maxHold = paperBot.maxHoldH != null ? paperBot.maxHoldH : PAPER_CFG.maxHoldH;
         if (g >= tgt) { closePaperPos(pos, price, 'TP'); changed = true; }
         else if (hasSl && price <= pos.sl) { closePaperPos(pos, price, pos.slStage === 'TRAIL' ? 'TRAIL' : pos.slStage === 'BE' ? 'BE' : 'SL'); changed = true; }
-        else if (ageH >= (paperBot.maxHoldH || PAPER_CFG.maxHoldH)) { closePaperPos(pos, price, 'TIME'); changed = true; }
+        else if (maxHold > 0 && ageH >= maxHold) { closePaperPos(pos, price, 'TIME'); changed = true; }
       } catch (e) { console.error('[paper] manage', pos.coin, e.message); }
       await sleep(150);
     }
@@ -3859,7 +3865,7 @@ app.post('/api/paper/config', (req, res) => {
   }
   if (req.body.maxHoldH !== undefined) {
     const v = parseFloat(req.body.maxHoldH);
-    if (v >= 1 && v <= 720) paperBot.maxHoldH = v;
+    if (v >= 0 && v <= 8760) paperBot.maxHoldH = v;   // 0 = без лимита времени
   }
   savePaperBot();
   res.json({

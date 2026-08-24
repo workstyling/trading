@@ -6097,6 +6097,24 @@
         <div id="coinsList"></div>
       </div>
       <div class="main-right">
+        <div id="scalpScanPanel" style="margin-bottom:14px;">
+          <div class="tl-head">
+            <div class="tl-head-top">
+              <span class="tl-name" style="color:#4cc9f0;">⚡ Скальп по рынку</span>
+              <span class="tl-sub">горизонт 2–6 ч · цель +1.38%</span>
+              <span class="tl-status">
+                <span id="ssScanning" class="tl-rebuild" style="display:none;">⟳ скан <span id="ssProgress">0</span>%</span>
+                <span id="ssAgo">—</span>
+              </span>
+            </div>
+            <div class="tl-bar">
+              <span id="ssRegime" class="ss-regime" title="Режим рынка. Замерено на 1119 сигналах: при BTC выше EMA20 (1ч) — 72% побед и +0.239% на сделку, ниже — 54% и −0.211%. Ниже EMA20 входы не выдаются.">режим —</span>
+              <span id="ssFound" style="font-size:10px;color:#7c8698;"></span>
+              <button class="tl-btn tl-refresh" id="ssRefreshBtn" onclick="loadScalpScan(true)" title="Пересканировать рынок сейчас (~30 сек)"><span class="spin-icon">⟳</span> Скан</button>
+            </div>
+          </div>
+          <div id="ssBody"><div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">Первый скан через минуту после старта…</div></div>
+        </div>
         <div id="topLosersPanel" style="margin-bottom:14px;">
           <div class="tl-head">
             <div class="tl-head-top">
@@ -6124,51 +6142,6 @@
           </div>
           <div id="tlPaperStrip" style="display:none;margin-bottom:6px;"></div>
           <div id="tlBody"><div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">Loading...</div></div>
-        </div>
-        <!-- ⚡ Скальп по всему рынку: гейт не привязан к 30-дневным лузерам -->
-        <div id="scalpScanPanel" style="margin-bottom:14px;">
-          <div class="tl-head">
-            <div class="tl-head-top">
-              <span class="tl-name" style="color:#4cc9f0;">⚡ Скальп по рынку</span>
-              <span class="tl-sub">горизонт 2–6 ч · цель +1.38%</span>
-              <span class="tl-status">
-                <span id="ssScanning" class="tl-rebuild" style="display:none;">⟳ скан <span id="ssProgress">0</span>%</span>
-                <span id="ssAgo">—</span>
-              </span>
-            </div>
-            <div class="tl-bar">
-              <span id="ssRegime" class="ss-regime" title="Режим рынка. Замерено на 1119 сигналах: при BTC выше EMA20 (1ч) — 72% побед и +0.239% на сделку, ниже — 54% и −0.211%. Ниже EMA20 входы не выдаются.">режим —</span>
-              <span id="ssFound" style="font-size:10px;color:#7c8698;"></span>
-              <button class="tl-btn tl-refresh" id="ssRefreshBtn" onclick="loadScalpScan(true)" title="Пересканировать рынок сейчас (~30 сек)"><span class="spin-icon">⟳</span> Скан</button>
-            </div>
-          </div>
-          <div id="ssBody"><div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">Первый скан через минуту после старта…</div></div>
-        </div>
-        <div id="topVolumePanel">
-          <div class="tg-header">
-            <span class="tg-title"><span class="tg-header-title">📊 Top Volume 24h</span><button class="tv-help-btn" onclick="_toggleHelp()" title="Как читать таблицу">?</button></span>
-            <span class="tg-meta">
-              <button id="tvgChartBtn" onclick="toggleTopVolumeChart()" style="padding:3px 10px;border:1px solid rgba(76,201,240,0.35);border-radius:12px;background:rgba(76,201,240,0.08);color:var(--blue);font-size:11px;font-weight:600;cursor:pointer;transition:all 0.2s;margin-right:4px;">📈 Chart</button>
-              <button class="tg-refresh-btn" id="tvRefreshBtn" onclick="loadTopVolume(true)" title="Refresh now"><span class="spin-icon">⟳</span> Refresh</button>
-              <span id="tvHitRate" style="color:#666;font-size:10px;margin:0 6px;" title="Точность скора по истории: доля случаев, когда цена дошла до +2% раньше, чем до −2% (окно 24ч). @8 — для скоров 7.5+, @6 — для 5.5–7"></span>
-              next: <span class="tg-countdown" id="tvCountdown">—</span>
-            </span>
-          </div>
-          <div style="display:flex;align-items:center;gap:4px;margin:2px 0;">
-            <span style="font-size:9px;color:#555;margin-right:2px;">фильтр:</span>
-            <button class="tv-chip" id="fltHi" onclick="_toggleFilter('hi')" title="Только скор 7+">7+</button>
-            <button class="tv-chip" id="fltUp" onclick="_toggleFilter('up')" title="Только с растущим скором">растущие ▲</button>
-            <button class="tv-chip" id="fltLiq" onclick="_toggleFilter('liq')" title="Скрыть неликвид">ликвидные</button>
-          </div>
-          <div id="tvHelp">
-            <b>Скор</b> — вероятность дойти до +2% раньше, чем до −2%.
-            <b style="color:#00e5a0;">8+</b> вход · <b style="color:#f5c518;">7</b> ждать · <b style="color:#f5843a;">5.5–6.5</b> следить · <b style="color:#f55;">&lt;5.5</b> мимо.<br>
-            <b>Стрелка/спарклайн</b> — тренд скора за 6ч: ▲ набирает силу (лучший вход), ▬ стабилен, ▼ выдыхается (поздно).<br>
-            <b>Депт-бар</b> — баланс стакана в ±2%: зелёная доля = покупатели, красная = продавцы. Наведи на кружок скора — расшифровка сигналов.<br>
-            <b>≤$N под вердиктом</b> — безопасный размер входа (~5% глубины стакана): больше — заметное проскальзывание на входе/выходе.
-          </div>
-          <div id="tvProgBar"></div>
-          <div id="tvBody"><div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">Loading...</div></div>
         </div>
         <div id="profitPanel">
           <div class="profit-header">
@@ -6296,10 +6269,10 @@
           <div class="pred-controls" style="display:flex;align-items:center;gap:10px;">
             <span style="font-size:11px;color:var(--t2);">Budget $</span>
             <input type="number" id="paperBudget" value="100" min="10" step="10" class="settings-input" style="width:70px;" onchange="savePaperConfig()">
-            <span style="font-size:11px;color:var(--t2);" title="Стоп-лосс в процентах. 0 = без стопа: держим до цели или до лимита времени — как ты торгуешь на самом деле.">SL %</span>
-            <input type="number" id="paperSl" value="3" min="0" max="30" step="0.5" class="settings-input" style="width:56px;" onchange="savePaperConfig()">
-            <span style="font-size:11px;color:var(--t2);" title="Максимальное время удержания в часах">Часы</span>
-            <input type="number" id="paperHold" value="72" min="1" max="720" step="12" class="settings-input" style="width:56px;" onchange="savePaperConfig()">
+            <span style="font-size:11px;color:var(--t2);" title="Стоп-лосс в процентах. 0 = без стопа: сделка висит до цели или до ручного закрытия — как ты торгуешь на самом деле.">SL %</span>
+            <input type="number" id="paperSl" value="0" min="0" max="30" step="0.5" class="settings-input" style="width:56px;" onchange="savePaperConfig()">
+            <span style="font-size:11px;color:var(--t2);" title="Максимальное время удержания в часах. 0 = без ограничения, сделка не закроется сама по времени.">Часы</span>
+            <input type="number" id="paperHold" value="0" min="0" max="8760" step="12" class="settings-input" style="width:56px;" onchange="savePaperConfig()">
             <span style="font-size:11px;color:var(--t2);" title="По какому сигналу бот открывает виртуальную сделку">Вход:</span>
             <select id="paperEntryMode" class="settings-input" style="width:190px;" onchange="savePaperConfig()">
               <option value="rev">Reversal-гейт (откалиброван)</option>
@@ -12903,9 +12876,13 @@ Requirements:
     }
 
     async function loadTopVolume(force = false) {
+      // Панель Top Volume удалена из интерфейса. Функции оставлены, потому что
+      // на них ссылаются трекеры и обработчик возврата на вкладку; без панели
+      // просто выходим, чтобы не гонять лишние запросы к бирже.
+      const body = document.getElementById('tvBody');
+      if (!body) return;
       try {
         const btn = document.getElementById('tvRefreshBtn');
-        const body = document.getElementById('tvBody');
         if (btn) { btn.disabled = true; btn.classList.add('spinning'); }
         if (force && body) body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;gap:10px;padding:30px;color:var(--t2);font-size:13px;"><span class="spin-icon" style="font-size:20px;display:inline-block;animation:spin 0.8s linear infinite;">⟳</span> Loading...</div>';
         const res = await fetch('/api/top-volume' + (force ? '?force=true' : ''));
@@ -12922,6 +12899,7 @@ Requirements:
     }
 
     function startTvCountdown() {
+      if (!document.getElementById('tvBody')) return;   // панели нет — таймер не нужен
       tvCountdownSec = 60;
       clearInterval(tvTimer);
       tvTimer = setInterval(() => {
@@ -14520,7 +14498,8 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
         const needWin = (j.slPct > 0 && netWin > 0) ? Math.ceil(netLoss / (netWin + netLoss) * 100) : null;
         const econ = `<div style="background:${needWin != null && needWin > 60 ? 'rgba(245,197,24,0.07)' : 'rgba(255,255,255,0.02)'};border:1px solid ${needWin != null && needWin > 60 ? 'rgba(245,197,24,0.3)' : 'rgba(255,255,255,0.07)'};border-radius:7px;padding:9px 12px;margin-bottom:12px;font-size:12px;color:var(--t2);">
           Сделка эмулирует твою реальную: покупка лимиткой по лучшему ask, продажа по <b style="color:var(--t0);">+${j.targetPct}%</b> (Sell Markup), комиссия <b style="color:var(--t0);">${j.feePct}%</b> с каждой стороны.
-          Выигрыш чистыми <b style="color:var(--green);">+${netWin.toFixed(2)}%</b>${j.slPct > 0 ? `, проигрыш <b style="color:var(--red,#f87171);">−${netLoss.toFixed(2)}%</b> (стоп ${j.slPct}%)` : ', стоп выключен — держим до цели или до лимита времени'}.
+          Выигрыш чистыми <b style="color:var(--green);">+${netWin.toFixed(2)}%</b>${j.slPct > 0 ? `, проигрыш <b style="color:var(--red,#f87171);">−${netLoss.toFixed(2)}%</b> (стоп ${j.slPct}%)` : ''}.
+          ${j.slPct > 0 ? '' : `<br>Стоп выключен${(j.maxHoldH || 0) > 0 ? `, лимит удержания ${j.maxHoldH} ч` : ' и лимита времени нет'} — сделка закроется только по цели или по кнопке ✕. Риск здесь не в стопе, а в зависшей позиции.`}
           ${needWin != null ? `<br>Чтобы не терять, нужно <b style="color:${needWin > 60 ? 'var(--yellow)' : 'var(--green)'};">${needWin}% побед</b>. По бэктесту reversal-гейт даёт 44% — ${needWin > 44 ? 'при таком стопе этого <b>не хватит</b>: либо увеличь цель, либо убери стоп (SL = 0)' : 'этого достаточно'}.` : ''}
         </div>`;
         const ov = j.stats.overall;
