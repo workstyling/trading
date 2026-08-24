@@ -6238,6 +6238,31 @@
           </div>
         </div>
         <div style="color:var(--t2);font-size:11px;margin:4px 0 12px;">Каждая покупка автоматически записывается с рыночным контекстом (score, rebound rating, час входа). Продажа закрывает позицию и считает PnL. Статистика показывает, какие сигналы реально зарабатывают.</div>
+        <!-- Лаборатория: фоновая проверка гейта скальпа на живых сделках -->
+        <div id="labSection" style="margin-bottom:22px;padding-bottom:20px;border-bottom:1px solid rgba(255,255,255,0.08);">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
+            <span style="font-size:13px;font-weight:700;color:#4cc9f0;">🧪 Лаборатория стратегии</span>
+            <span style="font-size:11px;color:var(--t2);">фоновое тестирование гейта ⚡ Скальп по рынку</span>
+            <span style="margin-left:auto;display:flex;align-items:center;gap:8px;">
+              <span style="font-size:11px;color:var(--t2);">$</span>
+              <input type="number" id="labBudget" value="100" min="10" max="100000" step="10" class="settings-input" style="width:70px;" onchange="saveLabConfig()">
+              <button id="labToggleBtn" class="tg-refresh-btn" onclick="toggleLab()">...</button>
+              <button class="tg-refresh-btn" onclick="loadLab()">Обновить</button>
+            </span>
+          </div>
+          <div style="color:var(--t2);font-size:11.5px;margin-bottom:12px;max-width:78ch;">
+            Пока включена, сервер сам открывает виртуальную сделку на каждом срабатывании гейта и запоминает условия входа: позицию в диапазоне, RSI, спред, объём, запас BTC над EMA20, час. Из закрытых сделок собирает расхождения и формулирует, что стоит поправить в алгоритме. Работает при закрытом браузере, пока не выключишь.
+          </div>
+          <div id="labStats" style="margin-bottom:12px;"></div>
+          <div id="labObservations" style="margin-bottom:12px;"></div>
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+            <span style="font-size:12px;font-weight:600;color:var(--t0);">Готовое задание для Claude Code</span>
+            <button class="tg-refresh-btn" id="labCopyBtn" onclick="copyLabBrief()">📋 Скопировать</button>
+            <button class="tg-refresh-btn" onclick="clearLabTrades()" style="border-color:rgba(255,90,90,0.3);color:#f77;">Сбросить сделки</button>
+          </div>
+          <pre id="labBrief" style="white-space:pre-wrap;word-break:break-word;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.07);border-radius:8px;padding:12px 14px;font-size:11px;line-height:1.55;color:var(--t1);max-height:340px;overflow:auto;margin:0;font-family:'JetBrains Mono',monospace;">Загрузка…</pre>
+        </div>
+
         <div id="journalStats" style="margin-bottom:14px;"></div>
         <div id="journalOpen" style="margin-bottom:14px;"></div>
         <div id="journalClosed"></div>
@@ -14329,7 +14354,7 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
         loadMoonshots();
         fetchServerPositions().then(() => { renderPaperPositions(); updatePaperAsks(); });
       }
-      if (name === 'journal') loadJournal();
+      if (name === 'journal') { loadJournal(); loadLab(); }
       if (name === 'paper') { loadPaper(); startPaperPoll(); } else stopPaperPoll();
     }
     // Restore last tab on load
@@ -14342,6 +14367,93 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
         try { fetchServerPositions().then(renderPaperPositions); } catch {}
       } catch {}
     });
+
+    /* ═══════════════ ЛАБОРАТОРИЯ СТРАТЕГИИ (вкладка Journal) ═══════════════ */
+    let _labEnabled = false, _labBrief = '';
+    function _paintLabBtn() {
+      const b = document.getElementById('labToggleBtn');
+      if (!b) return;
+      b.textContent = _labEnabled ? '⏹ Остановить' : '▶ Запустить';
+      b.style.borderColor = _labEnabled ? 'var(--green)' : '';
+      b.style.color = _labEnabled ? 'var(--green)' : '';
+      b.style.background = _labEnabled ? 'rgba(0,229,160,0.12)' : '';
+    }
+    async function toggleLab() {
+      try {
+        const r = await fetch('/api/lab/config', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ enabled: !_labEnabled })
+        });
+        const j = await r.json();
+        if (j.success) {
+          _labEnabled = j.enabled; _paintLabBtn();
+          showCustomAlert(_labEnabled
+            ? 'Лаборатория запущена: сервер будет открывать сделку на каждом входе гейта, пока не остановишь'
+            : 'Лаборатория остановлена. Открытые сделки продолжат вестись до цели или стопа.');
+          loadLab();
+        }
+      } catch (e) { showCustomAlert('Ошибка: ' + e.message, true); }
+    }
+    async function saveLabConfig() {
+      const b = parseFloat(document.getElementById('labBudget').value) || 100;
+      try { await fetch('/api/lab/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ budget: b }) }); } catch { }
+    }
+    function copyLabBrief() {
+      const btn = document.getElementById('labCopyBtn');
+      navigator.clipboard.writeText(_labBrief).then(() => {
+        if (btn) { const t = btn.textContent; btn.textContent = '✓ Скопировано'; setTimeout(() => { btn.textContent = t; }, 1600); }
+      }).catch(() => showCustomAlert('Не удалось скопировать — выдели текст вручную', true));
+    }
+    async function clearLabTrades() {
+      showConfirmModal('Сбросить сделки лаборатории',
+        'Удалить все накопленные сделки и начать сбор заново?<br><br>Наблюдения строятся именно на них — статистика обнулится.',
+        async () => {
+          try { await fetch('/api/lab/trades', { method: 'DELETE' }); loadLab(); } catch { }
+        });
+    }
+    async function loadLab() {
+      try {
+        const r = await fetch('/api/lab');
+        const j = await r.json();
+        if (!j.success) return;
+        _labEnabled = j.enabled; _paintLabBtn();
+        const bEl = document.getElementById('labBudget');
+        if (bEl && document.activeElement !== bEl) bEl.value = j.budget;
+        _labBrief = j.brief || '';
+        const pre = document.getElementById('labBrief');
+        if (pre) pre.textContent = _labBrief;
+
+        const st = j.stats;
+        const sEl = document.getElementById('labStats');
+        if (sEl) {
+          sEl.innerHTML = `<div style="display:flex;gap:10px;flex-wrap:wrap;">
+            ${_jStatCard('Статус', _labEnabled ? '<span style="color:var(--green);">РАБОТАЕТ</span>' : '<span style="color:var(--t2);">СТОП</span>', j.hoursRunning ? `${j.hoursRunning} ч в работе` : '')}
+            ${_jStatCard('Открыто', j.open.length, j.open.length ? j.open.map(t => t.coin).slice(0, 4).join(', ') : '')}
+            ${_jStatCard('Закрыто', j.closedCount, st ? `${st.wins} win / ${st.losses} loss` : '')}
+            ${_jStatCard('Winrate', st ? st.winRate + '%' : '—', 'бэктест обещал 68%')}
+            ${_jStatCard('На сделку', st ? (st.avgPct >= 0 ? '+' : '') + st.avgPct + '%' : '—', 'бэктест: +0.914%')}
+            ${_jStatCard('Итого', st ? _jPnlCell(st.totalUsd) : '—', st && st.avgHoldH != null ? `среднее ${st.avgHoldH} ч` : '')}
+          </div>`;
+        }
+
+        const oEl = document.getElementById('labObservations');
+        if (oEl) {
+          if (!j.enough) {
+            oEl.innerHTML = `<div style="color:var(--t2);font-size:12px;">Сделок ${j.closedCount}. Для разрезов нужно минимум 15 — пока копим.</div>`;
+          } else if (!j.observations.length) {
+            oEl.innerHTML = `<div style="color:var(--t2);font-size:12px;">Расхождений не найдено: гейт работает одинаково во всех замеренных условиях. Это тоже результат — сужать его пока не на чем.</div>`;
+          } else {
+            oEl.innerHTML = `<table class="pred-table"><thead><tr><th>Разрез</th><th>Группа</th><th>N</th><th>Win%</th><th>Средний</th><th>Отклонение</th></tr></thead><tbody>
+              ${j.observations.slice(0, 10).map(o => `<tr>
+                <td>${o.dim}</td><td style="text-align:left;color:var(--t1);">${o.group}</td>
+                <td>${o.n}</td><td>${o.winRate}%</td>
+                <td class="${o.avgPct >= 0 ? 'profit-pos' : 'profit-neg'}">${o.avgPct >= 0 ? '+' : ''}${o.avgPct}%</td>
+                <td class="${o.delta >= 0 ? 'profit-pos' : 'profit-neg'}" style="font-weight:700;">${o.delta >= 0 ? '+' : ''}${o.delta} п.п.</td>
+              </tr>`).join('')}</tbody></table>`;
+          }
+        }
+      } catch { }
+    }
 
     /* ═══════════════════ TRADE JOURNAL (вкладка Journal) ═══════════════════ */
     function _jPnlCell(v) {

@@ -4126,6 +4126,131 @@ app.get('/api/scalp-scan', (req, res) => {
   });
 });
 
+// ══════════════════════════════════════════════════════════════════
+// ═══ ЛАБОРАТОРИЯ: фоновое тестирование гейта скальпа ═══
+// Пока включена — открывает paper-сделку на каждый вход по гейту и
+// запоминает полный контекст. Из закрытых сделок собирает наблюдения
+// и готовый текст задания для доработки алгоритма.
+// ══════════════════════════════════════════════════════════════════
+const lab = require('./src/scalp/lab');
+const LAB_FILE = path.join(__dirname, 'scalp-lab.json');
+let labState = { enabled: false, startedAt: 0, budget: 100, trades: [], briefAt: 0 };
+try { labState = { ...labState, ...JSON.parse(fs.readFileSync(LAB_FILE, 'utf8')) }; } catch { }
+function saveLab() {
+  try { fs.writeFileSync(LAB_FILE, JSON.stringify({ ...labState, trades: labState.trades.slice(-800) }, null, 2)); }
+  catch (e) { console.error('[lab] save', e.message); }
+}
+
+// Открываем виртуальные сделки на входах гейта. Отдельно от Paper Bot,
+// чтобы ручные сделки не смешивались со статистикой эксперимента.
+let labTickRunning = false;
+async function labTick() {
+  if (labTickRunning) return;
+  labTickRunning = true;
+  try {
+    let changed = false;
+    const fee = paperLimitFee();
+    const target = paperTargetPct();
+    const slPct = paperBot.slPct != null ? paperBot.slPct : PAPER_CFG.slPct;
+
+    // 1) ведём открытые
+    for (const t of labState.trades.filter(x => !x.closedAt)) {
+      try {
+        const r = await fetch(`https://api.exchange.coinbase.com/products/${t.pair}/ticker`, { headers: { 'User-Agent': 'trading-app/1.0' } });
+        if (!r.ok) continue;
+        const tk = await r.json();
+        const px = parseFloat(tk.bid || tk.price);
+        if (!(px > 0)) continue;
+        t.last = px;
+        const g = (px - t.entry) / t.entry * 100;
+        const close = (exit, why) => {
+          t.exit = exit; t.closedAt = Date.now(); t.why = why;
+          const qty = t.budget * (1 - fee) / t.entry;
+          t.pnl = Math.round((qty * exit * (1 - fee) - t.budget) * 100) / 100;
+          t.pnlPct = Math.round(t.pnl / t.budget * 10000) / 100;
+          t.holdH = Math.round((t.closedAt - t.openedAt) / 3600000 * 10) / 10;
+          changed = true;
+          console.log(`[lab] ${t.coin} ${why}: ${t.pnlPct}%`);
+        };
+        if (g >= target) close(t.entry * (1 + target / 100), 'TP');
+        else if (slPct > 0 && g <= -slPct) close(t.entry * (1 - slPct / 100), 'SL');
+        else if ((Date.now() - t.openedAt) / 3600000 >= 48) close(px, 'TIME');
+      } catch { }
+      await sleep(120);
+    }
+
+    // 2) новые входы по гейту — из рыночного скана
+    if (labState.enabled) {
+      for (const r of scalpScan.results.filter(x => x.pass)) {
+        if (labState.trades.some(t => t.coin === r.coin && !t.closedAt)) continue;
+        const recent = [...labState.trades].reverse().find(t => t.coin === r.coin && t.closedAt);
+        if (recent && Date.now() - recent.closedAt < 4 * 3600 * 1000) continue;  // кулдаун 4ч
+        const ask = await fetchBestAsk(r.pair);
+        if (!(ask > 0)) continue;
+        labState.trades.push({
+          id: `lab_${Date.now()}_${r.coin}`,
+          coin: r.coin, pair: r.pair, entry: ask, last: ask,
+          budget: labState.budget, openedAt: Date.now(),
+          // полный контекст входа — по нему потом ищем закономерности
+          ctx: {
+            score: r.score, rangePos: r.rangePos, rsi: r.rsi,
+            rsiMin: r.checks && r.checks[1] ? parseFloat((r.checks[1].v.match(/мин 1ч ([\d.]+)/) || [])[1]) : null,
+            spreadPct: r.spreadPct, vol24: r.vol24, volX: r.volX,
+            btcDist: scalpScan.regime ? scalpScan.regime.distPct : null,
+            hourUtc: new Date().getUTCHours(),
+          },
+        });
+        changed = true;
+        console.log(`[lab] вход ${r.coin} @ $${ask} (балл ${r.score})`);
+      }
+    }
+    if (changed) saveLab();
+  } catch (e) { console.error('[lab]', e.message); }
+  finally { labTickRunning = false; }
+}
+setInterval(labTick, 60_000);
+setTimeout(labTick, 90_000);
+
+app.get('/api/lab', (req, res) => {
+  const closed = labState.trades.filter(t => t.closedAt);
+  const open = labState.trades.filter(t => !t.closedAt).map(t => ({
+    ...t, pnlPct: t.last ? Math.round(((t.last / t.entry - 1) * 100 - paperLimitFee() * 200) * 100) / 100 : null,
+  }));
+  const since = labState.startedAt ? Math.round((Date.now() - labState.startedAt) / 3600000) : 0;
+  const { base, observations, enough } = lab.findObservations(closed);
+  res.json({
+    success: true,
+    enabled: labState.enabled, startedAt: labState.startedAt, hoursRunning: since,
+    budget: labState.budget,
+    open, closedCount: closed.length,
+    closed: closed.slice(-40).reverse(),
+    stats: base, observations, enough,
+    brief: lab.buildBrief(closed, { since: since ? `${since} ч` : null }),
+  });
+});
+
+app.post('/api/lab/config', (req, res) => {
+  const { enabled, budget } = req.body || {};
+  if (enabled !== undefined) {
+    const on = !!enabled;
+    if (on && !labState.enabled) labState.startedAt = labState.startedAt || Date.now();
+    labState.enabled = on;
+  }
+  if (budget !== undefined) {
+    const b = parseFloat(budget);
+    if (b >= 10 && b <= 100000) labState.budget = b;
+  }
+  saveLab();
+  res.json({ success: true, enabled: labState.enabled, budget: labState.budget });
+});
+
+app.delete('/api/lab/trades', (req, res) => {
+  labState.trades = [];
+  labState.startedAt = labState.enabled ? Date.now() : 0;
+  saveLab();
+  res.json({ success: true });
+});
+
 // ── Одноразовый Telegram-алерт по scalp-гейту (отдельная кнопка) ──
 const SCALP_WATCH_FILE = path.join(__dirname, 'scalp-watch.json');
 let scalpWatchArmed = false;
