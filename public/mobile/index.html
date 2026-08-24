@@ -4461,9 +4461,9 @@
         if (rebEl) {
           if (j.rebuilding) {
             rebEl.style.display = '';
-            rebEl.textContent = '⟳ пересборка…';
+            rebEl.textContent = `⟳ ${j.rebuildPct ?? 0}%` + (j.rebuildPhase ? ` ${j.rebuildPhase}` : '');
             rebEl.style.color = 'var(--yellow)';
-            if (!window._tlRebPollM) { window._tlRebPollM = true; setTimeout(() => { window._tlRebPollM = false; loadTopLosersM(); }, 12000); }
+            if (!window._tlRebPollM) { window._tlRebPollM = true; setTimeout(() => { window._tlRebPollM = false; loadTopLosersM(); }, 4000); }
           } else if (rebEl.style.display !== 'none') {
             rebEl.textContent = '✓ обновлён';
             rebEl.style.color = '#00e5a0';

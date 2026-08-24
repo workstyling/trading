@@ -1139,6 +1139,8 @@ app.get('/api/cryptorank/top-movers', async (req, res) => {
 // ══════════ TOP LOSERS 30d (mcap ≥ $30M, торгуются на Coinbase) ══════════
 let topLosersCache = { data: [], fullAt: 0, priceAt: 0 };
 let topLosersBuilding = false;
+// Прогресс пересборки: 0-80% — сбор списка, 80-90% — свинг, 90-100% — скальп
+let tlProgress = { pct: 0, phase: '' };
 let mcapCache = { map: {}, at: 0 };
 // Кеш на диске — после рестарта таблица доступна сразу, без ожидания первой сборки
 const TOP_LOSERS_FILE = path.join(__dirname, 'top-losers-cache.json');
@@ -1154,15 +1156,25 @@ function saveTopLosersCache() {
 
 async function getMcapMap() {
   if (Date.now() - mcapCache.at < 60 * 60 * 1000 && Object.keys(mcapCache.map).length) return mcapCache.map;
-  const data = await cryptorankFetch('/currencies', { limit: 1000, sortBy: 'rank', sortDirection: 'ASC' });
-  const map = {};
-  (data.data || []).forEach(c => {
-    const sym = (c.symbol || '').toUpperCase();
-    const mc = parseFloat(c.marketCap ?? c.values?.USD?.marketCap ?? 0);
-    const px = parseFloat(c.price ?? c.values?.USD?.price ?? 0);
-    if (sym && mc && !map[sym]) map[sym] = { mc, px }; // px нужен для проверки коллизий тикеров
-  });
-  if (Object.keys(map).length) mcapCache = { map, at: Date.now() };
+  try {
+    const data = await cryptorankFetch('/currencies', { limit: 1000, sortBy: 'rank', sortDirection: 'ASC' });
+    const map = {};
+    (data.data || []).forEach(c => {
+      const sym = (c.symbol || '').toUpperCase();
+      const mc = parseFloat(c.marketCap ?? c.values?.USD?.marketCap ?? 0);
+      const px = parseFloat(c.price ?? c.values?.USD?.price ?? 0);
+      if (sym && mc && !map[sym]) map[sym] = { mc, px }; // px нужен для проверки коллизий тикеров
+    });
+    if (Object.keys(map).length) mcapCache = { map, at: Date.now() };
+  } catch (e) {
+    // CryptoRank отдаёт 401 при исчерпании лимита ключа. Раньше это роняло
+    // всю пересборку, и список молча устаревал. Работаем на прошлой карте:
+    // капитализации меняются медленно, для фильтра mcap ≥ $30M этого хватает.
+    const have = Object.keys(mcapCache.map).length;
+    if (!have) throw e;
+    const ageMin = Math.round((Date.now() - mcapCache.at) / 60000);
+    console.warn(`[mcap] ${e.message} — работаю на кэше (${have} монет, возраст ${ageMin} мин)`);
+  }
   return mcapCache.map;
 }
 
@@ -1223,8 +1235,12 @@ async function rebuildTopLosers() {
       const old = topLosersCache.data.find(x => x.coin === sym);
       if (old) out.push(old);
     };
+    // Прогресс по трём фазам: список занимает основное время, оценки — хвост
+    let doneCands = 0;
     for (const id of cands) {
       const sym = id.replace('-USD', '');
+      doneCands++;
+      tlProgress = { pct: Math.round(doneCands / cands.length * 80), phase: 'список' };
       try {
         const r = await fetch(`${CB}/products/${id}/candles?granularity=86400&start=${start}&end=${end}`, H);
         if (!r.ok) { keepOld(sym); continue; }
@@ -1271,9 +1287,12 @@ async function rebuildTopLosers() {
     saveTopLosersCache();
     console.log(`[top-losers] rebuilt: ${cands.length} candidates (mcap≥30M), top20 saved`);
     // Reversal Score считаем после сборки списка — нужны часовые свечи по каждой монете
+    tlProgress = { pct: 80, phase: 'свинг' };
     try { await attachReversal(topLosersCache.data); saveTopLosersCache(); } catch (e) { console.error('[reversal]', e.message); }
     // Скальп сразу следом — иначе после пересборки колонка пустует до своего интервала
+    tlProgress = { pct: 90, phase: 'скальп' };
     try { await attachScalp(); } catch (e) { console.error('[scalp]', e.message); }
+    tlProgress = { pct: 100, phase: '' };
   } catch (e) { console.error('[top-losers]', e.message); }
   finally { topLosersBuilding = false; }
 }
@@ -1322,6 +1341,7 @@ app.get('/api/top-losers', async (req, res) => {
     res.json({
       success: true, coins: topLosersCache.data, updatedAt: topLosersCache.priceAt, rebuiltAt: topLosersCache.fullAt,
       rebuilding: topLosersBuilding, building: topLosersBuilding && !topLosersCache.data.length,
+      rebuildPct: tlProgress.pct, rebuildPhase: tlProgress.phase,
       buyWatch: buyWatchArmed, scalpWatch: scalpWatchArmed,
       paperBudget: paperBot.budgetUsd,
       paperOpen: paperBot.open.map(p => ({
@@ -3955,7 +3975,10 @@ async function attachReversal(list) {
   // Снимок массива: refreshTopLosersPrices сортирует его на месте каждые 30с,
   // и обход «живого» массива перескакивал элементы — часть монет оставалась без оценки.
   // Объекты те же, поэтому проставленные поля попадают в кэш.
-  for (const c of [...list]) {
+  const snapR = [...list];
+  let doneR = 0;
+  for (const c of snapR) {
+    if (topLosersBuilding) tlProgress = { pct: 80 + Math.round(++doneR / snapR.length * 10), phase: 'свинг' };
     try {
       const s = await reversal.fetchReversalSignals(c.coin);
       if (!s) { c.rv = null; c.rvSig = null; continue; }
@@ -3982,7 +4005,10 @@ async function attachScalp() {
   scalpRunning = true;
   try {
     // Снимок — по той же причине, что и в attachReversal (массив сортируется на месте)
-    for (const c of [...topLosersCache.data]) {
+    const snapS = [...topLosersCache.data];
+    let doneS = 0;
+    for (const c of snapS) {
+      if (topLosersBuilding) tlProgress = { pct: 90 + Math.round(++doneS / snapS.length * 10), phase: 'скальп' };
       try {
         const s = await scalp.fetchScalpSignals(c.coin);
         if (!s) { c.sc = null; continue; }

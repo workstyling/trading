@@ -13141,9 +13141,11 @@ Requirements:
         if (rebEl) {
           if (j.rebuilding) {
             rebEl.style.display = '';
-            rebEl.textContent = '⟳ пересборка…';
+            // Показываем процент и фазу: сбор списка занимает основное время
+            rebEl.textContent = `⟳ пересборка ${j.rebuildPct ?? 0}%` + (j.rebuildPhase ? ` · ${j.rebuildPhase}` : '');
             rebEl.style.color = 'var(--yellow)';
-            if (!window._tlRebPoll) { window._tlRebPoll = true; setTimeout(() => { window._tlRebPoll = false; loadTopLosers(); }, 12000); }
+            // Во время пересборки опрашиваем чаще, чтобы процент реально бежал
+            if (!window._tlRebPoll) { window._tlRebPoll = true; setTimeout(() => { window._tlRebPoll = false; loadTopLosers(); }, 4000); }
           } else if (rebEl.style.display !== 'none') {
             rebEl.textContent = '✓ список обновлён';
             rebEl.style.color = '#00e5a0';
