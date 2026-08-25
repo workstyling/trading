@@ -4276,10 +4276,16 @@ async function labTick() {
       const done = labState.trades.filter(t => t.closedAt && !t.shadow);
       const { base, observations } = lab.findObservations(done);
       labState.generations = labState.generations || [];
+      // Состав гейта на момент закрытия поколения. Без него в разделе «уже
+      // внедрено» стояло «код гейта изменился» и ни слова о том, ЧТО именно
+      // изменилось — а именно этот раздел должен не давать предлагать одно и
+      // то же по кругу. Снимок ведётся непрерывно, поэтому здесь под рукой
+      // ещё СТАРЫЙ состав, до правки.
       labState.generations.push({
         at: Date.now(), auto: true,
         note: 'Gate code changed (detected automatically)',
         from: labState.fingerprint, to: fp,
+        gateWas: labState.gateSnapshot || null,
         trades: done.length, stats: base, observations: (observations || []).slice(0, 10),
       });
       labState.generations = labState.generations.slice(-20);
@@ -4289,6 +4295,16 @@ async function labTick() {
       console.log(`[lab] гейт изменён (${labState.fingerprint} → ${fp}): поколение #${labState.generations.length} закрыто, ${done.length} сделок в архиве`);
     }
     if (fp && fp !== labState.fingerprint) { labState.fingerprint = fp; changed = true; }
+    // Держим снимок живого гейта в актуальном состоянии: он же станет
+    // «как было» при следующей смене поколения
+    const liveChecks = (scalpScan.results[0] && scalpScan.results[0].checks || []).map(c => c.en || c.k);
+    if (liveChecks.length) {
+      const snap = JSON.stringify(liveChecks);
+      if (JSON.stringify(labState.gateSnapshot || null) !== snap) {
+        labState.gateSnapshot = liveChecks;
+        changed = true;
+      }
+    }
     const fee = paperLimitFee();
     const target = paperTargetPct();
     const slPct = paperBot.slPct != null ? paperBot.slPct : PAPER_CFG.slPct;

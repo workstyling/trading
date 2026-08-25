@@ -293,6 +293,19 @@ function buildBrief(trades, meta) {
       const dt = new Date(g.at).toISOString().slice(0, 16).replace('T', ' ');
       lines.push(`**${dt} UTC** — generation ${gens.length - Math.min(6, gens.length) + k + 1}, ${g.trades} trades collected` +
         (g.stats ? `, win ${g.stats.winRate}%, ${g.stats.avgPct >= 0 ? '+' : ''}${g.stats.avgPct}% per trade` : ''));
+      // Что конкретно изменилось в гейте. Без этого раздел «уже внедрено»
+      // говорил «код менялся» и не мешал предложить ровно то же ещё раз.
+      const was = g.gateWas || null;
+      const now = (meta && meta.liveChecks) || null;
+      if (was && now) {
+        const added = now.filter(x => !was.includes(x));
+        const removed = was.filter(x => !now.includes(x));
+        added.forEach(x => lines.push(`  - ADDED condition: ${x}`));
+        removed.forEach(x => lines.push(`  - REMOVED condition: ${x}`));
+        if (!added.length && !removed.length) {
+          lines.push('  - same conditions; thresholds or scoring weights changed');
+        }
+      }
       if (g.note) {
         g.note.split('\n').filter(Boolean).forEach(l => lines.push(`  - ${l}`));
       } else if (g.observations && g.observations.length) {
