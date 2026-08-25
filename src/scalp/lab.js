@@ -135,14 +135,22 @@ function buildBrief(trades, meta) {
   lines.push('');
   lines.push('## Где живёт код');
   lines.push('');
-  lines.push('- `src/scalp/index.js` — `calcScalpScore()`: гейт из 4 условий и баллы');
+  lines.push('- `src/scalp/index.js` — `calcScalpScore()`: условия гейта и баллы');
   lines.push('- `src/scalp/scanner.js` — `applyRegime()`: жёсткое условие по BTC');
   lines.push('- `src/scalp/backtest.js`, `exits.js`, `research.js` — как перепроверять на истории');
   lines.push('');
-  lines.push('Текущий гейт: позиция в 4ч диапазоне < 25%, RSI 5m вышел из перепроданности');
-  lines.push('(минимум за час < 30 и текущий выше минимума на 3+), цена выше EMA9 (5m),');
-  lines.push('объём ≥ $500K, BTC выше EMA20 (1ч). Цель +1.38%, аварийный стоп −6%.');
-  lines.push('');
+  // Условия читаются из живого расчёта, а не вписаны сюда руками: иначе
+  // после правки алгоритма задание описывало бы прошлую версию.
+  const live = (meta && meta.liveChecks) || [];
+  if (live.length) {
+    lines.push(`Текущий гейт — ${live.length} условий (снято с работающего сканера):`);
+    lines.push('');
+    live.forEach(k => lines.push(`- ${k}`));
+    lines.push('');
+    if (meta.fingerprint) lines.push(`Отпечаток кода гейта: \`${meta.fingerprint}\``);
+    if (meta.targetPct) lines.push(`Цель +${meta.targetPct}%, аварийный стоп −${meta.slPct}%.`);
+    lines.push('');
+  }
 
   // История поколений: что уже внедрено — чтобы не предлагать то же самое
   const gens = (meta && meta.generations) || [];

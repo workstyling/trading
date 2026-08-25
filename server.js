@@ -4142,6 +4142,18 @@ app.get('/api/scalp-scan', (req, res) => {
 // ══════════════════════════════════════════════════════════════════
 const lab = require('./src/scalp/lab');
 const LAB_FILE = path.join(__dirname, 'scalp-lab.json');
+
+// Отпечаток кода гейта. Любая правка в этих файлах меняет хэш — значит
+// собранные до неё сделки относятся к прошлой версии алгоритма и мешать их
+// со свежими нельзя. Раньше это надо было отмечать кнопкой вручную.
+function gateFingerprint() {
+  try {
+    const crypto = require('crypto');
+    const src = ['src/scalp/index.js', 'src/scalp/scanner.js']
+      .map(f => fs.readFileSync(path.join(__dirname, f), 'utf8')).join('\n');
+    return crypto.createHash('sha1').update(src).digest('hex').slice(0, 12);
+  } catch { return null; }
+}
 let labState = { enabled: false, startedAt: 0, budget: 100, trades: [], briefAt: 0 };
 try { labState = { ...labState, ...JSON.parse(fs.readFileSync(LAB_FILE, 'utf8')) }; } catch { }
 function saveLab() {
@@ -4157,6 +4169,27 @@ async function labTick() {
   labTickRunning = true;
   try {
     let changed = false;
+
+    // Код гейта изменился → закрываем поколение автоматически. Сделки,
+    // собранные по прошлой версии, уходят в архив, счёт начинается заново.
+    const fp = gateFingerprint();
+    if (fp && labState.fingerprint && fp !== labState.fingerprint) {
+      const done = labState.trades.filter(t => t.closedAt && !t.shadow);
+      const { base, observations } = lab.findObservations(done);
+      labState.generations = labState.generations || [];
+      labState.generations.push({
+        at: Date.now(), auto: true,
+        note: 'Код гейта изменён (обнаружено автоматически)',
+        from: labState.fingerprint, to: fp,
+        trades: done.length, stats: base, observations: (observations || []).slice(0, 10),
+      });
+      labState.generations = labState.generations.slice(-20);
+      labState.trades = labState.trades.filter(t => !t.closedAt).map(t => ({ ...t, gen: 'old' }));
+      labState.startedAt = Date.now();
+      changed = true;
+      console.log(`[lab] гейт изменён (${labState.fingerprint} → ${fp}): поколение #${labState.generations.length} закрыто, ${done.length} сделок в архиве`);
+    }
+    if (fp && fp !== labState.fingerprint) { labState.fingerprint = fp; changed = true; }
     const fee = paperLimitFee();
     const target = paperTargetPct();
     const slPct = paperBot.slPct != null ? paperBot.slPct : PAPER_CFG.slPct;
@@ -4252,10 +4285,17 @@ app.get('/api/lab', (req, res) => {
     closed: closed.slice(-40).reverse(),
     stats: base, observations, enough, conditions,
     generations: (labState.generations || []).slice(-10).reverse(),
+    fingerprint: labState.fingerprint,
     brief: lab.buildBrief(closed, {
       since: since ? `${since} ч` : null,
       generations: labState.generations || [],
       conditions,
+      // Условия снимаем с работающего сканера — задание всегда описывает
+      // ту версию алгоритма, которая реально крутится
+      liveChecks: (scalpScan.results[0] && scalpScan.results[0].checks || []).map(c => c.k),
+      fingerprint: labState.fingerprint,
+      targetPct: paperTargetPct(),
+      slPct: paperBot.slPct != null ? paperBot.slPct : PAPER_CFG.slPct,
     }),
   });
 });
