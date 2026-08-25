@@ -6270,6 +6270,8 @@
           <div class="pred-controls" style="display:flex;align-items:center;gap:10px;">
             <span style="font-size:11px;color:var(--t2);">Budget $</span>
             <input type="number" id="paperBudget" value="100" min="10" step="10" class="settings-input" style="width:70px;" onchange="savePaperConfig()">
+            <span style="font-size:11px;color:var(--t2);" title="Цель эксперимента. Отвязана от Sell Markup — тот управляет реальными продажами. Замер на 168 входах: цель +0.6% берётся в 96% случаев, но комиссия съедает 42% и остаётся +0.142%; цель +1.38% даёт +0.844%; +2% примерно вдвое больше и держится на всех трёх отрезках. Более высокие цели в замере лучше, но это во многом заслуга растущей недели.">Цель %</span>
+            <input type="number" id="paperTarget" value="2" min="0.3" max="20" step="0.1" class="settings-input" style="width:56px;" onchange="savePaperConfig()">
             <span style="font-size:11px;color:var(--t2);" title="Аварийный стоп. Замер на 289 входах: без стопа +1.029% на сделку (худшая −8.0%), стоп −6% даёт +0.914% и обрезает худшую до −6.3%, стоп −3% уже только +0.717%. Близкий стоп режет будущих победителей — 98% сделок доходят до цели за сутки. 0 = выключить.">Аварийный стоп %</span>
             <input type="number" id="paperSl" value="6" min="0" max="30" step="0.5" class="settings-input" style="width:56px;" onchange="savePaperConfig()">
             <span style="font-size:11px;color:var(--t2);" title="Максимальное время удержания в часах. 0 = без ограничения, сделка не закроется сама по времени.">Часы</span>
@@ -14521,7 +14523,7 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
       try {
         await fetch('/api/paper/config', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ budgetUsd: b, entryMode: m, slPct: isNaN(sl) ? undefined : sl, maxHoldH: isNaN(hh) ? undefined : hh })
+          body: JSON.stringify({ budgetUsd: b, entryMode: m, slPct: isNaN(sl) ? undefined : sl, maxHoldH: isNaN(hh) ? undefined : hh, targetPct: isNaN(tp) ? undefined : tp })
         });
         loadPaper();
       } catch { }
@@ -14553,6 +14555,8 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
         if (mEl && document.activeElement !== mEl && j.entryMode) mEl.value = j.entryMode;
         const slEl = document.getElementById('paperSl');
         if (slEl && document.activeElement !== slEl && j.slPct != null) slEl.value = j.slPct;
+        const tpEl = document.getElementById('paperTarget');
+        if (tpEl && document.activeElement !== tpEl && j.targetPct != null) tpEl.value = j.targetPct;
         const hhEl = document.getElementById('paperHold');
         if (hhEl && document.activeElement !== hhEl && j.maxHoldH != null) hhEl.value = j.maxHoldH;
         // Экономика сделки: цель и стоп из настроек, комиссия лимитки с обеих сторон

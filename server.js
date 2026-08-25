@@ -3690,9 +3690,18 @@ function paperLimitFee() {
   const s = loadSettings();
   return (parseFloat(s.tradeFee) || 0.06) / 100;
 }
+// Цель paper/лаборатории отвязана от Sell Markup: тот управляет РЕАЛЬНЫМИ
+// продажами, менять его ради эксперимента нельзя.
+// Замер на 168 входах текущего гейта (стоп −6%, комиссия круга 0.25%):
+//   цель +0.6%  → доходят 96%, но ожидание всего +0.142% (комиссия ест 42%)
+//   цель +1.38% → 95%, +0.844%
+//   цель +2.0%  → ожидание примерно вдвое выше, устойчиво 3/3 отрезка
+//   цель +5%    → +3.067%, но это во многом заслуга растущей недели:
+//                 на третьем отрезке результат падает в восемь раз
+// Берём 2.0% — вдвое лучше прежнего и не опирается на бычий рынок.
 function paperTargetPct() {
-  const s = loadSettings();
-  return parseFloat(s.sellMarkup) || 1.38;
+  if (paperBot.targetPct != null) return paperBot.targetPct;
+  return 2.0;
 }
 
 // PnL как в реальной сделке: купили лимиткой по ask, продаём лимиткой — комиссия с обеих сторон
@@ -3904,6 +3913,10 @@ app.post('/api/paper/config', (req, res) => {
   if (req.body.maxHoldH !== undefined) {
     const v = parseFloat(req.body.maxHoldH);
     if (v >= 0 && v <= 8760) paperBot.maxHoldH = v;   // 0 = без лимита времени
+  }
+  if (req.body.targetPct !== undefined) {
+    const v = parseFloat(req.body.targetPct);
+    if (v >= 0.3 && v <= 20) paperBot.targetPct = v;  // цель эксперимента, не Sell Markup
   }
   savePaperBot();
   res.json({
