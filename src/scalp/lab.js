@@ -482,10 +482,17 @@ function buildBrief(trades, meta) {
     lines.push('| Condition | Trades missing it | Wins | Average | vs passers | Verdict |');
     lines.push('|---|---|---|---|---|---|');
     for (const c of ready) {
-      lines.push(`| ${c.cond} | ${c.n} | ${c.winRate}% | ${d(c.avgPct)}% | **${d(c.delta)} pp** | ${c.verdict} |`);
+      lines.push(`| ${c.cond} | ${c.n} | ${c.winRate}% | ${d(c.avgPct)}% | **${d(c.delta)} pp** | ${c.verdict}${c.skewH != null && c.skewed ? ` (${c.skewH}h apart)` : ''} |`);
     }
     lines.push('');
-    const useless = ready.filter(c => c.verdict !== 'earns its place');
+    const skewed = ready.filter(c => c.skewed);
+    if (skewed.length) {
+      lines.push('**Ignore the rows marked "not comparable"** — that control group opened on');
+      lines.push('average more than three hours away from the trades that passed, so the');
+      lines.push('difference between them is the market moving in between, not the condition.');
+      lines.push('');
+    }
+    const useless = ready.filter(c => c.verdict !== 'earns its place' && !c.skewed);
     if (useless.length) {
       lines.push('**Candidates to relax:**');
       useless.forEach(c => lines.push(`- \`${c.cond}\` — without it ${d(c.delta)} pp. Check on history what ` +
@@ -573,9 +580,15 @@ function buildBrief(trades, meta) {
  * сделки идут не хуже прошедших, значит это условие ничего не добавляет и
  * только режет поток входов. Понять это по одним лишь прошедшим невозможно.
  */
+function medianOpened(arr) {
+  const ts = (arr || []).map(t => t.openedAt).filter(Number.isFinite).sort((a, b) => a - b);
+  return ts.length ? ts[Math.floor(ts.length / 2)] : NaN;
+}
+
 function checkConditions(passed, shadows, minN = 6) {
   const base = agg(passed);
   if (!base) return [];
+  const basisAt = medianOpened(passed);
   const byMissing = {};
   for (const t of shadows) {
     const k = t.missing || '—';
@@ -586,11 +599,20 @@ function checkConditions(passed, shadows, minN = 6) {
       const a = agg(arr);
       if (!a || a.n < minN) return { cond, n: a ? a.n : 0, enough: false };
       const delta = Math.round((a.avgPct - base.avgPct) * 1000) / 1000;
+      // Контроль и прошедшие должны быть из ОДНОГО периода. Если одна группа
+      // систематически старше другой, разница между ними — это движение рынка
+      // за разницу во времени, а не качество условия. Замерено вживую: у
+      // прошедших медианный возраст был 5.3 ч, у контроля 1.8 ч, и на падающем
+      // рынке контроль от одного этого выглядел лучше на полтора процента.
+      const skewH = Math.abs(medianOpened(arr) - basisAt) / 3600000;
+      const skewed = Number.isFinite(skewH) && skewH > 3;
       return {
         cond, enough: true, n: a.n, winRate: a.winRate, avgPct: a.avgPct,
         baseWin: base.winRate, baseAvg: base.avgPct, delta,
+        skewH: Number.isFinite(skewH) ? Math.round(skewH * 10) / 10 : null, skewed,
         // условие оправдано, если без него заметно хуже
-        verdict: delta <= -0.15 ? 'earns its place' : delta >= 0.15 ? 'hurts' : 'no effect',
+        verdict: skewed ? 'not comparable (different period)'
+          : delta <= -0.15 ? 'earns its place' : delta >= 0.15 ? 'hurts' : 'no effect',
       };
     })
     .sort((a, b) => (b.n || 0) - (a.n || 0));
