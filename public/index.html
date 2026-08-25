@@ -1375,12 +1375,16 @@
       align-items: center;
       gap: 16px;
       margin-bottom: 10px;
-      /* Перенос вместо обрезки: на узком окне поле Chat ID уезжало за край
-         панели и становилось недоступным */
+      /* Перенос вместо обрезки: на узком окне поля уезжали за край панели */
       flex-wrap: wrap;
       row-gap: 8px;
     }
-    #tradingSettings { flex-wrap: wrap; row-gap: 8px; gap: 0 6px; }
+    /* Настройки занимают всю оставшуюся ширину, а не жмутся к балансу слева */
+    #tradingSettings {
+      flex: 1 1 auto;
+      flex-wrap: wrap; row-gap: 8px; gap: 0 6px;
+      justify-content: flex-end;
+    }
 
     /* Комиссии — одна плашка вместо двух подписанных полей: они только
        показываются и приходят из тарифа Coinbase */
@@ -2343,6 +2347,16 @@
     .ss-track { position: relative; width: 40px; height: 3px; border-radius: 2px; background: rgba(255,255,255,0.09); }
     .ss-track u { position: absolute; left: 0; top: 0; bottom: 0; width: 25%; background: rgba(74,222,128,0.22); border-radius: 2px; }
     .ss-track s { position: absolute; top: -2px; width: 3px; height: 7px; border-radius: 1px; margin-left: -1.5px; }
+
+    /* Подписанные кнопки действий в таблице скальпа */
+    .ss-act {
+      padding: 3px 7px; border: 1px solid; border-radius: 5px;
+      font-size: 9.5px; font-weight: 600; white-space: nowrap;
+      cursor: pointer; transition: filter .15s, opacity .15s;
+    }
+    .ss-act + .ss-act { margin-left: 4px; }
+    .ss-act:hover:not(:disabled) { filter: brightness(1.35); }
+    .ss-act:disabled { cursor: default; opacity: 0.7; }
     .tg-refresh-btn {
       background: transparent;
       border: 1px solid rgba(74,222,128,0.3);
@@ -5984,10 +5998,12 @@
               <span class="fee-chip" id="feeChip" title="Комиссии из твоего тарифа Coinbase: лимитный ордер / рыночный. Обновляются сами по 30-дневному объёму.">
                 fee <b id="feeChipVal">0.06 / 0.125</b>%
               </span>
-              <span class="settings-label" title="Токен Telegram-бота для алертов">TG</span>
-              <input type="password" id="tgToken" class="settings-input" style="width:96px;" autocomplete="off">
-              <span class="settings-label" title="Твой Telegram chat id">Chat</span>
-              <input type="text" id="tgChat" class="settings-input" style="width:82px;" autocomplete="off">
+              <!-- Токен и chat id Telegram убраны из панели: их задают один раз,
+                   а место они занимали в строке, на которую смотрят при торговле.
+                   Поля скрыты, а не удалены — значения по-прежнему читаются и
+                   сохраняются на сервер тем же кодом. -->
+              <input type="hidden" id="tgToken" autocomplete="off">
+              <input type="hidden" id="tgChat" autocomplete="off">
             </div>
           </div>
           <div id="buyPanel">
@@ -6447,13 +6463,21 @@
       const tradeFee = parseFloat(document.getElementById('tradeFee').value) || 0.06;
       const marketFee = parseFloat(document.getElementById('marketFee').value) || 0.125;
       const bidLevel = Math.min(0, Math.max(-20, parseInt(document.getElementById('bidLevelInput')?.value, 10) || 0));
-      const telegramToken = document.getElementById('tgToken')?.value?.trim() ?? undefined;
-      const telegramChat = document.getElementById('tgChat')?.value?.trim() ?? undefined;
+      // Пустое значение НЕ отправляем: сервер отличает undefined (не трогать)
+      // от пустой строки (стереть), а скрытые поля пусты до того, как ответит
+      // /get-settings. Сохранение наценки в этот момент стирало бы токен
+      // Telegram — и, поскольку полей на экране больше нет, вернуть его было бы
+      // нечем.
+      const tgT = document.getElementById('tgToken')?.value?.trim();
+      const tgC = document.getElementById('tgChat')?.value?.trim();
+      const body = { sellMarkup, tradeFee, marketFee, bidLevel };
+      if (tgT) body.telegramToken = tgT;
+      if (tgC) body.telegramChat = tgC;
       try {
         const res = await fetch('/save-settings', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sellMarkup, tradeFee, marketFee, bidLevel, telegramToken, telegramChat })
+          body: JSON.stringify(body)
         });
         const data = await res.json();
         if (data.success) {
@@ -13210,9 +13234,10 @@ Requirements:
               <td style="font-size:11px;color:#889;">${x.rsi ?? '—'}</td>
               <td style="font-size:11px;color:${sprCol};">${x.spreadPct != null ? x.spreadPct + '%' : '—'}</td>
               <td class="tg-vol" style="font-size:11px;">${fmtVolShort(x.vol24)}</td>
+              <!-- Кнопки подписаны: два эмодзи без слов не говорили, что делают -->
               <td style="white-space:nowrap;">
-                <button onclick="event.stopPropagation();openPaperFromList('${x.coin}','${x.pair}')" ${inPaper.has(x.coin) ? 'disabled' : ''} title="Paper trade по ${x.coin}" style="padding:2px 5px;border:1px solid ${inPaper.has(x.coin) ? 'rgba(0,229,160,0.5)' : 'rgba(255,255,255,0.18)'};border-radius:5px;background:${inPaper.has(x.coin) ? 'rgba(0,229,160,0.15)' : 'transparent'};color:${inPaper.has(x.coin) ? '#00e5a0' : '#778'};font-size:10px;cursor:pointer;">📝</button>
-                <button onclick="event.stopPropagation();showLimitAdvice('${x.coin}')" title="Куда ставить лимитку" style="padding:2px 5px;border:1px solid rgba(245,197,24,0.3);border-radius:5px;background:rgba(245,197,24,0.07);color:#f5c518;font-size:10px;cursor:pointer;">🎯</button>
+                <button class="ss-act" onclick="event.stopPropagation();openPaperFromList('${x.coin}','${x.pair}')" ${inPaper.has(x.coin) ? 'disabled' : ''} title="${inPaper.has(x.coin) ? `${x.coin} уже в paper-портфеле` : `Открыть виртуальную сделку по ${x.coin}: как будто купил лимиткой по лучшему ask`}" style="border-color:${inPaper.has(x.coin) ? 'rgba(0,229,160,0.5)' : 'rgba(255,255,255,0.18)'};background:${inPaper.has(x.coin) ? 'rgba(0,229,160,0.15)' : 'transparent'};color:${inPaper.has(x.coin) ? '#00e5a0' : '#889'};">📝 Paper</button>
+                <button class="ss-act" onclick="event.stopPropagation();showLimitAdvice('${x.coin}')" title="Куда ставить лимитку по ${x.coin}: расчёт по стакану" style="border-color:rgba(245,197,24,0.3);background:rgba(245,197,24,0.07);color:#f5c518;">🎯 Лимит</button>
               </td>
             </tr>`;
           }).join('')}</tbody></table>`;
