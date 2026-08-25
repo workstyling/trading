@@ -2273,26 +2273,11 @@
       display: inline-flex; align-items: center; gap: 4px;
       font-size: 9px; color: var(--yellow);
     }
-    /* Режим рынка: единственный фактор, давший 18 п.п. разницы в бэктесте */
-    .ss-regime {
-      display: inline-flex; align-items: center; gap: 5px;
-      height: 24px; padding: 0 9px; border-radius: 7px;
-      font-size: 10px; font-weight: 600; white-space: nowrap;
-      border: 1px solid rgba(255,255,255,0.10);
-      background: rgba(255,255,255,0.035); color: #8a94a6;
-      cursor: help;
-    }
-    /* Точка-светофор вместо длинной подписи — цифры ушли в подсказку */
-    .ss-regime::before {
-      content: ''; width: 6px; height: 6px; border-radius: 50%;
-      background: currentColor; opacity: .85; flex: 0 0 auto;
-    }
-    .ss-found {
-      font-size: 10px; color: #7c8698; white-space: nowrap;
-      overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;
-    }
-    .ss-regime.ok { border-color: rgba(0,229,160,0.45); background: rgba(0,229,160,0.11); color: #00e5a0; }
-    .ss-regime.bad { border-color: rgba(255,90,90,0.45); background: rgba(255,90,90,0.10); color: #ff6b6b; }
+    /* Режим рынка — единственный фактор, давший 18 п.п. разницы в бэктесте.
+       Показываем точкой у названия: состояние двоичное, подпись съедала строку. */
+    .ss-dot { font-size: 11px; line-height: 1; color: #5c6674; cursor: help; align-self: center; }
+    .ss-dot.ok { color: #00e5a0; text-shadow: 0 0 7px rgba(0,229,160,0.55); }
+    .ss-dot.bad { color: #ff6b6b; text-shadow: 0 0 7px rgba(255,90,90,0.55); }
     #ssBody .tg-table th { text-align: center; }
     #ssBody .tg-table th:nth-child(1) { text-align: left; }
     .tg-refresh-btn {
@@ -6112,6 +6097,9 @@
           <div class="tl-head">
             <div class="tl-head-top">
               <span class="tl-name" style="color:#4cc9f0;">⚡ Скальп по рынку</span>
+              <!-- Режим рынка — точка у названия: плашка занимала место в строке
+                   контролов ради одного двоичного состояния -->
+              <span id="ssRegime" class="ss-dot" title="Режим рынка">●</span>
               <span class="tl-sub">горизонт 2–6 ч · цель +1.38%</span>
               <span class="tl-status">
                 <span id="ssScanning" class="tl-rebuild" style="display:none;">⟳ скан <span id="ssProgress">0</span>%</span>
@@ -6119,7 +6107,6 @@
               </span>
             </div>
             <div class="tl-bar">
-              <span id="ssRegime" class="ss-regime" title="Режим рынка. Замерено на 1119 сигналах: при BTC выше EMA20 (1ч) — 72% побед и +0.239% на сделку, ниже — 54% и −0.211%. Ниже EMA20 входы не выдаются.">режим —</span>
               <label class="tl-money" id="tlMoneyBox" title="Сумма paper-сделки в долларах. Сохраняется сразу при вводе, применяется ко всем новым сделкам.">
                 <span class="tl-money-lbl">📝 $</span>
                 <input type="number" id="tlPaperBudget" value="100" min="10" max="100000" step="10"
@@ -13163,9 +13150,8 @@ Requirements:
         const rg = document.getElementById('ssRegime');
         if (rg) {
           const m = j.regime;
-          rg.className = 'ss-regime' + (m ? (m.above ? ' ok' : ' bad') : '');
-          // Коротко в строке, цифры — в подсказке: шапка должна умещаться в один ряд
-          rg.textContent = m ? (m.above ? 'рынок за нас' : 'рынок против') : 'режим —';
+          // Подписи нет — только цвет точки; всё остальное в подсказке
+          rg.className = 'ss-dot' + (m ? (m.above ? ' ok' : ' bad') : '');
           rg.title = m
             ? `BTC ${m.above ? 'выше' : 'ниже'} EMA20 на часовых: ${m.distPct >= 0 ? '+' : ''}${m.distPct}%.\n` +
               `Замерено на 1119 сигналах: выше EMA20 — 72% побед и +0.239% на сделку, ниже — 54% и −0.211%.\n` +
