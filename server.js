@@ -4184,7 +4184,10 @@ function isMojibake(s) {
   const bad = (s.match(/[�?]/g) || []).length;
   return bad >= 8 && bad / s.length > 0.15;
 }
+const LEGACY_AUTO_NOTE = 'Код гейта изменён (обнаружено автоматически)';
 for (const g of labState.generations || []) {
+  // Авто-заметки, записанные до перехода на английский
+  if (g.note === LEGACY_AUTO_NOTE) g.note = 'Gate code changed (detected automatically)';
   if (isMojibake(g.note)) {
     g.noteBroken = g.note;
     g.note = 'Note lost to a text-encoding failure when it was recorded. ' +

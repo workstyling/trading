@@ -179,8 +179,11 @@ function buildBrief(trades, meta) {
     lines.push('');
   }
 
-  // История поколений: что уже внедрено — чтобы не предлагать то же самое
-  const gens = (meta && meta.generations) || [];
+  // История поколений: что уже внедрено — чтобы не предлагать то же самое.
+  // Авто-поколения без единой сделки отбрасываем: раздел называется «что уже
+  // внедрено», а такая запись говорит только «код менялся» и ничего не
+  // измеряет. Правка гейта из двух коммитов подряд плодила их пачками.
+  const gens = ((meta && meta.generations) || []).filter(g => !(g.auto && !g.trades));
   if (gens.length) {
     lines.push('## Already applied (do not propose again)');
     lines.push('');
