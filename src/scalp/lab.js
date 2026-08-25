@@ -439,7 +439,22 @@ function buildBrief(trades, meta) {
       }
       lines.push('');
       const cur = sweep.rows.find(r => r.tp === (meta.targetPct || 2) && r.sl === (meta.slPct || 6));
-      if (cur && best && best.exp > cur.exp) {
+      // Раньше здесь всегда объявлялся «победитель», даже когда КАЖДАЯ
+      // комбинация была убыточной. Выбирать наименее убыточный выход на
+      // выборке, где проиграли все, — значит лечить плохие входы выходом.
+      if (best && best.exp <= 0) {
+        lines.push('**Every combination lost money on this sample**, including the best row');
+        lines.push(`above (${d(best.exp)}%). That is a statement about the ENTRIES, not the exits:`);
+        lines.push('no target and no stop turns losing entries into winning ones. Do not read');
+        lines.push('the ordering above as a recommendation — it ranks degrees of loss.');
+        lines.push('');
+        const stopped = best.slShare;
+        if (stopped >= 60) {
+          lines.push(`${stopped}% of these trades hit the stop. Check whether they were opened into`);
+          lines.push('one falling stretch before concluding anything about the gate.');
+          lines.push('');
+        }
+      } else if (cur && best && best.exp > cur.exp) {
         lines.push(`Live data prefers **+${best.tp}% / ${best.sl ? '-' + best.sl + '%' : 'no stop'}** ` +
           `(${d(best.exp)}%) over the current **+${cur.tp}% / -${cur.sl}%** (${d(cur.exp)}%), ` +
           `a difference of **${d(Math.round((best.exp - cur.exp) * 1000) / 1000)} pp** per trade.`);
@@ -503,14 +518,29 @@ function buildBrief(trades, meta) {
       lines.push('real sample first. The rows are shown so you can watch them fill.');
       lines.push('');
     }
-    const skewed = ready.filter(c => c.skewed && !c.weakBasis);
+    const losing = ready.filter(c => c.bothLosing && !c.weakBasis && !c.staleBasis && !c.skewed);
+    if (losing.length) {
+      lines.push('**Both groups lost money here.** The rows below compare which of two');
+      lines.push('losing sets lost less, which is not a reason to loosen anything: a gate');
+      lines.push('condition cannot be judged on a stretch where the entries themselves failed.');
+      lines.push('No verdicts are issued until at least one side is profitable.');
+      lines.push('');
+    }
+    const stale = ready.filter(c => c.staleBasis && !c.weakBasis);
+    if (stale.length) {
+      lines.push('**The base predates the current gate.** Most of the trades being compared');
+      lines.push('against were opened under the previous version, so they say nothing about');
+      lines.push('what is running now.');
+      lines.push('');
+    }
+    const skewed = ready.filter(c => c.skewed && !c.weakBasis && !c.staleBasis);
     if (skewed.length) {
       lines.push('**Ignore the rows marked "not comparable"** — that control group opened on');
       lines.push('average more than three hours away from the trades that passed, so the');
       lines.push('difference between them is the market moving in between, not the condition.');
       lines.push('');
     }
-    const useless = ready.filter(c => c.verdict !== 'earns its place' && !c.skewed && !c.weakBasis);
+    const useless = ready.filter(c => c.verdict === 'hurts' || c.verdict === 'no effect');
     if (useless.length) {
       lines.push('**Candidates to relax:**');
       useless.forEach(c => lines.push(`- \`${c.cond}\` — without it ${d(c.delta)} pp. Check on history what ` +
@@ -538,7 +568,7 @@ function buildBrief(trades, meta) {
       lines.push(`Only ${base.n} gate trades so far; slicing needs at least 15.`);
     }
     if (!ready.length) lines.push('The control group has not filled either. Let it accumulate.');
-    else if (ready.some(c => !c.skewed && !c.weakBasis)) {
+    else if (ready.some(c => c.verdict === 'earns its place' || c.verdict === 'hurts' || c.verdict === 'no effect')) {
       lines.push('But the condition test above already works — start there.');
     } else {
       lines.push('The condition table above is not usable yet either: it compares against a');
@@ -633,6 +663,10 @@ function checkConditions(passed, shadows, minN = 6) {
   // вердикт «условие заслуживает места», хотя сравнивать там нечего.
   const baseCl = clusterStats(passed);
   const weakBasis = base.n < minN || !baseCl || baseCl.nClusters < 2;
+  // База должна относиться к ТЕКУЩЕМУ гейту. Если большинство её сделок
+  // открыто до смены поколения, они ничего не говорят о том, что стоит в бою.
+  const staleShare = base.n ? passed.filter(t => t.gen === 'old').length / base.n : 0;
+  const staleBasis = staleShare > 0.5;
   const byMissing = {};
   for (const t of shadows) {
     const k = condName(t.missing);
@@ -650,14 +684,20 @@ function checkConditions(passed, shadows, minN = 6) {
       // рынке контроль от одного этого выглядел лучше на полтора процента.
       const skewH = Math.abs(medianOpened(arr) - basisAt) / 3600000;
       const skewed = Number.isFinite(skewH) && skewH > 3;
+      const bothLosing = base.avgPct < 0 && a.avgPct < 0;
       return {
         cond, enough: true, n: a.n, winRate: a.winRate, avgPct: a.avgPct,
         baseWin: base.winRate, baseAvg: base.avgPct, delta,
         skewH: Number.isFinite(skewH) ? Math.round(skewH * 10) / 10 : null, skewed,
-        weakBasis, baseN: base.n, baseClusters: baseCl ? baseCl.nClusters : 0,
+        weakBasis, staleBasis, bothLosing, baseN: base.n, baseClusters: baseCl ? baseCl.nClusters : 0,
         // условие оправдано, если без него заметно хуже
         verdict: weakBasis ? `no basis yet (only ${base.n} passers from ${baseCl ? baseCl.nClusters : 0} burst${baseCl && baseCl.nClusters === 1 ? '' : 's'})`
+          : staleBasis ? 'no basis yet (base predates the current gate)'
           : skewed ? 'not comparable (different period)'
+          // Обе группы в минусе — это сравнение «что потеряло меньше».
+          // Ослаблять условие потому, что без него убыток мельче, значит
+          // лечить плохие входы выходом. Не вывод.
+          : bothLosing ? 'both lost money — nothing to act on'
           : delta <= -0.15 ? 'earns its place' : delta >= 0.15 ? 'hurts' : 'no effect',
       };
     })
