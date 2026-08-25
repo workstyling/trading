@@ -6100,7 +6100,7 @@
               <!-- Режим рынка — точка у названия: плашка занимала место в строке
                    контролов ради одного двоичного состояния -->
               <span id="ssRegime" class="ss-dot" title="Режим рынка">●</span>
-              <span class="tl-sub">горизонт 2–6 ч · цель +1.38%</span>
+              <span class="tl-sub">горизонт 2–6 ч · цель <span id="ssTargetLbl">+2%</span></span>
               <span class="tl-status">
                 <span id="ssScanning" class="tl-rebuild" style="display:none;">⟳ скан <span id="ssProgress">0</span>%</span>
                 <span id="ssAgo">—</span>
@@ -12984,7 +12984,7 @@ Requirements:
             <span title="Текущая цена">сейчас <span style="color:#c3cddb;">$${px(p.last)}</span></span>
           </div>
           <div style="display:flex;gap:10px;font-size:9.5px;color:#8a94a6;font-family:'JetBrains Mono',monospace;">
-            <span title="Цель = вход +${p.targetPct}% (твой Sell Markup). В скобках — сколько ещё должна пройти цена от текущей.">цель <span style="color:#00e5a0;">$${px(p.target)}</span> <span style="color:#556;">+${p.targetPct}%</span>${toTarget != null ? ` <span style="color:#667;">(ещё ${toTarget >= 0 ? '+' : ''}${toTarget.toFixed(2)}%)</span>` : ''}</span>
+            <span title="Цель = вход +${p.targetPct}% (цель эксперимента, задаётся полем «Цель %»). В скобках — сколько ещё должна пройти цена от текущей.">цель <span style="color:#00e5a0;">$${px(p.target)}</span> <span style="color:#556;">+${p.targetPct}%</span>${toTarget != null ? ` <span style="color:#667;">(ещё ${toTarget >= 0 ? '+' : ''}${toTarget.toFixed(2)}%)</span>` : ''}</span>
             ${p.sl > 0 ? `<span title="Стоп = вход −${p.slPct}%. В скобках — сколько ещё падения до него. Стадия: ${p.slStage}">стоп <span style="color:#f77;">$${px(p.sl)}</span> <span style="color:#667;">(ещё ${((p.sl / cur - 1) * 100).toFixed(2)}%)</span></span>` : '<span style="color:#667;">без стопа</span>'}
           </div>
           <div style="position:relative;background:#1a1f2b;height:5px;border-radius:3px;overflow:hidden;" title="Путь от стопа до цели">
@@ -13108,10 +13108,10 @@ Requirements:
                 : x.tag === 'ШИРОКИЙ СПРЕД' ? '#f55'
                 : '#8892a0';
               const tip = x
-                ? `СКАЛЬП ${x.score}/100 — гейт ${x.passed}/4&#10;` +
+                ? `СКАЛЬП ${x.score}/100 — гейт ${x.passed}/${x.checks.length}&#10;` +
                   x.checks.map(y => `${y.ok ? '✓' : '✗'} ${y.k}: ${y.v}`).join('&#10;') +
                   (x.spreadPct != null ? `&#10;спред: ${x.spreadPct}%` : '') +
-                  `&#10;&#10;Правило: 77+ = ВХОД. Горизонт 2–6 часов, цель +1.38%.&#10;` +
+                  `&#10;&#10;Правило: 86+ = ВХОД. Горизонт 2–6 часов, цель — поле «Цель %».&#10;` +
                   `Откалиброван на 28 тыс. сэмплов (свечи 5m): 68% побед.&#10;` +
                   `Вход 20–60 минут проверен и НЕ работает: ход за час 0.18%&#10;при комиссии круга 0.25%.`
                 : 'Скальп ещё не посчитан (обновляется раз в 3 минуты)';
@@ -13128,7 +13128,7 @@ Requirements:
             </td>
           </tr>`;
         }).join('');
-        body.innerHTML = `<table class="tg-table"><thead><tr><th>#</th><th>COIN</th><th>30D%</th><th>VOL 24H</th><th>MCAP</th>${SHOW_OLD_BUY ? '<th title="Старый рейтинг отскока (0–10): подтверждение разворота после 30д падения + микро-откат для входа">BUY</th>' : ''}<th title="Свинг-сигнал, горизонт 1–3 дня. Веса откалиброваны бэктестом на 1635 сигналах (свечи 4H). Гейт 4/4: просадка −32…−50%, цена выше EMA20 4H, RSI вышел из перепроданности, объём ≥ $500K. Покупать при 77 и выше — это ровно вердикт ВХОД. При 4/4 win-rate 44% против базовых 37%.">СВИНГ<br><span style="font-size:8px;color:#556;font-weight:400;text-transform:none;letter-spacing:0;">1–3 дня</span></th><th title="Краткосрочный сигнал, горизонт 2–6 часов, цель +1.38%. Откалиброван на 28 252 сэмплах (свечи 5m, 109 монет). Гейт 4/4: у дна 4-часового диапазона, RSI 5m вышел из перепроданности, цена выше EMA9 5m, объём ≥ $500K. 68% побед. ВАЖНО: горизонт 20–60 минут проверен и не работает — средний ход за час 0.18% против комиссии круга 0.25%.">СКАЛЬП<br><span style="font-size:8px;color:#556;font-weight:400;text-transform:none;letter-spacing:0;">2–6 часов</span></th><th>MONTH</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+        body.innerHTML = `<table class="tg-table"><thead><tr><th>#</th><th>COIN</th><th>30D%</th><th>VOL 24H</th><th>MCAP</th>${SHOW_OLD_BUY ? '<th title="Старый рейтинг отскока (0–10): подтверждение разворота после 30д падения + микро-откат для входа">BUY</th>' : ''}<th title="Свинг-сигнал, горизонт 1–3 дня. Веса откалиброваны бэктестом на 1635 сигналах (свечи 4H). Гейт 4/4: просадка −32…−50%, цена выше EMA20 4H, RSI вышел из перепроданности, объём ≥ $500K. Покупать при 77 и выше — это ровно вердикт ВХОД. При 4/4 win-rate 44% против базовых 37%.">СВИНГ<br><span style="font-size:8px;color:#556;font-weight:400;text-transform:none;letter-spacing:0;">1–3 дня</span></th><th title="Краткосрочный сигнал, горизонт 2–6 часов, цель задаётся полем «Цель %» (по умолчанию +2%). Откалиброван на 28 252 сэмплах (свечи 5m, 109 монет). Гейт 6/6: у дна 4-часового диапазона, RSI 5m вышел из перепроданности, цена выше EMA9 5m, диапазон 4ч не шире 8%, роста до входа не больше 15%, объём ≥ $500K. Плюс седьмое условие в сканере: BTC выше EMA20 1ч. ВАЖНО: горизонт 20–60 минут проверен и не работает — средний ход за час 0.18% против комиссии круга 0.25%.">СКАЛЬП<br><span style="font-size:8px;color:#556;font-weight:400;text-transform:none;letter-spacing:0;">2–6 часов</span></th><th>MONTH</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
         const u = document.getElementById('tlUpdated');
         if (u && j.updatedAt) u.textContent = new Date(j.updatedAt).toLocaleTimeString();
         // Синхронизация вотча (в т.ч. автогашение кнопки после срабатывания на сервере)
@@ -13249,7 +13249,7 @@ Requirements:
                 <th style="text-align:right;padding:4px 8px;">к mid</th><th style="text-align:right;padding:4px 8px;">чистыми у цели</th>
               </tr></thead><tbody>${rows}</tbody>
             </table>
-            <div style="color:#667;font-size:10.5px;margin-top:9px;">«Чистыми у цели» — сколько останется, если продать по Sell Markup ${j.targetPct}% с учётом обеих комиссий.</div>
+            <div style="color:#667;font-size:10.5px;margin-top:9px;">«Чистыми у цели» — сколько останется, если продать по цели ${j.targetPct}% с учётом обеих комиссий.</div>
             <div style="color:#667;font-size:10.5px;margin-top:4px;">Это справка. Ордера отсюда не выставляются — цену впиши в панель покупки вручную.</div>
           </div>`);
       } catch (e) { showCustomAlert('Ошибка: ' + e.message, true); }
@@ -14557,6 +14557,10 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
         if (slEl && document.activeElement !== slEl && j.slPct != null) slEl.value = j.slPct;
         const tpEl = document.getElementById('paperTarget');
         if (tpEl && document.activeElement !== tpEl && j.targetPct != null) tpEl.value = j.targetPct;
+        // Заголовок скальп-панели показывает живую цель: раньше там было
+        // зашито «+1.38%» и после смены настройки он врал
+        const tLbl = document.getElementById('ssTargetLbl');
+        if (tLbl && j.targetPct != null) tLbl.textContent = '+' + j.targetPct + '%';
         const hhEl = document.getElementById('paperHold');
         if (hhEl && document.activeElement !== hhEl && j.maxHoldH != null) hhEl.value = j.maxHoldH;
         // Экономика сделки: цель и стоп из настроек, комиссия лимитки с обеих сторон
@@ -14565,7 +14569,7 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
         const netLoss = (j.slPct || 0) + feeRt;
         const needWin = (j.slPct > 0 && netWin > 0) ? Math.ceil(netLoss / (netWin + netLoss) * 100) : null;
         const econ = `<div style="background:${needWin != null && needWin > 60 ? 'rgba(245,197,24,0.07)' : 'rgba(255,255,255,0.02)'};border:1px solid ${needWin != null && needWin > 60 ? 'rgba(245,197,24,0.3)' : 'rgba(255,255,255,0.07)'};border-radius:7px;padding:9px 12px;margin-bottom:12px;font-size:12px;color:var(--t2);">
-          Сделка эмулирует твою реальную: покупка лимиткой по лучшему ask, продажа по <b style="color:var(--t0);">+${j.targetPct}%</b> (Sell Markup), комиссия <b style="color:var(--t0);">${j.feePct}%</b> с каждой стороны.
+          Сделка эмулирует твою реальную: покупка лимиткой по лучшему ask, продажа по <b style="color:var(--t0);">+${j.targetPct}%</b> (цель эксперимента, не Sell Markup), комиссия <b style="color:var(--t0);">${j.feePct}%</b> с каждой стороны.
           Выигрыш чистыми <b style="color:var(--green);">+${netWin.toFixed(2)}%</b>${j.slPct > 0 ? `, проигрыш <b style="color:var(--red,#f87171);">−${netLoss.toFixed(2)}%</b> (стоп ${j.slPct}%)` : ''}.
           ${j.slPct > 0 ? '' : `<br>Стоп выключен${(j.maxHoldH || 0) > 0 ? `, лимит удержания ${j.maxHoldH} ч` : ' и лимита времени нет'} — сделка закроется только по цели или по кнопке ✕. Риск здесь не в стопе, а в зависшей позиции.`}
           ${j.slPct >= 5 ? `<br>Стоп −${j.slPct}% работает как <b>страховка от катастрофы</b>, а не как рабочий выход: 98% сделок доходят до цели за сутки, и близкий стоп резал бы будущих победителей. Замер на 289 входах: без стопа +1.029% на сделку при худшей −8.0%, со стопом −6% это +0.914% при худшей −6.3%. Страховка стоит примерно 11% преимущества.` : ''}
