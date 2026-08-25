@@ -1433,6 +1433,10 @@ setInterval(async () => {
         `<i>(reversal-гейт ещё не посчитан — сработал старый вердикт)</i>\n` +
         `(одноразовый алерт — выключен)`;
     const sent = await sendTelegram(text, 'HTML');
+    if (!sent) {
+      console.error('[buy-watch] ' + c.pair + ': отправка не удалась, алерт остаётся включённым');
+      return;
+    }
     buyWatchArmed = false;
     saveBuyWatch();
     console.log(`[buy-watch] сработал: ${c.pair} ${byRev ? 'rv=' + c.rv.score : 'rb=' + c.rb}, telegram=${sent}`);
@@ -2075,17 +2079,43 @@ setInterval(scoreEngineTick, 10 * 60 * 1000);
 setTimeout(scoreEngineTick, 15_000); // первый прогон вскоре после старта
 
 // ══════════ Telegram + алерт безубытка (Limit P&L → 0) ══════════
+// Экранирование для parse_mode:HTML. Подписи условий гейта содержат «(<25%)»,
+// и Telegram читал это как открывающий тег: ответ 400, сообщение НЕ уходило,
+// а вызывающий код всё равно считал алерт отработавшим и снимал его. Так
+// скальп-алерт молча не работал ни разу.
+function escTg(v) {
+  return String(v == null ? '' : v)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
 async function sendTelegram(text, parseMode) {
   const s = loadSettings();
   const token = s.telegramToken || process.env.TELEGRAM_BOT_TOKEN;
   const chat = s.telegramChat || process.env.TELEGRAM_CHAT_ID;
-  if (!token || !chat) return false;
-  try {
+  if (!token || !chat) { console.error('[telegram] не настроен: нет token или chat'); return false; }
+  const post = async (mode) => {
     const r = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: chat, text, ...(parseMode ? { parse_mode: parseMode } : {}) })
+      body: JSON.stringify({ chat_id: chat, text, ...(mode ? { parse_mode: mode } : {}) })
     });
-    return r.ok;
+    if (r.ok) return true;
+    // Ответ Telegram раньше отбрасывался молча — именно поэтому причина
+    // искалась вслепую. Теперь она в логе.
+    let why = r.status;
+    try { const j = await r.json(); why = r.status + ' ' + (j.description || ''); } catch { }
+    console.error('[telegram] отказ (' + (mode || 'plain') + '): ' + why);
+    return false;
+  };
+  try {
+    if (await post(parseMode)) return true;
+    // Разметка сломалась — отправляем без неё. Лучше кривое сообщение,
+    // чем потерянный сигнал.
+    if (parseMode) {
+      const plain = await post(null);
+      if (plain) console.error('[telegram] ушло без разметки');
+      return plain;
+    }
+    return false;
   } catch (e) { console.error('[telegram]', e.message); return false; }
 }
 
@@ -4519,16 +4549,23 @@ setInterval(async () => {
       `⚡ <b>SCALP ВХОД</b> — <b>${c.pair}</b>\n` +
       `Рейтинг <b>${c.score}/100</b> · гейт пройден · горизонт 2–6 часов\n` +
       `━━━━━━━━━━━━━━━━━━\n` +
-      c.checks.map(x => `${x.ok ? '✅' : '❌'} ${x.k}: ${x.v}`).join('\n') + '\n' +
+      c.checks.map(x => `${x.ok ? '✅' : '❌'} ${escTg(x.k)}: ${escTg(x.v)}`).join('\n') + '\n' +
       `💵 Цена: $${fmtPxAe(c.price)}` + (c.spreadPct != null ? ` · спред ${c.spreadPct}%` : '') +
       (c.vol24 ? ` · объём $${Math.round(c.vol24 / 1e3)}K` : '') + '\n\n' +
       `<i>Гейт откалиброван на 28 тыс. сэмплов: 68% побед, ожидание +0.2%\n` +
       `на сделку при цели +1.38%. Режим рынка учтён: ниже EMA20 по BTC\n` +
       `сигналы не выдаются, там ожидание отрицательное. Вход лимиткой.</i>\n` +
       `(одноразовый алерт — выключен)`, 'HTML');
+    // Снимаем ТОЛЬКО если сообщение действительно ушло. Раньше алерт
+    // выключался при любом исходе, и отказ Telegram выглядел так, будто
+    // сигнала просто не было.
+    if (!sent) {
+      console.error('[scalp-watch] ' + c.pair + ' score=' + c.score + ': отправка не удалась, алерт остаётся включённым');
+      return;
+    }
     scalpWatchArmed = false;
     saveScalpWatch();
-    console.log(`[scalp-watch] сработал ${c.pair}, score=${c.score}, telegram=${sent}`);
+    console.log(`[scalp-watch] сработал ${c.pair}, score=${c.score}, telegram=ok`);
   } catch (e) { console.error('[scalp-watch]', e.message); }
 }, 60_000);
 
