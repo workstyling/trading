@@ -14351,6 +14351,77 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
         showCustomAlert('Браузер не дал скопировать. Текст выделен — нажми Ctrl+C', true);
       });
     }
+
+    async function loadLab() {
+      try {
+        const r = await fetch('/api/lab');
+        const j = await r.json();
+        if (!j.success) return;
+        _labEnabled = j.enabled; _paintLabBtn();
+        const bEl = document.getElementById('labBudget');
+        if (bEl && document.activeElement !== bEl) bEl.value = j.budget;
+        _labBrief = j.brief || '';
+        const pre = document.getElementById('labBrief');
+        if (pre) pre.textContent = _labBrief;
+        const gEl = document.getElementById('labGens');
+        if (gEl) {
+          const g = j.generations || [];
+          gEl.textContent = g.length ? `внедрено правок: ${g.length}` : '';
+        }
+
+        const st = j.stats;
+        const sEl = document.getElementById('labStats');
+        if (sEl) {
+          sEl.innerHTML = `<div style="display:flex;gap:10px;flex-wrap:wrap;">
+            ${_jStatCard('Статус', _labEnabled ? '<span style="color:var(--green);">РАБОТАЕТ</span>' : '<span style="color:var(--t2);">СТОП</span>', j.hoursRunning ? `${j.hoursRunning} ч в работе` : '')}
+            ${_jStatCard('Открыто', j.open.length, j.open.filter(t => t.shadow).length ? `${j.open.filter(t => !t.shadow).length} по гейту + ${j.open.filter(t => t.shadow).length} контроль` : '')}
+            ${_jStatCard('Закрыто', j.closedCount, j.shadowCount ? `+ ${j.shadowCount} контрольных` : '')}
+            ${_jStatCard('Winrate', st ? st.winRate + '%' : '—', 'бэктест: 68%')}
+            ${_jStatCard('На сделку', st ? (st.avgPct >= 0 ? '+' : '') + st.avgPct + '%' : '—', 'бэктест: +0.199%')}
+            ${_jStatCard('Итого', st ? _jPnlCell(st.totalUsd) : '—', st && st.avgHoldH != null ? `среднее ${st.avgHoldH} ч` : '')}
+          </div>`;
+        }
+
+        const oEl = document.getElementById('labObservations');
+        if (oEl) {
+          let html = '';
+          // Проверка условий по контрольной группе — работает раньше разрезов
+          const conds = (j.conditions || []).filter(c => c.enough);
+          if (conds.length) {
+            html += `<div style="font-size:11px;color:var(--t2);font-weight:700;margin-bottom:6px;">ПРОВЕРКА УСЛОВИЙ ГЕЙТА (по контрольной группе)</div>
+              <table class="pred-table"><thead><tr><th>Условие</th><th>Без него</th><th>Win%</th><th>Средний</th><th>Против прошедших</th><th>Вывод</th></tr></thead><tbody>
+              ${conds.map(c => {
+                const col = c.verdict === 'нужно' ? 'var(--green)' : c.verdict === 'мешает' ? '#f87171' : 'var(--yellow)';
+                return `<tr><td style="text-align:left;">${c.cond}</td><td>${c.n}</td><td>${c.winRate}%</td>
+                  <td class="${c.avgPct >= 0 ? 'profit-pos' : 'profit-neg'}">${c.avgPct >= 0 ? '+' : ''}${c.avgPct}%</td>
+                  <td class="${c.delta >= 0 ? 'profit-pos' : 'profit-neg'}" style="font-weight:700;">${c.delta >= 0 ? '+' : ''}${c.delta} п.п.</td>
+                  <td style="color:${col};font-weight:600;">${c.verdict}</td></tr>`;
+              }).join('')}</tbody></table>`;
+          } else if ((j.conditions || []).length) {
+            html += `<div style="color:var(--t2);font-size:12px;margin-bottom:10px;">Контрольная группа копится: ${
+              j.conditions.map(c => `${c.cond} — ${c.n}`).join(', ')}. Нужно от 6 сделок на условие.</div>`;
+          }
+          // Разрезы по условиям входа — требуют больше данных
+          if (!j.enough) {
+            html += `<div style="color:var(--t2);font-size:12px;">Сделок по гейту ${j.closedCount}. Для разрезов нужно минимум 15.</div>`;
+          } else if (!j.observations.length) {
+            html += `<div style="color:var(--t2);font-size:12px;">Расхождений в разрезах нет: гейт работает одинаково во всех замеренных условиях.</div>`;
+          } else {
+            html += `<div style="font-size:11px;color:var(--t2);font-weight:700;margin:14px 0 6px;">РАСХОЖДЕНИЯ ПО УСЛОВИЯМ ВХОДА</div>
+              <table class="pred-table"><thead><tr><th>Разрез</th><th>Группа</th><th>N</th><th>Win%</th><th>Средний</th><th>Отклонение</th></tr></thead><tbody>
+              ${j.observations.slice(0, 10).map(o => `<tr>
+                <td>${o.dim}</td><td style="text-align:left;color:var(--t1);">${o.group}</td>
+                <td>${o.n}</td><td>${o.winRate}%</td>
+                <td class="${o.avgPct >= 0 ? 'profit-pos' : 'profit-neg'}">${o.avgPct >= 0 ? '+' : ''}${o.avgPct}%</td>
+                <td class="${o.delta >= 0 ? 'profit-pos' : 'profit-neg'}" style="font-weight:700;">${o.delta >= 0 ? '+' : ''}${o.delta} п.п.</td>
+              </tr>`).join('')}</tbody></table>`;
+          }
+          oEl.innerHTML = html;
+        }
+        _labSchedulePoll();
+      } catch { }
+    }
+
     /* ═══════════════════ TRADE JOURNAL (вкладка Journal) ═══════════════════ */
     function _jPnlCell(v) {
       const cls = v >= 0 ? 'profit-pos' : 'profit-neg';
