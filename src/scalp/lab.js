@@ -126,6 +126,47 @@ function sweepTargets(exits, fee, targets, stops) {
   return { rows, n: valid.length };
 }
 
+/**
+ * Гроздья входов.
+ *
+ * Гейт срабатывает пачками: когда BTC выше EMA20 и рынок разом проседает,
+ * условия выполняются у десятка монет за считанные минуты, а потом часами
+ * не срабатывает ничего. Замерено на живых данных — двенадцать входов за
+ * 1.2 часа, медианный интервал между ними 0.1 часа, затем ноль за три часа.
+ *
+ * Двенадцать позиций, открытых на одном движении рынка, — это одна ставка,
+ * а не двенадцать: они выиграют и проиграют вместе. Считать их независимыми
+ * значит переоценивать надёжность выборки в разы, и именно так первое
+ * поколение показало «win 100%» — оно поймало одну удачную гроздь.
+ */
+function clusters(trades, gapMin = 30) {
+  const ts = (trades || []).filter(t => t.openedAt).sort((a, b) => a.openedAt - b.openedAt);
+  if (!ts.length) return [];
+  const out = [[ts[0]]];
+  for (let i = 1; i < ts.length; i++) {
+    if (ts[i].openedAt - ts[i - 1].openedAt > gapMin * 60000) out.push([]);
+    out[out.length - 1].push(ts[i]);
+  }
+  return out;
+}
+
+/** Среднее по гроздьям, а не по сделкам: честная оценка при кучных входах */
+function clusterStats(trades) {
+  const cl = clusters(trades);
+  if (!cl.length) return null;
+  const perCluster = cl.map(c => c.reduce((a, t) => a + t.pnlPct, 0) / c.length);
+  const mean = perCluster.reduce((a, b) => a + b, 0) / perCluster.length;
+  const wins = perCluster.filter(v => v > 0).length;
+  const sizes = cl.map(c => c.length).sort((a, b) => a - b);
+  return {
+    nClusters: cl.length,
+    avgPerCluster: Math.round(mean * 1000) / 1000,
+    clusterWinRate: Math.round(wins / cl.length * 100),
+    biggest: sizes[sizes.length - 1],
+    medianSize: sizes[Math.floor(sizes.length / 2)],
+  };
+}
+
 /** Сводка по группе «не хватило двух условий» — насколько зажат гейт */
 function aggFar(trades) {
   const a = agg(trades || []);
@@ -170,7 +211,13 @@ function findObservations(trades, opts = {}) {
   const minN = opts.minN || 8;
   const minDelta = opts.minDelta || 0.25;
   const base = agg(trades);
-  if (!base || base.n < 15) return { base, observations: [], enough: false };
+  if (!base || base.n < 15) return { base, observations: [], enough: false, cl: clusterStats(trades) };
+  // Пятнадцать сделок из двух гроздей — это два наблюдения, а не пятнадцать.
+  // Разрезы по такой выборке находят свойства одного движения рынка и выдают
+  // их за свойства гейта.
+  const cl = clusterStats(trades);
+  const minClusters = opts.minClusters || 4;
+  if (cl && cl.nClusters < minClusters) return { base, observations: [], enough: false, cl, tooClustered: true };
 
   const observations = [];
   for (const [dim, fn] of Object.entries(BUCKETS)) {
@@ -197,7 +244,7 @@ function findObservations(trades, opts = {}) {
     }
   }
   observations.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
-  return { base, observations, enough: true };
+  return { base, observations, enough: true, cl };
 }
 
 /**
@@ -270,7 +317,36 @@ function buildBrief(trades, meta) {
   lines.push('## What the live trades produced');
   lines.push('');
   if (!base) {
-    lines.push('No trades yet.');
+    // Раньше здесь стояло голое «No trades yet», пока в работе висело три
+    // десятка позиций. Задание выглядело сломанным, хотя лаборатория шла
+    // полным ходом: закрытых просто ещё не было. Показываем, что в полёте.
+    const op = (meta && meta.openNow) || null;
+    if (!op || !op.n) {
+      lines.push('No trades yet, and none are open. Check that the lab is switched on.');
+    } else {
+      lines.push('Nothing has CLOSED yet, so there is nothing to conclude from. That is not');
+      lines.push(`a stall — **${op.n} trades are running right now** and will close as they hit`);
+      lines.push('the target, the stop, or the 48h limit.');
+      lines.push('');
+      lines.push(`- Gate entries in flight: **${op.gate}**, control group: **${op.shadow}**` +
+        (op.far ? `, wider control: **${op.far}**` : ''));
+      lines.push(`- Oldest open **${op.oldestH}h**, youngest **${op.youngestH}h**`);
+      lines.push(`- Currently in profit: **${op.up}** of ${op.n}`);
+      if (op.bestMfe != null) {
+        lines.push(`- Best peak reached so far **${d(op.bestMfe)}%**, deepest trough **${d(op.worstMae)}%**`);
+      }
+      if (op.clusters) {
+        lines.push(`- They arrived in **${op.clusters} bursts**, biggest ${op.biggest} entries at once`);
+      }
+      lines.push('');
+      if (op.oldestH >= 24) {
+        lines.push('The oldest are past a day. At a +2% target, most trades that are going to');
+        lines.push('work have worked by then, so expect these to close on the 48h limit rather');
+        lines.push('than the target — which is itself a finding about the target.');
+        lines.push('');
+      }
+      lines.push('Come back once trades start closing. Nothing here can be acted on yet.');
+    }
     return lines.join('\n');
   }
   lines.push(`- Trades collected: **${base.n}**` + (meta && meta.since ? ` over ${meta.since}` : ''));
@@ -283,6 +359,21 @@ function buildBrief(trades, meta) {
   // Раньше здесь стояло +0.914% — это число из теста стопов для paper-бота,
   // и задание всегда докладывало, что гейт сломан.
   const BASE_EXP = 0.199, BASE_WIN = 68;
+  // Кучность: без неё выборка выглядит втрое-вчетверо надёжнее, чем она есть
+  const cl = clusterStats(trades);
+  if (cl) {
+    lines.push(`- Independent bursts: **${cl.nClusters}** (entries within 30 min of each other count as one)`);
+    lines.push(`- Per-burst average: **${d(cl.avgPerCluster)}%**, ${cl.clusterWinRate}% of bursts positive`);
+    lines.push('');
+    if (cl.nClusters < 6) {
+      lines.push(`These ${base.n} trades are really **${cl.nClusters} events**. The gate fires in clumps:`);
+      lines.push('when BTC is above EMA20 and the market dips together, a dozen coins qualify');
+      lines.push('within minutes, then nothing for hours. Trades inside one burst win and lose');
+      lines.push('together, so treat the per-burst figure as the honest one and the per-trade');
+      lines.push('figure as optimistic.');
+      lines.push('');
+    }
+  }
   lines.push(`Historical backtest expectancy for the scalp gate: **+${BASE_EXP}%** per trade at ${BASE_WIN}% wins.`);
   const drift = Math.round((base.avgPct - BASE_EXP) * 1000) / 1000;
   lines.push(`Live data differs by **${d(drift)} pp** on result and ` +
@@ -412,7 +503,15 @@ function buildBrief(trades, meta) {
   if (!enough) {
     lines.push('## Conclusions');
     lines.push('');
-    lines.push(`Only ${base.n} gate trades so far; slicing needs at least 15.`);
+    const cls = clusterStats(trades);
+    if (cls && base.n >= 15 && cls.nClusters < 4) {
+      lines.push(`There are ${base.n} gate trades, which looks like enough, but they came from`);
+      lines.push(`only **${cls.nClusters} bursts** — ${cls.nClusters} independent observations, not ${base.n}.`);
+      lines.push('Slicing this sample would find properties of one market move and report them');
+      lines.push('as properties of the gate. Waiting for at least 4 separate bursts.');
+    } else {
+      lines.push(`Only ${base.n} gate trades so far; slicing needs at least 15.`);
+    }
     if (!ready.length) lines.push('The control group has not filled either. Let it accumulate.');
     else lines.push('But the condition test above already works — start there.');
     return lines.join('\n');
@@ -497,4 +596,4 @@ function checkConditions(passed, shadows, minN = 6) {
     .sort((a, b) => (b.n || 0) - (a.n || 0));
 }
 
-module.exports = { BUCKETS, agg, findObservations, buildBrief, checkConditions, sweepTargets, aggFar };
+module.exports = { BUCKETS, agg, findObservations, buildBrief, checkConditions, sweepTargets, aggFar, clusters, clusterStats };

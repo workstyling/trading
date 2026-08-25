@@ -4404,6 +4404,28 @@ app.get('/api/lab', (req, res) => {
       // цель и другой стоп, не запуская новый бэктест
       exits: closed.map(t => ({ why: t.why, mfe: t.mfe, mae: t.mae, pnlPct: t.pnlPct, holdH: t.holdH })),
       farGroup: lab.aggFar(farShadows),
+      // Что сейчас в полёте: пока ничего не закрылось, задание должно
+      // показывать работу, а не пустую строку «сделок нет»
+      openNow: (() => {
+        if (!open.length) return null;
+        const hrs = open.map(t => (Date.now() - t.openedAt) / 3600000);
+        const mfes = open.map(t => t.mfe).filter(Number.isFinite);
+        const maes = open.map(t => t.mae).filter(Number.isFinite);
+        const cl = lab.clusters(open);
+        return {
+          n: open.length,
+          gate: open.filter(t => !t.shadow).length,
+          shadow: open.filter(t => t.shadow && !t.far).length,
+          far: open.filter(t => t.far).length,
+          up: open.filter(t => t.pnlPct > 0).length,
+          oldestH: Math.round(Math.max(...hrs) * 10) / 10,
+          youngestH: Math.round(Math.min(...hrs) * 10) / 10,
+          bestMfe: mfes.length ? Math.max(...mfes) : null,
+          worstMae: maes.length ? Math.min(...maes) : null,
+          clusters: cl.length,
+          biggest: cl.length ? Math.max(...cl.map(c => c.length)) : 0,
+        };
+      })(),
       targetPct: paperTargetPct(),
       slPct: paperBot.slPct != null ? paperBot.slPct : PAPER_CFG.slPct,
       feePct: paperLimitFee() * 2,
