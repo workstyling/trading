@@ -4167,8 +4167,30 @@ function gateFingerprint() {
     return crypto.createHash('sha1').update(src).digest('hex').slice(0, 12);
   } catch { return null; }
 }
-let labState = { enabled: false, startedAt: 0, budget: 100, trades: [], briefAt: 0 };
+// Сумма лаборатории зафиксирована: это измерение, а не торговля. Все выводы
+// строятся на процентах, которые от суммы не зависят, а поле в интерфейсе
+// только требовало решения там, где решать нечего. $1000 — чтобы долларовые
+// итоги читались без нулей после запятой.
+const LAB_BUDGET = 1000;
+let labState = { enabled: false, startedAt: 0, budget: LAB_BUDGET, trades: [], briefAt: 0 };
 try { labState = { ...labState, ...JSON.parse(fs.readFileSync(LAB_FILE, 'utf8')) }; } catch { }
+labState.budget = LAB_BUDGET;
+
+// Заметки поколений раньше приходили кириллицей через shell и доезжали
+// побитыми (?????? и U+FFFD). Текст теперь пишется по-английски, а уже
+// испорченные записи помечаем честно, вместо того чтобы показывать мусор.
+function isMojibake(s) {
+  if (!s) return false;
+  const bad = (s.match(/[�?]/g) || []).length;
+  return bad >= 8 && bad / s.length > 0.15;
+}
+for (const g of labState.generations || []) {
+  if (isMojibake(g.note)) {
+    g.noteBroken = g.note;
+    g.note = 'Note lost to a text-encoding failure when it was recorded. ' +
+      'The stats and observations on this generation are intact.';
+  }
+}
 function saveLab() {
   try { fs.writeFileSync(LAB_FILE, JSON.stringify({ ...labState, trades: labState.trades.slice(-800) }, null, 2)); }
   catch (e) { console.error('[lab] save', e.message); }
@@ -4192,7 +4214,7 @@ async function labTick() {
       labState.generations = labState.generations || [];
       labState.generations.push({
         at: Date.now(), auto: true,
-        note: 'Код гейта изменён (обнаружено автоматически)',
+        note: 'Gate code changed (detected automatically)',
         from: labState.fingerprint, to: fp,
         trades: done.length, stats: base, observations: (observations || []).slice(0, 10),
       });
@@ -4251,7 +4273,10 @@ async function labTick() {
         if (recent && Date.now() - recent.closedAt < cooldown) continue;
         const ask = await fetchBestAsk(r.pair);
         if (!(ask > 0)) continue;
-        const missing = isShadow ? (r.checks.find(c => !c.ok) || {}).k || '—' : null;
+        // По-английски: это же название попадёт в таблицу проверки условий
+        // внутри задания для Claude Code
+        const mc = isShadow ? r.checks.find(c => !c.ok) : null;
+        const missing = mc ? (mc.en || mc.k) : null;
         labState.trades.push({
           id: `lab_${Date.now()}_${r.coin}`,
           coin: r.coin, pair: r.pair, entry: ask, last: ask,
@@ -4264,6 +4289,15 @@ async function labTick() {
             spreadPct: r.spreadPct, vol24: r.vol24, volX: r.volX,
             btcDist: scalpScan.regime ? scalpScan.regime.distPct : null,
             hourUtc: new Date().getUTCHours(),
+            // Гейт пропускает диапазон до 8% и рост до 15%, но внутри этих
+            // границ ничего не различает. Пишем сами числа: живые сделки
+            // могут показать, что разрешённая зона неоднородна.
+            range4Pct: r.range4Pct != null ? r.range4Pct : null,
+            runUp24: r.runUp24 != null ? r.runUp24 : null,
+            // Насколько цена уже отошла от вершины 4ч диапазона: при
+            // rangePos у дна это глубина падения, которую мы ловим
+            dropFromHigh: (r.range4Pct != null && r.rangePos != null)
+              ? Math.round(r.range4Pct * (1 - r.rangePos) * 100) / 100 : null,
           },
         });
         changed = true;
@@ -4305,7 +4339,7 @@ app.get('/api/lab', (req, res) => {
       conditions,
       // Условия снимаем с работающего сканера — задание всегда описывает
       // ту версию алгоритма, которая реально крутится
-      liveChecks: (scalpScan.results[0] && scalpScan.results[0].checks || []).map(c => c.k),
+      liveChecks: (scalpScan.results[0] && scalpScan.results[0].checks || []).map(c => c.en || c.k),
       fingerprint: labState.fingerprint,
       targetPct: paperTargetPct(),
       slPct: paperBot.slPct != null ? paperBot.slPct : PAPER_CFG.slPct,
@@ -4314,16 +4348,13 @@ app.get('/api/lab', (req, res) => {
 });
 
 app.post('/api/lab/config', (req, res) => {
-  const { enabled, budget } = req.body || {};
+  const { enabled } = req.body || {};
   if (enabled !== undefined) {
     const on = !!enabled;
     if (on && !labState.enabled) labState.startedAt = labState.startedAt || Date.now();
     labState.enabled = on;
   }
-  if (budget !== undefined) {
-    const b = parseFloat(budget);
-    if (b >= 10 && b <= 100000) labState.budget = b;
-  }
+  // budget больше не принимается: сумма зафиксирована в LAB_BUDGET
   saveLab();
   res.json({ success: true, enabled: labState.enabled, budget: labState.budget });
 });
@@ -4339,7 +4370,15 @@ app.delete('/api/lab/trades', (req, res) => {
 // вместе с наблюдениями, сбор начинается заново. Иначе следующее задание
 // повторяло бы то, что уже сделано, на старых данных.
 app.post('/api/lab/applied', (req, res) => {
-  const note = String((req.body || {}).note || '').slice(0, 2000);
+  let note = String((req.body || {}).note || '').slice(0, 2000);
+  // Не записываем заведомо битый текст: одна такая заметка уже осела в архиве
+  // и с тех пор показывалась в каждом задании
+  if (isMojibake(note)) {
+    return res.status(400).json({
+      success: false,
+      error: 'Note arrived garbled — the text lost its encoding in transit. Send it as UTF-8, in English.',
+    });
+  }
   const closed = labState.trades.filter(t => t.closedAt);
   const { base, observations } = lab.findObservations(closed);
   labState.generations = labState.generations || [];

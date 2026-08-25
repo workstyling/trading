@@ -6232,14 +6232,12 @@
             <span style="font-size:13px;font-weight:700;color:#4cc9f0;">🧪 Лаборатория стратегии</span>
             <span style="font-size:11px;color:var(--t2);">фоновое тестирование гейта ⚡ Скальп по рынку</span>
             <span style="margin-left:auto;display:flex;align-items:center;gap:8px;">
-              <span style="font-size:11px;color:var(--t2);">$</span>
-              <input type="number" id="labBudget" value="100" min="10" max="100000" step="10" class="settings-input" style="width:70px;" onchange="saveLabConfig()">
               <button id="labToggleBtn" class="tg-refresh-btn" onclick="toggleLab()">...</button>
               <button class="tg-refresh-btn" onclick="loadLab()">Обновить</button>
             </span>
           </div>
           <div style="color:var(--t2);font-size:11.5px;margin-bottom:12px;max-width:78ch;">
-            Пока включена, сервер сам открывает виртуальную сделку на каждом срабатывании гейта и запоминает условия входа: позицию в диапазоне, RSI, спред, объём, запас BTC над EMA20, час. Из закрытых сделок собирает расхождения и формулирует, что стоит поправить в алгоритме. Работает при закрытом браузере, пока не выключишь.
+            Пока включена, сервер сам открывает виртуальную сделку на каждом срабатывании гейта и запоминает условия входа: позицию в диапазоне, RSI и глубину его ямы, спред, объём и его всплеск, ширину 4ч диапазона, рост за сутки до входа, глубину падения от вершины, запас BTC над EMA20, час. Из закрытых сделок собирает расхождения и формулирует, что стоит поправить в алгоритме. Работает при закрытом браузере, пока не выключишь. Сумма сделки фиксирована ($1000) — выводы строятся на процентах.
           </div>
           <div id="labStats" style="margin-bottom:12px;"></div>
           <div id="labObservations" style="margin-bottom:12px;"></div>
@@ -14296,10 +14294,9 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
         }
       } catch (e) { showCustomAlert('Ошибка: ' + e.message, true); }
     }
-    async function saveLabConfig() {
-      const b = parseFloat(document.getElementById('labBudget').value) || 100;
-      try { await fetch('/api/lab/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ budget: b }) }); } catch { }
-    }
+    // Сумма лаборатории убрана из интерфейса и зафиксирована на сервере:
+    // это чистое измерение, проценты от неё не зависят, а лишнее поле только
+    // просило решения там, где решать нечего.
     // navigator.clipboard существует только в защищённом контексте (https или
     // localhost). Приложение открыто по http на IP — там его просто нет, и
     // кнопка молча не работала. Резервный путь через скрытую textarea.
@@ -14346,8 +14343,6 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
         const j = await r.json();
         if (!j.success) return;
         _labEnabled = j.enabled; _paintLabBtn();
-        const bEl = document.getElementById('labBudget');
-        if (bEl && document.activeElement !== bEl) bEl.value = j.budget;
         _labBrief = j.brief || '';
         const pre = document.getElementById('labBrief');
         if (pre) pre.textContent = _labBrief;
@@ -14379,7 +14374,9 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
             html += `<div style="font-size:11px;color:var(--t2);font-weight:700;margin-bottom:6px;">ПРОВЕРКА УСЛОВИЙ ГЕЙТА (по контрольной группе)</div>
               <table class="pred-table"><thead><tr><th>Условие</th><th>Без него</th><th>Win%</th><th>Средний</th><th>Против прошедших</th><th>Вывод</th></tr></thead><tbody>
               ${conds.map(c => {
-                const col = c.verdict === 'нужно' ? 'var(--green)' : c.verdict === 'мешает' ? '#f87171' : 'var(--yellow)';
+                // вердикты приходят с сервера по-английски: этот же текст уезжает
+                // в задание для Claude Code, а кириллица там ломалась в кодировке
+                const col = c.verdict === 'earns its place' ? 'var(--green)' : c.verdict === 'hurts' ? '#f87171' : 'var(--yellow)';
                 return `<tr><td style="text-align:left;">${c.cond}</td><td>${c.n}</td><td>${c.winRate}%</td>
                   <td class="${c.avgPct >= 0 ? 'profit-pos' : 'profit-neg'}">${c.avgPct >= 0 ? '+' : ''}${c.avgPct}%</td>
                   <td class="${c.delta >= 0 ? 'profit-pos' : 'profit-neg'}" style="font-weight:700;">${c.delta >= 0 ? '+' : ''}${c.delta} п.п.</td>

@@ -123,6 +123,7 @@ function applyRegime(sc, regime) {
   sc.regimeOk = regime ? !!regime.above : false;
   sc.checks.push({
     k: 'BTC выше EMA20 (1ч)',
+    en: 'BTC above EMA20 (1h)',
     ok: sc.regimeOk,
     v: regime ? (regime.above ? `+${regime.distPct}% над EMA20` : `${regime.distPct}% под EMA20`) : 'ещё не посчитан',
   });

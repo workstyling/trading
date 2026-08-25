@@ -113,15 +113,18 @@ async function fetchScalpSignals(coin) {
 function calcScalpScore(s, vol24, spreadPct) {
   if (!s) return null;
   const liquid = vol24 >= 500e3;
+  // `k` — подпись в интерфейсе, `en` — та же проверка по-английски: задание
+  // для Claude Code собирается на английском, и раньше туда протекала
+  // кириллица, которая на пути через shell превращалась в мусор.
   const checks = [
-    { k: 'У дна 4ч диапазона (<25%)', ok: s.rangePos < 0.25, v: Math.round(s.rangePos * 100) + '%' },
-    { k: 'RSI 5m вышел из ямы', ok: !!s.rsiRecover, v: `${s.rsi5 ?? '—'} (мин 1ч ${s.rsiMin1h ?? '—'})` },
-    { k: 'Цена выше EMA9 (5m)', ok: !!s.aboveE9, v: s.aboveE9 ? 'да' : 'нет' },
+    { k: 'У дна 4ч диапазона (<25%)', en: 'Bottom of 4h range (<25%)', ok: s.rangePos < 0.25, v: Math.round(s.rangePos * 100) + '%' },
+    { k: 'RSI 5m вышел из ямы', en: 'RSI 5m recovering off its low', ok: !!s.rsiRecover, v: `${s.rsi5 ?? '—'} (мин 1ч ${s.rsiMin1h ?? '—'})` },
+    { k: 'Цена выше EMA9 (5m)', en: 'Price above EMA9 (5m)', ok: !!s.aboveE9, v: s.aboveE9 ? 'да' : 'нет' },
     // Диапазон не раздут: «дно» растянутого пампом коридора — это сдув
-    { k: 'Диапазон 4ч не шире 8%', ok: s.range4Pct != null && s.range4Pct < 8, v: s.range4Pct != null ? s.range4Pct + '%' : '—' },
+    { k: 'Диапазон 4ч не шире 8%', en: '4h range no wider than 8%', ok: s.range4Pct != null && s.range4Pct < 8, v: s.range4Pct != null ? s.range4Pct + '%' : '—' },
     // И до него не было выброса: рост свыше +15% за сутки уводит ожидание в минус
-    { k: 'Не после пампа (рост ≤15%)', ok: s.runUp24 == null || s.runUp24 <= 15, v: s.runUp24 != null ? (s.runUp24 >= 0 ? '+' : '') + s.runUp24 + '%' : '—' },
-    { k: 'Ликвидность ≥ $500K', ok: liquid, v: '$' + Math.round(vol24 / 1e3) + 'K' },
+    { k: 'Не после пампа (рост ≤15%)', en: 'Not after a pump (24h run-up <=15%)', ok: s.runUp24 == null || s.runUp24 <= 15, v: s.runUp24 != null ? (s.runUp24 >= 0 ? '+' : '') + s.runUp24 + '%' : '—' },
+    { k: 'Ликвидность ≥ $500K', en: 'Liquidity >= $500K', ok: liquid, v: '$' + Math.round(vol24 / 1e3) + 'K' },
   ];
   const passed = checks.filter(x => x.ok).length;
   const allOk = passed === checks.length;

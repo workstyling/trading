@@ -14,52 +14,79 @@
  * — независимая проверка, и она копится сама.
  */
 
-/** Разрезы, по которым ищем расхождения. Каждый — функция от контекста входа. */
+/**
+ * Разрезы, по которым ищем расхождения. Каждый — функция от контекста входа.
+ * Подписи по-английски: этот текст уезжает в задание для Claude Code, а
+ * кириллица на пути через shell превращалась в мусор.
+ */
 const BUCKETS = {
-  'Позиция в 4ч диапазоне': (c) => {
+  'Position in 4h range': (c) => {
     if (c.rangePos == null) return null;
-    return c.rangePos < 0.10 ? 'у самого дна (<10%)'
-      : c.rangePos < 0.18 ? 'низко (10–18%)'
-      : 'верх зоны (18–25%)';
+    return c.rangePos < 0.10 ? 'very bottom (<10%)'
+      : c.rangePos < 0.18 ? 'low (10-18%)'
+      : 'upper part of zone (18-25%)';
   },
-  'RSI 5m на входе': (c) => {
+  'RSI 5m at entry': (c) => {
     if (c.rsi == null) return null;
-    return c.rsi < 40 ? 'RSI < 40' : c.rsi < 50 ? 'RSI 40–50' : c.rsi < 60 ? 'RSI 50–60' : 'RSI 60+';
+    return c.rsi < 40 ? 'RSI < 40' : c.rsi < 50 ? 'RSI 40-50' : c.rsi < 60 ? 'RSI 50-60' : 'RSI 60+';
   },
-  'Насколько RSI отскочил от ямы': (c) => {
+  'How far RSI bounced off its low': (c) => {
     // Number.isFinite, а не != null: NaN раньше проходил проверку и все такие
     // сделки сваливались в группу «сильно (12+)», беззвучно искажая разрез
     if (!Number.isFinite(c.rsi) || !Number.isFinite(c.rsiMin)) return null;
     const d = c.rsi - c.rsiMin;
-    return d < 6 ? 'едва вышел (<6)' : d < 12 ? 'умеренно (6–12)' : 'сильно (12+)';
+    return d < 6 ? 'barely (<6)' : d < 12 ? 'moderate (6-12)' : 'strong (12+)';
   },
-  'Спред на входе': (c) => {
+  'Spread at entry': (c) => {
     if (c.spreadPct == null) return null;
-    return c.spreadPct < 0.05 ? 'узкий (<0.05%)'
-      : c.spreadPct < 0.15 ? 'нормальный (0.05–0.15%)'
-      : c.spreadPct < 0.3 ? 'широковат (0.15–0.3%)'
-      : 'широкий (0.3%+)';
+    return c.spreadPct < 0.05 ? 'tight (<0.05%)'
+      : c.spreadPct < 0.15 ? 'normal (0.05-0.15%)'
+      : c.spreadPct < 0.3 ? 'wide-ish (0.15-0.3%)'
+      : 'wide (0.3%+)';
   },
-  'Объём монеты': (c) => {
+  'Coin volume': (c) => {
     if (!c.vol24) return null;
-    return c.vol24 < 1e6 ? '$0.5–1M' : c.vol24 < 5e6 ? '$1–5M' : c.vol24 < 20e6 ? '$5–20M' : '$20M+';
+    return c.vol24 < 1e6 ? '$0.5-1M' : c.vol24 < 5e6 ? '$1-5M' : c.vol24 < 20e6 ? '$5-20M' : '$20M+';
   },
-  'Всплеск объёма на входе': (c) => {
+  'Volume surge at entry': (c) => {
     if (c.volX == null) return null;
-    return c.volX < 1 ? 'ниже среднего' : c.volX < 1.5 ? 'обычный' : c.volX < 3 ? 'повышенный (1.5–3x)' : 'всплеск (3x+)';
+    return c.volX < 1 ? 'below average' : c.volX < 1.5 ? 'normal' : c.volX < 3 ? 'elevated (1.5-3x)' : 'surge (3x+)';
   },
-  'Запас BTC над EMA20': (c) => {
+  'BTC headroom above EMA20': (c) => {
     if (c.btcDist == null) return null;
-    return c.btcDist < 0.2 ? 'впритык (<0.2%)' : c.btcDist < 1 ? 'умеренный (0.2–1%)' : 'уверенный (1%+)';
+    return c.btcDist < 0.2 ? 'razor thin (<0.2%)' : c.btcDist < 1 ? 'moderate (0.2-1%)' : 'comfortable (1%+)';
   },
-  'Час входа (UTC)': (c) => {
+  'Entry hour (UTC)': (c) => {
     if (c.hourUtc == null) return null;
     const h = c.hourUtc;
-    return h < 6 ? '00–06' : h < 12 ? '06–12' : h < 18 ? '12–18' : '18–24';
+    return h < 6 ? '00-06' : h < 12 ? '06-12' : h < 18 ? '12-18' : '18-24';
   },
-  'Балл гейта': (c) => {
+  'Gate score': (c) => {
     if (c.score == null) return null;
-    return c.score < 90 ? '86–90' : c.score < 95 ? '90–95' : '95–100';
+    return c.score < 90 ? '86-90' : c.score < 95 ? '90-95' : '95-100';
+  },
+  // Ниже — то, что гейт проверяет порогом, но внутри порога не различает.
+  // Порог 8% и 15% выбраны бэктестом; живые сделки могут показать, что
+  // внутри разрешённой зоны результат тоже неоднороден.
+  '4h range width': (c) => {
+    if (c.range4Pct == null) return null;
+    return c.range4Pct < 2 ? 'very tight (<2%)'
+      : c.range4Pct < 4 ? 'tight (2-4%)'
+      : c.range4Pct < 6 ? 'medium (4-6%)'
+      : 'near the 8% limit (6-8%)';
+  },
+  '24h run-up before entry': (c) => {
+    if (c.runUp24 == null) return null;
+    return c.runUp24 < -3 ? 'was falling (<-3%)'
+      : c.runUp24 < 3 ? 'flat (-3 to +3%)'
+      : c.runUp24 < 8 ? 'rising (3-8%)'
+      : 'near the pump limit (8-15%)';
+  },
+  'Drop from 4h high': (c) => {
+    if (c.dropFromHigh == null) return null;
+    return c.dropFromHigh < 2 ? 'shallow (<2%)'
+      : c.dropFromHigh < 4 ? 'moderate (2-4%)'
+      : 'deep (4%+)';
   },
 };
 
@@ -110,7 +137,7 @@ function findObservations(trades, opts = {}) {
         dim, group: r.key, n: r.n, winRate: r.winRate,
         avgPct: r.avgPct, delta,
         worstPct: r.worstPct, avgHoldH: r.avgHoldH,
-        direction: delta > 0 ? 'лучше' : 'хуже',
+        direction: delta > 0 ? 'better' : 'worse',
       });
     }
   }
@@ -127,72 +154,72 @@ function buildBrief(trades, meta) {
   const lines = [];
   const d = (v) => (v >= 0 ? '+' : '') + v;
 
-  lines.push('# Задание: улучшить гейт скальпа по живым данным');
+  lines.push('# Task: improve the scalp gate using live data');
   lines.push('');
-  lines.push('Ниже — результаты реальных paper-сделок, открытых автоматически на каждом');
-  lines.push('срабатывании гейта скальпа. Это независимая проверка порогов, которые были');
-  lines.push('откалиброваны на одной неделе исторических данных.');
+  lines.push('Below are results from paper trades opened automatically on every scalp gate');
+  lines.push('trigger. This is an independent check on thresholds that were calibrated on a');
+  lines.push('single week of historical data.');
   lines.push('');
-  lines.push('## Где живёт код');
+  lines.push('## Where the code lives');
   lines.push('');
-  lines.push('- `src/scalp/index.js` — `calcScalpScore()`: условия гейта и баллы');
-  lines.push('- `src/scalp/scanner.js` — `applyRegime()`: жёсткое условие по BTC');
-  lines.push('- `src/scalp/backtest.js`, `exits.js`, `research.js` — как перепроверять на истории');
+  lines.push('- `src/scalp/index.js` — `calcScalpScore()`: gate conditions and scoring');
+  lines.push('- `src/scalp/scanner.js` — `applyRegime()`: the hard BTC regime condition');
+  lines.push('- `src/scalp/backtest.js`, `exits.js`, `research.js` — how to re-check on history');
   lines.push('');
   // Условия читаются из живого расчёта, а не вписаны сюда руками: иначе
   // после правки алгоритма задание описывало бы прошлую версию.
   const live = (meta && meta.liveChecks) || [];
   if (live.length) {
-    lines.push(`Текущий гейт — ${live.length} условий (снято с работающего сканера):`);
+    lines.push(`Current gate — ${live.length} conditions (read from the running scanner):`);
     lines.push('');
     live.forEach(k => lines.push(`- ${k}`));
     lines.push('');
-    if (meta.fingerprint) lines.push(`Отпечаток кода гейта: \`${meta.fingerprint}\``);
-    if (meta.targetPct) lines.push(`Цель +${meta.targetPct}%, аварийный стоп −${meta.slPct}%.`);
+    if (meta.fingerprint) lines.push(`Gate code fingerprint: \`${meta.fingerprint}\``);
+    if (meta.targetPct) lines.push(`Target +${meta.targetPct}%, catastrophe stop -${meta.slPct}%.`);
     lines.push('');
   }
 
   // История поколений: что уже внедрено — чтобы не предлагать то же самое
   const gens = (meta && meta.generations) || [];
   if (gens.length) {
-    lines.push('## Что уже внедрено (не предлагать повторно)');
+    lines.push('## Already applied (do not propose again)');
     lines.push('');
     gens.slice(-6).forEach((g, k) => {
       const dt = new Date(g.at).toISOString().slice(0, 16).replace('T', ' ');
-      lines.push(`**${dt} UTC** — поколение ${gens.length - Math.min(6, gens.length) + k + 1}, собрано ${g.trades} сделок` +
-        (g.stats ? `, win ${g.stats.winRate}%, ${g.stats.avgPct >= 0 ? '+' : ''}${g.stats.avgPct}% на сделку` : ''));
+      lines.push(`**${dt} UTC** — generation ${gens.length - Math.min(6, gens.length) + k + 1}, ${g.trades} trades collected` +
+        (g.stats ? `, win ${g.stats.winRate}%, ${g.stats.avgPct >= 0 ? '+' : ''}${g.stats.avgPct}% per trade` : ''));
       if (g.note) {
         g.note.split('\n').filter(Boolean).forEach(l => lines.push(`  - ${l}`));
       } else if (g.observations && g.observations.length) {
         g.observations.slice(0, 3).forEach(o =>
-          lines.push(`  - было найдено: ${o.dim} «${o.group}» ${o.delta >= 0 ? '+' : ''}${o.delta} п.п.`));
+          lines.push(`  - found at the time: ${o.dim} "${o.group}" ${o.delta >= 0 ? '+' : ''}${o.delta} pp`));
       }
       lines.push('');
     });
-    lines.push('Цифры ниже собраны УЖЕ ПОСЛЕ последней правки — это проверка того,');
-    lines.push('что она дала, а не повторение прошлого анализа.');
+    lines.push('The numbers below were collected AFTER the last change — they test what it');
+    lines.push('did, they are not a repeat of the earlier analysis.');
     lines.push('');
   }
-  lines.push('## Что дали живые сделки');
+  lines.push('## What the live trades produced');
   lines.push('');
   if (!base) {
-    lines.push('Сделок пока нет.');
+    lines.push('No trades yet.');
     return lines.join('\n');
   }
-  lines.push(`- Собрано сделок: **${base.n}**` + (meta && meta.since ? ` за ${meta.since}` : ''));
-  lines.push(`- Побед: **${base.winRate}%** (${base.wins} из ${base.n})`);
-  lines.push(`- Средний результат: **${d(base.avgPct)}%** на сделку (комиссии учтены)`);
-  lines.push(`- Итого: **${d(base.totalUsd)}$**` + (base.avgHoldH != null ? `, среднее удержание ${base.avgHoldH} ч` : ''));
-  lines.push(`- Худшая сделка: **${base.worstPct}%**`);
+  lines.push(`- Trades collected: **${base.n}**` + (meta && meta.since ? ` over ${meta.since}` : ''));
+  lines.push(`- Wins: **${base.winRate}%** (${base.wins} of ${base.n})`);
+  lines.push(`- Average result: **${d(base.avgPct)}%** per trade (fees included)`);
+  lines.push(`- Total: **${d(base.totalUsd)}$**` + (base.avgHoldH != null ? `, average hold ${base.avgHoldH}h` : ''));
+  lines.push(`- Worst trade: **${base.worstPct}%**`);
   lines.push('');
   // База именно скальп-гейта: +0.199% при 68% побед (28 252 сэмпла, 6ч горизонт).
   // Раньше здесь стояло +0.914% — это число из теста стопов для paper-бота,
   // и задание всегда докладывало, что гейт сломан.
   const BASE_EXP = 0.199, BASE_WIN = 68;
-  lines.push(`Ожидание по историческому бэктесту скальп-гейта: **+${BASE_EXP}%** на сделку при ${BASE_WIN}% побед.`);
+  lines.push(`Historical backtest expectancy for the scalp gate: **+${BASE_EXP}%** per trade at ${BASE_WIN}% wins.`);
   const drift = Math.round((base.avgPct - BASE_EXP) * 1000) / 1000;
-  lines.push(`Расхождение с живыми данными: **${d(drift)} п.п.** по результату, ` +
-    `**${d(base.winRate - BASE_WIN)} п.п.** по доле побед.`);
+  lines.push(`Live data differs by **${d(drift)} pp** on result and ` +
+    `**${d(base.winRate - BASE_WIN)} pp** on win rate.`);
   lines.push('');
 
   // Проверка условий по контрольной группе — работает раньше разрезов,
@@ -200,81 +227,87 @@ function buildBrief(trades, meta) {
   const conds = (meta && meta.conditions) || [];
   const ready = conds.filter(c => c.enough);
   if (ready.length) {
-    lines.push('## Проверка каждого условия гейта');
+    lines.push('## Testing each gate condition');
     lines.push('');
-    lines.push('Контрольная группа — сделки, которым не хватило РОВНО ОДНОГО условия.');
-    lines.push('Если без условия результат не хуже, условие только режет поток входов.');
+    lines.push('The control group is trades that missed EXACTLY ONE condition. If results');
+    lines.push('without a condition are no worse, that condition only throttles entry flow.');
     lines.push('');
-    lines.push('| Условие | Сделок без него | Побед | Средний | Против прошедших | Вывод |');
+    lines.push('| Condition | Trades missing it | Wins | Average | vs passers | Verdict |');
     lines.push('|---|---|---|---|---|---|');
     for (const c of ready) {
-      lines.push(`| ${c.cond} | ${c.n} | ${c.winRate}% | ${d(c.avgPct)}% | **${d(c.delta)} п.п.** | ${c.verdict} |`);
+      lines.push(`| ${c.cond} | ${c.n} | ${c.winRate}% | ${d(c.avgPct)}% | **${d(c.delta)} pp** | ${c.verdict} |`);
     }
     lines.push('');
-    const useless = ready.filter(c => c.verdict !== 'нужно');
+    const useless = ready.filter(c => c.verdict !== 'earns its place');
     if (useless.length) {
-      lines.push('**Кандидаты на ослабление:**');
-      useless.forEach(c => lines.push(`- \`${c.cond}\` — без него ${d(c.delta)} п.п. Проверить на истории, ` +
-        `что даст снятие или смягчение порога.`));
+      lines.push('**Candidates to relax:**');
+      useless.forEach(c => lines.push(`- \`${c.cond}\` — without it ${d(c.delta)} pp. Check on history what ` +
+        `removing or loosening the threshold would do.`));
       lines.push('');
     }
   } else if (conds.length) {
-    lines.push('## Проверка условий');
+    lines.push('## Condition testing');
     lines.push('');
-    lines.push('Контрольная группа копится: ' + conds.map(c => `${c.cond} — ${c.n}`).join(', ') +
-      '. Нужно от 6 сделок на условие.');
+    lines.push('Control group still filling: ' + conds.map(c => `${c.cond} — ${c.n}`).join(', ') +
+      '. Needs at least 6 trades per condition.');
     lines.push('');
   }
 
   if (!enough) {
-    lines.push('## Выводы');
+    lines.push('## Conclusions');
     lines.push('');
-    lines.push(`Сделок по гейту пока ${base.n}, для разрезов нужно хотя бы 15.`);
-    if (!ready.length) lines.push('Контрольная группа тоже ещё не набралась. Дай накопиться.');
-    else lines.push('Но проверка условий выше уже работает — с неё и начинай.');
+    lines.push(`Only ${base.n} gate trades so far; slicing needs at least 15.`);
+    if (!ready.length) lines.push('The control group has not filled either. Let it accumulate.');
+    else lines.push('But the condition test above already works — start there.');
     return lines.join('\n');
   }
 
   if (!observations.length) {
-    lines.push('## Выводы');
+    lines.push('## Conclusions');
     lines.push('');
-    lines.push('Ни один разрез не даёт отклонения ≥0.25 п.п. от общего среднего.');
-    lines.push('Это значит, что гейт работает одинаково во всех замеренных условиях —');
-    lines.push('сужать его пока не на чем. Продолжай копить сделки.');
+    lines.push('No slice deviates by 0.25 pp or more from the overall average. The gate');
+    lines.push('performs the same across every measured condition, so there is nothing to');
+    lines.push('narrow yet. Keep accumulating trades.');
     return lines.join('\n');
   }
 
-  lines.push('## Найденные расхождения');
+  lines.push('## Deviations found');
   lines.push('');
-  lines.push('| Разрез | Группа | Сделок | Побед | Средний | Отклонение |');
+  lines.push('| Slice | Group | Trades | Wins | Average | Deviation |');
   lines.push('|---|---|---|---|---|---|');
   for (const o of observations.slice(0, 12)) {
-    lines.push(`| ${o.dim} | ${o.group} | ${o.n} | ${o.winRate}% | ${d(o.avgPct)}% | **${d(o.delta)} п.п.** |`);
+    lines.push(`| ${o.dim} | ${o.group} | ${o.n} | ${o.winRate}% | ${d(o.avgPct)}% | **${d(o.delta)} pp** |`);
   }
   lines.push('');
-  lines.push('## Что предлагается сделать');
+  lines.push('## Suggested work');
   lines.push('');
   let i = 1;
   for (const o of observations.slice(0, 6)) {
     if (o.delta < 0) {
-      lines.push(`${i++}. **${o.dim} — «${o.group}» работает хуже** (${o.n} сделок, ${o.winRate}% побед, ${d(o.avgPct)}%, это ${d(o.delta)} п.п. к среднему).`);
-      lines.push(`   Проверить на истории, стоит ли исключить такие входы или снизить им балл.`);
+      lines.push(`${i++}. **${o.dim} — "${o.group}" performs worse** (${o.n} trades, ${o.winRate}% wins, ${d(o.avgPct)}%, which is ${d(o.delta)} pp off the average).`);
+      lines.push(`   Check on history whether to exclude such entries or score them lower.`);
     } else {
-      lines.push(`${i++}. **${o.dim} — «${o.group}» работает лучше** (${o.n} сделок, ${o.winRate}% побед, ${d(o.avgPct)}%, это ${d(o.delta)} п.п. к среднему).`);
-      lines.push(`   Проверить, не стоит ли поднять таким входам балл или сделать условие обязательным.`);
+      lines.push(`${i++}. **${o.dim} — "${o.group}" performs better** (${o.n} trades, ${o.winRate}% wins, ${d(o.avgPct)}%, which is ${d(o.delta)} pp off the average).`);
+      lines.push(`   Check whether to score such entries higher or make the condition mandatory.`);
     }
     lines.push('');
   }
-  lines.push('## Обязательное требование');
+  lines.push('## Hard requirement');
   lines.push('');
-  lines.push('Каждое изменение сначала прогнать на исторических данных');
-  lines.push('(`node src/scalp/backtest.js 7 500000`) и проверить устойчивость по трём');
-  lines.push('отрезкам времени. Правки, которые улучшают только общий результат, но');
-  lines.push('не держатся на отрезках, не принимать — так уже было с сигналом');
-  lines.push('«возраст входа» и с выходом по EMA9.');
+  lines.push('Run every change against historical data first');
+  lines.push('(`node src/scalp/backtest.js 7 500000`) and check stability across three time');
+  lines.push('segments. Do not accept changes that improve only the overall result but do');
+  lines.push('not hold across segments — that already happened with the "signal age" idea');
+  lines.push('and with the EMA9 exit.');
   lines.push('');
-  lines.push('Выборка мала и покрывает один режим рынка. Это подсказка, куда смотреть,');
-  lines.push('а не готовое решение.');
+  lines.push('One more trap worth naming: measure candidate filters against the CURRENT');
+  lines.push('live gate, not an older one. A daily-range filter looked like a clear win');
+  lines.push('against the pre-pump-filter gate and turned out to be worth nothing once the');
+  lines.push('range and run-up conditions were already in place — it was removing trades');
+  lines.push('they had already removed.');
+  lines.push('');
+  lines.push('The sample is small and covers one market regime. This is a pointer to where');
+  lines.push('to look, not a finished answer.');
   return lines.join('\n');
 }
 
@@ -302,7 +335,7 @@ function checkConditions(passed, shadows, minN = 6) {
         cond, enough: true, n: a.n, winRate: a.winRate, avgPct: a.avgPct,
         baseWin: base.winRate, baseAvg: base.avgPct, delta,
         // условие оправдано, если без него заметно хуже
-        verdict: delta <= -0.15 ? 'нужно' : delta >= 0.15 ? 'мешает' : 'не влияет',
+        verdict: delta <= -0.15 ? 'earns its place' : delta >= 0.15 ? 'hurts' : 'no effect',
       };
     })
     .sort((a, b) => (b.n || 0) - (a.n || 0));
