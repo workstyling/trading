@@ -13194,9 +13194,18 @@ Requirements:
         const inPaper = _paperCoins;
         // Режим — один раз полосой над таблицей, а не плашкой в каждой строке
         const rgm = j.regime;
+        // Расстояние до EMA20 без направления мало что говорит: −0.1% и растёт
+        // означает, что входы вот-вот откроются, а −0.1% и падает — обратное.
+        // Режим — самый сильный фактор из найденных (18 п.п.), так что знать,
+        // куда он идёт, важнее, чем кажется.
+        const dd = rgm && rgm.distDelta;
+        const trend = dd == null || Math.abs(dd) < 0.02 ? ''
+          : rgm.above
+            ? (dd > 0 ? ` <b>и уходит вверх</b> (${_sgn(dd)} за скан)` : ` <b>но сползает к EMA20</b> (${_sgn(dd)} за скан)`)
+            : (dd > 0 ? ` <b>и подходит к EMA20</b> (${_sgn(dd)} за скан)` : ` <b>и уходит вниз</b> (${_sgn(dd)} за скан)`);
         const regimeBar = !rgm ? '' : rgm.above
-          ? `<div class="ss-regime-bar ok"><span>▲</span><span><b>Рынок за нас</b> — BTC на ${rgm.distPct}% выше EMA20 (1ч). <span class="ss-rb-note">Входы разрешены.</span></span></div>`
-          : `<div class="ss-regime-bar"><span>▼</span><span><b>Рынок против</b> — BTC на ${Math.abs(rgm.distPct)}% ниже EMA20 (1ч). <span class="ss-rb-note">Входы не выдаются: ниже EMA20 ожидание −0.211% против +0.239% выше. Баллы сжаты в 0–60, порядок сохранён.</span></span></div>`;
+          ? `<div class="ss-regime-bar ok"><span>▲</span><span><b>Рынок за нас</b> — BTC на ${rgm.distPct}% выше EMA20 (1ч)${trend}. <span class="ss-rb-note">Входы разрешены.</span></span></div>`
+          : `<div class="ss-regime-bar"><span>▼</span><span><b>Рынок против</b> — BTC на ${Math.abs(rgm.distPct)}% ниже EMA20 (1ч)${trend}. <span class="ss-rb-note">Входы не выдаются: ниже EMA20 ожидание −0.211% против +0.239% выше. Баллы сжаты в 0–60, порядок сохранён.</span></span></div>`;
         body.innerHTML = regimeBar + `<table class="tg-table"><thead><tr>
             <th>COIN</th><th title="Балл 0–100. Полоса под числом — насколько близко до входа. При закрытом режиме шкала сжата в 0–60.">SCORE</th>
             <th title="Сколько из условий гейта выполнено">ГЕЙТ</th>
@@ -13207,13 +13216,20 @@ Requirements:
             // сказано полосой выше. Но писать голое «ВХОД» при закрытом режиме
             // нельзя: строка звала бы покупать там, где вход не выдаётся.
             // «ЖДЁТ РЫНКА» говорит правду целиком — монета готова, рынок нет.
-            const tg = (x.tagOwn === 'ВХОД' && !x.pass) ? 'ЖДЁТ РЫНКА' : (x.tagOwn || x.tag);
-            const col = tg === 'ВХОД' ? '#4cc9f0' : tg === 'ЖДЁТ РЫНКА' ? '#5ba9c4' : tg === 'БЛИЗКО' ? '#f5c518'
+            // «БЛИЗКО» по определению значит ровно одно непройденное условие,
+            // но какое — раньше было видно только в подсказке. Пишем прямо:
+            // так таблица из списка наблюдения становится списком ожидания.
+            const own = x.tagOwn || x.tag;
+            const miss = (own === 'БЛИЗКО' && x.checks) ? x.checks.find(c => !c.ok) : null;
+            const tg = (x.tagOwn === 'ВХОД' && !x.pass) ? 'ЖДЁТ РЫНКА'
+              : miss ? 'ждёт ' + _shortCheck(miss.k) : own;
+            const col = tg === 'ВХОД' ? '#4cc9f0' : tg === 'ЖДЁТ РЫНКА' ? '#5ba9c4' : (tg === 'БЛИЗКО' || miss) ? '#f5c518'
               : tg === 'ШИРОКИЙ СПРЕД' || tg === 'ПОСЛЕ ПАМПА' ? '#ff6b6b'
               : tg === 'НЕЛИКВИД' ? '#8892a0' : '#7c8698';
             const tip = `SCALP ${x.score}/100 — гейт ${x.passed}/${x.checks.length}&#10;` +
               x.checks.map(y => `${y.ok ? '✓' : '✗'} ${y.k}: ${y.v}`).join('&#10;') +
               (x.scoreRaw != null ? `&#10;&#10;Без учёта режима рынка балл ${x.scoreRaw}.` : '') +
+              (x.scorePrev != null ? `&#10;Прошлый скан: ${x.scorePrev} (${x.scoreDelta >= 0 ? '+' : ''}${x.scoreDelta}).` : '') +
               `&#10;&#10;Правило: 86+ = ВХОД. Горизонт 2–6 часов.`;
             const sprCol = x.spreadPct == null ? '#667' : x.spreadPct > 0.4 ? '#f55' : x.spreadPct > 0.15 ? '#f5c518' : '#00e5a0';
             const posPct = Math.round(x.rangePos * 100);
@@ -13221,7 +13237,7 @@ Requirements:
             return `<tr style="cursor:pointer;${x.pass ? 'background:rgba(76,201,240,0.10);box-shadow:inset 3px 0 0 #4cc9f0;' : ''}" onclick="selectCoinForBuy('${x.coin}')" title="Выбрать ${x.coin} для покупки">
               <td class="tg-coin" style="font-size:12px;">${x.coin}<br><span style="color:#555;font-size:10px;font-weight:400;">$${px(x.price)}</span></td>
               <td><div class="ss-score" title="${tip}">
-                <span class="ss-score-n" style="color:${col};">${x.score}</span>
+                <span class="ss-score-n" style="color:${col};">${x.score}${_scoreTrend(x.scoreDelta)}</span>
                 <span class="ss-meter"><i style="width:${Math.max(2, Math.min(100, x.score))}%;background:${col};"></i></span>
                 <span class="ss-tag" style="color:${col};background:${col}1f;">${tg}</span>
               </div></td>
@@ -13245,6 +13261,27 @@ Requirements:
     }
     setInterval(loadScalpScan, 45_000);
     loadScalpScan();
+
+    // Короткое имя условия для строки таблицы: полные подписи не влезают
+    function _shortCheck(k) {
+      if (!k) return '?';
+      if (k.includes('У дна')) return 'дна 4ч';
+      if (k.includes('RSI')) return 'RSI';
+      if (k.includes('EMA9')) return 'EMA9';
+      if (k.includes('Диапазон')) return 'диапазон';
+      if (k.includes('памп')) return 'откат';
+      if (k.includes('Ликвидность')) return 'объём';
+      if (k.includes('BTC')) return 'BTC';
+      return k.slice(0, 12);
+    }
+    function _sgn(v) { return (v >= 0 ? '+' : '') + v + '%'; }
+    // Монета, поднявшаяся с 37 до 44, и монета, сползшая с 52 до 44 — это
+    // разные ситуации, а число одно и то же
+    function _scoreTrend(d) {
+      if (d == null || d === 0) return '';
+      const up = d > 0;
+      return `<span style="font-size:8px;font-weight:700;margin-left:2px;color:${up ? '#4ade80' : '#f87171'};" title="${up ? 'вырос' : 'упал'} на ${Math.abs(d)} с прошлого скана">${up ? '▲' : '▼'}${Math.abs(d)}</span>`;
+    }
 
     /* Совет по размещению лимитки — преимущество тонкое, исполнение решает */
     async function showLimitAdvice(coin) {

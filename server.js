@@ -4102,6 +4102,11 @@ setTimeout(attachScalp, 50_000);
 const scalpScanner = require('./src/scalp/scanner');
 
 const scalpScan = { running: false, progress: 0, scanned: 0, total: 0, at: 0, results: [], regime: null };
+// Прошлый скан: по нему считаем, куда движется балл монеты и режим рынка.
+// Держим здесь, а НЕ в src/scalp/*, потому что отпечаток гейта хэширует те
+// файлы — добавление показательной мелочи туда обнулило бы поколение
+// лаборатории, а это ровно то, что мы только что чинили.
+const scalpPrev = { scores: new Map(), distPct: null, at: 0 };
 
 async function runScalpScan() {
   if (scalpScan.running) return;
@@ -4116,6 +4121,21 @@ async function runScalpScan() {
         scalpScan.progress = total ? Math.round(done / total * 100) : 0;
       },
     });
+    // Тренд балла: до перезаписи результатов сравниваем с прошлым сканом
+    for (const r of out.results) {
+      const was = scalpPrev.scores.get(r.coin);
+      r.scorePrev = was != null ? was : null;
+      r.scoreDelta = was != null ? r.score - was : null;
+    }
+    if (out.regime) {
+      out.regime.distPrev = scalpPrev.distPct;
+      out.regime.distDelta = scalpPrev.distPct != null
+        ? Math.round((out.regime.distPct - scalpPrev.distPct) * 100) / 100 : null;
+      scalpPrev.distPct = out.regime.distPct;
+    }
+    scalpPrev.scores = new Map(out.results.map(r => [r.coin, r.score]));
+    scalpPrev.at = out.at;
+
     scalpScan.results = out.results;
     scalpScan.regime = out.regime;
     scalpScan.at = out.at;
@@ -4253,6 +4273,13 @@ async function labTick() {
         if (!(px > 0)) continue;
         t.last = px;
         const g = (px - t.entry) / t.entry * 100;
+        // Пик и дно за время сделки. Без них исход −6% по стопу и исход
+        // «дошла до +1.9% и развернулась» в журнале неразличимы, хотя это
+        // разные истории. С ними каждая закрытая сделка становится замером
+        // ЛЮБОЙ цели и ЛЮБОГО стопа сразу — на тех же самых сделках, без
+        // нового бэктеста.
+        if (t.mfe == null || g > t.mfe) t.mfe = Math.round(g * 100) / 100;
+        if (t.mae == null || g < t.mae) t.mae = Math.round(g * 100) / 100;
         const close = (exit, why) => {
           t.exit = exit; t.closedAt = Date.now(); t.why = why;
           const qty = t.budget * (1 - fee) / t.entry;
@@ -4272,15 +4299,26 @@ async function labTick() {
     // 2) новые входы. Кроме прошедших гейт берём КОНТРОЛЬНУЮ ГРУППУ: монеты,
     // которым не хватило ровно одного условия. Только по прошедшим невозможно
     // узнать, заслуживает ли условие своего места — нужен встречный пример.
+    //
+    // Плюс ВТОРОЙ круг контроля: те, кто провалил ровно два условия. Группа
+    // «не хватило одного» отвечает, заслуживает ли места каждое условие по
+    // отдельности, но не отвечает, не зажат ли гейт целиком — сколько живых
+    // прибыльных входов мы просто никогда не видим. Держим их отдельно и
+    // мельче: это разведка, а не проверка условия.
     if (labState.enabled) {
       const passers = scalpScan.results.filter(x => x.pass);
-      const openShadows = labState.trades.filter(t => !t.closedAt && t.shadow).length;
+      const openShadows = labState.trades.filter(t => !t.closedAt && t.shadow && !t.far).length;
+      const openFar = labState.trades.filter(t => !t.closedAt && t.far).length;
       const nearMiss = scalpScan.results
         .filter(x => !x.pass && x.checks && x.passed === x.checks.length - 1)
         .slice(0, Math.max(0, 12 - openShadows));   // потолок: тикеры тоже стоят запросов
+      const farMiss = scalpScan.results
+        .filter(x => !x.pass && x.checks && x.passed === x.checks.length - 2)
+        .slice(0, Math.max(0, 6 - openFar));
 
-      for (const r of [...passers, ...nearMiss]) {
+      for (const r of [...passers, ...nearMiss, ...farMiss]) {
         const isShadow = !r.pass;
+        const isFar = isShadow && r.passed === r.checks.length - 2;
         if (labState.trades.some(t => t.coin === r.coin && !t.closedAt)) continue;
         const recent = [...labState.trades].reverse().find(t => t.coin === r.coin && t.closedAt);
         const cooldown = (isShadow ? 6 : 4) * 3600 * 1000;
@@ -4289,13 +4327,14 @@ async function labTick() {
         if (!(ask > 0)) continue;
         // По-английски: это же название попадёт в таблицу проверки условий
         // внутри задания для Claude Code
-        const mc = isShadow ? r.checks.find(c => !c.ok) : null;
-        const missing = mc ? (mc.en || mc.k) : null;
+        const failed = isShadow ? r.checks.filter(c => !c.ok).map(c => c.en || c.k) : [];
+        const missing = failed.length ? failed.join(' + ') : null;
         labState.trades.push({
           id: `lab_${Date.now()}_${r.coin}`,
           coin: r.coin, pair: r.pair, entry: ask, last: ask,
-          shadow: isShadow, missing,
+          shadow: isShadow, far: isFar, missing,
           budget: labState.budget, openedAt: Date.now(),
+          mfe: 0, mae: 0,          // пик и дно в % от входа, ведём на каждом тике
           // полный контекст входа — по нему потом ищем закономерности
           ctx: {
             score: r.score, rangePos: r.rangePos, rsi: r.rsi,
@@ -4315,7 +4354,7 @@ async function labTick() {
           },
         });
         changed = true;
-        console.log(`[lab] ${isShadow ? 'контроль' : 'вход'} ${r.coin} @ $${ask} (балл ${r.score}` +
+        console.log(`[lab] ${isFar ? 'разведка' : isShadow ? 'контроль' : 'вход'} ${r.coin} @ $${ask} (балл ${r.score}` +
           (isShadow ? `, не хватило: ${missing}` : '') + ')');
       }
     }
@@ -4331,7 +4370,11 @@ app.get('/api/lab', (req, res) => {
   // а не для оценки самого гейта
   const closedAll = labState.trades.filter(t => t.closedAt);
   const closed = closedAll.filter(t => !t.shadow);
-  const shadows = closedAll.filter(t => t.shadow);
+  // Контроль «не хватило одного» и разведка «не хватило двух» — разные вопросы,
+  // и смешивать их нельзя: во второй группе ключ составной, и проверка условий
+  // приняла бы пару условий за одно
+  const shadows = closedAll.filter(t => t.shadow && !t.far);
+  const farShadows = closedAll.filter(t => t.far);
   const open = labState.trades.filter(t => !t.closedAt).map(t => ({
     ...t, pnlPct: t.last ? Math.round(((t.last / t.entry - 1) * 100 - paperLimitFee() * 200) * 100) / 100 : null,
   }));
@@ -4342,7 +4385,7 @@ app.get('/api/lab', (req, res) => {
     success: true,
     enabled: labState.enabled, startedAt: labState.startedAt, hoursRunning: since,
     budget: labState.budget,
-    open, closedCount: closed.length, shadowCount: shadows.length,
+    open, closedCount: closed.length, shadowCount: shadows.length, farCount: farShadows.length,
     closed: closed.slice(-40).reverse(),
     stats: base, observations, enough, conditions,
     generations: (labState.generations || []).slice(-10).reverse(),
@@ -4357,8 +4400,13 @@ app.get('/api/lab', (req, res) => {
       fingerprint: labState.fingerprint,
       // Сколько из закрытых открылись ещё при прошлом поколении
       staleCount: closed.filter(t => t.gen === 'old').length,
+      // Пик/дно и причины выхода — по ним задание считает, что дала бы другая
+      // цель и другой стоп, не запуская новый бэктест
+      exits: closed.map(t => ({ why: t.why, mfe: t.mfe, mae: t.mae, pnlPct: t.pnlPct, holdH: t.holdH })),
+      farGroup: lab.aggFar(farShadows),
       targetPct: paperTargetPct(),
       slPct: paperBot.slPct != null ? paperBot.slPct : PAPER_CFG.slPct,
+      feePct: paperLimitFee() * 2,
     }),
   });
 });

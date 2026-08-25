@@ -90,6 +90,61 @@ const BUCKETS = {
   },
 };
 
+/**
+ * Что дала бы ДРУГАЯ цель и другой стоп — на уже собранных сделках.
+ *
+ * Пик (mfe) и дно (mae) каждой сделки записаны по ходу её жизни, поэтому
+ * исход при любом пороге восстанавливается точно: если дно опустилось ниже
+ * стопа — стоп; иначе если пик дошёл до цели — цель. Единственное, чего
+ * пик и дно не хранят, — порядок событий, поэтому при совпадении считаем
+ * срабатывание стопа (консервативно: так результат не завышается).
+ */
+function sweepTargets(exits, fee, targets, stops) {
+  const rows = [];
+  const valid = exits.filter(e => Number.isFinite(e.mfe) && Number.isFinite(e.mae));
+  if (valid.length < 5) return { rows, n: valid.length };
+  for (const tp of targets) {
+    for (const sl of stops) {
+      let sum = 0, wins = 0, hitTp = 0, hitSl = 0;
+      for (const e of valid) {
+        let pnl;
+        if (sl > 0 && e.mae <= -sl) { pnl = -sl - fee; hitSl++; }
+        else if (e.mfe >= tp) { pnl = tp - fee; hitTp++; }
+        else pnl = e.pnlPct != null ? e.pnlPct : 0;   // ни туда ни сюда — как закрылась
+        sum += pnl;
+        if (pnl > 0) wins++;
+      }
+      rows.push({
+        tp, sl, n: valid.length,
+        exp: Math.round(sum / valid.length * 1000) / 1000,
+        winRate: Math.round(wins / valid.length * 100),
+        tpShare: Math.round(hitTp / valid.length * 100),
+        slShare: Math.round(hitSl / valid.length * 100),
+      });
+    }
+  }
+  return { rows, n: valid.length };
+}
+
+/** Сводка по группе «не хватило двух условий» — насколько зажат гейт */
+function aggFar(trades) {
+  const a = agg(trades || []);
+  if (!a) return null;
+  const byPair = {};
+  for (const t of trades) {
+    const k = t.missing || '—';
+    (byPair[k] || (byPair[k] = [])).push(t);
+  }
+  return {
+    ...a,
+    pairs: Object.entries(byPair)
+      .map(([cond, arr]) => ({ cond, ...agg(arr) }))
+      .filter(x => x.n >= 3)
+      .sort((x, y) => y.n - x.n)
+      .slice(0, 8),
+  };
+}
+
 /** Сводка по набору сделок */
 function agg(trades) {
   if (!trades.length) return null;
@@ -234,6 +289,95 @@ function buildBrief(trades, meta) {
     `**${d(base.winRate - BASE_WIN)} pp** on win rate.`);
   lines.push('');
 
+  // ── Причины выхода ───────────────────────────────────────────────────
+  // Поле why писалось с самого начала и никуда не показывалось. Разбивка
+  // меняет вывод: масса TIME значит, что цель недостижима, масса SL — что
+  // стоп стоит в рабочей зоне, а не в аварийной.
+  const exits = (meta && meta.exits) || [];
+  if (exits.length) {
+    const by = { TP: 0, SL: 0, TIME: 0, other: 0 };
+    for (const e of exits) by[e.why] !== undefined ? by[e.why]++ : by.other++;
+    const pct = (v) => Math.round(v / exits.length * 100);
+    lines.push('## How trades ended');
+    lines.push('');
+    lines.push(`- Hit target: **${by.TP}** (${pct(by.TP)}%)`);
+    lines.push(`- Hit stop: **${by.SL}** (${pct(by.SL)}%)`);
+    lines.push(`- Closed on the 48h limit: **${by.TIME}** (${pct(by.TIME)}%)`);
+    if (by.TIME > exits.length * 0.3) {
+      lines.push('');
+      lines.push('More than a third timed out, which means the target is out of reach for');
+      lines.push('these entries rather than merely slow. Test a lower one below.');
+    }
+    if (by.SL > exits.length * 0.25) {
+      lines.push('');
+      lines.push('The stop is firing on a quarter of trades or more. It was sized as');
+      lines.push('catastrophe insurance, not as a working exit — check whether it now sits');
+      lines.push('inside normal noise for these coins.');
+    }
+    lines.push('');
+
+    // ── Что дала бы другая цель и другой стоп ──────────────────────────
+    const fee = (meta && meta.feePct) || 0.25;
+    const sweep = sweepTargets(exits, fee,
+      [0.8, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0], [0, 3, 4, 6, 8]);
+    if (sweep.rows.length) {
+      lines.push('## What other targets and stops would have produced');
+      lines.push('');
+      lines.push(`Reconstructed from the peak and trough recorded on each of the ${sweep.n} live`);
+      lines.push('trades, not from a backtest. These are the same trades, re-scored: if the');
+      lines.push('trough went past a stop it is counted as stopped, otherwise if the peak');
+      lines.push('reached a target it is counted as a win. Peak and trough do not record the');
+      lines.push('ORDER of the two, so a trade that hit both is counted as stopped — the');
+      lines.push('numbers lean pessimistic rather than flattering.');
+      lines.push('');
+      lines.push('| Target | Stop | Expectancy | Wins | Reached target | Stopped |');
+      lines.push('|---|---|---|---|---|---|');
+      const best = sweep.rows.slice().sort((a, b) => b.exp - a.exp)[0];
+      for (const r of sweep.rows.slice().sort((a, b) => b.exp - a.exp).slice(0, 12)) {
+        const mark = r === best ? ' **←**' : '';
+        lines.push(`| +${r.tp}% | ${r.sl ? '-' + r.sl + '%' : 'none'} | **${d(r.exp)}%** | ${r.winRate}% | ${r.tpShare}% | ${r.slShare}% |${mark}`);
+      }
+      lines.push('');
+      const cur = sweep.rows.find(r => r.tp === (meta.targetPct || 2) && r.sl === (meta.slPct || 6));
+      if (cur && best && best.exp > cur.exp) {
+        lines.push(`Live data prefers **+${best.tp}% / ${best.sl ? '-' + best.sl + '%' : 'no stop'}** ` +
+          `(${d(best.exp)}%) over the current **+${cur.tp}% / -${cur.sl}%** (${d(cur.exp)}%), ` +
+          `a difference of **${d(Math.round((best.exp - cur.exp) * 1000) / 1000)} pp** per trade.`);
+        lines.push('Confirm on history before changing anything — this sample is one market regime.');
+      } else if (cur) {
+        lines.push(`The current **+${cur.tp}% / -${cur.sl}%** is the best combination in this sample.`);
+      }
+      lines.push('');
+    }
+  }
+
+  // ── Насколько зажат гейт ─────────────────────────────────────────────
+  // Группа «не хватило ДВУХ условий»: она отвечает не на вопрос «нужно ли
+  // условие», а на вопрос «сколько прибыльных входов мы вообще не видим».
+  const far = meta && meta.farGroup;
+  if (far && far.n >= 5) {
+    lines.push('## How much the gate is leaving on the table');
+    lines.push('');
+    lines.push('Trades that missed TWO conditions — never eligible, tracked only to see');
+    lines.push('what lies outside the gate entirely.');
+    lines.push('');
+    lines.push(`- ${far.n} trades, ${far.winRate}% wins, **${d(far.avgPct)}%** per trade` +
+      (base ? ` against **${d(base.avgPct)}%** for trades that passed` : ''));
+    if (base && far.avgPct > base.avgPct) {
+      lines.push('');
+      lines.push('Entries the gate rejects outright are doing BETTER than the ones it lets');
+      lines.push('through. If this holds past 20 trades the gate is over-tightened, and the');
+      lines.push('pairs below say where to look first.');
+    }
+    if (far.pairs && far.pairs.length) {
+      lines.push('');
+      lines.push('| Missing pair | Trades | Wins | Average |');
+      lines.push('|---|---|---|---|');
+      for (const p of far.pairs) lines.push(`| ${p.cond} | ${p.n} | ${p.winRate}% | ${d(p.avgPct)}% |`);
+    }
+    lines.push('');
+  }
+
   // Проверка условий по контрольной группе — работает раньше разрезов,
   // потому что требует меньше данных
   const conds = (meta && meta.conditions) || [];
@@ -353,4 +497,4 @@ function checkConditions(passed, shadows, minN = 6) {
     .sort((a, b) => (b.n || 0) - (a.n || 0));
 }
 
-module.exports = { BUCKETS, agg, findObservations, buildBrief, checkConditions };
+module.exports = { BUCKETS, agg, findObservations, buildBrief, checkConditions, sweepTargets, aggFar };
