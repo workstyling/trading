@@ -187,10 +187,43 @@ function buildBrief(trades, meta) {
     `**${d(base.winRate - BASE_WIN)} п.п.** по доле побед.`);
   lines.push('');
 
+  // Проверка условий по контрольной группе — работает раньше разрезов,
+  // потому что требует меньше данных
+  const conds = (meta && meta.conditions) || [];
+  const ready = conds.filter(c => c.enough);
+  if (ready.length) {
+    lines.push('## Проверка каждого условия гейта');
+    lines.push('');
+    lines.push('Контрольная группа — сделки, которым не хватило РОВНО ОДНОГО условия.');
+    lines.push('Если без условия результат не хуже, условие только режет поток входов.');
+    lines.push('');
+    lines.push('| Условие | Сделок без него | Побед | Средний | Против прошедших | Вывод |');
+    lines.push('|---|---|---|---|---|---|');
+    for (const c of ready) {
+      lines.push(`| ${c.cond} | ${c.n} | ${c.winRate}% | ${d(c.avgPct)}% | **${d(c.delta)} п.п.** | ${c.verdict} |`);
+    }
+    lines.push('');
+    const useless = ready.filter(c => c.verdict !== 'нужно');
+    if (useless.length) {
+      lines.push('**Кандидаты на ослабление:**');
+      useless.forEach(c => lines.push(`- \`${c.cond}\` — без него ${d(c.delta)} п.п. Проверить на истории, ` +
+        `что даст снятие или смягчение порога.`));
+      lines.push('');
+    }
+  } else if (conds.length) {
+    lines.push('## Проверка условий');
+    lines.push('');
+    lines.push('Контрольная группа копится: ' + conds.map(c => `${c.cond} — ${c.n}`).join(', ') +
+      '. Нужно от 6 сделок на условие.');
+    lines.push('');
+  }
+
   if (!enough) {
     lines.push('## Выводы');
     lines.push('');
-    lines.push(`Сделок пока мало (${base.n}), для разрезов нужно хотя бы 15. Дай накопиться.`);
+    lines.push(`Сделок по гейту пока ${base.n}, для разрезов нужно хотя бы 15.`);
+    if (!ready.length) lines.push('Контрольная группа тоже ещё не набралась. Дай накопиться.');
+    else lines.push('Но проверка условий выше уже работает — с неё и начинай.');
     return lines.join('\n');
   }
 
@@ -237,4 +270,34 @@ function buildBrief(trades, meta) {
   return lines.join('\n');
 }
 
-module.exports = { BUCKETS, agg, findObservations, buildBrief };
+/**
+ * Проверка каждого условия гейта по контрольной группе.
+ *
+ * Контроль — сделки, которым не хватило РОВНО ОДНОГО условия. Если такие
+ * сделки идут не хуже прошедших, значит это условие ничего не добавляет и
+ * только режет поток входов. Понять это по одним лишь прошедшим невозможно.
+ */
+function checkConditions(passed, shadows, minN = 6) {
+  const base = agg(passed);
+  if (!base) return [];
+  const byMissing = {};
+  for (const t of shadows) {
+    const k = t.missing || '—';
+    (byMissing[k] || (byMissing[k] = [])).push(t);
+  }
+  return Object.entries(byMissing)
+    .map(([cond, arr]) => {
+      const a = agg(arr);
+      if (!a || a.n < minN) return { cond, n: a ? a.n : 0, enough: false };
+      const delta = Math.round((a.avgPct - base.avgPct) * 1000) / 1000;
+      return {
+        cond, enough: true, n: a.n, winRate: a.winRate, avgPct: a.avgPct,
+        baseWin: base.winRate, baseAvg: base.avgPct, delta,
+        // условие оправдано, если без него заметно хуже
+        verdict: delta <= -0.15 ? 'нужно' : delta >= 0.15 ? 'мешает' : 'не влияет',
+      };
+    })
+    .sort((a, b) => (b.n || 0) - (a.n || 0));
+}
+
+module.exports = { BUCKETS, agg, findObservations, buildBrief, checkConditions };

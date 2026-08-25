@@ -4194,17 +4194,29 @@ async function labTick() {
       await sleep(120);
     }
 
-    // 2) новые входы по гейту — из рыночного скана
+    // 2) новые входы. Кроме прошедших гейт берём КОНТРОЛЬНУЮ ГРУППУ: монеты,
+    // которым не хватило ровно одного условия. Только по прошедшим невозможно
+    // узнать, заслуживает ли условие своего места — нужен встречный пример.
     if (labState.enabled) {
-      for (const r of scalpScan.results.filter(x => x.pass)) {
+      const passers = scalpScan.results.filter(x => x.pass);
+      const openShadows = labState.trades.filter(t => !t.closedAt && t.shadow).length;
+      const nearMiss = scalpScan.results
+        .filter(x => !x.pass && x.checks && x.passed === x.checks.length - 1)
+        .slice(0, Math.max(0, 12 - openShadows));   // потолок: тикеры тоже стоят запросов
+
+      for (const r of [...passers, ...nearMiss]) {
+        const isShadow = !r.pass;
         if (labState.trades.some(t => t.coin === r.coin && !t.closedAt)) continue;
         const recent = [...labState.trades].reverse().find(t => t.coin === r.coin && t.closedAt);
-        if (recent && Date.now() - recent.closedAt < 4 * 3600 * 1000) continue;  // кулдаун 4ч
+        const cooldown = (isShadow ? 6 : 4) * 3600 * 1000;
+        if (recent && Date.now() - recent.closedAt < cooldown) continue;
         const ask = await fetchBestAsk(r.pair);
         if (!(ask > 0)) continue;
+        const missing = isShadow ? (r.checks.find(c => !c.ok) || {}).k || '—' : null;
         labState.trades.push({
           id: `lab_${Date.now()}_${r.coin}`,
           coin: r.coin, pair: r.pair, entry: ask, last: ask,
+          shadow: isShadow, missing,
           budget: labState.budget, openedAt: Date.now(),
           // полный контекст входа — по нему потом ищем закономерности
           ctx: {
@@ -4216,7 +4228,8 @@ async function labTick() {
           },
         });
         changed = true;
-        console.log(`[lab] вход ${r.coin} @ $${ask} (балл ${r.score})`);
+        console.log(`[lab] ${isShadow ? 'контроль' : 'вход'} ${r.coin} @ $${ask} (балл ${r.score}` +
+          (isShadow ? `, не хватило: ${missing}` : '') + ')');
       }
     }
     if (changed) saveLab();
@@ -4227,21 +4240,30 @@ setInterval(labTick, 60_000);
 setTimeout(labTick, 90_000);
 
 app.get('/api/lab', (req, res) => {
-  const closed = labState.trades.filter(t => t.closedAt);
+  // Контрольная группа считается отдельно: она нужна для проверки условий,
+  // а не для оценки самого гейта
+  const closedAll = labState.trades.filter(t => t.closedAt);
+  const closed = closedAll.filter(t => !t.shadow);
+  const shadows = closedAll.filter(t => t.shadow);
   const open = labState.trades.filter(t => !t.closedAt).map(t => ({
     ...t, pnlPct: t.last ? Math.round(((t.last / t.entry - 1) * 100 - paperLimitFee() * 200) * 100) / 100 : null,
   }));
   const since = labState.startedAt ? Math.round((Date.now() - labState.startedAt) / 3600000) : 0;
   const { base, observations, enough } = lab.findObservations(closed);
+  const conditions = lab.checkConditions(closed, shadows);
   res.json({
     success: true,
     enabled: labState.enabled, startedAt: labState.startedAt, hoursRunning: since,
     budget: labState.budget,
-    open, closedCount: closed.length,
+    open, closedCount: closed.length, shadowCount: shadows.length,
     closed: closed.slice(-40).reverse(),
-    stats: base, observations, enough,
+    stats: base, observations, enough, conditions,
     generations: (labState.generations || []).slice(-10).reverse(),
-    brief: lab.buildBrief(closed, { since: since ? `${since} ч` : null, generations: labState.generations || [] }),
+    brief: lab.buildBrief(closed, {
+      since: since ? `${since} ч` : null,
+      generations: labState.generations || [],
+      conditions,
+    }),
   });
 });
 
