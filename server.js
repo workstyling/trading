@@ -4391,7 +4391,7 @@ app.get('/api/lab', (req, res) => {
     generations: (labState.generations || []).slice(-10).reverse(),
     fingerprint: labState.fingerprint,
     brief: lab.buildBrief(closed, {
-      since: since ? `${since} ч` : null,
+      since: since ? `${since}h` : null,
       generations: labState.generations || [],
       conditions,
       // Условия снимаем с работающего сканера — задание всегда описывает

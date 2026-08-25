@@ -366,7 +366,7 @@ function buildBrief(trades, meta) {
     lines.push(`- Per-burst average: **${d(cl.avgPerCluster)}%**, ${cl.clusterWinRate}% of bursts positive`);
     lines.push('');
     if (cl.nClusters < 6) {
-      lines.push(`These ${base.n} trades are really **${cl.nClusters} events**. The gate fires in clumps:`);
+      lines.push(`These ${base.n} trades are really **${cl.nClusters} event${cl.nClusters === 1 ? '' : 's'}**. The gate fires in clumps:`);
       lines.push('when BTC is above EMA20 and the market dips together, a dozen coins qualify');
       lines.push('within minutes, then nothing for hours. Trades inside one burst win and lose');
       lines.push('together, so treat the per-burst figure as the honest one and the per-trade');
@@ -394,12 +394,21 @@ function buildBrief(trades, meta) {
     lines.push(`- Hit target: **${by.TP}** (${pct(by.TP)}%)`);
     lines.push(`- Hit stop: **${by.SL}** (${pct(by.SL)}%)`);
     lines.push(`- Closed on the 48h limit: **${by.TIME}** (${pct(by.TIME)}%)`);
-    if (by.TIME > exits.length * 0.3) {
+    // Пороговые предупреждения имеют смысл только на осмысленной выборке.
+    // На трёх сделках «стоп срабатывает у четверти» означает «сработал один
+    // раз» — это шум, поданный как вывод.
+    const enoughForWarnings = exits.length >= 10;
+    if (!enoughForWarnings) {
+      lines.push('');
+      lines.push(`Too few closes (${exits.length}) to read anything into these shares — one trade`);
+      lines.push('moves them by tens of percent. No conclusions about target or stop yet.');
+    }
+    if (enoughForWarnings && by.TIME > exits.length * 0.3) {
       lines.push('');
       lines.push('More than a third timed out, which means the target is out of reach for');
       lines.push('these entries rather than merely slow. Test a lower one below.');
     }
-    if (by.SL > exits.length * 0.25) {
+    if (enoughForWarnings && by.SL > exits.length * 0.25) {
       lines.push('');
       lines.push('The stop is firing on a quarter of trades or more. It was sized as');
       lines.push('catastrophe insurance, not as a working exit — check whether it now sits');
@@ -485,14 +494,23 @@ function buildBrief(trades, meta) {
       lines.push(`| ${c.cond} | ${c.n} | ${c.winRate}% | ${d(c.avgPct)}% | **${d(c.delta)} pp** | ${c.verdict}${c.skewH != null && c.skewed ? ` (${c.skewH}h apart)` : ''} |`);
     }
     lines.push('');
-    const skewed = ready.filter(c => c.skewed);
+    const weak = ready.filter(c => c.weakBasis);
+    if (weak.length) {
+      const w = weak[0];
+      lines.push(`**No verdicts yet.** These control groups are compared against only ${w.baseN}`);
+      lines.push(`trades that passed, from ${w.baseClusters} burst${w.baseClusters === 1 ? '' : 's'}. A control group can be larger than`);
+      lines.push('the thing it is a control for and still say nothing — the base has to be a');
+      lines.push('real sample first. The rows are shown so you can watch them fill.');
+      lines.push('');
+    }
+    const skewed = ready.filter(c => c.skewed && !c.weakBasis);
     if (skewed.length) {
       lines.push('**Ignore the rows marked "not comparable"** — that control group opened on');
       lines.push('average more than three hours away from the trades that passed, so the');
       lines.push('difference between them is the market moving in between, not the condition.');
       lines.push('');
     }
-    const useless = ready.filter(c => c.verdict !== 'earns its place' && !c.skewed);
+    const useless = ready.filter(c => c.verdict !== 'earns its place' && !c.skewed && !c.weakBasis);
     if (useless.length) {
       lines.push('**Candidates to relax:**');
       useless.forEach(c => lines.push(`- \`${c.cond}\` — without it ${d(c.delta)} pp. Check on history what ` +
@@ -502,7 +520,7 @@ function buildBrief(trades, meta) {
   } else if (conds.length) {
     lines.push('## Condition testing');
     lines.push('');
-    lines.push('Control group still filling: ' + conds.map(c => `${c.cond} — ${c.n}`).join(', ') +
+    lines.push('Control group still filling: ' + conds.map(c => `${condName(c.cond)} — ${c.n}`).join(', ') +
       '. Needs at least 6 trades per condition.');
     lines.push('');
   }
@@ -520,7 +538,12 @@ function buildBrief(trades, meta) {
       lines.push(`Only ${base.n} gate trades so far; slicing needs at least 15.`);
     }
     if (!ready.length) lines.push('The control group has not filled either. Let it accumulate.');
-    else lines.push('But the condition test above already works — start there.');
+    else if (ready.some(c => !c.skewed && !c.weakBasis)) {
+      lines.push('But the condition test above already works — start there.');
+    } else {
+      lines.push('The condition table above is not usable yet either: it compares against a');
+      lines.push('base that is too small or came from a single burst. Nothing to act on.');
+    }
     return lines.join('\n');
   }
 
@@ -585,13 +608,34 @@ function medianOpened(arr) {
   return ts.length ? ts[Math.floor(ts.length / 2)] : NaN;
 }
 
+// Названия условий, записанные до перехода задания на английский. Без этого
+// в англоязычной таблице появлялась строка «RSI 5m вышел из ямы».
+const LEGACY_COND = {
+  'У дна 4ч диапазона (<25%)': 'Bottom of 4h range (<25%)',
+  'RSI 5m вышел из ямы': 'RSI 5m recovering off its low',
+  'Цена выше EMA9 (5m)': 'Price above EMA9 (5m)',
+  'Диапазон 4ч не шире 8%': '4h range no wider than 8%',
+  'Не после пампа (рост ≤15%)': 'Not after a pump (24h run-up <=15%)',
+  'Ликвидность ≥ $500K': 'Liquidity >= $500K',
+  'BTC выше EMA20 (1ч)': 'BTC above EMA20 (1h)',
+};
+function condName(k) {
+  if (!k) return '—';
+  return k.split(' + ').map(x => LEGACY_COND[x] || x).join(' + ');
+}
+
 function checkConditions(passed, shadows, minN = 6) {
   const base = agg(passed);
   if (!base) return [];
   const basisAt = medianOpened(passed);
+  // У контрольной группы порог был, а у ОСНОВАНИЯ сравнения — нет. Шесть
+  // контрольных против трёх прошедших из одной грозди давали уверенный
+  // вердикт «условие заслуживает места», хотя сравнивать там нечего.
+  const baseCl = clusterStats(passed);
+  const weakBasis = base.n < minN || !baseCl || baseCl.nClusters < 2;
   const byMissing = {};
   for (const t of shadows) {
-    const k = t.missing || '—';
+    const k = condName(t.missing);
     (byMissing[k] || (byMissing[k] = [])).push(t);
   }
   return Object.entries(byMissing)
@@ -610,8 +654,10 @@ function checkConditions(passed, shadows, minN = 6) {
         cond, enough: true, n: a.n, winRate: a.winRate, avgPct: a.avgPct,
         baseWin: base.winRate, baseAvg: base.avgPct, delta,
         skewH: Number.isFinite(skewH) ? Math.round(skewH * 10) / 10 : null, skewed,
+        weakBasis, baseN: base.n, baseClusters: baseCl ? baseCl.nClusters : 0,
         // условие оправдано, если без него заметно хуже
-        verdict: skewed ? 'not comparable (different period)'
+        verdict: weakBasis ? `no basis yet (only ${base.n} passers from ${baseCl ? baseCl.nClusters : 0} burst${baseCl && baseCl.nClusters === 1 ? '' : 's'})`
+          : skewed ? 'not comparable (different period)'
           : delta <= -0.15 ? 'earns its place' : delta >= 0.15 ? 'hurts' : 'no effect',
       };
     })
