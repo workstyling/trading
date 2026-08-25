@@ -3770,19 +3770,12 @@ async function paperBotTick() {
         if (price > pos.peak) pos.peak = price;
         const g = (price - pos.entry) / pos.entry * 100; // грязное изменение, %
         const hasSl = (pos.slPct == null ? PAPER_CFG.slPct : pos.slPct) > 0;
-        // Предупреждение до стопа: даёт шанс решить самому, пока не сработала
-        // страховка. Шлём один раз на позицию.
+        // Глубокий минус отмечаем флагом для интерфейса. В Telegram не пишем:
+        // paper — это симуляция, единственный источник сообщений — кнопка Алерт.
         const warnAt = paperBot.warnPct != null ? paperBot.warnPct : PAPER_CFG.warnPct;
         if (warnAt > 0 && !pos.warned && g <= -warnAt) {
           pos.warned = true; changed = true;
-          const slTxt = hasSl ? `аварийный стоп −${pos.slPct ?? PAPER_CFG.slPct}% на $${fmtPxAe(pos.sl)}` : 'стоп выключен';
-          sendTelegram(
-            `⚠️ <b>PAPER: позиция глубоко в минусе</b> — <b>${pos.pair}</b>\n` +
-            `Вход $${fmtPxAe(pos.entry)} → сейчас $${fmtPxAe(price)} (${g.toFixed(1)}%)\n` +
-            `${slTxt}\n` +
-            `<i>Замер: 98% сделок доходят до цели за сутки, поэтому спешить\n` +
-            `с выходом обычно не стоит. Но если это уже слом — закрой вручную.</i>`, 'HTML').catch(() => { });
-          console.log(`[paper] предупреждение ${pos.coin}: ${g.toFixed(1)}%`);
+          console.log(`[paper] ${pos.coin} глубоко в минусе: ${g.toFixed(1)}%`);
         }
         // Подтяжка стопа имеет смысл только если стоп вообще включён.
         // При цели 1.38% трейлинг не нужен — цель ближе, чем порог трейлинга.
@@ -4581,10 +4574,10 @@ async function runCalibrationCheck(silent) {
     `<b>Вердикт:</b> ${verdict}${drift != null ? ` (${drift >= 0 ? '+' : ''}${drift} п.п. к ожиданию)` : ''}\n` +
     (rep.realTrades ? `\n<b>Реальные сделки:</b> ${rep.realTrades.n} шт · ${rep.realTrades.winRate}% · ${rep.realTrades.totalUsd >= 0 ? '+' : ''}$${rep.realTrades.totalUsd}\n` : '') +
     `\n<i>Калибровка сделана на одном рыночном эпизоде. Если вердикт\nне «держится» два отчёта подряд — пороги пора пересчитывать.</i>`;
-  if (!silent) {
-    const sent = await sendTelegram(text, 'HTML');
-    console.log(`[calibration] отчёт отправлен: ${verdict}, telegram=${sent}`);
-  }
+  // В Telegram не шлём: это статистика по paper-сделкам, а туда идут только
+  // сигналы кнопки Алерт и события по реальным ордерам. Отчёт живёт в логе
+  // и в /api/calibration.
+  if (!silent) console.log(`[calibration] ${verdict}\n${text.replace(/<[^>]+>/g, '')}`);
   return rep;
 }
 

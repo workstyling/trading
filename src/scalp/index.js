@@ -75,6 +75,16 @@ async function fetchScalpSignals(coin) {
   const hi = Math.max(...win48.map(x => x.high));
   const rangePos = hi > lo ? (px - lo) / (hi - lo) : 0.5;
 
+  // Ширина диапазона и рост ДО него. «Дно диапазона», раздутого недавним
+  // пампом, — это начало сдува, а не откат в тренде. Замер на 249 входах:
+  //   диапазон < 8%      +0.544% против +0.418% базы, устойчиво 3/3
+  //   рост до +15%       +0.56%   (умеренный рост даже помогает)
+  //   рост свыше +15%    −0.44%   — ожидание уходит в минус
+  const range4Pct = lo > 0 ? (hi - lo) / lo * 100 : null;
+  const runUp24 = (c.length >= 289 && closes[i - 288] > 0)
+    ? (closes[i - 48] / closes[i - 288] - 1) * 100
+    : null;
+
   const e9 = ema(closes, 9), e21 = ema(closes, 21);
   const vols = c.slice(Math.max(0, i - 48), i).map(x => x.vol);
   const avgVol = vols.length ? vols.reduce((a, b) => a + b, 0) / vols.length : 0;
@@ -86,6 +96,8 @@ async function fetchScalpSignals(coin) {
     rsiMin1h: rMin != null ? Math.round(rMin * 10) / 10 : null,
     rsiRecover: rMin != null && rNow != null && rMin < 30 && rNow > rMin + 3,
     rangePos: Math.round(rangePos * 100) / 100,
+    range4Pct: range4Pct != null ? Math.round(range4Pct * 10) / 10 : null,
+    runUp24: runUp24 != null ? Math.round(runUp24 * 10) / 10 : null,
     low4h: lo, high4h: hi,
     ema9: e9, ema21: e21,
     aboveE9: e9 != null && px > e9,
@@ -105,9 +117,14 @@ function calcScalpScore(s, vol24, spreadPct) {
     { k: 'У дна 4ч диапазона (<25%)', ok: s.rangePos < 0.25, v: Math.round(s.rangePos * 100) + '%' },
     { k: 'RSI 5m вышел из ямы', ok: !!s.rsiRecover, v: `${s.rsi5 ?? '—'} (мин 1ч ${s.rsiMin1h ?? '—'})` },
     { k: 'Цена выше EMA9 (5m)', ok: !!s.aboveE9, v: s.aboveE9 ? 'да' : 'нет' },
+    // Диапазон не раздут: «дно» растянутого пампом коридора — это сдув
+    { k: 'Диапазон 4ч не шире 8%', ok: s.range4Pct != null && s.range4Pct < 8, v: s.range4Pct != null ? s.range4Pct + '%' : '—' },
+    // И до него не было выброса: рост свыше +15% за сутки уводит ожидание в минус
+    { k: 'Не после пампа (рост ≤15%)', ok: s.runUp24 == null || s.runUp24 <= 15, v: s.runUp24 != null ? (s.runUp24 >= 0 ? '+' : '') + s.runUp24 + '%' : '—' },
     { k: 'Ликвидность ≥ $500K', ok: liquid, v: '$' + Math.round(vol24 / 1e3) + 'K' },
   ];
   const passed = checks.filter(x => x.ok).length;
+  const allOk = passed === checks.length;
 
   let sc = 0;
   if (s.rangePos < 0.25) sc += 25; else if (s.rangePos < 0.4) sc += 10; else if (s.rangePos > 0.9) sc -= 5;
@@ -117,6 +134,10 @@ function calcScalpScore(s, vol24, spreadPct) {
   if (vol24 >= 2e6) sc += 15; else if (vol24 >= 1e6) sc += 13; else if (vol24 >= 500e3) sc += 11; else if (vol24 >= 250e3) sc += 5;
   if (s.e9overE21) sc += 5;
   if (s.volX >= 1.5) sc += 5;
+  // Штрафы за раздутый диапазон и памп перед входом — по замеру они уводят
+  // ожидание вниз даже там, где остальные условия выполнены
+  if (s.range4Pct != null && s.range4Pct >= 8) sc -= 12;
+  if (s.runUp24 != null && s.runUp24 > 15) sc -= 15;
 
   // Спред критичен: цель всего 1.38%, широкий спред съедает её на входе-выходе
   let wideSpread = false;
@@ -124,19 +145,23 @@ function calcScalpScore(s, vol24, spreadPct) {
 
   if (!liquid) sc = Math.min(sc, 39);
   if (wideSpread) sc = Math.min(sc, 44);
-  if (passed < 4 || wideSpread) sc = Math.min(sc, 74);   // 77+ ⇔ вход, как в REV
+  // Потолок для непрошедших: 77+ ⇔ вход, тот же инвариант, что у REV.
+  // Считаем от checks.length, а не от числа — условий стало шесть.
+  if (!allOk || wideSpread) sc = Math.min(sc, 74);
   sc = Math.max(0, Math.min(100, Math.round(sc)));
 
   let tag;
   if (!liquid) tag = 'НЕЛИКВИД';
   else if (wideSpread) tag = 'ШИРОКИЙ СПРЕД';
-  else if (passed === 4) tag = 'ВХОД';
-  else if (passed === 3) tag = 'БЛИЗКО';
+  else if (s.runUp24 != null && s.runUp24 > 15) tag = 'ПОСЛЕ ПАМПА';
+  else if (allOk) tag = 'ВХОД';
+  else if (passed === checks.length - 1) tag = 'БЛИЗКО';
   else tag = 'ЖДАТЬ';
 
   return {
-    score: sc, tag, pass: passed === 4 && !wideSpread, passed, checks,
+    score: sc, tag, pass: allOk && !wideSpread, passed, checks,
     rsi: s.rsi5, rangePos: s.rangePos, volX: s.volX,
+    range4Pct: s.range4Pct, runUp24: s.runUp24,
     // Отдаём числами: лаборатория раньше выковыривала rsiMin регуляркой из
     // русского текста проверки и молча получала NaN при правке формулировки
     rsiMin: s.rsiMin1h, rsiRecover: !!s.rsiRecover,
