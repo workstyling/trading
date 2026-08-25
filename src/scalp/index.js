@@ -137,6 +137,9 @@ function calcScalpScore(s, vol24, spreadPct) {
   return {
     score: sc, tag, pass: passed === 4 && !wideSpread, passed, checks,
     rsi: s.rsi5, rangePos: s.rangePos, volX: s.volX,
+    // Отдаём числами: лаборатория раньше выковыривала rsiMin регуляркой из
+    // русского текста проверки и молча получала NaN при правке формулировки
+    rsiMin: s.rsiMin1h, rsiRecover: !!s.rsiRecover,
     aboveE9: !!s.aboveE9, spreadPct: spreadPct != null ? Math.round(spreadPct * 100) / 100 : null,
   };
 }

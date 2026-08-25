@@ -2850,6 +2850,11 @@
       selectedCoin: null,
 
       init() {
+        // Панель трекеров удалена из мобильной вёрстки, а движок продолжал
+        // восстанавливать монеты из localStorage и слать по запросу в секунду
+        // на каждую — без единого пикселя UI и без возможности остановить.
+        // Это был главный источник 429 у живых панелей.
+        if (!document.getElementById('activeTrackersContainer')) return;
         const defaultUsdInput = document.getElementById('defaultTrackerUsdAmount');
         if (defaultUsdInput) {
           this.defaultUsdAmount = parseFloat(defaultUsdInput.value) || 100;

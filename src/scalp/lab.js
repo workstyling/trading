@@ -27,7 +27,9 @@ const BUCKETS = {
     return c.rsi < 40 ? 'RSI < 40' : c.rsi < 50 ? 'RSI 40–50' : c.rsi < 60 ? 'RSI 50–60' : 'RSI 60+';
   },
   'Насколько RSI отскочил от ямы': (c) => {
-    if (c.rsi == null || c.rsiMin == null) return null;
+    // Number.isFinite, а не != null: NaN раньше проходил проверку и все такие
+    // сделки сваливались в группу «сильно (12+)», беззвучно искажая разрез
+    if (!Number.isFinite(c.rsi) || !Number.isFinite(c.rsiMin)) return null;
     const d = c.rsi - c.rsiMin;
     return d < 6 ? 'едва вышел (<6)' : d < 12 ? 'умеренно (6–12)' : 'сильно (12+)';
   },
@@ -175,9 +177,14 @@ function buildBrief(trades, meta) {
   lines.push(`- Итого: **${d(base.totalUsd)}$**` + (base.avgHoldH != null ? `, среднее удержание ${base.avgHoldH} ч` : ''));
   lines.push(`- Худшая сделка: **${base.worstPct}%**`);
   lines.push('');
-  lines.push('Ожидание по историческому бэктесту было +0.914% на сделку при 68% побед.');
-  const drift = Math.round((base.avgPct - 0.914) * 1000) / 1000;
-  lines.push(`Расхождение с живыми данными: **${d(drift)} п.п.**`);
+  // База именно скальп-гейта: +0.199% при 68% побед (28 252 сэмпла, 6ч горизонт).
+  // Раньше здесь стояло +0.914% — это число из теста стопов для paper-бота,
+  // и задание всегда докладывало, что гейт сломан.
+  const BASE_EXP = 0.199, BASE_WIN = 68;
+  lines.push(`Ожидание по историческому бэктесту скальп-гейта: **+${BASE_EXP}%** на сделку при ${BASE_WIN}% побед.`);
+  const drift = Math.round((base.avgPct - BASE_EXP) * 1000) / 1000;
+  lines.push(`Расхождение с живыми данными: **${d(drift)} п.п.** по результату, ` +
+    `**${d(base.winRate - BASE_WIN)} п.п.** по доле побед.`);
   lines.push('');
 
   if (!enough) {

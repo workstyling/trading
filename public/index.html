@@ -12007,6 +12007,8 @@ Requirements:
     }
 
     async function loadTopGainers(force = false) {
+      // Панель удалена из интерфейса — без неё не ходим на биржу впустую
+      if (!document.getElementById('tgBody')) return;
       const body = document.getElementById('tgBody');
       if (body) {
         body.innerHTML = `<div class="tg-loader-container"><div class="tg-spinner"></div><div>Fetching gainers...</div></div>`;
@@ -12021,6 +12023,7 @@ Requirements:
 
     let tgPaused = false;
     function startTgCountdown() {
+      if (!document.getElementById('tgBody')) return;
       clearInterval(tgTimer);
       tgNextIn = TG_INTERVAL;
       tgTimer = setInterval(() => {
@@ -12109,6 +12112,8 @@ Requirements:
     }
 
     async function loadTopRecoveries(force = false) {
+      // Панель удалена из интерфейса — без неё не ходим на биржу впустую
+      if (!document.getElementById('trBody')) return;
       const body = document.getElementById('trBody');
       if (body) {
         body.innerHTML = `<div class="tg-loader-container"><div class="tg-spinner"></div><div>Fetching recoveries...</div></div>`;
@@ -12123,6 +12128,7 @@ Requirements:
 
     let trPaused = false;
     function startTrCountdown() {
+      if (!document.getElementById('trBody')) return;
       clearInterval(trTimer);
       trNextIn = TR_INTERVAL;
       trTimer = setInterval(() => {
@@ -14308,11 +14314,44 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
       const b = parseFloat(document.getElementById('labBudget').value) || 100;
       try { await fetch('/api/lab/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ budget: b }) }); } catch { }
     }
+    // navigator.clipboard существует только в защищённом контексте (https или
+    // localhost). Приложение открыто по http на IP — там его просто нет, и
+    // кнопка молча не работала. Резервный путь через скрытую textarea.
+    function _copyText(text) {
+      if (navigator.clipboard && window.isSecureContext) {
+        return navigator.clipboard.writeText(text);
+      }
+      return new Promise((resolve, reject) => {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', '');
+        ta.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;';
+        document.body.appendChild(ta);
+        ta.select();
+        ta.setSelectionRange(0, text.length);   // на мобильных без этого копируется пусто
+        let ok = false;
+        try { ok = document.execCommand('copy'); } catch { ok = false; }
+        document.body.removeChild(ta);
+        ok ? resolve() : reject(new Error('execCommand отказал'));
+      });
+    }
+
     function copyLabBrief() {
       const btn = document.getElementById('labCopyBtn');
-      navigator.clipboard.writeText(_labBrief).then(() => {
-        if (btn) { const t = btn.textContent; btn.textContent = '✓ Скопировано'; setTimeout(() => { btn.textContent = t; }, 1600); }
-      }).catch(() => showCustomAlert('Не удалось скопировать — выдели текст вручную', true));
+      if (!_labBrief) { showCustomAlert('Задание ещё не загружено', true); return; }
+      _copyText(_labBrief).then(() => {
+        if (btn) { const t = btn.textContent; btn.textContent = '✓ Скопировано'; setTimeout(() => { btn.textContent = t; }, 1800); }
+      }).catch(() => {
+        // Последний резерв: выделяем текст, чтобы можно было нажать Ctrl+C
+        const pre = document.getElementById('labBrief');
+        if (pre) {
+          const r = document.createRange();
+          r.selectNodeContents(pre);
+          const sel = window.getSelection();
+          sel.removeAllRanges(); sel.addRange(r);
+        }
+        showCustomAlert('Браузер не дал скопировать. Текст выделен — нажми Ctrl+C', true);
+      });
     }
     // Фиксируем, что задание внедрено: сделки уходят в архив поколением,
     // сбор стартует заново. Без этого следующий бриф повторял бы прошлое.

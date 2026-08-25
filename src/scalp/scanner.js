@@ -117,11 +117,14 @@ async function scanMarket(volumeCache, opts = {}) {
  * поэтому вход не выдаём, но монету показываем с честным вердиктом.
  */
 function applyRegime(sc, regime) {
-  sc.regimeOk = regime ? !!regime.above : true;
+  // Пока режим не посчитан (первые ~75 сек после старта) вход НЕ выдаём:
+  // раньше отсутствие данных считалось «можно», и колонка могла показать ВХОД
+  // при BTC ниже EMA20 — там ожидание −0.211%.
+  sc.regimeOk = regime ? !!regime.above : false;
   sc.checks.push({
     k: 'BTC выше EMA20 (1ч)',
     ok: sc.regimeOk,
-    v: regime ? (regime.above ? `+${regime.distPct}% над EMA20` : `${regime.distPct}% под EMA20`) : 'нет данных',
+    v: regime ? (regime.above ? `+${regime.distPct}% над EMA20` : `${regime.distPct}% под EMA20`) : 'ещё не посчитан',
   });
   if (!sc.regimeOk) {
     sc.pass = false;

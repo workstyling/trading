@@ -810,8 +810,8 @@ async function runResearchScan() {
 }
 
 // Auto-scan 20s after start, then every 30min
-setTimeout(runResearchScan, 20000);
-setInterval(runResearchScan, 30 * 60 * 1000);
+// ОТКЛЮЧЕНО: панель удалена из интерфейса, автоскан жёг лимит Coinbase впустую. setTimeout(runResearchScan, 20000);
+// ОТКЛЮЧЕНО: панель удалена из интерфейса, автоскан жёг лимит Coinbase впустую. setInterval(runResearchScan, 30 * 60 * 1000);
 
 app.get('/api/research', (req, res) => {
   if (req.query.refresh === '1' && !researchScanRunning) {
@@ -959,9 +959,9 @@ async function runRecoveryScan() {
 }
 
 // Auto-scan on startup (delayed to avoid 429 conflicts)
-setTimeout(runRecoveryScan, 15000);
+// ОТКЛЮЧЕНО: панель удалена из интерфейса, автоскан жёг лимит Coinbase впустую. setTimeout(runRecoveryScan, 15000);
 // Re-scan every 30 minutes
-setInterval(runRecoveryScan, 30 * 60 * 1000);
+// ОТКЛЮЧЕНО: панель удалена из интерфейса, автоскан жёг лимит Coinbase впустую. setInterval(runRecoveryScan, 30 * 60 * 1000);
 
 app.get('/api/recovery-scan', async (req, res) => {
   try {
@@ -1096,8 +1096,8 @@ async function runDipScan() {
 }
 
 // Auto-scan 45s after start, then every 15min
-setTimeout(runDipScan, 45000);
-setInterval(runDipScan, 15 * 60 * 1000);
+// ОТКЛЮЧЕНО: панель удалена из интерфейса, автоскан жёг лимит Coinbase впустую. setTimeout(runDipScan, 45000);
+// ОТКЛЮЧЕНО: панель удалена из интерфейса, автоскан жёг лимит Coinbase впустую. setInterval(runDipScan, 15 * 60 * 1000);
 
 app.get('/api/dip-scan', (req, res) => {
   if (req.query.refresh === '1' && !dipScanRunning) runDipScan();
@@ -1283,6 +1283,13 @@ async function rebuildTopLosers() {
       await new Promise(r2 => setTimeout(r2, 120));
     }
     out.sort((a, b) => a.pct30d - b.pct30d);
+    // При 429 на /products Coinbase отдаёт объект вместо массива, кандидатов
+    // не остаётся, и раньше пустой результат затирал кэш — таблица пропадала
+    // и не восстанавливалась после рестарта. Пустую сборку не принимаем.
+    if (!out.length) {
+      console.warn('[top-losers] пересборка вернула 0 монет — оставляю прошлый кэш');
+      return;
+    }
     topLosersCache = { data: out.slice(0, 20), fullAt: Date.now(), priceAt: Date.now() };
     saveTopLosersCache();
     console.log(`[top-losers] rebuilt: ${cands.length} candidates (mcap≥30M), top20 saved`);
@@ -1297,14 +1304,24 @@ async function rebuildTopLosers() {
   finally { topLosersBuilding = false; }
 }
 
+let refreshingPrices = false;
 async function refreshTopLosersPrices(force) {
   if (!topLosersCache.data.length) return;
   if (!force && Date.now() - topLosersCache.priceAt <= 30_000) return;
+  // Вызывается из четырёх мест (API, buy-watch, paperBotTick, attachReversal).
+  // Без этой защиты параллельные проходы множили поток тикеров и ловили 429.
+  if (refreshingPrices) return;
+  refreshingPrices = true;
+  // Запоминаем объект кэша: rebuildTopLosers может заменить его целиком, пока
+  // мы ждём биржу, и тогда цены легли бы в выброшенный массив, а свежим
+  // пометился бы новый — цены замирали до следующего force.
+  const cacheRef = topLosersCache;
   const H = { headers: { 'User-Agent': 'trading-app/1.0' } };
   // Пачка из 20 одновременных тикеров ловила 429, и объём оставался чёрновым
   // из дневной свечи → монеты ложно уезжали в НЕЛИКВИД. Идём партиями с ретраем.
-  const list = topLosersCache.data;
+  const list = cacheRef.data;
   let volOk = 0;
+  try {
   for (let i = 0; i < list.length; i += 5) {
     await Promise.all(list.slice(i, i + 5).map(async c => {
       for (let attempt = 0; attempt < 2; attempt++) {
@@ -1328,9 +1345,12 @@ async function refreshTopLosersPrices(force) {
     }));
     if (i + 5 < list.length) await sleep(120);
   }
-  if (volOk < list.length) console.log(`[top-losers] объём обновлён у ${volOk}/${list.length} (остальные — из общего кеша объёмов)`);
-  topLosersCache.data.sort((a, b) => a.pct30d - b.pct30d);
-  topLosersCache.priceAt = Date.now();
+    if (volOk < list.length) console.log(`[top-losers] объём обновлён у ${volOk}/${list.length} (остальные — из общего кеша объёмов)`);
+    // Штампуем тот же кэш, который обновляли: если пересборка успела его
+    // заменить, помечать свежим новый было бы ложью
+    cacheRef.data.sort((a, b) => a.pct30d - b.pct30d);
+    cacheRef.priceAt = Date.now();
+  } finally { refreshingPrices = false; }
 }
 
 app.get('/api/top-losers', async (req, res) => {
@@ -3561,10 +3581,14 @@ async function autoExitTick() {
   autoExitTickRunning = true;
   try {
     for (const w of active) {
+      // Пользователь мог снять авто-выход, пока тик ждал ответы биржи.
+      // Без этой проверки мы продавали снятую позицию маркетом.
+      if (w.state !== 'active') continue;
       try {
         let changed = false;
         // 1) статусы TP-ордеров
         for (const tp of w.tps) {
+          if (w.state !== 'active') break;
           if (!tp.orderId || tp.filled || tp.cancelled) continue;
           const info = await getOrderInfo(tp.orderId);
           if (info.status === 'FILLED') {
@@ -3947,7 +3971,7 @@ function calcReversalScore(d, s, btc) {
   let sc = 0;
   // Окно просадки (макс 30) — немонотонно, по замеренным win-rate
   if (drop <= -60) sc += 4;               // win 32%, PF 0.78 — сломанный проект
-  else if (drop <= -50) sc += 10;
+  else if (drop < -50) sc += 10;          // строго ниже: ровно −50% входит в окно гейта
   else if (drop <= -40) sc += 30;         // win 44%, PF 1.30 — оптимум
   else if (drop <= -32) sc += 26;         // win 41%, PF 1.18
   else if (drop <= -25) sc += 12;         // win 35%, PF 0.89
@@ -4185,7 +4209,7 @@ async function labTick() {
           // полный контекст входа — по нему потом ищем закономерности
           ctx: {
             score: r.score, rangePos: r.rangePos, rsi: r.rsi,
-            rsiMin: r.checks && r.checks[1] ? parseFloat((r.checks[1].v.match(/мин 1ч ([\d.]+)/) || [])[1]) : null,
+            rsiMin: r.rsiMin != null ? r.rsiMin : null,   // приходит числом из calcScalpScore
             spreadPct: r.spreadPct, vol24: r.vol24, volX: r.volX,
             btcDist: scalpScan.regime ? scalpScan.regime.distPct : null,
             hourUtc: new Date().getUTCHours(),
