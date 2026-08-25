@@ -199,8 +199,17 @@ function buildBrief(trades, meta) {
       }
       lines.push('');
     });
-    lines.push('The numbers below were collected AFTER the last change — they test what it');
-    lines.push('did, they are not a repeat of the earlier analysis.');
+    // Раньше здесь стояло безусловное «всё собрано после правки». Сделки,
+    // открытые до смены поколения, продолжают вестись и закрываются уже в
+    // новом — то есть утверждение было неверным ровно тогда, когда это важно.
+    const stale = (meta && meta.staleCount) || 0;
+    if (stale) {
+      lines.push(`Of the trades below, ${stale} were OPENED before the last generation change`);
+      lines.push('and closed after it. They are counted, but they did not test the change.');
+    } else {
+      lines.push('The numbers below were collected AFTER the last change — they test what it');
+      lines.push('did, they are not a repeat of the earlier analysis.');
+    }
     lines.push('');
   }
   lines.push('## What the live trades produced');

@@ -4164,7 +4164,18 @@ function gateFingerprint() {
     const crypto = require('crypto');
     const src = ['src/scalp/index.js', 'src/scalp/scanner.js']
       .map(f => fs.readFileSync(path.join(__dirname, f), 'utf8')).join('\n');
-    return crypto.createHash('sha1').update(src).digest('hex').slice(0, 12);
+    // Хэшируем логику, а не файл целиком. Раньше отпечаток менялся от любой
+    // правки — от комментария, от подписи условия, от переименования тега, —
+    // и лаборатория выбрасывала накопленную выборку как «данные другого
+    // алгоритма». За один день так сгорело четыре поколения подряд, ни одно
+    // из-за изменения самого гейта. Убираем комментарии и пробелы: остаётся
+    // код, который действительно решает, кого пускать.
+    const logic = src
+      .replace(/\/\*[\s\S]*?\*\//g, '')     // блочные комментарии
+      .replace(/(^|[^:])\/\/.*$/gm, '$1')   // строчные, но не «://» в ссылках
+      .replace(/\s+/g, ' ')
+      .trim();
+    return crypto.createHash('sha1').update(logic).digest('hex').slice(0, 12);
   } catch { return null; }
 }
 // Сумма лаборатории зафиксирована: это измерение, а не торговля. Все выводы
@@ -4344,6 +4355,8 @@ app.get('/api/lab', (req, res) => {
       // ту версию алгоритма, которая реально крутится
       liveChecks: (scalpScan.results[0] && scalpScan.results[0].checks || []).map(c => c.en || c.k),
       fingerprint: labState.fingerprint,
+      // Сколько из закрытых открылись ещё при прошлом поколении
+      staleCount: closed.filter(t => t.gen === 'old').length,
       targetPct: paperTargetPct(),
       slPct: paperBot.slPct != null ? paperBot.slPct : PAPER_CFG.slPct,
     }),
