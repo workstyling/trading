@@ -2280,6 +2280,50 @@
     .ss-dot.bad { color: #ff6b6b; text-shadow: 0 0 7px rgba(255,90,90,0.55); }
     #ssBody .tg-table th { text-align: center; }
     #ssBody .tg-table th:nth-child(1) { text-align: left; }
+    #ssBody .tg-table td { text-align: center; padding: 7px 6px; }
+    #ssBody .tg-table td:first-child { text-align: left; }
+    /* Цифры в колонках должны стоять столбиком, иначе строки «дышат» */
+    #ssBody .tg-table td { font-variant-numeric: tabular-nums; }
+    #ssBody .tg-table tr:hover td { background: rgba(76,201,240,0.06); }
+
+    /* Режим рынка — одна полоса на панель. Раньше он повторялся красной
+       плашкой в каждой строке: двенадцать копий одного глобального факта. */
+    .ss-regime-bar {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 10px; margin-bottom: 8px;
+      border-radius: 7px; font-size: 10.5px; line-height: 1.35;
+      background: rgba(255,107,107,0.07);
+      border: 1px solid rgba(255,107,107,0.22);
+      color: #ffa8a8;
+    }
+    .ss-regime-bar.ok {
+      background: rgba(74,222,128,0.06);
+      border-color: rgba(74,222,128,0.20);
+      color: #86efac;
+    }
+    .ss-regime-bar b { font-weight: 700; }
+    .ss-regime-bar .ss-rb-note { color: #7c8698; font-weight: 400; }
+
+    /* Балл: число плюс тонкая шкала. Одно число не даёт почувствовать,
+       насколько кандидат близок к входу — полоса даёт. */
+    .ss-score { display: inline-flex; flex-direction: column; align-items: center; gap: 3px; cursor: help; min-width: 42px; }
+    .ss-score-n { font-weight: 800; font-size: 13.5px; line-height: 1; font-variant-numeric: tabular-nums; }
+    .ss-meter { width: 38px; height: 3px; border-radius: 2px; background: rgba(255,255,255,0.09); overflow: hidden; }
+    .ss-meter i { display: block; height: 100%; border-radius: 2px; transition: width .35s ease; }
+    .ss-tag { font-size: 7.5px; font-weight: 800; letter-spacing: .04em; padding: 1px 4px; border-radius: 4px; white-space: nowrap; }
+
+    /* Гейт: сегменты вместо ●○ — видно и сколько выполнено, и сколько всего */
+    .ss-gate { display: inline-flex; gap: 2px; align-items: center; cursor: help; }
+    .ss-gate i { width: 5px; height: 10px; border-radius: 1.5px; background: rgba(255,255,255,0.10); }
+    .ss-gate i.on { background: #4cc9f0; box-shadow: 0 0 5px rgba(76,201,240,0.45); }
+
+    /* Позиция в 4ч диапазоне: цифра плюс дорожка с меткой. Зона входа —
+       нижние 25% — залита, чтобы «у дна» читалось без чтения числа. */
+    .ss-pos { display: inline-flex; flex-direction: column; align-items: center; gap: 3px; }
+    .ss-pos-n { font-size: 11px; font-variant-numeric: tabular-nums; }
+    .ss-track { position: relative; width: 40px; height: 3px; border-radius: 2px; background: rgba(255,255,255,0.09); }
+    .ss-track u { position: absolute; left: 0; top: 0; bottom: 0; width: 25%; background: rgba(74,222,128,0.22); border-radius: 2px; }
+    .ss-track s { position: absolute; top: -2px; width: 3px; height: 7px; border-radius: 1px; margin-left: -1.5px; }
     .tg-refresh-btn {
       background: transparent;
       border: 1px solid rgba(74,222,128,0.3);
@@ -6284,7 +6328,7 @@
             <button class="tg-refresh-btn" onclick="loadPaper()">Refresh</button>
           </div>
         </div>
-        <div style="color:var(--t2);font-size:11px;margin:4px 0 12px;max-width:82ch;">Сюда попадают сделки, открытые вручную кнопкой 📝 из таблицы скальпа. Настройки общие и для лаборатории: цель берётся из Sell Markup, вход эмулируется лимиткой по лучшему ask, комиссии считаются с обеих сторон. Реальные деньги не используются. Тумблер запускает автоматический вход по сигналам — для эксперимента лучше пользоваться лабораторией выше.</div>
+        <div style="color:var(--t2);font-size:11px;margin:4px 0 12px;max-width:82ch;">Сюда попадают сделки, открытые вручную кнопкой 📝 из таблицы скальпа. Настройки общие и для лаборатории: цель берётся из поля «Цель %» и к Sell Markup отношения не имеет, вход эмулируется лимиткой по лучшему ask, комиссии считаются с обеих сторон. Реальные деньги не используются. Тумблер запускает автоматический вход по сигналам — для эксперимента лучше пользоваться лабораторией выше.</div>
         <div id="paperStats" style="margin-bottom:14px;"></div>
         <div id="paperOpen" style="margin-bottom:14px;"></div>
         <div id="paperClosed"></div>
@@ -13176,32 +13220,56 @@ Requirements:
 
         const body = document.getElementById('ssBody');
         if (!body) return;
-        const rows = (j.results || []).filter(x => x.score >= 40).slice(0, 12);
+        // Берём лучших по баллу без абсолютного порога. Порог «>= 40» был
+        // подогнан под старую обрезанную шкалу: после перехода на сжатие
+        // почти все кандидаты оказались ниже него и панель показывала
+        // одну монету. Ранг сам по себе и есть нужный фильтр.
+        const rows = (j.results || []).slice(0, 12);
         if (!rows.length) {
           body.innerHTML = `<div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">${j.scanning ? 'Сканирую рынок…' : 'Кандидатов нет — гейт никто не проходит'}</div>`;
           return;
         }
         const px = v => v == null ? '—' : v < 0.001 ? v.toFixed(8) : v < 1 ? v.toFixed(5) : v < 100 ? v.toFixed(3) : v.toFixed(2);
         const inPaper = _paperCoins;
-        body.innerHTML = `<table class="tg-table"><thead><tr>
-            <th>COIN</th><th>SCORE</th><th title="Сколько из условий гейта выполнено">ГЕЙТ</th>
-            <th title="Позиция в 4-часовом диапазоне: 0% = у самого дна">У ДНА</th>
+        // Режим — один раз полосой над таблицей, а не плашкой в каждой строке
+        const rgm = j.regime;
+        const regimeBar = !rgm ? '' : rgm.above
+          ? `<div class="ss-regime-bar ok"><span>▲</span><span><b>Рынок за нас</b> — BTC на ${rgm.distPct}% выше EMA20 (1ч). <span class="ss-rb-note">Входы разрешены.</span></span></div>`
+          : `<div class="ss-regime-bar"><span>▼</span><span><b>Рынок против</b> — BTC на ${Math.abs(rgm.distPct)}% ниже EMA20 (1ч). <span class="ss-rb-note">Входы не выдаются: ниже EMA20 ожидание −0.211% против +0.239% выше. Баллы сжаты в 0–60, порядок сохранён.</span></span></div>`;
+        body.innerHTML = regimeBar + `<table class="tg-table"><thead><tr>
+            <th>COIN</th><th title="Балл 0–100. Полоса под числом — насколько близко до входа. При закрытом режиме шкала сжата в 0–60.">SCORE</th>
+            <th title="Сколько из условий гейта выполнено">ГЕЙТ</th>
+            <th title="Позиция в 4-часовом диапазоне: 0% = у самого дна. Залитая часть дорожки — зона входа (нижние 25%).">У ДНА</th>
             <th>RSI 5m</th><th>СПРЕД</th><th>VOL 24H</th><th></th>
           </tr></thead><tbody>${rows.map(x => {
-            const col = x.tag === 'ВХОД' ? '#4cc9f0' : x.tag === 'БЛИЗКО' ? '#f5c518'
-              : x.tag === 'РЫНОК ПРОТИВ' ? '#ff6b6b' : x.tag === 'ШИРОКИЙ СПРЕД' ? '#f55' : '#8892a0';
+            // Вердикт самой монеты: «рынок против» — состояние рынка, оно уже
+            // сказано полосой выше. Но писать голое «ВХОД» при закрытом режиме
+            // нельзя: строка звала бы покупать там, где вход не выдаётся.
+            // «ЖДЁТ РЫНКА» говорит правду целиком — монета готова, рынок нет.
+            const tg = (x.tagOwn === 'ВХОД' && !x.pass) ? 'ЖДЁТ РЫНКА' : (x.tagOwn || x.tag);
+            const col = tg === 'ВХОД' ? '#4cc9f0' : tg === 'ЖДЁТ РЫНКА' ? '#5ba9c4' : tg === 'БЛИЗКО' ? '#f5c518'
+              : tg === 'ШИРОКИЙ СПРЕД' || tg === 'ПОСЛЕ ПАМПА' ? '#ff6b6b'
+              : tg === 'НЕЛИКВИД' ? '#8892a0' : '#7c8698';
             const tip = `SCALP ${x.score}/100 — гейт ${x.passed}/${x.checks.length}&#10;` +
               x.checks.map(y => `${y.ok ? '✓' : '✗'} ${y.k}: ${y.v}`).join('&#10;') +
-              `&#10;&#10;Правило: 77+ = ВХОД. 68% побед, ожидание +0.2% на сделку.`;
+              (x.scoreRaw != null ? `&#10;&#10;Без учёта режима рынка балл ${x.scoreRaw}.` : '') +
+              `&#10;&#10;Правило: 86+ = ВХОД. Горизонт 2–6 часов.`;
             const sprCol = x.spreadPct == null ? '#667' : x.spreadPct > 0.4 ? '#f55' : x.spreadPct > 0.15 ? '#f5c518' : '#00e5a0';
+            const posPct = Math.round(x.rangePos * 100);
+            const posCol = x.rangePos < 0.25 ? '#4ade80' : '#7c8698';
             return `<tr style="cursor:pointer;${x.pass ? 'background:rgba(76,201,240,0.10);box-shadow:inset 3px 0 0 #4cc9f0;' : ''}" onclick="selectCoinForBuy('${x.coin}')" title="Выбрать ${x.coin} для покупки">
               <td class="tg-coin" style="font-size:12px;">${x.coin}<br><span style="color:#555;font-size:10px;font-weight:400;">$${px(x.price)}</span></td>
-              <td style="text-align:center;"><div title="${tip}" style="cursor:help;display:inline-flex;flex-direction:column;align-items:center;gap:1px;">
-                <span style="font-weight:800;color:${col};font-size:13px;">${x.score}</span>
-                <span style="font-size:7px;font-weight:800;color:${col};background:${col}22;padding:1px 4px;border-radius:4px;white-space:nowrap;">${x.tag}</span>
+              <td><div class="ss-score" title="${tip}">
+                <span class="ss-score-n" style="color:${col};">${x.score}</span>
+                <span class="ss-meter"><i style="width:${Math.max(2, Math.min(100, x.score))}%;background:${col};"></i></span>
+                <span class="ss-tag" style="color:${col};background:${col}1f;">${tg}</span>
               </div></td>
-              <td style="color:#889;font-size:10px;">${x.checks.map(y => y.ok ? '●' : '○').join('')}</td>
-              <td style="font-size:11px;color:${x.rangePos < 0.25 ? '#00e5a0' : '#889'};">${Math.round(x.rangePos * 100)}%</td>
+              <td><span class="ss-gate" title="${x.passed} из ${x.checks.length} условий выполнено">${
+                x.checks.map(y => `<i class="${y.ok ? 'on' : ''}"></i>`).join('')}</span></td>
+              <td><span class="ss-pos">
+                <span class="ss-pos-n" style="color:${posCol};">${posPct}%</span>
+                <span class="ss-track"><u></u><s style="left:${Math.max(0, Math.min(100, posPct))}%;background:${posCol};"></s></span>
+              </span></td>
               <td style="font-size:11px;color:#889;">${x.rsi ?? '—'}</td>
               <td style="font-size:11px;color:${sprCol};">${x.spreadPct != null ? x.spreadPct + '%' : '—'}</td>
               <td class="tg-vol" style="font-size:11px;">${fmtVolShort(x.vol24)}</td>
