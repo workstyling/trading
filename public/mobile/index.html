@@ -2639,11 +2639,10 @@
         return `<tr onclick="selectCoinFromGainers('${g.coin}')">
           <td>
             <div class="tg-coin-cell">
+              <!-- Кнопка ⚡ убрана: панели трекеров на мобильной нет, и запуск
+                   опроса раз в секунду было некуда показывать -->
               <div class="tg-coin-row">
                 <span class="tg-coin">${g.coin}</span>
-                <button class="tg-track-btn" onclick="event.stopPropagation(); MultiTracker.add('${g.coin}')" title="Track ${g.coin} in real-time">
-                  <svg viewBox="0 0 24 24" class="tg-track-icon"><path d="M13 2L3 14H12L11 22L21 10H12L13 2Z"/></svg>
-                </button>
               </div>
               <span class="tg-price">$${price}</span>
             </div>
@@ -2744,11 +2743,10 @@
         return `<tr onclick="selectCoinFromGainers('${g.coin}')">
           <td>
             <div class="tg-coin-cell">
+              <!-- Кнопка ⚡ убрана: панели трекеров на мобильной нет, и запуск
+                   опроса раз в секунду было некуда показывать -->
               <div class="tg-coin-row">
                 <span class="tg-coin">${g.coin}</span>
-                <button class="tg-track-btn" onclick="event.stopPropagation(); MultiTracker.add('${g.coin}')" title="Track ${g.coin} in real-time">
-                  <svg viewBox="0 0 24 24" class="tg-track-icon"><path d="M13 2L3 14H12L11 22L21 10H12L13 2Z"/></svg>
-                </button>
               </div>
               <span class="tg-price">$${price}</span>
             </div>

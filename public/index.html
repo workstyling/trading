@@ -1375,7 +1375,23 @@
       align-items: center;
       gap: 16px;
       margin-bottom: 10px;
+      /* Перенос вместо обрезки: на узком окне поле Chat ID уезжало за край
+         панели и становилось недоступным */
+      flex-wrap: wrap;
+      row-gap: 8px;
     }
+    #tradingSettings { flex-wrap: wrap; row-gap: 8px; gap: 0 6px; }
+
+    /* Комиссии — одна плашка вместо двух подписанных полей: они только
+       показываются и приходят из тарифа Coinbase */
+    .fee-chip {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 3px 8px; border-radius: 6px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      color: var(--t2); font-size: 10.5px; white-space: nowrap; cursor: help;
+    }
+    .fee-chip b { color: var(--t1); font-weight: 600; font-variant-numeric: tabular-nums; }
 
     .balance-label {
       color: var(--t1);
@@ -2226,6 +2242,9 @@
     /* Одна строка: контролов много, перенос выглядел неряшливо */
     .tl-bar { display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; min-width: 0; }
     .tl-bar > * { flex: 0 0 auto; }
+    /* Счётчик распирает строку: сумма прижата к левому краю, кнопки — к
+       правому, вместо кучи в левом углу с пустотой на пол-панели */
+    #scalpScanPanel .ss-found { flex: 1 1 auto; text-align: center; }
     /* Поле суммы: подпись и ввод в одной капсуле, чтобы не рассыпались */
     .tl-money {
       display: inline-flex; align-items: stretch; height: 24px;
@@ -5942,28 +5961,33 @@
       <div class="main-left">
         <div id="balancePanel">
           <div class="balance-row">
-            <span class="balance-label">USD Balance:</span>
+            <!-- Подписи укорочены до одного слова: строка не влезала по ширине
+                 и «TG Token» обрезался. Полные названия — в подсказках. -->
+            <span class="balance-label" title="Баланс USD на счёте">USD</span>
             <span class="balance-value" id="usdBalance">$0.00</span>
             <span class="vol30-pill" id="vol30Pill" title="Loading...">
-              <span class="vol30-lbl">30D Vol</span>
+              <span class="vol30-lbl">30D</span>
               <span class="vol30-val" id="vol30Val">—</span>
               <span id="vol30Tier" style="font-size:9px;color:#888;margin-left:4px;"></span>
             </span>
             <div id="tradingSettings" class="settings-panel"
               style="margin:0;border:none;background:none;padding:0;margin-left:12px;">
-              <span class="settings-label">Sell Markup:</span>
+              <span class="settings-label" title="Sell Markup — наценка для реальных лимитных продаж. К цели скальп-эксперимента отношения не имеет.">Markup</span>
               <input type="number" id="sellMarkup" step="0.01" min="0" value="1.38" class="settings-input">
               <span class="settings-unit">%</span>
-              <span class="settings-label">Limit Fee:</span>
-              <input type="number" id="tradeFee" step="0.001" min="0" value="0.06" class="settings-input" readonly style="opacity:0.5;cursor:default;">
-              <span class="settings-unit">%</span>
-              <span class="settings-label">Market Fee:</span>
-              <input type="number" id="marketFee" step="0.001" min="0" value="0.125" class="settings-input" readonly style="opacity:0.5;cursor:default;">
-              <span class="settings-unit">%</span>
-              <span class="settings-label" title="Токен Telegram-бота для алертов">TG Token:</span>
-              <input type="password" id="tgToken" class="settings-input" style="width:110px;" autocomplete="off">
-              <span class="settings-label" title="Твой Telegram chat id">Chat ID:</span>
-              <input type="text" id="tgChat" class="settings-input" style="width:90px;" autocomplete="off">
+              <!-- Комиссии только показывались: они приходят из тарифа Coinbase
+                   и не редактируются. Два поля с подписями съедали ширину, из-за
+                   чего Chat ID уезжал за край. Теперь это одна плашка, а сами
+                   поля скрыты — весь расчётный код читает их по-прежнему. -->
+              <input type="hidden" id="tradeFee" value="0.06">
+              <input type="hidden" id="marketFee" value="0.125">
+              <span class="fee-chip" id="feeChip" title="Комиссии из твоего тарифа Coinbase: лимитный ордер / рыночный. Обновляются сами по 30-дневному объёму.">
+                fee <b id="feeChipVal">0.06 / 0.125</b>%
+              </span>
+              <span class="settings-label" title="Токен Telegram-бота для алертов">TG</span>
+              <input type="password" id="tgToken" class="settings-input" style="width:96px;" autocomplete="off">
+              <span class="settings-label" title="Твой Telegram chat id">Chat</span>
+              <input type="text" id="tgChat" class="settings-input" style="width:82px;" autocomplete="off">
             </div>
           </div>
           <div id="buyPanel">
@@ -6070,22 +6094,11 @@
           </div>
         </div>
 
-        <!-- Active Trackers Panel -->
-        <div id="activeTrackersPanel" class="active-trackers-panel">
-          <div class="at-header">
-            <span class="at-title">⚡ Real-Time Coin Trackers (1s)</span>
-            <div class="at-add-controls">
-              <input type="text" id="addTrackerCoinInput" placeholder="Symbol (e.g. SOL, ETH)" class="at-coin-input" onkeydown="if(event.key === 'Enter') addManualCoinTracker()">
-              <button onclick="addManualCoinTracker()" class="at-add-btn">+ Add</button>
-              <span class="at-usd-label">Default $:</span>
-              <input type="number" id="defaultTrackerUsdAmount" value="100" class="at-usd-input" oninput="MultiTracker.defaultUsdAmount = parseFloat(this.value) || 100">
-            </div>
-          </div>
-          <div id="activeTrackersContainer" class="active-trackers-container">
-            <div class="no-trackers-placeholder">No active trackers. Click ⚡ next to a coin name below or enter a symbol to start one.</div>
-          </div>
-        </div>
-
+        <!-- Панель Real-Time Coin Trackers удалена. Объект MultiTracker
+             оставлен: на него завязаны обработчики клавиш и синхронизация
+             суммы, а проверки там через typeof. Восстановление сохранённых
+             монет отключено ниже, иначе трекеры опрашивали бы тикер раз в
+             секунду на монету при отсутствующем интерфейсе. -->
         <div id="selectedOrders">
           <h3>Selected Orders by Coin <button onclick="saveSelectedToServer();showCustomAlert('Synced to server!')" style="margin-left:10px;padding:2px 10px;border:1px solid var(--blue);border-radius:5px;background:transparent;color:var(--blue);font-size:10px;cursor:pointer;">Sync</button></h3>
           <div class="selected-scroll"></div>
@@ -6157,9 +6170,11 @@
                   oninput="onPaperBudgetInput(this.value)">
               </label>
               <span id="tlPaperBudgetOk" class="tl-ok">✓</span>
+              <!-- Счётчик распирает строку: контролы прижаты к краям, а не
+                   сбиты в левый угол с пустотой справа -->
+              <span id="ssFound" class="ss-found"></span>
               <button class="tl-btn" id="tlScalpWatchBtn" onclick="toggleScalpWatch()"
                 title="Одноразовый Telegram-алерт. Нажми — сервер пришлёт ОДНО сообщение, когда монета пройдёт гейт входа, и выключится сам. Работает при закрытом браузере. Чтобы следить дальше, включи снова.">⚡ Алерт</button>
-              <span id="ssFound" class="ss-found"></span>
               <button class="tl-btn" id="ssRefreshBtn" onclick="loadScalpScan(true)" title="Пересканировать рынок сейчас (~30 сек)"><span class="spin-icon">⟳</span> Скан</button>
             </div>
           </div>
@@ -6415,6 +6430,7 @@
           document.getElementById('sellMarkup').value = tradingSettings.sellMarkup;
           document.getElementById('tradeFee').value = tradingSettings.tradeFee;
           document.getElementById('marketFee').value = tradingSettings.marketFee;
+          paintFeeChip();
           const blEl = document.getElementById('bidLevelInput');
           if (blEl) blEl.value = tradingSettings.bidLevel || 0;
           const tgT = document.getElementById('tgToken'), tgC = document.getElementById('tgChat');
@@ -6504,61 +6520,10 @@
     }
     loadBeWatches();
 
-    // ── Auto-exit: серверная TP/SL-лестница (TP1/2/3 лимитками + SL маркетом) ──
-    let _autoExits = {};
-    async function loadAutoExits() {
-      try {
-        const r = await fetch('/api/auto-exit');
-        const j = await r.json();
-        if (j.success) { _autoExits = {}; (j.watches || []).forEach(w => _autoExits[w.coin] = w); }
-      } catch { }
-    }
-    function _paintAutoExitBtn(coin) {
-      const b = document.getElementById('aex_' + coin);
-      if (!b) return;
-      const on = !!_autoExits[coin];
-      b.textContent = on ? '🎯 AUTO ON' : '🎯 AUTO';
-      b.style.borderColor = on ? 'var(--green)' : 'rgba(255,255,255,0.25)';
-      b.style.background = on ? 'rgba(0,229,160,0.12)' : 'transparent';
-      b.style.color = on ? 'var(--green)' : '#889';
-    }
-    async function toggleAutoExit(coin, pair, filled, avgBuy, usd) {
-      if (_autoExits[coin]) {
-        showConfirmModal('Disarm Auto-Exit', `${coin}: снять авто-выход и отменить оставшиеся TP-ордера?`, async () => {
-          try {
-            const r = await fetch('/api/auto-exit/disarm', {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ coin })
-            });
-            const j = await r.json();
-            if (!j.success) { showCustomAlert(j.error || 'Ошибка', true); return; }
-            delete _autoExits[coin];
-            _paintAutoExitBtn(coin);
-            showCustomAlert(`${coin}: авто-выход снят, TP-ордера отменены`);
-          } catch (e) { showCustomAlert('Ошибка: ' + e.message, true); }
-        });
-        return;
-      }
-      const tp1 = avgBuy * 1.015, tp2 = avgBuy * 1.03, tp3 = avgBuy * 1.05, sl = avgBuy * 0.97;
-      showConfirmModal('Arm Auto-Exit',
-        `${coin}: выставить лестницу из <strong>РЕАЛЬНЫХ</strong> ордеров?<br><br>` +
-        `TP1 +1.5% (${fmtPrice(tp1)}) — 40%<br>TP2 +3% (${fmtPrice(tp2)}) — 35%<br>TP3 +5% (${fmtPrice(tp3)}) — 25%<br>` +
-        `SL −3% (${fmtPrice(sl)}) — маркет-продажа, после TP1 стоп в безубыток`,
-        async () => {
-          try {
-            const r = await fetch('/api/auto-exit', {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ coin, pair, size: filled, entryPrice: avgBuy, costUsd: usd })
-            });
-            const j = await r.json();
-            if (!j.success) { showCustomAlert(j.error || 'Ошибка', true); return; }
-            _autoExits[coin] = j.watch;
-            _paintAutoExitBtn(coin);
-            showCustomAlert(`${coin}: авто-выход активен — 3 TP-лимитки выставлены, сервер следит за SL`);
-          } catch (e) { showCustomAlert('Ошибка: ' + e.message, true); }
-        });
-    }
-    loadAutoExits();
+    // Кнопка AUTO (серверная TP/SL-лестница из РЕАЛЬНЫХ ордеров) убрана из
+    // шапки позиции — вместе с ней ушёл и весь клиентский код: она была
+    // единственным входом, и запрос /api/auto-exit при каждой загрузке
+    // страницы больше не нужен. Серверные эндпоинты и тик остались.
 
     // Уровень стакана для покупки: 0 = best bid, -1 = второй уровень...
     function adjustBidLevel(d) {
@@ -6716,6 +6681,7 @@
             const marketFeeEl = document.getElementById('marketFee');
             if (tradeFeeEl) tradeFeeEl.value = newMaker;
             if (marketFeeEl) marketFeeEl.value = newTaker;
+            paintFeeChip();
             saveSettingsToServer();
           }
         }
@@ -7588,37 +7554,10 @@
       defaultUsdAmount: 100,
       selectedCoin: null,
 
-      init() {
-        const defaultUsdInput = document.getElementById('defaultTrackerUsdAmount');
-        if (defaultUsdInput) {
-          this.defaultUsdAmount = parseFloat(defaultUsdInput.value) || 100;
-        }
-
-        // Restore tracked coins
-        try {
-          const saved = safeStorage.getItem('mt_tracked_coins');
-          if (saved) {
-            const coins = JSON.parse(saved);
-            if (Array.isArray(coins)) {
-              setTimeout(() => {
-                coins.forEach(coin => {
-                  this.add(coin, true);
-                });
-
-                // Restore selected MultiTracker coin highlight
-                const savedSel = safeStorage.getItem('selectedMultiTrackerCoin');
-                if (savedSel && this.trackers[savedSel]) {
-                  this.selectCard(savedSel);
-                } else if (typeof selectedBuyCoin !== 'undefined' && selectedBuyCoin && this.trackers[selectedBuyCoin]) {
-                  this.selectCard(selectedBuyCoin);
-                }
-              }, 500);
-            }
-          }
-        } catch (e) {
-          console.warn('Failed to restore MultiTracker coins:', e);
-        }
-      },
+      // Панель трекеров удалена из интерфейса, поэтому восстанавливать
+      // сохранённые монеты нельзя: каждый трекер бьёт по тикеру раз в секунду,
+      // и они молча качали бы сеть без единого элемента на экране.
+      init() { },
 
       selectCard(coin) {
         this.selectedCoin = coin;
@@ -11011,7 +10950,7 @@ Requirements:
         const isFav = favoriteCoins.has(coin);
         h += `<div class="coin-group" data-coin="${coin}" data-coin-pair="${pair}">
           <h4><a href="https://www.tradingview.com/chart/?symbol=COINBASE%3A${coin}USD" target="_blank">${pair}</a>${todayBadge} <span onclick="toggleFavoriteCoin('${coin}')" title="${isFav ? 'Remove from favorites' : 'Add to favorites'}" style="cursor:pointer;font-size:16px;opacity:${isFav ? '1' : '0.25'};padding:0 6px;color:${isFav ? '#f5c518' : 'inherit'};">★</span><button class="select-coin-btn" onclick="selectCoinForBuy('${coin}')" title="Set for Buy">⬆</button></h4>
-          <div class="balance">Selected: ${fmtSize(totalFilled)} ${coin} <span id="realBal_${coin}" style="color:var(--t2);font-size:10px;">(loading real balance...)</span> ${totalFilled > 0 ? `<button class="sell-all-btn" onclick="sellAllCoin('${pair}', '${totalFilled}', ${avgBuyPrice}, ${totalUSD})">SELL ALL</button> <button id="bew_${coin}" onclick="toggleBeWatch('${coin}','${pair}',${totalFilled},${totalUSD})" title="Telegram-алерт, когда Limit P&L дойдёт до 0 (сработает один раз и выключится)" style="padding:3px 8px;border:1px solid ${_beWatches[coin] ? 'var(--yellow)' : 'rgba(255,255,255,0.25)'};border-radius:5px;background:${_beWatches[coin] ? 'rgba(245,197,24,0.15)' : 'transparent'};color:${_beWatches[coin] ? 'var(--yellow)' : '#889'};font-size:10px;font-weight:600;cursor:pointer;">🔔 BE${_beWatches[coin] ? ' ON' : ''}</button> <button id="aex_${coin}" onclick="toggleAutoExit('${coin}','${pair}',${totalFilled},${avgBuyPrice},${totalUSD})" title="Авто-выход: TP1 +1.5% (40%) / TP2 +3% (35%) / TP3 +5% (25%) лимитками + серверный SL −3% маркетом; после TP1 стоп в безубыток" style="padding:3px 8px;border:1px solid ${_autoExits[coin] ? 'var(--green)' : 'rgba(255,255,255,0.25)'};border-radius:5px;background:${_autoExits[coin] ? 'rgba(0,229,160,0.12)' : 'transparent'};color:${_autoExits[coin] ? 'var(--green)' : '#889'};font-size:10px;font-weight:600;cursor:pointer;">🎯 AUTO${_autoExits[coin] ? ' ON' : ''}</button>` : ''} <button class="${btnClass}" onclick="saveGroupProfit('${coin}', ${groupProfit.toFixed(2)}, '${filledBuys.map(o => o.order_id).join(',')}', '${filledSells.map(o => o.order_id).join(',')}', ${buyCreatedDate ? `'${buyCreatedDate}'` : 'null'})" ${btnDisabled ? 'disabled' : ''}>${btnText}</button>
+          <div class="balance">Selected: ${fmtSize(totalFilled)} ${coin} <span id="realBal_${coin}" style="color:var(--t2);font-size:10px;">(loading real balance...)</span> ${totalFilled > 0 ? `<button class="sell-all-btn" onclick="sellAllCoin('${pair}', '${totalFilled}', ${avgBuyPrice}, ${totalUSD})">SELL ALL</button> <button id="bew_${coin}" onclick="toggleBeWatch('${coin}','${pair}',${totalFilled},${totalUSD})" title="Telegram-алерт, когда Limit P&L дойдёт до 0 (сработает один раз и выключится)" style="padding:3px 8px;border:1px solid ${_beWatches[coin] ? 'var(--yellow)' : 'rgba(255,255,255,0.25)'};border-radius:5px;background:${_beWatches[coin] ? 'rgba(245,197,24,0.15)' : 'transparent'};color:${_beWatches[coin] ? 'var(--yellow)' : '#889'};font-size:10px;font-weight:600;cursor:pointer;">🔔 BE${_beWatches[coin] ? ' ON' : ''}</button>` : ''} <button class="${btnClass}" onclick="saveGroupProfit('${coin}', ${groupProfit.toFixed(2)}, '${filledBuys.map(o => o.order_id).join(',')}', '${filledSells.map(o => o.order_id).join(',')}', ${buyCreatedDate ? `'${buyCreatedDate}'` : 'null'})" ${btnDisabled ? 'disabled' : ''}>${btnText}</button>
           ${totalFilled > 0 ? `<span style="margin-left:10px;display:inline-flex;align-items:center;gap:4px;">
             <input type="text" id="limitSellPrice_${coin}" placeholder="Limit price" style="width:90px;padding:3px 6px;background:var(--s3);border:1px solid var(--b1);border-radius:5px;color:var(--t0);font-family:'JetBrains Mono',monospace;font-size:11px;outline:none;" autocomplete="off">
             <button onclick="sellAllLimit('${pair}','${totalFilled}','${coin}')" style="padding:3px 10px;border:1px solid var(--yellow);border-radius:5px;background:transparent;color:var(--yellow);font-size:10px;font-weight:600;cursor:pointer;">Sell Limit</button>
@@ -12011,11 +11950,10 @@ Requirements:
         return `<tr onclick="validateAndSelectCoin('${g.coin}')">
           <td>
             <div class="tg-coin-cell">
+              <!-- Кнопка ⚡ убрана вместе с панелью трекеров: она запускала бы
+                   опрос раз в секунду без места, где показать результат -->
               <div class="tg-coin-row">
                 <span class="tg-coin">${g.coin}</span>
-                <button class="tg-track-btn" onclick="event.stopPropagation(); MultiTracker.add('${g.coin}')" title="Track ${g.coin} in real-time">
-                  <svg viewBox="0 0 24 24" class="tg-track-icon"><path d="M13 2L3 14H12L11 22L21 10H12L13 2Z"/></svg>
-                </button>
               </div>
               <span class="tg-price">$${price}</span>
             </div>
@@ -12115,11 +12053,10 @@ Requirements:
         return `<tr onclick="validateAndSelectCoin('${g.coin}')">
           <td>
             <div class="tg-coin-cell">
+              <!-- Кнопка ⚡ убрана вместе с панелью трекеров: она запускала бы
+                   опрос раз в секунду без места, где показать результат -->
               <div class="tg-coin-row">
                 <span class="tg-coin">${g.coin}</span>
-                <button class="tg-track-btn" onclick="event.stopPropagation(); MultiTracker.add('${g.coin}')" title="Track ${g.coin} in real-time">
-                  <svg viewBox="0 0 24 24" class="tg-track-icon"><path d="M13 2L3 14H12L11 22L21 10H12L13 2Z"/></svg>
-                </button>
               </div>
               <span class="tg-price">$${price}</span>
             </div>
@@ -15013,6 +14950,16 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
         const d = await r.json();
         if (d.success) paperPositionsCache = d.positions || {};
       } catch (e) { console.error('positions fetch:', e); }
+    }
+
+    // Плашка комиссий: значения живут в скрытых полях, показываем их одной
+    // строкой вместо двух подписанных инпутов
+    function paintFeeChip() {
+      const el = document.getElementById('feeChipVal');
+      if (!el) return;
+      const m = document.getElementById('tradeFee')?.value;
+      const t = document.getElementById('marketFee')?.value;
+      if (m != null && t != null) el.textContent = `${m} / ${t}`;
     }
 
     function getFeePct() {
