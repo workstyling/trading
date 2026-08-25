@@ -6308,7 +6308,6 @@
             <span style="font-size:11px;color:var(--t2);">фоновое тестирование гейта ⚡ Скальп по рынку</span>
             <span style="margin-left:auto;display:flex;align-items:center;gap:8px;">
               <button id="labToggleBtn" class="tg-refresh-btn" onclick="toggleLab()">...</button>
-              <button class="tg-refresh-btn" onclick="loadLab()">Обновить</button>
             </span>
           </div>
           <div style="color:var(--t2);font-size:11.5px;margin-bottom:12px;max-width:78ch;">
@@ -14333,8 +14332,12 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
     function _labSchedulePoll() {
       clearTimeout(_labPollTimer);
       const onJournal = document.getElementById('tab-journal')?.classList.contains('active');
-      if (!_labEnabled || !onJournal || document.hidden) return;
-      _labPollTimer = setTimeout(loadLab, 30_000);
+      if (!onJournal || document.hidden) return;
+      // Кнопки «Обновить» больше нет, поэтому опрашиваем и при остановленной
+      // лаборатории: открытые сделки продолжают вестись до цели или стопа, и
+      // без опроса карточка замерла бы с устаревшими цифрами. Пока стоит —
+      // реже, чтобы не дёргать сервер впустую.
+      _labPollTimer = setTimeout(loadLab, _labEnabled ? 30_000 : 60_000);
     }
     document.addEventListener('visibilitychange', () => { if (!document.hidden) _labSchedulePoll(); });
     function _paintLabBtn() {
