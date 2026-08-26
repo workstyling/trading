@@ -1497,6 +1497,7 @@
         </label>
         <span id="tlPaperBudgetOkM" class="tl-ok">✓</span>
         <button class="tl-btn" id="tlScalpWatchBtnM" onclick="toggleScalpWatchM()" title="Одноразовый Telegram-алерт: одно сообщение при входе, потом выключится">⚡ Алерт</button>
+        <button class="tl-btn" id="tlScalpLoopBtnM" onclick="toggleScalpLoopM()" title="Непрерывный алерт: шлёт каждый новый вход, пока не выключишь. По одной монете повторно — только после падения на 1% и нового прохода гейта.">🔁 Поток</button>
         <button class="tl-btn tl-refresh" id="ssRefreshBtnM" onclick="loadScalpScanM(true)">⟳ Скан</button>
       </div>
     </div>
@@ -4285,7 +4286,20 @@
       _paintBuyWatchBtnM();
       if (_tlBuyWatch) toast('Слежу за свингом: Telegram при первом входе (один раз)');
     }
-    let _tlScalpWatch = false;
+    let _tlScalpWatch = false, _tlScalpLoop = false;
+    function _paintScalpLoopBtnM() {
+      const b = document.getElementById('tlScalpLoopBtnM');
+      if (!b) return;
+      b.textContent = _tlScalpLoop ? '🔁 Поток вкл' : '🔁 Поток';
+      b.classList.toggle('on-scalp', _tlScalpLoop);
+    }
+    async function toggleScalpLoopM() {
+      const r = await api('/api/scalp-watch-loop', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enable: !_tlScalpLoop }) });
+      if (!r || !r.success) { toast((r && r.error) || 'Ошибка', true); return; }
+      _tlScalpLoop = r.loop;
+      _paintScalpLoopBtnM();
+      toast(_tlScalpLoop ? 'Непрерывный режим включён' : 'Непрерывный режим выключен');
+    }
     function _paintScalpWatchBtnM() {
       const b = document.getElementById('tlScalpWatchBtnM');
       if (!b) return;
@@ -4519,6 +4533,8 @@
         }
         const px = v => v == null ? '—' : v < 0.001 ? v.toFixed(8) : v < 1 ? v.toFixed(5) : v < 100 ? v.toFixed(3) : v.toFixed(2);
         // Режим — одной полосой, а не плашкой в каждой строке
+        if (typeof j.watchLoop === 'boolean' && j.watchLoop !== _tlScalpLoop) { _tlScalpLoop = j.watchLoop; _paintScalpLoopBtnM(); }
+        if (typeof j.watch === 'boolean' && j.watch !== _tlScalpWatch) { _tlScalpWatch = j.watch; _paintScalpWatchBtnM(); }
         const rgm = j.regime;
         const _shortCheckM = (k) => !k ? '?'
           : k.includes('У дна') ? 'дна 4ч' : k.includes('RSI') ? 'RSI'

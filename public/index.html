@@ -6191,6 +6191,8 @@
               <span id="ssFound" class="ss-found"></span>
               <button class="tl-btn" id="tlScalpWatchBtn" onclick="toggleScalpWatch()"
                 title="Одноразовый Telegram-алерт. Нажми — сервер пришлёт ОДНО сообщение, когда монета пройдёт гейт входа, и выключится сам. Работает при закрытом браузере. Чтобы следить дальше, включи снова.">⚡ Алерт</button>
+              <button class="tl-btn" id="tlScalpLoopBtn" onclick="toggleScalpLoop()"
+                title="Непрерывный Telegram-алерт. Работает, пока не выключишь, и шлёт каждый новый вход по гейту. По одной и той же монете повторное сообщение придёт только после того, как она подешевеет минимум на 1% и снова пройдёт гейт — иначе монета на границе условий слала бы сообщение каждую минуту. Входы приходят пачками, поэтому за один проход отправляется одно сообщение со списком, а не десяток подряд.">🔁 Поток</button>
               <button class="tl-btn" id="ssRefreshBtn" onclick="loadScalpScan(true)" title="Пересканировать рынок сейчас (~30 сек)"><span class="spin-icon">⟳</span> Скан</button>
             </div>
           </div>
@@ -12884,6 +12886,29 @@ Requirements:
         if (_tlScalpWatch) showCustomAlert('Слежу за краткосроком: пришлю в Telegram первую монету с гейтом 4/4 (один раз)');
       } catch (e) { showCustomAlert('Ошибка: ' + e.message, true); }
     }
+    // Непрерывный режим — отдельная кнопка и отдельное состояние на сервере
+    let _tlScalpLoop = false;
+    function _paintScalpLoopBtn() {
+      const b = document.getElementById('tlScalpLoopBtn');
+      if (!b) return;
+      b.textContent = _tlScalpLoop ? '🔁 Поток · вкл' : '🔁 Поток';
+      b.classList.toggle('on-scalp', _tlScalpLoop);
+    }
+    async function toggleScalpLoop() {
+      try {
+        const r = await fetch('/api/scalp-watch-loop', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ enable: !_tlScalpLoop })
+        });
+        const j = await r.json();
+        if (!j.success) { showCustomAlert(j.error || 'Ошибка', true); return; }
+        _tlScalpLoop = j.loop;
+        _paintScalpLoopBtn();
+        showCustomAlert(_tlScalpLoop
+          ? 'Непрерывный режим включён: буду слать каждый новый вход. По одной монете повторно — только после падения на 1% и нового прохода гейта.'
+          : 'Непрерывный режим выключен.');
+      } catch (e) { showCustomAlert('Ошибка: ' + e.message, true); }
+    }
     async function toggleBuyWatch() {
       try {
         const r = await fetch('/api/buy-watch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enable: !_tlBuyWatch }) });
@@ -13055,6 +13080,7 @@ Requirements:
         const pbEl = document.getElementById('tlPaperBudget');
         if (pbEl && document.activeElement !== pbEl && j.paperBudget != null) pbEl.value = j.paperBudget;
         if (typeof j.scalpWatch === 'boolean' && j.scalpWatch !== _tlScalpWatch) { _tlScalpWatch = j.scalpWatch; _paintScalpWatchBtn(); }
+        if (typeof j.scalpWatchLoop === 'boolean' && j.scalpWatchLoop !== _tlScalpLoop) { _tlScalpLoop = j.scalpWatchLoop; _paintScalpLoopBtn(); }
 
         const body = document.getElementById('tlBody');
         if (!body) return;                       // таблицы нет — остальное не рисуем
@@ -13136,6 +13162,7 @@ Requirements:
         // Синхронизация вотча (в т.ч. автогашение кнопки после срабатывания на сервере)
         if (typeof j.buyWatch === 'boolean' && j.buyWatch !== _tlBuyWatch) { _tlBuyWatch = j.buyWatch; _paintBuyWatchBtn(); }
         if (typeof j.scalpWatch === 'boolean' && j.scalpWatch !== _tlScalpWatch) { _tlScalpWatch = j.scalpWatch; _paintScalpWatchBtn(); }
+        if (typeof j.scalpWatchLoop === 'boolean' && j.scalpWatchLoop !== _tlScalpLoop) { _tlScalpLoop = j.scalpWatchLoop; _paintScalpLoopBtn(); }
       } catch { }
     }
     setInterval(loadTopLosers, 30_000);
@@ -13170,6 +13197,8 @@ Requirements:
           if (p) p.textContent = j.progress;
           if (j.scanning && !window._ssPoll) { window._ssPoll = true; setTimeout(() => { window._ssPoll = false; loadScalpScan(); }, 6000); }
         }
+        if (typeof j.watchLoop === 'boolean' && j.watchLoop !== _tlScalpLoop) { _tlScalpLoop = j.watchLoop; _paintScalpLoopBtn(); }
+        if (typeof j.watch === 'boolean' && j.watch !== _tlScalpWatch) { _tlScalpWatch = j.watch; _paintScalpWatchBtn(); }
         const ago = document.getElementById('ssAgo');
         if (ago) ago.textContent = j.agoSec == null ? '—' : j.agoSec < 60 ? `${j.agoSec}с назад` : `${Math.round(j.agoSec / 60)}м назад`;
         const found = document.getElementById('ssFound');

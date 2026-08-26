@@ -4194,6 +4194,7 @@ app.get('/api/scalp-scan', (req, res) => {
     entries: scalpScan.results.filter(r => r.pass).length,
     results: results.slice(0, 40),
     watch: scalpWatchArmed,
+    watchLoop: scalpLoopOn,
   });
 });
 
@@ -4534,33 +4535,120 @@ app.post('/api/lab/applied', (req, res) => {
 // ── Одноразовый Telegram-алерт по scalp-гейту (отдельная кнопка) ──
 const SCALP_WATCH_FILE = path.join(__dirname, 'scalp-watch.json');
 let scalpWatchArmed = false;
-try { scalpWatchArmed = !!(JSON.parse(fs.readFileSync(SCALP_WATCH_FILE, 'utf8')).armed); } catch { }
-function saveScalpWatch() { try { fs.writeFileSync(SCALP_WATCH_FILE, JSON.stringify({ armed: scalpWatchArmed })); } catch { } }
+// Непрерывный режим: шлёт по каждому новому входу, пока не выключишь.
+// scalpSent — по какой монете и по какой цене уже сообщали. Повторный
+// сигнал по той же монете выдаём только после того, как она реально
+// подешевела и снова прошла гейт: иначе монета, болтающаяся на границе
+// условий, слала бы сообщение каждую минуту.
+let scalpLoopOn = false;
+let scalpSent = {};              // coin -> { price, at, fell }
+const SCALP_REARM_DROP = 1.0;    // на сколько % должна упасть, чтобы считаться новым случаем
+try {
+  const st = JSON.parse(fs.readFileSync(SCALP_WATCH_FILE, 'utf8'));
+  scalpWatchArmed = !!st.armed;
+  scalpLoopOn = !!st.loop;
+  scalpSent = st.sent && typeof st.sent === 'object' ? st.sent : {};
+} catch { }
+function saveScalpWatch() {
+  try {
+    fs.writeFileSync(SCALP_WATCH_FILE, JSON.stringify({
+      armed: scalpWatchArmed, loop: scalpLoopOn, sent: scalpSent,
+    }));
+  } catch { }
+}
+function tgConfigured() {
+  const s = loadSettings();
+  return !!(s.telegramToken && s.telegramChat);
+}
 
 app.post('/api/scalp-watch', (req, res) => {
   const enable = !!(req.body || {}).enable;
-  if (enable) {
-    const s = loadSettings();
-    if (!(s.telegramToken && s.telegramChat)) return res.json({ success: false, error: 'Telegram не настроен: укажи Bot Token и Chat ID в настройках' });
-  }
+  if (enable && !tgConfigured()) return res.json({ success: false, error: 'Telegram не настроен: укажи Bot Token и Chat ID в настройках' });
   scalpWatchArmed = enable;
   saveScalpWatch();
   res.json({ success: true, armed: scalpWatchArmed });
 });
 
+app.post('/api/scalp-watch-loop', (req, res) => {
+  const enable = !!(req.body || {}).enable;
+  if (enable && !tgConfigured()) return res.json({ success: false, error: 'Telegram не настроен: укажи Bot Token и Chat ID в настройках' });
+  scalpLoopOn = enable;
+  // При включении начинаем с чистого листа: иначе монеты из прошлого
+  // сеанса молчали бы до падения без всякой причины.
+  if (enable) scalpSent = {};
+  saveScalpWatch();
+  res.json({ success: true, loop: scalpLoopOn });
+});
+
+const NL = String.fromCharCode(10);
+
+// Общий сбор кандидатов для обоих режимов алерта
+function scalpAlertPool() {
+  const pool = [
+    ...scalpScan.results.filter(r => r.pass),
+    ...topLosersCache.data.filter(c => c.sc && c.sc.pass).map(c => ({ ...c.sc, coin: c.coin, pair: c.pair, price: c.price, vol24: c.vol24 })),
+  ];
+  const best = new Map();
+  for (const r of pool) if (!best.has(r.coin) || best.get(r.coin).score < r.score) best.set(r.coin, r);
+  return [...best.values()].sort((a, b) => b.score - a.score);
+}
+
+// ── Непрерывный режим ──────────────────────────────────────────────
+// Гейт срабатывает пачками (замерено: 12 входов за 1.2 часа), поэтому шлём
+// ОДНО сообщение на проход со списком новых монет, а не двенадцать подряд:
+// иначе и Telegram упрётся в лимит, и читать это невозможно.
+setInterval(async () => {
+  if (!scalpLoopOn) return;
+  try {
+    const now = Date.now();
+    // Перезарядка: следим за ценой ВСЕХ монет скана, а не только прошедших.
+    // Монета снова становится новым случаем, когда подешевела к цене прошлого
+    // сигнала минимум на SCALP_REARM_DROP процентов.
+    for (const r of scalpScan.results) {
+      const seen = scalpSent[r.coin];
+      if (seen && r.price > 0 && r.price <= seen.price * (1 - SCALP_REARM_DROP / 100)) seen.fell = true;
+    }
+    for (const k of Object.keys(scalpSent)) {
+      if (now - scalpSent[k].at > 24 * 3600 * 1000) delete scalpSent[k];
+    }
+
+    const fresh = scalpAlertPool().filter(c => {
+      const seen = scalpSent[c.coin];
+      return !seen || seen.fell;
+    });
+    if (!fresh.length) return;
+
+    const list = fresh.slice(0, 8);
+    const head = list.length === 1
+      ? '\u26a1 <b>SCALP ВХОД</b> — <b>' + escTg(list[0].pair) + '</b>'
+      : '\u26a1 <b>SCALP: входов ' + list.length + '</b>';
+    const body = list.map(c => {
+      const again = scalpSent[c.coin] ? ' <i>(повторно, после падения)</i>' : '';
+      return '<b>' + escTg(c.pair) + '</b> — <b>' + c.score + '/100</b>' + again + NL +
+        '   $' + fmtPxAe(c.price) +
+        (c.spreadPct != null ? ' · спред ' + c.spreadPct + '%' : '') +
+        (c.vol24 ? ' · объём $' + Math.round(c.vol24 / 1e3) + 'K' : '');
+    }).join(NL);
+    const more = fresh.length > list.length ? NL + '<i>…и ещё ' + (fresh.length - list.length) + '</i>' : '';
+    const sent = await sendTelegram(
+      head + NL + '━━━━━━━━━━━━━━━━━━' + NL + body + more + NL + NL +
+      '<i>Непрерывный режим. По одной монете повторное сообщение придёт' + NL +
+      'только после падения не менее чем на ' + SCALP_REARM_DROP + '% и нового прохода гейта.' + NL +
+      'Горизонт 2–6 часов, вход лимиткой.</i>', 'HTML');
+    if (!sent) { console.error('[scalp-loop] отправка не удалась, состояние не меняем'); return; }
+    for (const c of list) scalpSent[c.coin] = { price: c.price, at: now, fell: false };
+    saveScalpWatch();
+    console.log('[scalp-loop] отправлено ' + list.length + ': ' + list.map(c => c.coin + '/' + c.score).join(' '));
+  } catch (e) { console.error('[scalp-loop]', e.message); }
+}, 60_000);
+
 setInterval(async () => {
   if (!scalpWatchArmed) return;
   try {
     // Ищем по всему рынку, а не только в Top Losers — гейт к ним не привязан
-    const pool = [
-      ...scalpScan.results.filter(r => r.pass),
-      ...topLosersCache.data.filter(c => c.sc && c.sc.pass).map(c => ({ ...c.sc, coin: c.coin, pair: c.pair, price: c.price, vol24: c.vol24 })),
-    ];
-    if (!pool.length) return;
-    // дубликаты одной монеты убираем, оставляя лучший балл
-    const best = new Map();
-    for (const r of pool) if (!best.has(r.coin) || best.get(r.coin).score < r.score) best.set(r.coin, r);
-    const c = [...best.values()].sort((a, b) => b.score - a.score)[0];
+    const ranked = scalpAlertPool();
+    if (!ranked.length) return;
+    const c = ranked[0];
     const sent = await sendTelegram(
       `⚡ <b>SCALP ВХОД</b> — <b>${c.pair}</b>\n` +
       `Рейтинг <b>${c.score}/100</b> · гейт пройден · горизонт 2–6 часов\n` +
