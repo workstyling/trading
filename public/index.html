@@ -14458,8 +14458,12 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
             ${_jStatCard('Статус', _labEnabled ? '<span style="color:var(--green);">РАБОТАЕТ</span>' : '<span style="color:var(--t2);">СТОП</span>', j.hoursRunning ? `${j.hoursRunning} ч в работе` : '')}
             ${_jStatCard('Открыто', j.open.length, j.open.filter(t => t.shadow).length ? `${j.open.filter(t => !t.shadow).length} по гейту + ${j.open.filter(t => t.shadow).length} контроль` : '')}
             ${_jStatCard('Закрыто', j.closedCount, j.shadowCount ? `+ ${j.shadowCount} контрольных` : '')}
-            ${_jStatCard('Winrate', st ? st.winRate + '%' : '—', 'бэктест: 68%')}
-            ${_jStatCard('На сделку', st ? (st.avgPct >= 0 ? '+' : '') + st.avgPct + '%' : '—', 'бэктест: +0.199%')}
+            ${/* Эталон пересчитан: 68% и +0.199% — цифры с одной недели калибровки.
+                  Прогон на 25 днях и 927 входах по текущему гейту дал 60% и -0.103%
+                  при профит-факторе 0.90. Карточка показывала старые числа и
+                  противоречила заданию под ней. */''}
+            ${_jStatCard('Winrate', st ? st.winRate + '%' : '—', 'бэктест 25д: 60%')}
+            ${_jStatCard('На сделку', st ? (st.avgPct >= 0 ? '+' : '') + st.avgPct + '%' : '—', 'бэктест 25д: −0.103%')}
             ${_jStatCard('Итого', st ? _jPnlCell(st.totalUsd) : '—', st && st.avgHoldH != null ? `среднее ${st.avgHoldH} ч` : '')}
           </div>`;
         }
