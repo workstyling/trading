@@ -155,7 +155,7 @@ function stats(a) {
       const bm = marginAt(c[i].t);
       // живой гейт целиком; запас BTC берём числом, чтобы резать по нему
       const gate = rangePos < 0.25 && rMin != null && rMin < 30 && rsi[i] > rMin + 3
-        && e9[i] != null && px > e9[i] && bm != null && bm > 0
+        && e9[i] != null && px > e9[i] && bm != null
         && range4 < 8 && runUp <= 15;
       if (!gate) continue;
       if (i - last < 6) continue;
@@ -175,19 +175,43 @@ function stats(a) {
   console.log('='.repeat(92));
   console.log('  РАСПРЕДЕЛЕНИЕ ЗАПАСА BTC НА ВХОДАХ');
   console.log('='.repeat(92));
-  const bs = S.map(x => x.bm).sort((a, b) => a - b);
+  const bs = S.filter(x => x.bm > 0).map(x => x.bm).sort((a, b) => a - b);
   const thin = bs.filter(x => x < 0.2).length;
   console.log(`  медиана ${bs[Math.floor(bs.length / 2)].toFixed(2)}%  ·  меньше 0.2%: ${thin}/${bs.length} (${Math.round(thin / bs.length * 100)}%)`);
 
   console.log('\n' + '='.repeat(92));
-  console.log('  ТРЕБОВАТЬ ЗАПАС НЕ МЕНЬШЕ X%');
+  console.log('  ЗАСЛУЖИВАЕТ ЛИ УСЛОВИЕ ПО РЕЖИМУ СВОЕГО МЕСТА');
+  console.log('='.repeat(92));
+  console.log('  Живые контрольные группы показали, что монеты, провалившие ТОЛЬКО');
+  console.log('  условие по BTC, идут лучше прошедших. Проверяем на истории.\n');
+  console.log('  ГРУППА                    N     WIN%   ОЖИДАНИЕ     PF      отр.1    отр.2    отр.3');
+  const groups = [
+    ['BTC выше EMA20 (в бою)', x => x.bm > 0],
+    ['BTC ниже EMA20 (режется)', x => x.bm <= 0],
+    ['без условия по режиму', () => true],
+  ];
+  for (const [name, f] of groups) {
+    const a = S.filter(f);
+    const st = stats(a);
+    if (!st) { console.log('  ' + name.padEnd(26) + 'нет данных'); continue; }
+    const vals = segs.map(g => { const b = a.filter(g); return b.length >= 12 ? stats(b).exp : null; });
+    console.log('  ' + name.padEnd(24) + String(st.n).padStart(5) + '  ' +
+      (st.win.toFixed(0) + '%').padStart(6) + '  ' +
+      ((st.exp >= 0 ? '+' : '') + st.exp.toFixed(3) + '%').padStart(9) + '  ' +
+      st.pf.toFixed(2).padStart(6) + '  ' +
+      vals.map(v => (v == null ? '  н/д' : (v >= 0 ? '+' : '') + v.toFixed(3)).padStart(8)).join(' '));
+  }
+
+  console.log('\n' + '='.repeat(92));
+  console.log('  ТРЕБОВАТЬ ЗАПАС НЕ МЕНЬШЕ X% (только там, где BTC выше EMA20)');
   console.log('='.repeat(92));
   console.log('  ПОРОГ   ОСТАНЕТСЯ   WIN%   ОЖИДАНИЕ   vs БАЗА     PF     отр.1    отр.2    отр.3   ИТОГ');
-  const base = stats(S);
-  const baseSeg = segs.map(f => { const a = S.filter(f); return a.length >= 12 ? stats(a).exp : null; });
+  const A = S.filter(x => x.bm > 0);
+  const base = stats(A);
+  const baseSeg = segs.map(f => { const a = A.filter(f); return a.length >= 12 ? stats(a).exp : null; });
   const out = [];
   for (const m of MARGINS) {
-    const kept = S.filter(x => x.bm >= m);
+    const kept = A.filter(x => x.bm >= m);
     const st = stats(kept);
     if (!st || st.n < 40) { console.log(`  >=${m}%     мало входов (${kept.length})`); continue; }
     const vals = segs.map(f => { const a = kept.filter(f); return a.length >= 12 ? stats(a).exp : null; });

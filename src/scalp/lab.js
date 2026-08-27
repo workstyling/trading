@@ -593,9 +593,38 @@ function buildBrief(trades, meta) {
   if (!observations.length) {
     lines.push('## Conclusions');
     lines.push('');
-    lines.push('No slice deviates by 0.25 pp or more from the overall average. The gate');
-    lines.push('performs the same across every measured condition, so there is nothing to');
-    lines.push('narrow yet. Keep accumulating trades.');
+    lines.push('No slice of the ENTRY CONTEXT deviates by 0.25 pp or more from the overall');
+    lines.push('average — position in range, RSI, spread, volume and the rest all behave the');
+    lines.push('same. There is nothing to narrow along those lines.');
+    // Раньше на этом раздел заканчивался словами «ничего сужать не надо»,
+    // хотя выше в этом же тексте контрольные группы могли идти ЛУЧШЕ
+    // прошедших. Вывод читался как «всё в порядке» и противоречил
+    // собственным данным двумя экранами выше.
+    const far = meta && meta.farGroup;
+    const beaten = [];
+    if (far && far.n >= 5 && base && far.avgPct > base.avgPct) {
+      beaten.push(`trades rejected for TWO conditions averaged ${d(far.avgPct)}% against ${d(base.avgPct)}% for those that passed`);
+    }
+    for (const c of (meta && meta.conditions) || []) {
+      if (c.enough && base && c.avgPct > base.avgPct + 0.5) {
+        beaten.push(`dropping "${c.cond}" would have averaged ${d(c.avgPct)}% against ${d(base.avgPct)}%`);
+      }
+    }
+    if (beaten.length) {
+      lines.push('');
+      lines.push('**But that is not the whole picture.** The sections above show the gate being');
+      lines.push('beaten by what it rejects:');
+      lines.push('');
+      beaten.forEach(x => lines.push(`- ${x}`));
+      lines.push('');
+      lines.push('Those comparisons carry the caveats printed with them — different periods,');
+      lines.push('a base that may predate the current gate — so none of them is a verdict.');
+      lines.push('They point at the CONDITIONS, not at the entry context, and that is where');
+      lines.push('the next test belongs: re-run each suspect condition on history with');
+      lines.push('`src/scalp/regime.js` or `backtest.js` and check all three segments.');
+    } else {
+      lines.push('Keep accumulating trades.');
+    }
     return lines.join('\n');
   }
 
