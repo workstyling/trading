@@ -371,7 +371,13 @@ function buildBrief(trades, meta) {
   // База именно скальп-гейта: +0.199% при 68% побед (28 252 сэмпла, 6ч горизонт).
   // Раньше здесь стояло +0.914% — это число из теста стопов для paper-бота,
   // и задание всегда докладывало, что гейт сломан.
-  const BASE_EXP = 0.199, BASE_WIN = 68;
+  // Эталон пересчитан. Раньше здесь стояло +0.199% при 68% побед — цифра с
+  // ОДНОЙ недели, на которой гейт калибровался. Прогон на 25 днях и 927
+  // входах по текущему гейту дал -0.103% при 60% побед и профит-факторе 0.90,
+  // причём положителен только последний из трёх отрезков. Сравнивать живые
+  // результаты со старым числом значило докладывать тревожное расхождение
+  // там, где живые данные как раз СОВПАДАЮТ с историей.
+  const BASE_EXP = -0.103, BASE_WIN = 60;
   // Кучность: без неё выборка выглядит втрое-вчетверо надёжнее, чем она есть
   const cl = clusterStats(trades);
   if (cl) {
@@ -387,9 +393,13 @@ function buildBrief(trades, meta) {
       lines.push('');
     }
   }
-  lines.push(`Historical backtest expectancy for the scalp gate: **+${BASE_EXP}%** per trade at ${BASE_WIN}% wins.`);
+  lines.push(`Backtest over 25 days, 927 entries on the CURRENT gate: **${d(BASE_EXP)}%** per trade`);
+  lines.push(`at ${BASE_WIN}% wins, profit factor 0.90. Only the most recent of three segments`);
+  lines.push('was positive. The gate has no measured edge over that window, so treat a live');
+  lines.push('loss as consistent with history rather than as a malfunction.');
+  lines.push('');
   const drift = Math.round((base.avgPct - BASE_EXP) * 1000) / 1000;
-  lines.push(`Live data differs by **${d(drift)} pp** on result and ` +
+  lines.push(`Live data differs from that by **${d(drift)} pp** on result and ` +
     `**${d(base.winRate - BASE_WIN)} pp** on win rate.`);
   lines.push('');
 
