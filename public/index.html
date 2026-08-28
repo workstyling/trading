@@ -1648,6 +1648,7 @@
       box-shadow: 0 0 16px rgba(48, 209, 88, 0.25);
     }
 
+
     .buy-btn:active {
       transform: scale(0.97);
     }
@@ -5597,6 +5598,21 @@
       filter: brightness(1.1) !important;
     }
 
+    /* Рыночная покупка — свой цвет: исполняется мгновенно и необратимо,
+       спутать её с лимиткой нельзя. Стоит ПОСЛЕ блока .buy-btn выше, иначе
+       его !important перекрашивает кнопку обратно в зелёную. */
+    .buy-btn.mkt {
+      background: linear-gradient(135deg, #f59e0b, #f97316) !important;
+      color: #1a1200 !important;
+      box-shadow: 0 4px 15px rgba(245, 158, 11, 0.25) !important;
+      margin-left: 5px;
+    }
+    .buy-btn.mkt:hover {
+      box-shadow: 0 6px 20px rgba(245, 158, 11, 0.45) !important;
+      filter: brightness(1.1) !important;
+    }
+    .buy-btn.mkt:disabled { opacity: 0.55 !important; cursor: default; }
+
     .buy-limit-btn, .tracker-toggle-btn, .at-add-btn, .telegram-btn {
       border: 1px solid rgba(0, 242, 254, 0.3) !important;
       background: rgba(0, 242, 254, 0.05) !important;
@@ -6029,6 +6045,8 @@
               <input type="text" class="buy-usd-field" id="buyUsdAmount" value="0" onclick="this.select()" onchange="onUsdAmountChange(this.value)">
               <span class="buy-usd-label">USD</span>
               <button class="buy-btn" id="buyBtn" onclick="executeBuyOrder()">BUY</button>
+              <button class="buy-btn mkt" id="buyMktBtn" onclick="executeMarketBuy()"
+                title="Покупка ПО РЫНКУ: исполняется мгновенно по лучшему ask, отменить нельзя. Дороже лимитки на величину спреда и проскальзывания — она показана в строке ниже. Перед отправкой спросит подтверждение.">MKT</button>
               <div class="buy-input-group" style="flex-shrink:0;" title="Уровень стакана для лимитки: 0 = лучший bid, −1 = второй уровень, −2 = третий… Сохраняется в настройках.">
                 <span style="font-size:9px;color:#667;padding:0 2px 0 5px;">lvl</span>
                 <button class="buy-input-btn minus" onclick="adjustBidLevel(-1)">−</button>
@@ -6972,6 +6990,66 @@
       localStorage.setItem('buySize', document.getElementById('buySize').value);
       updateBuyUsdAmount();
     });
+
+    // Покупка по рынку. Отдельная от лимитной: исполняется мгновенно и
+    // необратимо, поэтому спрашивает подтверждение и показывает, во что
+    // обойдётся спред — те же цифры, что в строке стакана под панелью.
+    async function executeMarketBuy() {
+      const quoteSize = parseFloat(document.getElementById('buyUsdAmount').value.replace(/[$,]/g, '')) || 0;
+      if (!quoteSize || quoteSize < 1) { showCustomAlert('Сумма слишком мала', true); return; }
+      const coin = selectedBuyCoin;
+      const productId = coin + '-USD';
+
+      let bid = buyPanelPrices.bid, ask = buyPanelPrices.ask;
+      try {
+        const t = await (await fetch(`https://api.exchange.coinbase.com/products/${productId}/ticker`)).json();
+        if (parseFloat(t.bid) > 0) bid = parseFloat(t.bid);
+        if (parseFloat(t.ask) > 0) ask = parseFloat(t.ask);
+      } catch { }
+      if (!(ask > 0)) { showCustomAlert('Не удалось получить цену', true); return; }
+
+      const spreadPct = bid > 0 ? (ask - bid) / ((ask + bid) / 2) * 100 : null;
+      const qty = quoteSize / ask;
+      const feePct = parseFloat(tradingSettings.marketFee) || 0.125;
+      const fee = quoteSize * feePct / 100;
+      // Насколько дороже лимитки по лучшему bid — то, что реально теряется
+      const vsLimit = bid > 0 ? (ask / bid - 1) * 100 : 0;
+      const vsLimitUsd = quoteSize * vsLimit / 100;
+
+      showConfirmModal('Купить по рынку',
+        `<b>${coin}</b> на <b>$${quoteSize.toFixed(2)}</b> — это <b>РЕАЛЬНЫЙ</b> ордер.<br><br>` +
+        `Цена ask: <b>$${fmtPrice(ask)}</b>${spreadPct != null ? ` · спред <b>${spreadPct.toFixed(3)}%</b>` : ''}<br>` +
+        `Получишь примерно <b>${qty < 1 ? qty.toFixed(6) : qty.toFixed(3)} ${coin}</b><br>` +
+        `Комиссия рынка <b>${feePct}%</b> ≈ <b>$${fee.toFixed(2)}</b><br>` +
+        `Дороже лимитки по bid на <b>${vsLimit.toFixed(2)}%</b> ≈ <b>$${vsLimitUsd.toFixed(2)}</b><br><br>` +
+        `<span style="color:var(--yellow);">Исполнится мгновенно. Отменить нельзя.</span>`,
+        async () => {
+          const btn = document.getElementById('buyMktBtn');
+          if (btn) { btn.disabled = true; btn.textContent = '...'; }
+          try {
+            const r = await fetch('/create-market-buy-order', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ productId, quoteSize: Math.round(quoteSize * 100) / 100 })
+            });
+            const j = await r.json();
+            if (!j.success) { showCustomAlert(j.error || 'Ордер отклонён', true); return; }
+            showCustomAlert(`${coin}: куплено по рынку на $${quoteSize.toFixed(2)}`);
+            // В тот же список, что и лимитные покупки, иначе сделка не попадёт
+            // в подсчёт прибыли по монете
+            if (j.orderId && !selectedOrders.includes(j.orderId)) {
+              selectedOrders.push(j.orderId);
+              safeStorage.setItem(SELECTED_ORDERS_KEY, JSON.stringify(selectedOrders));
+              saveSelectedToServer();
+            }
+            loadUsdBalance();
+            setTimeout(loadLatestOrders, 1000);
+          } catch (e) {
+            showCustomAlert('Ошибка: ' + e.message, true);
+          } finally {
+            if (btn) { btn.disabled = false; btn.textContent = 'MKT'; }
+          }
+        });
+    }
 
     async function executeBuyOrder() {
       console.log('executeBuyOrder called');

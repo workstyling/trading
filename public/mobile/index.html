@@ -134,6 +134,14 @@
       font-size: 15px; font-weight: 700; cursor: pointer; transition: all .15s;
     }
     .trade-btn:active { transform: scale(.97); }
+    /* Покупка по рынку — свой цвет: мгновенно и необратимо */
+    .btn-mkt {
+      background: rgba(245, 158, 11, 0.14);
+      border: 1px solid rgba(245, 158, 11, 0.5);
+      color: #f5a524;
+    }
+    .btn-mkt:disabled { opacity: 0.6; }
+
     .btn-buy { background: var(--green); color: #000; }
     .btn-sell { background: var(--red); color: #fff; }
 
@@ -1436,6 +1444,7 @@
     <div id="buyDepthInfoM" style="font-size:10px;color:var(--t2);margin:8px 0 12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;"></div>
     <div class="trade-actions">
       <button class="trade-btn btn-buy" id="btnBuy" onclick="executeBuy()">BUY</button>
+      <button class="trade-btn btn-mkt" id="btnBuyMkt" onclick="executeMarketBuy()">MKT</button>
     </div>
     <div class="trade-actions" style="margin-top: 10px; display: none !important; gap: 8px;">
       <input type="text" class="limit-input" id="limitPrice" placeholder="Limit price..." autocomplete="off" style="flex: 1;">
@@ -2162,6 +2171,53 @@
         }
         loadBalance(); loadOrders().then(updateMonitor);
       } else toast(r.error || 'Failed', 'error');
+    }
+
+    // Покупка по рынку: мгновенно, необратимо, поэтому подтверждение
+    // показывает спред и во что он обойдётся
+    async function executeMarketBuy() {
+      const coin = document.getElementById('coinInput').value.trim().toUpperCase();
+      if (!coin) { toast('Укажи монету', 'error'); return; }
+      const usd = parseFloat(getUsdAmount());
+      if (!(usd >= 1)) { toast('Сумма слишком мала', 'error'); return; }
+
+      let bid = prices.bid, ask = prices.ask;
+      try {
+        const t = await (await fetch(`https://api.exchange.coinbase.com/products/${coin}-USD/ticker`)).json();
+        if (parseFloat(t.bid) > 0) bid = parseFloat(t.bid);
+        if (parseFloat(t.ask) > 0) ask = parseFloat(t.ask);
+      } catch { }
+      if (!(ask > 0)) { toast('Не удалось получить цену', 'error'); return; }
+
+      const spread = bid > 0 ? (ask - bid) / ((ask + bid) / 2) * 100 : 0;
+      const feePct = parseFloat(tradingSettings.marketFee) || 0.125;
+      const vsLimit = bid > 0 ? (ask / bid - 1) * 100 : 0;
+      const qty = usd / ask;
+
+      const ok = await confirmTrade(
+        `<b>ПО РЫНКУ</b> ${coin} на $${usd.toFixed(2)}<br>` +
+        `ask $${fmt(ask)} · спред ${spread.toFixed(3)}%<br>` +
+        `≈ ${qty < 1 ? qty.toFixed(6) : qty.toFixed(3)} ${coin}<br>` +
+        `комиссия ${feePct}% ≈ $${(usd * feePct / 100).toFixed(2)}<br>` +
+        `дороже лимитки на ${vsLimit.toFixed(2)}% ≈ $${(usd * vsLimit / 100).toFixed(2)}<br>` +
+        `<span style="font-size:11px;color:#f5c518;">Исполнится сразу, отменить нельзя</span>`);
+      if (!ok) return;
+
+      const btn = document.getElementById('btnBuyMkt');
+      if (btn) { btn.disabled = true; btn.textContent = '...'; }
+      const r = await api('/create-market-buy-order', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ productId: coin + '-USD', quoteSize: Math.round(usd * 100) / 100 })
+      });
+      if (btn) { btn.disabled = false; btn.textContent = 'MKT'; }
+      if (r && r.success) {
+        toast('Куплено по рынку');
+        if (r.orderId && !selectedOrders.includes(r.orderId)) {
+          selectedOrders.push(r.orderId);
+          saveSelectedToServer();
+        }
+        loadBalance(); loadOrders().then(updateMonitor);
+      } else toast((r && r.error) || 'Не удалось', 'error');
     }
 
     async function executeSell() {

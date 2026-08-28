@@ -458,6 +458,53 @@ app.get('/get-balance', async (req, res) => {
   }
 });
 
+// API: Рыночная покупка на сумму в долларах.
+// Отдельный эндпоинт, а не флаг у лимитного: market_market_ioc для BUY
+// принимает quote_size (сумму), тогда как лимитный считает base_size из цены.
+// Смешивать их в одной ветке — верный способ однажды купить не то количество.
+app.post('/create-market-buy-order', async (req, res) => {
+  try {
+    const { productId, quoteSize } = req.body || {};
+    const usd = parseFloat(quoteSize);
+    if (!productId || !(usd > 0)) {
+      return res.json({ success: false, error: 'Нужны productId и сумма больше нуля' });
+    }
+    // Потолок на случай опечатки в поле суммы: рыночный ордер исполняется
+    // мгновенно и отменить его нельзя.
+    if (usd > 10000) {
+      return res.json({ success: false, error: `Сумма $${usd} выше потолка $10000 для рыночной покупки` });
+    }
+    const clientOrderId = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
+    const orderData = {
+      client_order_id: clientOrderId,
+      product_id: productId,
+      side: 'BUY',
+      order_configuration: { market_market_ioc: { quote_size: usd.toFixed(2) } },
+    };
+    console.log('Creating MARKET buy order:', orderData);
+    const response = await client.createOrder(orderData);
+    const parsed = typeof response === 'string' ? JSON.parse(response) : response;
+
+    if (parsed.success === false || parsed.error_response) {
+      const errorMsg = parsed.error_response?.message || parsed.error_response?.error
+        || parsed.error_response?.preview_failure_reason || 'Order rejected';
+      console.error('Coinbase rejected market buy:', errorMsg);
+      return res.json({ success: false, error: errorMsg, details: parsed });
+    }
+    const orderId = parsed.success_response?.order_id || parsed.order_id;
+    if (!orderId) {
+      console.error('No order ID in market buy response:', parsed);
+      return res.json({ success: false, error: 'No order ID returned', details: parsed });
+    }
+    console.log('Market buy created, ID:', orderId);
+    ordersCache.ts = 0;
+    res.json({ success: true, orderId });
+  } catch (error) {
+    console.error('Market buy error:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // API: Create limit buy order
 app.post('/create-buy-order', async (req, res) => {
   try {
