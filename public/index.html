@@ -11341,7 +11341,7 @@ Requirements:
 
             const currentLabelPos = Math.max(14, currentPos);
             h += `
-            <div class="price-progress-container" id="progress_${coin}_${idx}" data-buy-price="${buyPrice}" data-target-price="${targetSellPrice}" data-breakeven-pct="${breakevenPct}" data-order-id="${buyOrder.order_id}" data-filled="${filledSize}" data-spent="${(filledSize * buyPrice).toFixed(2)}" data-fee="${buyFeeP}" data-left-max="${leftMax}" data-right-max="${rightMax}">
+            <div class="price-progress-container" id="progress_${coin}_${idx}" data-buy-price="${buyPrice}" data-target-price="${targetSellPrice}" data-breakeven-pct="${breakevenPct}" data-order-id="${buyOrder.order_id}" data-filled="${filledSize}" data-spent="${actualCost.toFixed(2)}" data-fee="${buyFeeP}" data-sell-fee="${sellFeeP}" data-left-max="${leftMax}" data-right-max="${rightMax}">
               <div class="price-progress-top">
                 <span class="info-order" style="left:0;color:#888;font-size:9px;">#${orderIdShort}</span>
                 <span class="info-current ${isProfit ? 'profit' : 'loss'}" style="left:${currentLabelPos}%">${currentPct >= 0 ? '+' : ''}${currentPct.toFixed(2)}%</span>
@@ -11422,8 +11422,15 @@ Requirements:
         if (!bar) return;
         const buyPrice = parseFloat(container.dataset.buyPrice) || 0;
         const filled = parseFloat(container.dataset.filled) || 0;
+        // spent — РЕАЛЬНО потраченное (total_value_after_fees с биржи), а не
+        // filled*price. Раньше комиссия покупки не учитывалась вовсе, и после
+        // покупки по рынку прибыль на шкале завышалась вдвое: рыночная
+        // комиссия 0.25% против лимитной 0.06%.
         const spent = parseFloat(container.dataset.spent) || 0;
-        const fee = parseFloat(container.dataset.fee) || 0;
+        // На продаже нужна комиссия ПРОДАЖИ. Раньше сюда подставлялась
+        // комиссия покупки — та же точка безубытка на шкале считалась по
+        // marketFee, а подсказка по tradeFee, и они не совпадали.
+        const fee = parseFloat(container.dataset.sellFee) || parseFloat(container.dataset.fee) || 0;
         const leftMax = parseFloat(container.dataset.leftMax) || -5;
         const rightMax = parseFloat(container.dataset.rightMax) || 5;
         const tooltip = bar.querySelector('.price-hover-tooltip');
@@ -11647,11 +11654,18 @@ Requirements:
           if (bestAsk > 0) {
             const buyPrice = parseFloat(progressEl.dataset.buyPrice) || 0;
             const targetSellPrice = parseFloat(progressEl.dataset.targetPrice) || 0;
-            const fee = parseFloat(progressEl.dataset.fee) || getFeeLimit();
+            const buyFee = parseFloat(progressEl.dataset.fee) || getFeeLimit();
+            const sellFee = parseFloat(progressEl.dataset.sellFee) || getFeeMarket();
+            const filledQty = parseFloat(progressEl.dataset.filled) || 0;
+            const realCost = parseFloat(progressEl.dataset.spent) || 0;
 
             if (buyPrice > 0) {
-              const effectivePrice = bestAsk * (1 - fee);
-              const costBasis = buyPrice * (1 + fee);
+              const effectivePrice = bestAsk * (1 - sellFee);
+              // Себестоимость единицы из ФАКТИЧЕСКИХ затрат: так неважно,
+              // покупалось лимиткой или по рынку — комиссия уже внутри.
+              const costBasis = (filledQty > 0 && realCost > 0)
+                ? realCost / filledQty
+                : buyPrice * (1 + buyFee);
               const targetPct = ((targetSellPrice - buyPrice) / buyPrice * 100);
               const currentPct = ((effectivePrice - costBasis) / costBasis * 100);
               const breakevenPct = parseFloat(progressEl.dataset.breakevenPct) || 0.12;
