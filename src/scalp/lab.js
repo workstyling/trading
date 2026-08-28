@@ -218,6 +218,17 @@ function findObservations(trades, opts = {}) {
   const cl = clusterStats(trades);
   const minClusters = opts.minClusters || 4;
   if (cl && cl.nClusters < minClusters) return { base, observations: [], enough: false, cl, tooClustered: true };
+  // Когда почти все сделки закрылись по одной и той же цели, они дают ОДИН И
+  // ТОТ ЖЕ результат, и среднее любого разреза определяется тем, в какой из
+  // них попали единичные неудачники. Замерено вживую: 27 сделок из 29 дали
+  // ровно +1.75%, одна −2.39% и одна +0.74%. Оба «расхождения», которые
+  // задание тогда предложило исправлять, оказались одной и той же убыточной
+  // сделкой, попавшей в два разреза. Резать по такому нельзя.
+  const losers = trades.filter(t => t.pnlPct <= 0).length;
+  const minLosers = opts.minLosers || 5;
+  if (losers < minLosers) {
+    return { base, observations: [], enough: false, cl, tooFewLosers: true, losers };
+  }
 
   const observations = [];
   for (const [dim, fn] of Object.entries(BUCKETS)) {
@@ -377,7 +388,7 @@ function buildBrief(trades, meta) {
   // причём положителен только последний из трёх отрезков. Сравнивать живые
   // результаты со старым числом значило докладывать тревожное расхождение
   // там, где живые данные как раз СОВПАДАЮТ с историей.
-  const BASE_EXP = -0.103, BASE_WIN = 60;
+  const BASE_EXP = 0.101, BASE_WIN = 66;
   // Кучность: без неё выборка выглядит втрое-вчетверо надёжнее, чем она есть
   const cl = clusterStats(trades);
   if (cl) {
@@ -393,10 +404,14 @@ function buildBrief(trades, meta) {
       lines.push('');
     }
   }
-  lines.push(`Backtest over 25 days, 927 entries on the CURRENT gate: **${d(BASE_EXP)}%** per trade`);
-  lines.push(`at ${BASE_WIN}% wins, profit factor 0.90. Only the most recent of three segments`);
-  lines.push('was positive. The gate has no measured edge over that window, so treat a live');
-  lines.push('loss as consistent with history rather than as a malfunction.');
+  lines.push(`Backtest over 60 days, 1383 entries on the CURRENT gate (weekly-return`);
+  lines.push(`condition included): **${d(BASE_EXP)}%** per trade at ${BASE_WIN}% wins, profit factor 1.10.`);
+  lines.push('The edge is real but thin — roughly 0.1% against a 0.25% round trip. Without');
+  lines.push('the weekly condition the same gate measured -0.103% at PF 0.90, so most of');
+  lines.push('what the gate has is that one filter.');
+  lines.push('');
+  lines.push('A live result far ABOVE this figure means the market is unusually kind, not');
+  lines.push('that the gate is better than measured. Expect reversion toward the backtest.');
   lines.push('');
   const drift = Math.round((base.avgPct - BASE_EXP) * 1000) / 1000;
   lines.push(`Live data differs from that by **${d(drift)} pp** on result and ` +
@@ -582,7 +597,16 @@ function buildBrief(trades, meta) {
     lines.push('## Conclusions');
     lines.push('');
     const cls = clusterStats(trades);
-    if (cls && base.n >= 15 && cls.nClusters < 4) {
+    const lost = trades.filter(t => t.pnlPct <= 0).length;
+    if (base.n >= 15 && lost < 5) {
+      lines.push(`There are ${base.n} gate trades and only **${lost}** of them lost money. Almost every`);
+      lines.push('trade closed at the same target, so every trade in a slice carries an');
+      lines.push('identical result and a slice average is decided by which slice happens to');
+      lines.push('contain a loser. Slicing that reports differences driven by one or two');
+      lines.push('trades, so it is withheld until at least 5 losses exist to distribute.');
+      lines.push('');
+      lines.push('This is a good problem to have, but it is not evidence about the conditions.');
+    } else if (cls && base.n >= 15 && cls.nClusters < 4) {
       lines.push(`There are ${base.n} gate trades, which looks like enough, but they came from`);
       lines.push(`only **${cls.nClusters} bursts** — ${cls.nClusters} independent observations, not ${base.n}.`);
       lines.push('Slicing this sample would find properties of one market move and report them');
