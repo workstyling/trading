@@ -1829,6 +1829,35 @@
     }
 
     // ── API calls ──
+    // Общий кеш рыночных данных Coinbase — та же беда, что на десктопе.
+    // Замерено на боевой мобильной странице: 70 запросов к Coinbase за 32
+    // секунды, каждый тикер холдинга по 12 раз, то есть раз в 2.7 секунды.
+    // Несколько циклов тянут одно и то же независимо друг от друга, а лимит
+    // Coinbase — 10 запросов в секунду на адрес, общий с сервером.
+    const _cbCache = new Map();
+    const _cbInflight = new Map();
+    async function cbGet(url, ttlMs = 2500) {
+      const hit = _cbCache.get(url);
+      if (hit && Date.now() - hit.at < ttlMs) return hit.data;
+      const flying = _cbInflight.get(url);
+      if (flying) return flying;
+      const pr = (async () => {
+        try {
+          const r = await fetch(url);
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          const data = await r.json();
+          _cbCache.set(url, { at: Date.now(), data });
+          return data;
+        } finally { _cbInflight.delete(url); }
+      })();
+      _cbInflight.set(url, pr);
+      return pr;
+    }
+    setInterval(() => {
+      const cutoff = Date.now() - 60_000;
+      for (const [k, v] of _cbCache) if (v.at < cutoff) _cbCache.delete(k);
+    }, 60_000);
+
     async function api(url, opts) {
       try {
         const r = await fetch(BASE + url, opts);
@@ -2042,7 +2071,7 @@
       try {
         // Свежий стакан не чаще раза в 4с — быстрые клики ± пересчитывают по кешу мгновенно
         if (_mDepthBook.coin !== coin || Date.now() - _mDepthBook.t > 4000) {
-          const r = await fetch(`https://api.exchange.coinbase.com/products/${coin}-USD/book?level=2`);
+          const r = { ok: true, json: async () => await cbGet(`https://api.exchange.coinbase.com/products/${coin}-USD/book?level=2`) };
           if (!r.ok) return;
           const b = await r.json();
           _mDepthBook = { coin, bids: b.bids || [], asks: b.asks || [], t: Date.now() };
@@ -2113,7 +2142,7 @@
       els.forEach(el => { (groups[el.dataset.pair] = groups[el.dataset.pair] || []).push(el); });
       await Promise.all(Object.keys(groups).map(async pair => {
         try {
-          const r = await fetch(`https://api.exchange.coinbase.com/products/${pair}/book?level=2`);
+          const r = { ok: true, json: async () => await cbGet(`https://api.exchange.coinbase.com/products/${pair}/book?level=2`) };
           if (!r.ok) return;
           const book = await r.json();
           groups[pair].forEach(el => {
@@ -2396,9 +2425,8 @@
         // Fetch live price
         let bid = 0, ask = 0;
         try {
-          const r = await fetch(`https://api.exchange.coinbase.com/products/${pair}/ticker`);
-          if (r.ok) {
-            const t = await r.json();
+          const t = await cbGet(`https://api.exchange.coinbase.com/products/${pair}/ticker`).catch(() => null);
+          if (t) {
             bid = parseFloat(t.bid) || 0;
             ask = parseFloat(t.ask) || 0;
             monitorPriceCache[pair] = { bid, ask };
