@@ -6744,9 +6744,8 @@
       try {
         // Обычно стакан уже свежий из updateBuyPanelPrices (каждые 5с); сами тянем только если устарел
         if (_buyBook.coin !== coin || Date.now() - _buyBook.t > 6_000) {
-          const r = await fetch(`https://api.exchange.coinbase.com/products/${coin}-USD/book?level=2`);
-          if (!r.ok) return;
-          const b = await r.json();
+          const b = await cbGet(`https://api.exchange.coinbase.com/products/${coin}-USD/book?level=2`).catch(() => null);
+          if (!b) return;
           _buyBook = { coin, bids: b.bids || [], asks: b.asks || [], t: Date.now() };
         }
         const bids = _buyBook.bids, asks = _buyBook.asks;
@@ -6812,8 +6811,7 @@
       try {
         const pair = selectedBuyCoin + '-USD';
         // level=2: тот же запрос даёт и лучшие цены, и полный стакан для превью глубины
-        const res = await fetch(`https://api.exchange.coinbase.com/products/${pair}/book?level=2`);
-        const data = await res.json();
+        const data = await cbGet(`https://api.exchange.coinbase.com/products/${pair}/book?level=2`);
         _buyBook = { coin: selectedBuyCoin, bids: data.bids || [], asks: data.asks || [], t: Date.now() };
         const bidEl = document.getElementById('buyBestBid');
         const askEl = document.getElementById('buyBestAsk');
@@ -11511,6 +11509,46 @@ Requirements:
     setInterval(fetchRealBalances, 15000);
 
     // Fees (dynamic from settings)
+    // Общий кеш рыночных данных Coinbase.
+    //
+    // Замерено на боевой странице: за 30 секунд из ОДНОЙ вкладки уходило 64
+    // запроса к Coinbase, из них стакан WLFI — 21 раз, то есть каждые 1.4
+    // секунды. Причина не в частоте таймеров, а в том, что четыре независимых
+    // цикла (панель покупки, позиции по ордерам, расчёт продажи, глубина)
+    // тянут ОДИН И ТОТ ЖЕ стакан каждый сам за себя, ничего не зная друг о
+    // друге. Публичный лимит Coinbase — 10 запросов в секунду на адрес, и из
+    // того же лимита сервер платит за скан рынка и лабораторию.
+    //
+    // Кеш делает две вещи: отдаёт свежий ответ повторно в пределах TTL и
+    // склеивает ОДНОВРЕМЕННЫЕ запросы одного адреса — второй вызов получает
+    // тот же промис, а не заводит вторую загрузку.
+    const _cbCache = new Map();     // url -> { at, data }
+    const _cbInflight = new Map();  // url -> Promise
+    async function cbGet(url, ttlMs = 2500) {
+      const now = Date.now();
+      const hit = _cbCache.get(url);
+      if (hit && now - hit.at < ttlMs) return hit.data;
+      const flying = _cbInflight.get(url);
+      if (flying) return flying;
+      const p = (async () => {
+        try {
+          const r = await fetch(url);
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          const data = await r.json();
+          _cbCache.set(url, { at: Date.now(), data });
+          return data;
+        } finally {
+          _cbInflight.delete(url);
+        }
+      })();
+      _cbInflight.set(url, p);
+      return p;
+    }
+    setInterval(() => {
+      const cutoff = Date.now() - 60_000;
+      for (const [k, v] of _cbCache) if (v.at < cutoff) _cbCache.delete(k);
+    }, 60_000);
+
     function getFeeLimit() { return tradingSettings.tradeFee / 100; }
     function getFeeMarket() { return tradingSettings.marketFee / 100; }
 
@@ -11543,9 +11581,7 @@ Requirements:
     const lastPricesCache = {};
     async function calculateMarketAmount(pair, totalFilledSize) {
       try {
-        const res = await fetch(`https://api.exchange.coinbase.com/products/${pair}/book?level=2`);
-        if (!res.ok) throw new Error('API error');
-        const data = await res.json();
+        const data = await cbGet(`https://api.exchange.coinbase.com/products/${pair}/book?level=2`);
         if (!data.bids || !data.bids.length) {
           // Return cached values if available
           if (lastPricesCache[pair]) return lastPricesCache[pair];
@@ -11763,8 +11799,7 @@ Requirements:
       await Promise.all(pairs.map(async (pair) => {
         let book = null;
         try {
-          const res = await fetch(`https://api.exchange.coinbase.com/products/${pair}/book?level=2`);
-          if (res.ok) book = await res.json();
+          book = await cbGet(`https://api.exchange.coinbase.com/products/${pair}/book?level=2`);
         } catch {}
         if (!book) return; // keep cached values; do not clear DOM
         const asks = book.asks || [];
