@@ -1450,7 +1450,7 @@
     <div id="buyDepthInfoM" style="font-size:10px;color:var(--t2);margin:8px 0 12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;"></div>
     <div class="trade-actions">
       <button class="trade-btn btn-buy" id="btnBuy" onclick="executeBuy()">BUY</button>
-      <button class="trade-btn btn-mkt" id="btnBuyMkt" onclick="executeMarketBuy()">MKT</button>
+      <button class="trade-btn btn-mkt" id="btnBuyMkt" onclick="executeMarketBuy()">BUY MKT</button>
     </div>
     <div class="trade-actions" style="margin-top: 10px; display: none !important; gap: 8px;">
       <input type="text" class="limit-input" id="limitPrice" placeholder="Limit price..." autocomplete="off" style="flex: 1;">
@@ -2246,7 +2246,7 @@
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ productId: coin + '-USD', quoteSize: Math.round(usd * 100) / 100 })
       });
-      if (btn) { btn.disabled = false; btn.textContent = 'MKT'; }
+      if (btn) { btn.disabled = false; btn.textContent = 'BUY MKT'; }
       if (r && r.success) {
         toast('Куплено по рынку');
         if (r.orderId && !selectedOrders.includes(r.orderId)) {
@@ -2521,7 +2521,7 @@
           const totalFilledStr = totalFilled.toFixed(totalFilled < 1 ? 8 : 6);
           html += `<div style="margin-top:8px;display:flex;gap:6px;">
             <button class="mon-sell-btn all" style="flex:1;padding:10px;" onclick="sellAtAsk('${pair}','${totalFilledStr}',${avgBuy},${totalUSD})">SELL ALL ${coin}</button>
-            <button class="mon-sell-btn mkt" style="flex:0 0 84px;padding:10px;" onclick="sellAllMarketM('${pair}','${totalFilledStr}','${coin}',${totalUSD})">MKT</button>
+            <button class="mon-sell-btn mkt" style="flex:0 0 96px;padding:10px;" onclick="sellAllMarketM('${pair}','${totalFilledStr}','${coin}',${totalUSD})">SELL MKT</button>
           </div>`;
         }
 
