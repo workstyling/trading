@@ -2231,7 +2231,7 @@
           selectedOrders.push(r.order_id);
           saveSelectedToServer();
         }
-        refreshAfterTradeM();
+        refreshAfterTradeM(r.order_id);
       } else toast(r.error || 'Failed', 'error');
     }
 
@@ -2312,7 +2312,7 @@
             selectedOrders.push(r.orderId);
             saveSelectedToServer();
           }
-          refreshAfterTradeM();
+          refreshAfterTradeM(r.orderId);
         } else {
           toast((r && r.error) || 'Не удалось', 'error');
           b.disabled = false; b.textContent = 'Купить';
@@ -2346,7 +2346,7 @@
           selectedOrders.push(r.order_id);
           saveSelectedToServer();
         }
-        refreshAfterTradeM();
+        refreshAfterTradeM(r.order_id);
       } else toast(r.error || 'Failed', 'error');
     }
 
@@ -2371,13 +2371,13 @@
           selectedOrders.push(r.order_id);
           saveSelectedToServer();
         }
-        refreshAfterTradeM();
+        refreshAfterTradeM(r.order_id);
       } else toast(r.error || 'Failed', 'error');
     }
 
     // ── Orders ──
-    async function loadOrders() {
-      const r = await api('/get-latest-orders');
+    async function loadOrders(fresh) {
+      const r = await api('/get-latest-orders' + (fresh ? '?fresh=1' : ''));
       if (r.success) {
         allOrders = r.orders;
         renderOrders();
@@ -2753,7 +2753,7 @@
           if (timer) { clearInterval(timer); timer = null; }
           ov.remove();
           toast('Продано по рынку');
-          refreshAfterTradeM();
+          refreshAfterTradeM(r.orderId);
         } else {
           toast((r && r.error) || 'Не удалось', 'error');
           restore();
@@ -3986,10 +3986,34 @@
 
     // После сделки обновляем и баланс, и объём: объём тикал раз в 5 минут
     // поверх такого же серверного кеша и отставал до десяти минут.
-    function refreshAfterTradeM() {
+    // То же, что на десктопе: ордер появляется у биржи раньше, чем к нему
+    // подтягиваются размер, стоимость и комиссия. Один запрос сразу после
+    // сделки забирал полупустой снимок, и он же ложился в серверный кеш на
+    // восемь секунд — таблица так и стояла до перезагрузки страницы.
+    const TRADE_POLL_AT_M = [700, 1500, 3000, 5000, 8000, 13000, 20000];
+    function orderSettledM(o) {
+      if (!o) return false;
+      const st = (o.status || '').toUpperCase();
+      if (st === 'OPEN' || st === 'PENDING' || st === 'QUEUED') return true;
+      if (st === 'CANCELLED' || st === 'EXPIRED' || st === 'FAILED') return true;
+      return parseFloat(o.filled_size || 0) > 0 && parseFloat(o.total_value || 0) > 0;
+    }
+    function refreshAfterTradeM(orderId) {
       try { loadBalance(); } catch { }
       try { loadVol30dMobile(true); } catch { }
-      try { loadOrders().then(updateMonitor); } catch { }
+      let i = 0;
+      const tick = async () => {
+        try { await loadOrders(true); updateMonitor(); } catch { }
+        const o = orderId ? allOrders.find(x => x.order_id === orderId) : null;
+        if (orderId ? orderSettledM(o) : i >= 2) {
+          try { loadBalance(); } catch { }
+          try { loadVol30dMobile(true); } catch { }
+          return;
+        }
+        i++;
+        if (i < TRADE_POLL_AT_M.length) setTimeout(tick, TRADE_POLL_AT_M[i] - TRADE_POLL_AT_M[i - 1]);
+      };
+      setTimeout(tick, TRADE_POLL_AT_M[0]);
     }
 
     async function loadVol30dMobile(fresh) {

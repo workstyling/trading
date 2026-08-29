@@ -259,6 +259,8 @@ app.post('/api/market-sell', async (req, res) => {
     const orderId = await placeMarketSell(productId, sz);
     if (!orderId) return res.json({ success: false, error: 'Биржа не вернула id ордера' });
     console.log('Market sell created, ID:', orderId);
+    ordersCache.ts = 0; // сбрасываем кеш: иначе список ордеров ещё 8с без продажи
+    balanceCache.ts = 0;
     res.json({ success: true, orderId });
   } catch (error) {
     console.error('Market sell error:', error.message);
@@ -571,6 +573,7 @@ app.post('/create-market-buy-order', async (req, res) => {
     }
     console.log('Market buy created, ID:', orderId);
     ordersCache.ts = 0;
+    balanceCache.ts = 0;
     res.json({ success: true, orderId });
   } catch (error) {
     console.error('Market buy error:', error.message);
@@ -678,7 +681,11 @@ const ORDERS_CACHE_TTL = 8000; // 8 seconds
 app.get('/get-latest-orders', async (req, res) => {
   try {
     const now = Date.now();
-    if (ordersCache.data && (now - ordersCache.ts) < ORDERS_CACHE_TTL) {
+    // fresh=1 обходит кеш. Нужен сразу после сделки: биржа досыпает в ордер
+    // filled_size, total_value и комиссию не мгновенно, и восьмисекундный кеш
+    // успевал заморозить полупустой снимок на два цикла опроса.
+    const fresh = req.query.fresh === '1';
+    if (!fresh && ordersCache.data && (now - ordersCache.ts) < ORDERS_CACHE_TTL) {
       return res.json({ success: true, orders: ordersCache.data });
     }
     const orders = await getLatestOrders();

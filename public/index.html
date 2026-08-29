@@ -6729,10 +6729,38 @@
     // серверного кеша — после покупки он до десяти минут показывал старое
     // число. Список ордеров обновляем с задержкой: бирже нужно мгновение,
     // чтобы ордер появился в выдаче.
-    function refreshAfterTrade() {
+    // Ордер «дозревает» на бирже: сначала появляется сам, потом к нему
+    // подтягиваются filled_size, total_value и комиссия. Одного запроса через
+    // секунду не хватало — в таблицу попадал полупустой снимок, и он же
+    // оседал в серверном кеше на 8 секунд. Поэтому опрашиваем лесенкой и
+    // останавливаемся, как только ордер стал целым.
+    const TRADE_POLL_AT = [700, 1500, 3000, 5000, 8000, 13000, 20000];
+    function orderSettled(o) {
+      if (!o) return false;
+      const st = (o.status || '').toUpperCase();
+      // Лимитка висит в стакане — ждать нечего, она уже показана верно.
+      if (st === 'OPEN' || st === 'PENDING' || st === 'QUEUED') return true;
+      if (st === 'CANCELLED' || st === 'EXPIRED' || st === 'FAILED') return true;
+      return parseFloat(o.filled_size || 0) > 0 && parseFloat(o.total_value || 0) > 0;
+    }
+    function refreshAfterTrade(orderId) {
       try { loadUsdBalance(); } catch { }
       try { loadVolume30d(true); } catch { }
-      setTimeout(() => { try { loadLatestOrders(); } catch { } }, 1000);
+      let i = 0;
+      const tick = async () => {
+        try { await loadLatestOrders(true); } catch { }
+        const o = orderId ? allOrders.find(x => x.order_id === orderId) : null;
+        // Без id останавливаемся после третьего захода: дольше опрашивать
+        // вслепую незачем, дальше подхватит обычный десятисекундный цикл.
+        if (orderId ? orderSettled(o) : i >= 2) {
+          try { loadUsdBalance(); } catch { }
+          try { loadVolume30d(true); } catch { }
+          return;
+        }
+        i++;
+        if (i < TRADE_POLL_AT.length) setTimeout(tick, TRADE_POLL_AT[i] - TRADE_POLL_AT[i - 1]);
+      };
+      setTimeout(tick, TRADE_POLL_AT[0]);
     }
 
     async function loadVolume30d(fresh) {
@@ -7195,7 +7223,7 @@
             safeStorage.setItem(SELECTED_ORDERS_KEY, JSON.stringify(selectedOrders));
             saveSelectedToServer();
           }
-          refreshAfterTrade();
+          refreshAfterTrade(j.orderId);
         } catch (e) {
           showCustomAlert('Ошибка: ' + e.message, true);
           b.disabled = false; b.textContent = 'Купить'; timer = setInterval(tick, 1000);
@@ -7293,7 +7321,7 @@
             selectedOrders.push(newOrderId);
             safeStorage.setItem(SELECTED_ORDERS_KEY, JSON.stringify(selectedOrders)); saveSelectedToServer();
           }
-          refreshAfterTrade();
+          refreshAfterTrade(newOrderId);
         } else {
           // Extract error from response
           const errorMsg = data.error || data.order?.error_response?.message || data.order?.error_response?.preview_failure_reason || 'Buy failed';
@@ -7354,7 +7382,7 @@
             selectedOrders.push(newOrderId);
             safeStorage.setItem(SELECTED_ORDERS_KEY, JSON.stringify(selectedOrders)); saveSelectedToServer();
           }
-          refreshAfterTrade();
+          refreshAfterTrade(newOrderId);
           priceInput.value = '';
         } else {
           const errorMsg = data.error || data.order?.error_response?.message || data.order?.error_response?.preview_failure_reason || 'Buy failed';
@@ -8439,7 +8467,7 @@
                   selectedOrders.push(newOrderId);
                   safeStorage.setItem(SELECTED_ORDERS_KEY, JSON.stringify(selectedOrders)); saveSelectedToServer();
                 }
-                refreshAfterTrade();
+                refreshAfterTrade(newOrderId);
               } else {
                 const errorMsg = data.error || data.order?.error_response?.message || 'Buy order failed';
                 showCustomAlert(errorMsg, true);
@@ -8812,7 +8840,7 @@
           if (timer) { clearInterval(timer); timer = null; }
           overlay.remove();
           showCustomAlert(`${coin}: продано по рынку`);
-          refreshAfterTrade();
+          refreshAfterTrade(j.orderId);
         } catch (e) {
           showCustomAlert('Ошибка: ' + e.message, true);
           restore();
@@ -12251,9 +12279,9 @@ Requirements:
     setTimeout(updateOrderPositions, 500);
     setTimeout(updateSelectedPrices, 100); // Run immediately on load
 
-    async function loadLatestOrders() {
+    async function loadLatestOrders(fresh) {
       try {
-        const res = await fetch(ORDERS_SERVER + '/get-latest-orders');
+        const res = await fetch(ORDERS_SERVER + '/get-latest-orders' + (fresh ? '?fresh=1' : ''));
         const data = await res.json();
         if (data.success && Array.isArray(data.orders)) {
           // Check for completed selected orders
