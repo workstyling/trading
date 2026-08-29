@@ -6226,7 +6226,7 @@
         </div>
         <div id="profitPanel">
           <div class="profit-header">
-            <span class="profit-title">Total Profit <span id="todayProfit" style="margin-left:8px;font-size:11px;font-weight:700;color:#00e5a0;background:rgba(0,229,160,0.1);padding:2px 8px;border-radius:8px;" title="Прибыль за сегодня — по времени продажи (купил вчера, продал сегодня → считается сюда)">today: $0.00</span></span>
+            <span class="profit-title">Total Profit <span id="todayProfit" style="margin-left:8px;font-size:11px;font-weight:700;color:#00e5a0;background:rgba(0,229,160,0.1);padding:2px 8px;border-radius:8px;" title="Прибыль за сегодня — по времени фактического исполнения продажи, а не по моменту сохранения записи. Купил вчера, продал сегодня — считается сюда. Продал вчера, а кнопку нажал сегодня — не считается.">today: $0.00</span></span>
             <span class="profit-total" id="totalProfit">$0.00</span>
           </div>
           <div class="profit-list" id="profitList"></div>
@@ -9761,6 +9761,12 @@ Requirements:
       }
 
       const _details = (window._orderDetailsMap || {})[coin] || {};
+      // Когда РЕАЛЬНО продано. Раньше в date писался момент нажатия «Save
+      // Profit», и сделка, закрытая вчера вечером, попадала в «сегодня»
+      // просто потому, что кнопку нажали утром. Берём время последнего
+      // исполнения среди продаж; если биржа его не отдала — время создания
+      // ордера продажи; и только если продаж нет вовсе — текущий момент.
+      const soldAt = sellTimeOf(_details.sells) || new Date().toISOString();
       const entry = {
         id: Date.now(),
         coin: coin,
@@ -9770,7 +9776,8 @@ Requirements:
         buyOrderDetails: _details.buys || [],
         sellOrderDetails: _details.sells || [],
         createdDate: createdDate || null,
-        date: new Date().toISOString(),
+        soldAt,
+        date: new Date().toISOString(),   // когда запись сохранена — оставляем для истории
         sentToAccount: false
       };
       profitHistory.push(entry);
@@ -11185,6 +11192,26 @@ Requirements:
       }
     }
 
+    // Время фактической продажи по списку sell-ордеров: берём самое позднее
+    // исполнение. Порядок предпочтений — исполнение, потом создание ордера.
+    function sellTimeOf(sells) {
+      if (!Array.isArray(sells) || !sells.length) return null;
+      let best = 0;
+      for (const o of sells) {
+        const t = new Date(o.last_fill_time || o.created_time || 0).getTime();
+        if (t > best) best = t;
+      }
+      return best > 0 ? new Date(best).toISOString() : null;
+    }
+
+    // Дата, по которой сделку относят к дню: сначала записанное время продажи,
+    // затем — восстановленное из деталей ордеров (чтобы старые записи, где
+    // soldAt ещё нет, тоже считались правильно), и лишь в конце дата
+    // сохранения записи.
+    function profitDateOf(e) {
+      return e.soldAt || sellTimeOf(e.sellOrderDetails) || e.date;
+    }
+
     function updateProfitPanel() {
       const totalEl = document.getElementById('totalProfit');
       const listEl = document.getElementById('profitList');
@@ -11193,12 +11220,14 @@ Requirements:
       totalEl.textContent = (total >= 0 ? '+' : '') + '$' + total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
       totalEl.className = 'profit-total ' + (total >= 0 ? 'positive' : 'negative');
 
-      // Прибыль за сегодня — по дате продажи (e.date), т.е. «купил вчера, продал сегодня» тоже входит
+      // Прибыль за сегодня — по времени ФАКТИЧЕСКОЙ продажи, а не по моменту
+      // сохранения записи. «Купил вчера, продал сегодня» входит; «продал
+      // вчера, а кнопку нажал сегодня» — нет.
       const todayEl = document.getElementById('todayProfit');
       if (todayEl) {
         const now = new Date();
         const isToday = d => { const x = new Date(d); return x.getFullYear() === now.getFullYear() && x.getMonth() === now.getMonth() && x.getDate() === now.getDate(); };
-        const todaySum = Math.round(profitHistory.filter(e => isToday(e.date)).reduce((s, e) => s + e.profit, 0) * 100) / 100;
+        const todaySum = Math.round(profitHistory.filter(e => isToday(profitDateOf(e))).reduce((s, e) => s + e.profit, 0) * 100) / 100;
         todayEl.textContent = 'today: ' + (todaySum >= 0 ? '+' : '') + '$' + todaySum.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         todayEl.style.color = todaySum >= 0 ? '#00e5a0' : '#f55';
         todayEl.style.background = todaySum >= 0 ? 'rgba(0,229,160,0.1)' : 'rgba(255,85,85,0.1)';
@@ -11374,6 +11403,7 @@ Requirements:
           product_id: o.product_id,
           side: o.side,
           created_time: o.created_time || null,
+          last_fill_time: o.last_fill_time || null,
           filled_size: o.filled_size,
           average_filled_price: o.average_filled_price,
           limit_price: o.limit_price || null

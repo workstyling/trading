@@ -703,6 +703,9 @@ async function getLatestOrders() {
       order_type: order.order_type,
       status: order.status,
       created_time: order.created_time,
+      // Время ПОСЛЕДНЕГО исполнения. У лимитки она может провисеть сутки:
+      // created_time скажет, когда её выставили, а не когда продалось.
+      last_fill_time: order.last_fill_time || null,
       filled_size: order.filled_size || '0',
       filled_value: order.filled_value || '0',
       average_filled_price: order.average_filled_price || '0',
