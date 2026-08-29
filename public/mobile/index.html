@@ -2624,6 +2624,8 @@
       const restore = () => {
         const b = document.getElementById('msOkM');
         if (b) { b.disabled = false; b.textContent = 'Продать'; }
+        const f = document.getElementById('msForceLossM');
+        if (f) { f.disabled = false; f.textContent = 'Всё равно продать в убыток'; }
         if (!timer) timer = setInterval(tick, 1000);
       };
 

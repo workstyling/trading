@@ -8751,6 +8751,10 @@
       const restore = () => {
         const b = overlay.querySelector('#msConfirm');
         if (b) { b.disabled = false; b.textContent = 'Продать'; }
+        // И кнопку внутри предупреждения тоже: если биржа отклонила именно её
+        // ордер, она оставалась залипшей на «...» и второй попытки не было.
+        const f = document.getElementById('msForceLoss');
+        if (f) { f.disabled = false; f.textContent = 'Всё равно продать в убыток'; }
         if (!timer) timer = setInterval(tick, 1000);
       };
 
