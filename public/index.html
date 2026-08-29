@@ -8748,19 +8748,47 @@
       // кеша, и если продажа выходит в минус — показываем отдельное
       // предупреждение со свежим числом. Каждый раз, без «больше не
       // спрашивать»: убыток должен подтверждаться сознательно.
-      let lossAcknowledged = false;
       const restore = () => {
         const b = overlay.querySelector('#msConfirm');
-        if (b) { b.disabled = false; b.textContent = lossAcknowledged ? 'Продать в убыток' : 'Продать'; }
+        if (b) { b.disabled = false; b.textContent = 'Продать'; }
         if (!timer) timer = setInterval(tick, 1000);
       };
 
+      // Отправка ордера. Вынесена отдельно, потому что вызывается из двух
+      // мест: обычной кнопки (только когда сделка в плюсе) и кнопки внутри
+      // предупреждения (осознанная продажа в минус).
+      const sendOrder = async (btnEl) => {
+        if (btnEl) { btnEl.disabled = true; btnEl.textContent = '...'; }
+        if (timer) { clearInterval(timer); timer = null; }
+        try {
+          const r = await fetch('/api/market-sell', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ productId, size })
+          });
+          const j = await r.json();
+          if (!j.success) { showCustomAlert(j.error || 'Продажа отклонена', true); restore(); return; }
+          if (timer) { clearInterval(timer); timer = null; }
+          overlay.remove();
+          showCustomAlert(`${coin}: продано по рынку`);
+          loadUsdBalance();
+          setTimeout(loadLatestOrders, 1000);
+        } catch (e) {
+          showCustomAlert('Ошибка: ' + e.message, true);
+          restore();
+        }
+      };
+
+      // Главная кнопка НИКОГДА не продаёт в минус: она каждый раз делает
+      // свежий замер и, если сделка убыточна, показывает предупреждение —
+      // сколько бы раз её ни нажимали. Продать в убыток можно только
+      // отдельной кнопкой внутри предупреждения, и её приходится искать
+      // глазами, а не попадать в неё вторым кликом по инерции.
       overlay.querySelector('#msConfirm').onclick = async () => {
         const btn = overlay.querySelector('#msConfirm');
         btn.disabled = true; btn.textContent = 'проверяю…';
         if (timer) { clearInterval(timer); timer = null; }
 
-        if (!lossAcknowledged && cost > 0) {
+        if (cost > 0) {
           let fresh = null;
           try {
             // Прямой запрос, а не cbGet: с ttl=0 кеш обходится, но вызов
@@ -8781,45 +8809,35 @@
             return;
           }
           if (fresh.profit < 0) {
-            lossAcknowledged = true;
             // Отдельный контейнер, а не msLive: секундный тик перерисовывает
             // msLive целиком и через мгновение стёр бы предупреждение —
             // проверено, оно исчезало примерно за секунду.
             const box = document.getElementById('msWarn');
             if (box) {
               box.innerHTML =
-                `<div style="padding:10px;border-radius:8px;margin-bottom:10px;background:rgba(255,107,107,0.12);border:1px solid rgba(255,107,107,0.45);">` +
+                `<div style="position:relative;padding:10px;border-radius:8px;margin-bottom:10px;background:rgba(255,107,107,0.12);border:1px solid rgba(255,107,107,0.45);">` +
+                `<button id="msWarnClose" title="Закрыть предупреждение" style="position:absolute;top:6px;right:8px;border:none;background:none;color:var(--t2);font-size:16px;line-height:1;cursor:pointer;padding:2px 4px;">×</button>` +
                 `<div style="color:var(--red,#ff6b6b);font-weight:700;margin-bottom:6px;">Это продажа В УБЫТОК</div>` +
                 `Перепроверено прямо сейчас, по свежему стакану:<br>` +
                 `Средняя цена: <b>$${fmtPrice(fresh.avg)}</b><br>` +
                 `Получишь: <b>$${fresh.net.toFixed(2)}</b> против потраченных <b>$${cost.toFixed(2)}</b><br>` +
                 `<span style="color:var(--red,#ff6b6b);font-weight:700;font-size:16px;">` +
                 `−$${Math.abs(fresh.profit).toFixed(2)} (${fresh.pct.toFixed(2)}%)</span><br><br>` +
-                `<span style="color:var(--t2);font-size:11.5px;">Нажми ещё раз, если это осознанное решение. ` +
-                `Обновление цифр продолжается.</span></div>`;
+                `<span style="color:var(--t2);font-size:11.5px;">Кнопка «Продать» будет проверять цену снова при каждом нажатии ` +
+                `и в минус не отправит. Если убыток нужно зафиксировать осознанно — вот она:</span><br>` +
+                `<button id="msForceLoss" style="margin-top:8px;padding:6px 12px;border-radius:6px;border:1px solid rgba(255,107,107,0.6);background:rgba(255,107,107,0.18);color:#ffb4b4;font-size:12px;font-weight:700;cursor:pointer;">` +
+                `Всё равно продать в убыток</button></div>`;
+              const closeBtn = document.getElementById('msWarnClose');
+              if (closeBtn) closeBtn.onclick = () => { box.innerHTML = ''; };
+              const forceBtn = document.getElementById('msForceLoss');
+              if (forceBtn) forceBtn.onclick = () => sendOrder(forceBtn);
             }
             restore();
             return;
           }
         }
 
-        btn.textContent = '...';
-        try {
-          const r = await fetch('/api/market-sell', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ productId, size })
-          });
-          const j = await r.json();
-          if (!j.success) { showCustomAlert(j.error || 'Продажа отклонена', true); restore(); return; }
-          overlay.remove();
-          if (timer) { clearInterval(timer); timer = null; }
-          showCustomAlert(`${coin}: продано по рынку`);
-          loadUsdBalance();
-          setTimeout(loadLatestOrders, 1000);
-        } catch (e) {
-          showCustomAlert('Ошибка: ' + e.message, true);
-          restore();
-        }
+        await sendOrder(btn);
       };
     }
 
