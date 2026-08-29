@@ -2237,49 +2237,88 @@
 
     // Покупка по рынку: мгновенно, необратимо, поэтому подтверждение
     // показывает спред и во что он обойдётся
+    // Покупка по рынку: живой диалог, как на десктопе и как у продажи.
+    // Раньше здесь было статичное подтверждение по лучшему ask — оно не
+    // показывало ни прохода по стакану, ни того, куда идёт цена.
     async function executeMarketBuy() {
       const coin = document.getElementById('coinInput').value.trim().toUpperCase();
       if (!coin) { toast('Укажи монету', 'error'); return; }
       const usd = parseFloat(getUsdAmount());
       if (!(usd >= 1)) { toast('Сумма слишком мала', 'error'); return; }
-
-      let bid = prices.bid, ask = prices.ask;
-      try {
-        const t = await (await fetch(`https://api.exchange.coinbase.com/products/${coin}-USD/ticker`)).json();
-        if (parseFloat(t.bid) > 0) bid = parseFloat(t.bid);
-        if (parseFloat(t.ask) > 0) ask = parseFloat(t.ask);
-      } catch { }
-      if (!(ask > 0)) { toast('Не удалось получить цену', 'error'); return; }
-
-      const spread = bid > 0 ? (ask - bid) / ((ask + bid) / 2) * 100 : 0;
+      const pair = coin + '-USD';
       const feePct = parseFloat(tradingSettings.marketFee) || 0.25;
-      const vsLimit = bid > 0 ? (ask / bid - 1) * 100 : 0;
-      const qty = usd / ask;
+      const limitFeePct = parseFloat(tradingSettings.tradeFee) || 0.125;
 
-      const ok = await confirmTrade(
-        `<b>ПО РЫНКУ</b> ${coin} на $${usd.toFixed(2)}<br>` +
-        `ask $${fmt(ask)} · спред ${spread.toFixed(3)}%<br>` +
-        `≈ ${qty < 1 ? qty.toFixed(6) : qty.toFixed(3)} ${coin}<br>` +
-        `комиссия ${feePct}% ≈ $${(usd * feePct / 100).toFixed(2)}<br>` +
-        `дороже лимитки на ${vsLimit.toFixed(2)}% ≈ $${(usd * vsLimit / 100).toFixed(2)}<br>` +
-        `<span style="font-size:11px;color:#f5c518;">Исполнится сразу, отменить нельзя</span>`);
-      if (!ok) return;
+      const ov = document.createElement('div');
+      ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;';
+      ov.innerHTML = `<div style="background:#12151c;border:1px solid rgba(245,158,11,0.4);border-radius:12px;padding:16px;max-width:340px;width:100%;">
+        <div style="color:#f5a524;font-weight:700;margin-bottom:8px;">Купить по рынку</div>
+        <div style="font-size:13px;color:#cfd6e4;"><b>${coin}</b> на $${usd.toFixed(2)}, РЕАЛЬНЫЙ ордер.</div>
+        <div id="mbLiveM" style="font-size:12.5px;color:#cfd6e4;margin-top:10px;font-variant-numeric:tabular-nums;">Считаю по стакану…</div>
+        <div style="font-size:10.5px;color:#7c8698;margin-top:8px;">Обновляется каждую секунду. Отменить нельзя.</div>
+        <div style="display:flex;gap:8px;margin-top:14px;">
+          <button id="mbCancelM" style="flex:1;padding:10px;border-radius:8px;border:1px solid #333;background:transparent;color:#aab;">Отмена</button>
+          <button id="mbOkM" style="flex:1;padding:10px;border-radius:8px;border:none;background:#f5a524;color:#1a1200;font-weight:700;">Купить</button>
+        </div></div>`;
+      document.body.appendChild(ov);
 
-      const btn = document.getElementById('btnBuyMkt');
-      if (btn) { btn.disabled = true; btn.textContent = '...'; }
-      const r = await api('/create-market-buy-order', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ productId: coin + '-USD', quoteSize: Math.round(usd * 100) / 100 })
-      });
-      if (btn) { btn.disabled = false; btn.textContent = 'BUY MKT'; }
-      if (r && r.success) {
-        toast('Куплено по рынку');
-        if (r.orderId && !selectedOrders.includes(r.orderId)) {
-          selectedOrders.push(r.orderId);
-          saveSelectedToServer();
+      let timer = null;
+      const hist = [];   // {t, p} — история лучшего ask по тикам диалога
+      const stop = () => { if (timer) clearInterval(timer); timer = null; ov.remove(); };
+
+      async function tick() {
+        const box = document.getElementById('mbLiveM');
+        if (!box) return;
+        try {
+          const book = await cbGet(`https://api.exchange.coinbase.com/products/${pair}/book?level=2`, 900);
+          const bestAsk = parseFloat(book.asks?.[0]?.[0]) || 0;
+          const bestBid = parseFloat(book.bids?.[0]?.[0]) || 0;
+          if (bestAsk > 0) { hist.push({ t: Date.now(), p: bestAsk }); if (hist.length > 40) hist.shift(); }
+          const w = walkAsksM(book.asks, usd);
+          const avg = w.qty > 0 ? w.spent / w.qty : 0;
+          const slip = bestAsk > 0 ? (avg / bestAsk - 1) * 100 : 0;
+          const fee = usd * feePct / 100;
+          // Полная переплата против лимитки: спред + проход по стакану +
+          // разница комиссий. Спред сам по себе меньше и вводил бы в заблуждение.
+          const vsLimit = bestBid > 0
+            ? ((avg * (1 + feePct / 100)) / (bestBid * (1 + limitFeePct / 100)) - 1) * 100 : 0;
+          box.innerHTML = trendBox(hist) +
+            `Средняя: <b>$${fmt(avg)}</b>` + (slip > 0.005 ? ` (просk. ${slip.toFixed(3)}%)` : '') + `<br>` +
+            `Уровней стакана: <b>${w.levels}</b><br>` +
+            `Получишь: <b>${w.qty < 1 ? w.qty.toFixed(6) : w.qty.toFixed(3)} ${coin}</b><br>` +
+            `Комиссия ${feePct}%: <b>−$${fee.toFixed(2)}</b><br>` +
+            `<span style="color:#f5c518;">Дороже лимитки на <b>${vsLimit.toFixed(2)}%</b> ≈ <b>$${(usd * vsLimit / 100).toFixed(2)}</b></span>` +
+            (w.short ? `<br><span style="color:#ff6b6b;">Стакана не хватает на всю сумму</span>` : '');
+        } catch {
+          box.innerHTML = '<span style="color:#f5c518;">Стакан недоступен</span>';
         }
-        loadBalance(); loadOrders().then(updateMonitor);
-      } else toast((r && r.error) || 'Не удалось', 'error');
+      }
+      await tick();
+      timer = setInterval(tick, 1000);
+
+      document.getElementById('mbCancelM').onclick = stop;
+      document.getElementById('mbOkM').onclick = async () => {
+        const b = document.getElementById('mbOkM');
+        b.disabled = true; b.textContent = '...';
+        if (timer) { clearInterval(timer); timer = null; }
+        const r = await api('/create-market-buy-order', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ productId: pair, quoteSize: Math.round(usd * 100) / 100 })
+        });
+        if (r && r.success) {
+          ov.remove();
+          toast('Куплено по рынку');
+          if (r.orderId && !selectedOrders.includes(r.orderId)) {
+            selectedOrders.push(r.orderId);
+            saveSelectedToServer();
+          }
+          loadBalance(); loadOrders().then(updateMonitor);
+        } else {
+          toast((r && r.error) || 'Не удалось', 'error');
+          b.disabled = false; b.textContent = 'Купить';
+          timer = setInterval(tick, 1000);
+        }
+      };
     }
 
     async function executeSell() {
@@ -2580,6 +2619,50 @@
     // Считаем проходом по стакану: крупная позиция не влезает в верхний
     // уровень, и оценка по лучшему bid завышала бы выручку тем сильнее,
     // чем больше объём.
+    // Куда идёт рынок прямо сейчас — то же, что на десктопе. Диалог и так
+    // опрашивает стакан раз в секунду, поэтому цены складываются в короткую
+    // историю. Перед рыночным ордером направление важнее любой другой цифры:
+    // если цена сползает, секунда ожидания дешевле спреда.
+    function renderTrendM(hist) {
+      if (!hist || hist.length < 2) return '<span style="color:#7c8698;">жду второй замер…</span>';
+      const now = hist[hist.length - 1].p, first = hist[0].p;
+      const recent = hist[Math.max(0, hist.length - 6)].p;
+      const dRecent = recent > 0 ? (now / recent - 1) * 100 : 0;
+      const dAll = first > 0 ? (now / first - 1) * 100 : 0;
+      const secs = Math.round((hist[hist.length - 1].t - hist[0].t) / 1000);
+      const up = dRecent > 0.001, down = dRecent < -0.001;
+      const col = up ? '#4ade80' : down ? '#ff6b6b' : '#7c8698';
+      const arrow = up ? '\u25b2' : down ? '\u25bc' : '=';
+      const word = up ? 'растёт' : down ? 'падает' : 'стоит';
+      const blocks = '\u2581\u2582\u2583\u2584\u2585\u2586\u2587\u2588';
+      const ps = hist.map(x => x.p);
+      const lo = Math.min(...ps), hi = Math.max(...ps);
+      const spark = hi > lo
+        ? ps.slice(-20).map(v => blocks[Math.min(7, Math.floor((v - lo) / (hi - lo) * 7.999))]).join('')
+        : blocks[3].repeat(Math.min(20, ps.length));
+      return `<span style="color:${col};font-weight:700;">${arrow} ${word}</span> ` +
+        `<span style="color:${col};">${dRecent >= 0 ? '+' : ''}${dRecent.toFixed(3)}%</span> ` +
+        `<span style="color:#7c8698;font-size:10.5px;">за 5с · ${dAll >= 0 ? '+' : ''}${dAll.toFixed(3)}% за ${secs}с</span><br>` +
+        `<span style="color:${col};font-family:monospace;letter-spacing:-1px;font-size:12px;">${spark}</span>`;
+    }
+    const trendBox = (hist) =>
+      `<div style="margin-bottom:7px;padding:6px 8px;border-radius:6px;background:rgba(255,255,255,0.04);">` +
+      `<span style="color:#7c8698;font-size:10.5px;">Рынок сейчас:</span><br>${renderTrendM(hist)}</div>`;
+
+    // Покупка на фиксированную сумму тратит деньги ВВЕРХ по стакану
+    function walkAsksM(asks, usd) {
+      let left = usd, qty = 0, levels = 0;
+      for (const [p, q] of asks || []) {
+        const px = parseFloat(p), sz = parseFloat(q);
+        if (!(px > 0) || !(sz > 0)) continue;
+        const canBuy = Math.min(sz, left / px);
+        if (canBuy <= 0) break;
+        qty += canBuy; left -= canBuy * px; levels++;
+        if (left <= 1e-9) break;
+      }
+      return { qty, spent: usd - left, short: left > 1e-6, levels };
+    }
+
     function walkBookM(bids, size) {
       let left = size, gross = 0, levels = 0;
       for (const [p, q] of bids || []) {
@@ -2613,6 +2696,7 @@
       document.body.appendChild(ov);
 
       let timer = null;
+      const hist = [];   // {t, p} — история лучшего bid по тикам диалога
       const stop = () => { if (timer) clearInterval(timer); timer = null; ov.remove(); };
 
       async function tick() {
@@ -2620,6 +2704,8 @@
         if (!box) return;
         try {
           const book = await cbGet(`https://api.exchange.coinbase.com/products/${pair}/book?level=2`, 900);
+          const bidTop = parseFloat(book.bids?.[0]?.[0]) || 0;
+          if (bidTop > 0) { hist.push({ t: Date.now(), p: bidTop }); if (hist.length > 40) hist.shift(); }
           const w = walkBookM(book.bids, qty);
           const fee = w.gross * feePct / 100;
           const net = w.gross - fee;
@@ -2629,7 +2715,7 @@
           const profit = cost > 0 ? net - cost : null;
           const pct = cost > 0 ? profit / cost * 100 : null;
           const col = profit == null ? '#cfd6e4' : profit >= 0 ? '#4ade80' : '#ff6b6b';
-          box.innerHTML = `Средняя: <b>$${fmt(avg)}</b>` + (slip > 0.005 ? ` (просk. ${slip.toFixed(3)}%)` : '') + `<br>` +
+          box.innerHTML = trendBox(hist) + `Средняя: <b>$${fmt(avg)}</b>` + (slip > 0.005 ? ` (просk. ${slip.toFixed(3)}%)` : '') + `<br>` +
             `Уровней стакана: <b>${w.levels}</b><br>` +
             `Выручка: <b>$${w.gross.toFixed(2)}</b> − комиссия <b>$${fee.toFixed(2)}</b><br>` +
             `На руки: <b>$${net.toFixed(2)}</b>` +
