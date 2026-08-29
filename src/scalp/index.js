@@ -45,6 +45,27 @@ function ema(v, p) {
 }
 
 /** Свечи 5m за последние сутки + производные сигналы */
+// Дневные свечи держим в кеше на час: они меняются медленно, а тянуть их
+// на каждый скан для сотни монет — лишние сто запросов каждые четыре минуты
+// из общего с сервером лимита Coinbase.
+const _dailyCache = new Map();   // coin -> { at, candles }
+const DAILY_TTL = 60 * 60 * 1000;
+async function fetchDaily(coin) {
+  const hit = _dailyCache.get(coin);
+  if (hit && Date.now() - hit.at < DAILY_TTL) return hit.candles;
+  try {
+    const r = await fetch(`${CB}/products/${coin}-USD/candles?granularity=86400`, H);
+    if (!r.ok) return hit ? hit.candles : null;
+    const raw = await r.json();
+    if (!Array.isArray(raw)) return hit ? hit.candles : null;
+    const c = raw.filter(x => Array.isArray(x) && x[4] > 0)
+      .map(x => ({ t: x[0], high: x[2], close: x[4] }))
+      .sort((a, b) => a.t - b.t);
+    _dailyCache.set(coin, { at: Date.now(), candles: c });
+    return c;
+  } catch { return hit ? hit.candles : null; }
+}
+
 async function fetchScalpSignals(coin) {
   let raw = null;
   for (let a = 0; a < 3; a++) {
@@ -85,6 +106,28 @@ async function fetchScalpSignals(coin) {
     ? (closes[i - 48] / closes[i - 288] - 1) * 100
     : null;
 
+  // Насколько монета ниже своей вершины за 14 дней.
+  //
+  // Условие «не после пампа» смотрит только сутки, и монета, выросшая
+  // неделю назад и с тех пор падающая, проходит его свободно: на суточном
+  // горизонте там тихо. Но гейт покупает провалы, а в затяжном снижении
+  // провал не откупается. Замер на 499 входах за 30 дней:
+  //   база                       69% побед, +0.286%, PF 1.34
+  //   не глубже 10% под вершиной 73% побед, +0.606%, PF 2.12, остаётся 56%
+  // Улучшение на ВСЕХ трёх отрезках (+0.140, +0.202, +0.534), причём первый
+  // отрезок из минуса выходит в плюс. Пороги 15% и 25% слабее (2/3), а
+  // фильтры по падению за 3 и 7 дней не проходят вовсе — значит дело не в
+  // «любой мере снижения», а именно в удалённости от вершины.
+  let fromHigh14 = null;
+  try {
+    const daily = await fetchDaily(coin);
+    if (Array.isArray(daily) && daily.length >= 15) {
+      const win = daily.slice(-15);
+      const hi14 = Math.max(...win.map(x => x.high));
+      if (hi14 > 0) fromHigh14 = (px / hi14 - 1) * 100;
+    }
+  } catch { }
+
   const e9 = ema(closes, 9), e21 = ema(closes, 21);
   const vols = c.slice(Math.max(0, i - 48), i).map(x => x.vol);
   const avgVol = vols.length ? vols.reduce((a, b) => a + b, 0) / vols.length : 0;
@@ -98,6 +141,7 @@ async function fetchScalpSignals(coin) {
     rangePos: Math.round(rangePos * 100) / 100,
     range4Pct: range4Pct != null ? Math.round(range4Pct * 10) / 10 : null,
     runUp24: runUp24 != null ? Math.round(runUp24 * 10) / 10 : null,
+    fromHigh14: fromHigh14 != null ? Math.round(fromHigh14 * 10) / 10 : null,
     low4h: lo, high4h: hi,
     ema9: e9, ema21: e21,
     aboveE9: e9 != null && px > e9,
@@ -124,6 +168,10 @@ function calcScalpScore(s, vol24, spreadPct) {
     { k: 'Диапазон 4ч не шире 8%', en: '4h range no wider than 8%', ok: s.range4Pct != null && s.range4Pct < 8, v: s.range4Pct != null ? s.range4Pct + '%' : '—' },
     // И до него не было выброса: рост свыше +15% за сутки уводит ожидание в минус
     { k: 'Не после пампа (рост ≤15%)', en: 'Not after a pump (24h run-up <=15%)', ok: s.runUp24 == null || s.runUp24 <= 15, v: s.runUp24 != null ? (s.runUp24 >= 0 ? '+' : '') + s.runUp24 + '%' : '—' },
+    // Не ловим падающий нож: монета, ушедшая далеко от своей двухнедельной
+    // вершины, в снижении, а не в откате. Нет данных — не пропускаем, как и
+    // с условием по режиму: отсутствие сведений это не разрешение.
+    { k: 'Не глубже 10% под вершиной 14д', en: 'Within 10% of its 14-day high', ok: s.fromHigh14 != null && s.fromHigh14 >= -10, v: s.fromHigh14 != null ? s.fromHigh14 + '%' : 'нет данных' },
     { k: 'Ликвидность ≥ $500K', en: 'Liquidity >= $500K', ok: liquid, v: '$' + Math.round(vol24 / 1e3) + 'K' },
   ];
   const passed = checks.filter(x => x.ok).length;
@@ -137,6 +185,13 @@ function calcScalpScore(s, vol24, spreadPct) {
   if (vol24 >= 2e6) sc += 15; else if (vol24 >= 1e6) sc += 13; else if (vol24 >= 500e3) sc += 11; else if (vol24 >= 250e3) sc += 5;
   if (s.e9overE21) sc += 5;
   if (s.volX >= 1.5) sc += 5;
+  // Новое условие в баллы не добавляем: минимальный проходной остаётся 86,
+  // и инвариант «86+ ровно тогда, когда пройдены все условия» сохраняется.
+  // Штраф за глубокое падение. Размер выбран так, чтобы «нож» опускался
+  // примерно на уровень монеты, которой не хватает EMA9 (−25 баллов): обе
+  // вне входа, но нож далёк от него на дни, а EMA9 переворачивается за
+  // минуты, и ставить нож выше в списке ожидания было бы неправдой.
+  if (s.fromHigh14 != null && s.fromHigh14 < -10) sc -= 35;
   // Штрафы за раздутый диапазон и памп перед входом — по замеру они уводят
   // ожидание вниз даже там, где остальные условия выполнены
   if (s.range4Pct != null && s.range4Pct >= 8) sc -= 12;
