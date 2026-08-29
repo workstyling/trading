@@ -2327,13 +2327,58 @@ app.post('/api/deploy', (req, res) => {
   if ((req.query.key || req.headers['x-deploy-key']) !== (process.env.DEPLOY_KEY || 'trading-deploy-2026')) {
     return res.status(403).json({ success: false, error: 'bad key' });
   }
+  // Файлы с ЖИВЫМИ данными: настройки (там токен Telegram), история прибыли,
+  // избранное, выбранная монета. Часть из них исторически попала под git, и
+  // в репозитории лежат устаревшие копии — пустой токен и 42 записи истории
+  // против 75 на сервере. Один коммит, случайно затронувший такой файл, стёр
+  // бы их при следующем pull. Снимаем копию до pull и возвращаем после:
+  // содержимое сервера всегда важнее содержимого репозитория.
+  const PROTECTED = ['settings.json', 'profit-history.json', 'favorites.json',
+    'selected-orders.json', 'selected-coin.json'];
+  const backup = new Map();
+  for (const f of PROTECTED) {
+    try {
+      const fp = path.join(__dirname, f);
+      if (fs.existsSync(fp)) backup.set(f, fs.readFileSync(fp, 'utf8'));
+    } catch { }
+  }
+  const restore = () => {
+    for (const [f, data] of backup) {
+      try {
+        const fp = path.join(__dirname, f);
+        if (!fs.existsSync(fp) || fs.readFileSync(fp, 'utf8') !== data) {
+          fs.writeFileSync(fp, data);
+          console.log('[deploy] восстановлен ' + f);
+        }
+      } catch (e) { console.error('[deploy] не удалось вернуть ' + f + ':', e.message); }
+    }
+  };
+
   try {
     const { execSync } = require('child_process');
-    const out = execSync('git pull', { cwd: __dirname, timeout: 60000 }).toString();
+    let out;
+    try {
+      out = execSync('git pull', { cwd: __dirname, timeout: 60000 }).toString();
+    } catch (pullErr) {
+      // Локальные правки защищённых файлов мешают pull — убираем их из
+      // рабочей копии и повторяем, содержимое всё равно вернём из копии.
+      const msg = String(pullErr.stdout || '') + String(pullErr.stderr || '') + pullErr.message;
+      if (/local changes|would be overwritten/i.test(msg)) {
+        for (const f of PROTECTED) {
+          try { execSync(`git checkout -- ${f}`, { cwd: __dirname }); } catch { }
+        }
+        out = execSync('git pull', { cwd: __dirname, timeout: 60000 }).toString();
+        out = 'повтор после сброса защищённых файлов\n' + out;
+      } else {
+        throw pullErr;
+      }
+    }
+    restore();
     const changed = !/Already up to date/i.test(out);
-    res.json({ success: true, out, restarting: changed });
+    res.json({ success: true, out, restarting: changed, protectedRestored: [...backup.keys()] });
     if (changed) setTimeout(() => process.exit(0), 500); // pm2 перезапустит процесс с новым кодом
   } catch (e) {
+    restore();
     res.status(500).json({ success: false, error: e.message });
   }
 });
