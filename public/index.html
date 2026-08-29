@@ -6724,12 +6724,23 @@
       if (n >= 1e3) return sign + '$' + (n / 1e3).toFixed(0) + 'K';
       return sign + '$' + n.toFixed(0);
     }
-    async function loadVolume30d() {
+    // Обновление после сделки: баланс и 30-дневный объём вместе. Раньше
+    // обновлялся только баланс, а объём тикал раз в 5 минут поверх такого же
+    // серверного кеша — после покупки он до десяти минут показывал старое
+    // число. Список ордеров обновляем с задержкой: бирже нужно мгновение,
+    // чтобы ордер появился в выдаче.
+    function refreshAfterTrade() {
+      try { loadUsdBalance(); } catch { }
+      try { loadVolume30d(true); } catch { }
+      setTimeout(() => { try { loadLatestOrders(); } catch { } }, 1000);
+    }
+
+    async function loadVolume30d(fresh) {
       const valEl = document.getElementById('vol30Val');
       const pillEl = document.getElementById('vol30Pill');
       if (!valEl) return;
       try {
-        const res = await fetch('/get-volume-30d');
+        const res = await fetch('/get-volume-30d' + (fresh ? '?fresh=1' : ''));
         const data = await res.json();
         if (!data.success) return;
         valEl.textContent = '$' + Math.round(data.totalUsd).toLocaleString('en-US');
@@ -7184,8 +7195,7 @@
             safeStorage.setItem(SELECTED_ORDERS_KEY, JSON.stringify(selectedOrders));
             saveSelectedToServer();
           }
-          loadUsdBalance();
-          setTimeout(loadLatestOrders, 1000);
+          refreshAfterTrade();
         } catch (e) {
           showCustomAlert('Ошибка: ' + e.message, true);
           b.disabled = false; b.textContent = 'Купить'; timer = setInterval(tick, 1000);
@@ -7283,8 +7293,7 @@
             selectedOrders.push(newOrderId);
             safeStorage.setItem(SELECTED_ORDERS_KEY, JSON.stringify(selectedOrders)); saveSelectedToServer();
           }
-          loadUsdBalance();
-          setTimeout(loadLatestOrders, 1000);
+          refreshAfterTrade();
         } else {
           // Extract error from response
           const errorMsg = data.error || data.order?.error_response?.message || data.order?.error_response?.preview_failure_reason || 'Buy failed';
@@ -7345,8 +7354,7 @@
             selectedOrders.push(newOrderId);
             safeStorage.setItem(SELECTED_ORDERS_KEY, JSON.stringify(selectedOrders)); saveSelectedToServer();
           }
-          loadUsdBalance();
-          setTimeout(loadLatestOrders, 1000);
+          refreshAfterTrade();
           priceInput.value = '';
         } else {
           const errorMsg = data.error || data.order?.error_response?.message || data.order?.error_response?.preview_failure_reason || 'Buy failed';
@@ -8431,8 +8439,7 @@
                   selectedOrders.push(newOrderId);
                   safeStorage.setItem(SELECTED_ORDERS_KEY, JSON.stringify(selectedOrders)); saveSelectedToServer();
                 }
-                loadUsdBalance();
-                setTimeout(loadLatestOrders, 1000);
+                refreshAfterTrade();
               } else {
                 const errorMsg = data.error || data.order?.error_response?.message || 'Buy order failed';
                 showCustomAlert(errorMsg, true);
@@ -8603,6 +8610,7 @@
           await new Promise(r => setTimeout(r, 1000));
           await loadLatestOrders();
           loadUsdBalance(); // Refresh balance after order
+          loadVolume30d(true);
           console.log('After loadLatestOrders, selectedOrders:', JSON.stringify(selectedOrders));
         } else {
           showCustomAlert('Error: ' + data.error, true);
@@ -8804,8 +8812,7 @@
           if (timer) { clearInterval(timer); timer = null; }
           overlay.remove();
           showCustomAlert(`${coin}: продано по рынку`);
-          loadUsdBalance();
-          setTimeout(loadLatestOrders, 1000);
+          refreshAfterTrade();
         } catch (e) {
           showCustomAlert('Ошибка: ' + e.message, true);
           restore();
@@ -8902,6 +8909,7 @@
               showCustomAlert('Limit sell order created!');
               await loadLatestOrders();
               loadUsdBalance();
+              loadVolume30d(true);
             } else {
               showCustomAlert('Error: ' + (data.error || 'Failed'), true);
             }

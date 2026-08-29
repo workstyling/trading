@@ -2231,7 +2231,7 @@
           selectedOrders.push(r.order_id);
           saveSelectedToServer();
         }
-        loadBalance(); loadOrders().then(updateMonitor);
+        refreshAfterTradeM();
       } else toast(r.error || 'Failed', 'error');
     }
 
@@ -2312,7 +2312,7 @@
             selectedOrders.push(r.orderId);
             saveSelectedToServer();
           }
-          loadBalance(); loadOrders().then(updateMonitor);
+          refreshAfterTradeM();
         } else {
           toast((r && r.error) || 'Не удалось', 'error');
           b.disabled = false; b.textContent = 'Купить';
@@ -2346,7 +2346,7 @@
           selectedOrders.push(r.order_id);
           saveSelectedToServer();
         }
-        loadBalance(); loadOrders().then(updateMonitor);
+        refreshAfterTradeM();
       } else toast(r.error || 'Failed', 'error');
     }
 
@@ -2371,7 +2371,7 @@
           selectedOrders.push(r.order_id);
           saveSelectedToServer();
         }
-        loadBalance(); loadOrders().then(updateMonitor);
+        refreshAfterTradeM();
       } else toast(r.error || 'Failed', 'error');
     }
 
@@ -2753,7 +2753,7 @@
           if (timer) { clearInterval(timer); timer = null; }
           ov.remove();
           toast('Продано по рынку');
-          loadBalance(); loadOrders().then(updateMonitor);
+          refreshAfterTradeM();
         } else {
           toast((r && r.error) || 'Не удалось', 'error');
           restore();
@@ -3984,9 +3984,17 @@
       }
     }
 
-    async function loadVol30dMobile() {
+    // После сделки обновляем и баланс, и объём: объём тикал раз в 5 минут
+    // поверх такого же серверного кеша и отставал до десяти минут.
+    function refreshAfterTradeM() {
+      try { loadBalance(); } catch { }
+      try { loadVol30dMobile(true); } catch { }
+      try { loadOrders().then(updateMonitor); } catch { }
+    }
+
+    async function loadVol30dMobile(fresh) {
       try {
-        const r = await api('/get-volume-30d');
+        const r = await api('/get-volume-30d' + (fresh ? '?fresh=1' : ''));
         if (!r.success) return;
         const vol = r.totalUsd || 0;
         const volEl = document.getElementById('mVol30Val');

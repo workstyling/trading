@@ -3396,7 +3396,10 @@ const VOLUME_30D_TTL = 5 * 60 * 1000; // 5 minutes
 app.get('/get-volume-30d', async (req, res) => {
   try {
     const now = Date.now();
-    if (volume30dCache.data && (now - volume30dCache.ts) < VOLUME_30D_TTL) {
+    // fresh=1 — обойти кеш. Нужен сразу после сделки: пятиминутный кеш иначе
+    // показывал бы объём, не включающий только что совершённую операцию.
+    const forceFresh = req.query.fresh === '1';
+    if (!forceFresh && volume30dCache.data && (now - volume30dCache.ts) < VOLUME_30D_TTL) {
       return res.json({ success: true, ...volume30dCache.data, cached: true });
     }
     const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
