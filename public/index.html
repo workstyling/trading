@@ -8742,25 +8742,79 @@
 
       overlay.querySelector('#msCancel').onclick = stop;
       overlay.onclick = (e) => { if (e.target === overlay) stop(); };
+      // Цифры в окне живут до секунды, а между нажатием и отправкой цена
+      // успевает уйти. Поэтому по нажатию делаем ЕЩЁ ОДИН замер, уже без
+      // кеша, и если продажа выходит в минус — показываем отдельное
+      // предупреждение со свежим числом. Каждый раз, без «больше не
+      // спрашивать»: убыток должен подтверждаться сознательно.
+      let lossAcknowledged = false;
+      const restore = () => {
+        const b = overlay.querySelector('#msConfirm');
+        if (b) { b.disabled = false; b.textContent = lossAcknowledged ? 'Продать в убыток' : 'Продать'; }
+        if (!timer) timer = setInterval(tick, 1000);
+      };
+
       overlay.querySelector('#msConfirm').onclick = async () => {
         const btn = overlay.querySelector('#msConfirm');
-        btn.disabled = true; btn.textContent = '...';
+        btn.disabled = true; btn.textContent = 'проверяю…';
         if (timer) { clearInterval(timer); timer = null; }
+
+        if (!lossAcknowledged && cost > 0) {
+          let fresh = null;
+          try {
+            // Прямой запрос, а не cbGet: с ttl=0 кеш обходится, но вызов
+            // может присоединиться к УЖЕ ЛЕТЯЩЕМУ запросу секундного тика и
+            // вернуть его результат. Для перепроверки в момент нажатия нужен
+            // собственный свежий замер, а не чужой.
+            const rb = await fetch(`https://api.exchange.coinbase.com/products/${productId}/book?level=2`);
+            if (!rb.ok) throw new Error('HTTP ' + rb.status);
+            const book = await rb.json();
+            const w = walkBook(book.bids, qty);
+            const fee = w.gross * feePct / 100;
+            const net = w.gross - fee;
+            fresh = { net, profit: net - cost, pct: (net - cost) / cost * 100, avg: w.filled > 0 ? w.gross / w.filled : 0 };
+          } catch {
+            // Свежую цену получить не удалось — молча продавать нельзя
+            showCustomAlert('Не удалось перепроверить цену. Попробуй ещё раз.', true);
+            restore();
+            return;
+          }
+          if (fresh.profit < 0) {
+            lossAcknowledged = true;
+            const box = document.getElementById('msLive');
+            if (box) {
+              box.innerHTML =
+                `<div style="padding:10px;border-radius:8px;background:rgba(255,107,107,0.12);border:1px solid rgba(255,107,107,0.45);">` +
+                `<div style="color:var(--red,#ff6b6b);font-weight:700;margin-bottom:6px;">Это продажа В УБЫТОК</div>` +
+                `Перепроверено прямо сейчас, по свежему стакану:<br>` +
+                `Средняя цена: <b>$${fmtPrice(fresh.avg)}</b><br>` +
+                `Получишь: <b>$${fresh.net.toFixed(2)}</b> против потраченных <b>$${cost.toFixed(2)}</b><br>` +
+                `<span style="color:var(--red,#ff6b6b);font-weight:700;font-size:16px;">` +
+                `−$${Math.abs(fresh.profit).toFixed(2)} (${fresh.pct.toFixed(2)}%)</span><br><br>` +
+                `<span style="color:var(--t2);font-size:11.5px;">Нажми ещё раз, если это осознанное решение. ` +
+                `Обновление цифр продолжается.</span></div>`;
+            }
+            restore();
+            return;
+          }
+        }
+
+        btn.textContent = '...';
         try {
           const r = await fetch('/api/market-sell', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ productId, size })
           });
           const j = await r.json();
-          if (!j.success) { showCustomAlert(j.error || 'Продажа отклонена', true); btn.disabled = false; btn.textContent = 'Продать'; timer = setInterval(tick, 1000); return; }
+          if (!j.success) { showCustomAlert(j.error || 'Продажа отклонена', true); restore(); return; }
           overlay.remove();
+          if (timer) { clearInterval(timer); timer = null; }
           showCustomAlert(`${coin}: продано по рынку`);
           loadUsdBalance();
           setTimeout(loadLatestOrders, 1000);
         } catch (e) {
           showCustomAlert('Ошибка: ' + e.message, true);
-          btn.disabled = false; btn.textContent = 'Продать';
-          timer = setInterval(tick, 1000);
+          restore();
         }
       };
     }

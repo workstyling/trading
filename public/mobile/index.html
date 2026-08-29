@@ -2618,22 +2618,67 @@
       timer = setInterval(tick, 1000);
 
       document.getElementById('msCancelM').onclick = stop;
+      // По нажатию — свежий замер без кеша, и если выходит в минус, отдельное
+      // предупреждение. Каждый раз: убыток подтверждается сознательно.
+      let lossAck = false;
+      const restore = () => {
+        const b = document.getElementById('msOkM');
+        if (b) { b.disabled = false; b.textContent = lossAck ? 'Продать в убыток' : 'Продать'; }
+        if (!timer) timer = setInterval(tick, 1000);
+      };
+
       document.getElementById('msOkM').onclick = async () => {
         const b = document.getElementById('msOkM');
-        b.disabled = true; b.textContent = '...';
+        b.disabled = true; b.textContent = 'проверяю…';
         if (timer) { clearInterval(timer); timer = null; }
+
+        if (!lossAck && cost > 0) {
+          let fresh = null;
+          try {
+            // Прямой запрос, минуя кеш и склейку: перепроверка по нажатию
+            // должна быть собственным свежим замером.
+            const rb = await fetch(`https://api.exchange.coinbase.com/products/${pair}/book?level=2`);
+            if (!rb.ok) throw new Error('HTTP ' + rb.status);
+            const book = await rb.json();
+            const w = walkBookM(book.bids, qty);
+            const fee = w.gross * feePct / 100;
+            const net = w.gross - fee;
+            fresh = { net, profit: net - cost, pct: (net - cost) / cost * 100, avg: w.filled > 0 ? w.gross / w.filled : 0 };
+          } catch {
+            toast('Не удалось перепроверить цену', 'error');
+            restore();
+            return;
+          }
+          if (fresh.profit < 0) {
+            lossAck = true;
+            const box = document.getElementById('msLiveM');
+            if (box) {
+              box.innerHTML =
+                `<div style="padding:9px;border-radius:8px;background:rgba(255,107,107,0.12);border:1px solid rgba(255,107,107,0.45);">` +
+                `<div style="color:#ff6b6b;font-weight:700;margin-bottom:5px;">Это продажа В УБЫТОК</div>` +
+                `Перепроверено сейчас:<br>Средняя <b>$${fmt(fresh.avg)}</b><br>` +
+                `Получишь <b>$${fresh.net.toFixed(2)}</b> против <b>$${cost.toFixed(2)}</b><br>` +
+                `<span style="color:#ff6b6b;font-weight:700;font-size:15px;">−$${Math.abs(fresh.profit).toFixed(2)} (${fresh.pct.toFixed(2)}%)</span><br>` +
+                `<span style="color:#7c8698;font-size:11px;">Нажми ещё раз, если решение осознанное.</span></div>`;
+            }
+            restore();
+            return;
+          }
+        }
+
+        b.textContent = '...';
         const r = await api('/api/market-sell', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ productId: pair, size })
         });
         if (r && r.success) {
+          if (timer) { clearInterval(timer); timer = null; }
           ov.remove();
           toast('Продано по рынку');
           loadBalance(); loadOrders().then(updateMonitor);
         } else {
           toast((r && r.error) || 'Не удалось', 'error');
-          b.disabled = false; b.textContent = 'Продать';
-          timer = setInterval(tick, 1000);
+          restore();
         }
       };
     }
