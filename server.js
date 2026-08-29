@@ -3408,15 +3408,33 @@ app.get('/get-volume-30d', async (req, res) => {
     let pages = 0;
     let oldestSeen = null;
 
-    while (pages < 50) { // hard safety cap
-      const params = { limit: 250, start_sequence_timestamp: cutoff.toISOString() };
+    // Обход исполнений постранично.
+    //
+    // Прежняя версия передавала start_sequence_timestamp вместе с курсором и
+    // недосчитывала: сверка с ордерами дала $140 999 против $131 118, причём
+    // весь недобор приходился на покупки. Плюс выход по «дошли до края
+    // окна» не срабатывал никогда — oldestSeen обновлялся ПОСЛЕ фильтра
+    // `continue`, поэтому никогда не оказывался старше границы.
+    //
+    // Теперь фильтр по времени только на нашей стороне, а обход идёт до тех
+    // пор, пока не встретится исполнение старше границы или не кончится
+    // курсор. Так постраничность не зависит от того, как биржа сочетает
+    // фильтр по времени с курсором.
+    let reachedEdge = false;
+    let seenFills = 0;
+    while (pages < 60) { // hard safety cap
+      const params = { limit: 250 };
       if (cursor) params.cursor = cursor;
       const result = await client.listFills(params);
       const data = typeof result === 'string' ? JSON.parse(result) : result;
       const fills = data.fills || [];
+      seenFills += fills.length;
       for (const f of fills) {
         const ts = new Date(f.trade_time);
-        if (ts < cutoff) continue;
+        // Границу отслеживаем по ВСЕМ исполнениям, включая старые: только так
+        // видно, что нужный отрезок пройден до конца.
+        if (!oldestSeen || ts < oldestSeen) oldestSeen = ts;
+        if (ts < cutoff) { reachedEdge = true; continue; }
         const size = parseFloat(f.size || 0);
         const price = parseFloat(f.price || 0);
         const fee = parseFloat(f.commission || 0);
@@ -3425,13 +3443,11 @@ app.get('/get-volume-30d', async (req, res) => {
         totalFees += fee;
         if (f.side === 'BUY') { buyUsd += usd; buyCount++; }
         else if (f.side === 'SELL') { sellUsd += usd; sellCount++; }
-        if (!oldestSeen || ts < oldestSeen) oldestSeen = ts;
       }
       pages++;
       if (!data.cursor || fills.length === 0) break;
       cursor = data.cursor;
-      // Stop early if we've already reached older than cutoff
-      if (oldestSeen && oldestSeen < cutoff) break;
+      if (reachedEdge) break;
     }
 
     const out = {
@@ -3442,6 +3458,10 @@ app.get('/get-volume-30d', async (req, res) => {
       buyCount, sellCount,
       totalFills: buyCount + sellCount,
       pages,
+      // Дошли ли до края окна: если нет, значит обход упёрся в потолок
+      // страниц и число занижено — это должно быть видно, а не угадываться.
+      complete: reachedEdge,
+      scannedFills: seenFills,
     };
     volume30dCache = { data: out, ts: now };
     res.json({ success: true, ...out });
