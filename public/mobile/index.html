@@ -1663,7 +1663,9 @@
         body: JSON.stringify({ selected: selectedOrders, muted: [] })
       }).catch(() => {});
     }
-    let tradingSettings = { sellMarkup: 1.38, tradeFee: 0.06, marketFee: 0.125 };
+    // Действующий тариф, а не старый вдвое меньший — см. комментарий в
+    // десктопной версии.
+    let tradingSettings = { sellMarkup: 1.38, tradeFee: 0.125, marketFee: 0.25 };
 
     // ── Tabs ──
     document.querySelectorAll('.tab').forEach(tab => {
@@ -2113,8 +2115,8 @@
         if (usd > 0) {
           const lvlIdx = Math.abs(Math.min(0, parseInt(tradingSettings.bidLevel, 10) || 0));
           const bidPx = parseFloat((bids[lvlIdx] || bids[0])[0]);
-          const feeL = (parseFloat(tradingSettings.tradeFee) || 0.25) / 100;
-          const feeM = (parseFloat(tradingSettings.marketFee) || 0.5) / 100;
+          const feeL = (parseFloat(tradingSettings.tradeFee) || 0.125) / 100;
+          const feeM = (parseFloat(tradingSettings.marketFee) || 0.25) / 100;
           if (bidPx > 0) {
             const unitsLimit = usd * (1 - feeL) / bidPx;
             let leftN = usd * (1 - feeM), unitsMkt = 0;
@@ -2225,7 +2227,7 @@
       if (!(ask > 0)) { toast('Не удалось получить цену', 'error'); return; }
 
       const spread = bid > 0 ? (ask - bid) / ((ask + bid) / 2) * 100 : 0;
-      const feePct = parseFloat(tradingSettings.marketFee) || 0.125;
+      const feePct = parseFloat(tradingSettings.marketFee) || 0.25;
       const vsLimit = bid > 0 ? (ask / bid - 1) * 100 : 0;
       const qty = usd / ask;
 
@@ -2638,8 +2640,8 @@
 
     async function sellAtAsk(pair, size, avgBuyPrice, actualCost) {
       const coin = pair.split('-')[0];
-      const buyFee = (tradingSettings.tradeFee || 0.06) / 100;    // limit fee used at purchase
-      const sellFee = (tradingSettings.marketFee || 0.125) / 100;  // taker fee for sell (worst case)
+      const buyFee = (tradingSettings.tradeFee || 0.125) / 100;   // комиссия лимитки на покупке
+      const sellFee = (tradingSettings.marketFee || 0.25) / 100;  // комиссия рынка на продаже
       const sz = parseFloat(size);
 
       // Fetch live ask price

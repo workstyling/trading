@@ -6462,7 +6462,14 @@
     }
 
     // ========== TRADING SETTINGS ==========
-    let tradingSettings = { sellMarkup: 1.38, tradeFee: 0.06, marketFee: 0.125 };
+    // Стартовые значения комиссий. Раньше здесь стоял СТАРЫЙ тариф
+    // (0.06 / 0.125), ровно вдвое ниже действующего (0.125 / 0.25). Пока не
+    // ответит /get-settings, вся арифметика комиссий считалась по половине
+    // реальной ставки, а все запасные значения вида `|| 0.25` ниже по коду
+    // не срабатывали никогда: поле всегда заполнено, и `parseFloat(0.06)`
+    // истинно. Ставим действующий тариф — ошибаться лучше в сторону
+    // завышения расходов, а не занижения.
+    let tradingSettings = { sellMarkup: 1.38, tradeFee: 0.125, marketFee: 0.25 };
 
     async function loadSettings() {
       try {
@@ -6789,8 +6796,8 @@
           const lvlIdx = Math.abs(Math.min(0, parseInt(tradingSettings.bidLevel, 10) || 0));
           const bidRow = bids[lvlIdx] || bids[0];
           const bidPx = parseFloat(bidRow[0]);
-          const feeL = (parseFloat(tradingSettings.tradeFee) || 0.25) / 100;
-          const feeM = (parseFloat(tradingSettings.marketFee) || 0.5) / 100;
+          const feeL = (parseFloat(tradingSettings.tradeFee) || 0.125) / 100;
+          const feeM = (parseFloat(tradingSettings.marketFee) || 0.25) / 100;
           if (bidPx > 0) {
             const unitsLimit = usd * (1 - feeL) / bidPx;
             let leftN = usd * (1 - feeM), unitsMkt = 0;
@@ -6997,65 +7004,119 @@
       updateBuyUsdAmount();
     });
 
-    // Покупка по рынку. Отдельная от лимитной: исполняется мгновенно и
-    // необратимо, поэтому спрашивает подтверждение и показывает, во что
-    // обойдётся спред — те же цифры, что в строке стакана под панелью.
+    // Покупка по рынку: живой пересчёт по стакану, как у продажи.
+    //
+    // Раньше диалог считал по лучшему ask и показывал только спред. Но ордер
+    // на фиксированную сумму тратит деньги ВВЕРХ по стакану: на тонкой монете
+    // сумма уходит за несколько уровней, и реальная средняя цена оказывается
+    // хуже лучшего ask. Строка под панелью это уже считает — теперь и диалог.
+    function walkAsks(asks, usd) {
+      let left = usd, qty = 0, levels = 0;
+      for (const [pxStr, szStr] of asks || []) {
+        const px = parseFloat(pxStr), sz = parseFloat(szStr);
+        if (!(px > 0) || !(sz > 0)) continue;
+        const canBuy = Math.min(sz, left / px);
+        if (canBuy <= 0) break;
+        qty += canBuy;
+        left -= canBuy * px;
+        levels++;
+        if (left <= 1e-9) break;
+      }
+      return { qty, spent: usd - left, short: left > 1e-6, levels };
+    }
+
     async function executeMarketBuy() {
       const quoteSize = parseFloat(document.getElementById('buyUsdAmount').value.replace(/[$,]/g, '')) || 0;
       if (!quoteSize || quoteSize < 1) { showCustomAlert('Сумма слишком мала', true); return; }
       const coin = selectedBuyCoin;
       const productId = coin + '-USD';
+      const feePct = parseFloat(tradingSettings.marketFee) || 0.25;
+      const limitFeePct = parseFloat(tradingSettings.tradeFee) || 0.125;
 
-      let bid = buyPanelPrices.bid, ask = buyPanelPrices.ask;
-      try {
-        const t = await (await fetch(`https://api.exchange.coinbase.com/products/${productId}/ticker`)).json();
-        if (parseFloat(t.bid) > 0) bid = parseFloat(t.bid);
-        if (parseFloat(t.ask) > 0) ask = parseFloat(t.ask);
-      } catch { }
-      if (!(ask > 0)) { showCustomAlert('Не удалось получить цену', true); return; }
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay';
+      overlay.innerHTML = `
+        <div class="modal-box">
+          <div class="modal-title">⚠️ Купить по рынку</div>
+          <div class="modal-body">
+            <b>${coin}</b> на <b>$${quoteSize.toFixed(2)}</b> — это <b>РЕАЛЬНЫЙ</b> ордер.<br><br>
+            <div id="mbLive" style="font-variant-numeric:tabular-nums;">Считаю по стакану…</div>
+            <div style="color:var(--t2);font-size:11px;margin-top:8px;">
+              Цифры обновляются каждую секунду. Исполнится мгновенно, отменить нельзя.
+            </div>
+          </div>
+          <div class="modal-buttons">
+            <button class="modal-btn modal-btn-cancel" id="mbCancel">Cancel</button>
+            <button class="modal-btn modal-btn-confirm" id="mbConfirm">Купить</button>
+          </div>
+        </div>`;
+      document.body.appendChild(overlay);
 
-      const spreadPct = bid > 0 ? (ask - bid) / ((ask + bid) / 2) * 100 : null;
-      const qty = quoteSize / ask;
-      const feePct = parseFloat(tradingSettings.marketFee) || 0.125;
-      const fee = quoteSize * feePct / 100;
-      // Насколько дороже лимитки по лучшему bid — то, что реально теряется
-      const vsLimit = bid > 0 ? (ask / bid - 1) * 100 : 0;
-      const vsLimitUsd = quoteSize * vsLimit / 100;
+      let timer = null;
+      const stop = () => { if (timer) clearInterval(timer); timer = null; overlay.remove(); };
 
-      showConfirmModal('Купить по рынку',
-        `<b>${coin}</b> на <b>$${quoteSize.toFixed(2)}</b> — это <b>РЕАЛЬНЫЙ</b> ордер.<br><br>` +
-        `Цена ask: <b>$${fmtPrice(ask)}</b>${spreadPct != null ? ` · спред <b>${spreadPct.toFixed(3)}%</b>` : ''}<br>` +
-        `Получишь примерно <b>${qty < 1 ? qty.toFixed(6) : qty.toFixed(3)} ${coin}</b><br>` +
-        `Комиссия рынка <b>${feePct}%</b> ≈ <b>$${fee.toFixed(2)}</b><br>` +
-        `Спред к лимитке по bid: <b>${vsLimit.toFixed(2)}%</b> ≈ <b>$${vsLimitUsd.toFixed(2)}</b><br>` +
-        `<span style="color:var(--t2);font-size:11px;">Полная переплата против лимитки больше — добавь проскальзывание по стакану и разницу комиссий; она в строке под панелью.</span><br><br>` +
-        `<span style="color:var(--yellow);">Исполнится мгновенно. Отменить нельзя.</span>`,
-        async () => {
-          const btn = document.getElementById('buyMktBtn');
-          if (btn) { btn.disabled = true; btn.textContent = '...'; }
-          try {
-            const r = await fetch('/create-market-buy-order', {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ productId, quoteSize: Math.round(quoteSize * 100) / 100 })
-            });
-            const j = await r.json();
-            if (!j.success) { showCustomAlert(j.error || 'Ордер отклонён', true); return; }
-            showCustomAlert(`${coin}: куплено по рынку на $${quoteSize.toFixed(2)}`);
-            // В тот же список, что и лимитные покупки, иначе сделка не попадёт
-            // в подсчёт прибыли по монете
-            if (j.orderId && !selectedOrders.includes(j.orderId)) {
-              selectedOrders.push(j.orderId);
-              safeStorage.setItem(SELECTED_ORDERS_KEY, JSON.stringify(selectedOrders));
-              saveSelectedToServer();
-            }
-            loadUsdBalance();
-            setTimeout(loadLatestOrders, 1000);
-          } catch (e) {
-            showCustomAlert('Ошибка: ' + e.message, true);
-          } finally {
-            if (btn) { btn.disabled = false; btn.textContent = 'MKT'; }
+      async function tick() {
+        const box = document.getElementById('mbLive');
+        if (!box) return;
+        try {
+          const book = await cbGet(`https://api.exchange.coinbase.com/products/${productId}/book?level=2`, 900);
+          const bestAsk = parseFloat(book.asks?.[0]?.[0]) || 0;
+          const bestBid = parseFloat(book.bids?.[0]?.[0]) || 0;
+          const w = walkAsks(book.asks, quoteSize);
+          const avg = w.qty > 0 ? w.spent / w.qty : 0;
+          const slip = bestAsk > 0 ? (avg / bestAsk - 1) * 100 : 0;
+          const fee = quoteSize * feePct / 100;
+          // Полная переплата против лимитки по bid: спред + проход по стакану
+          // + разница комиссий. Именно это число стоит в строке под панелью.
+          const vsLimitPct = bestBid > 0
+            ? ((avg * (1 + feePct / 100)) / (bestBid * (1 + limitFeePct / 100)) - 1) * 100 : 0;
+          box.innerHTML =
+            `Средняя цена исполнения: <b>$${fmtPrice(avg)}</b>` +
+            (slip > 0.005 ? ` <span style="color:var(--yellow);">(проскальзывание ${slip.toFixed(3)}%)</span>` : '') + `<br>` +
+            `Пройдёт уровней стакана: <b>${w.levels}</b><br>` +
+            `Получишь: <b>${w.qty < 1 ? w.qty.toFixed(6) : w.qty.toFixed(3)} ${coin}</b><br>` +
+            `Комиссия ${feePct}%: <b>−$${fee.toFixed(2)}</b><br>` +
+            `<span style="color:var(--yellow);">Дороже лимитки по bid на <b>${vsLimitPct.toFixed(2)}%</b> ≈ <b>$${(quoteSize * vsLimitPct / 100).toFixed(2)}</b></span>` +
+            `<br><span style="color:var(--t2);font-size:11px;">Здесь всё вместе: спред, проход по стакану и разница комиссий ${feePct}% против ${limitFeePct}%.</span>` +
+            (w.short ? `<br><span style="color:var(--red,#ff6b6b);">Стакана не хватает на всю сумму: оценка по $${w.spent.toFixed(2)}.</span>` : '');
+        } catch {
+          box.innerHTML = '<span style="color:var(--yellow);">Стакан недоступен, цифры не обновляются.</span>';
+        }
+      }
+      await tick();
+      timer = setInterval(tick, 1000);
+
+      overlay.querySelector('#mbCancel').onclick = stop;
+      overlay.onclick = (e) => { if (e.target === overlay) stop(); };
+      overlay.querySelector('#mbConfirm').onclick = async () => {
+        const b = overlay.querySelector('#mbConfirm');
+        b.disabled = true; b.textContent = '...';
+        if (timer) { clearInterval(timer); timer = null; }
+        try {
+          const r = await fetch('/create-market-buy-order', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ productId, quoteSize: Math.round(quoteSize * 100) / 100 })
+          });
+          const j = await r.json();
+          if (!j.success) {
+            showCustomAlert(j.error || 'Ордер отклонён', true);
+            b.disabled = false; b.textContent = 'Купить'; timer = setInterval(tick, 1000);
+            return;
           }
-        });
+          overlay.remove();
+          showCustomAlert(`${coin}: куплено по рынку на $${quoteSize.toFixed(2)}`);
+          if (j.orderId && !selectedOrders.includes(j.orderId)) {
+            selectedOrders.push(j.orderId);
+            safeStorage.setItem(SELECTED_ORDERS_KEY, JSON.stringify(selectedOrders));
+            saveSelectedToServer();
+          }
+          loadUsdBalance();
+          setTimeout(loadLatestOrders, 1000);
+        } catch (e) {
+          showCustomAlert('Ошибка: ' + e.message, true);
+          b.disabled = false; b.textContent = 'Купить'; timer = setInterval(tick, 1000);
+        }
+      };
     }
 
     async function executeBuyOrder() {
@@ -7107,7 +7168,7 @@
       // выставляемся и насколько это ниже рынка.
       const askNow = buyPanelPrices.ask > 0 ? buyPanelPrices.ask : limitPrice;
       const qty = quoteSize / limitPrice;
-      const feePct = parseFloat(tradingSettings.tradeFee) || 0.06;
+      const feePct = parseFloat(tradingSettings.tradeFee) || 0.125;
       const belowAsk = askNow > 0 ? (1 - limitPrice / askNow) * 100 : 0;
       const okToSend = await new Promise(resolve => {
         showConfirmModal('Купить лимиткой',
@@ -11691,8 +11752,10 @@ Requirements:
       for (const [k, v] of _cbCache) if (v.at < cutoff) _cbCache.delete(k);
     }, 60_000);
 
-    function getFeeLimit() { return tradingSettings.tradeFee / 100; }
-    function getFeeMarket() { return tradingSettings.marketFee / 100; }
+    // С защитой от NaN: раньше при пустом поле возвращался NaN, и он тихо
+    // расползался по расчётам прибыли вместо того, чтобы упасть заметно.
+    function getFeeLimit() { const v = parseFloat(tradingSettings.tradeFee); return (v >= 0 ? v : 0.125) / 100; }
+    function getFeeMarket() { const v = parseFloat(tradingSettings.marketFee); return (v >= 0 ? v : 0.25) / 100; }
 
     // Format number like exchange (remove trailing zeros)
     function fmtPrice(n) {
