@@ -29,3 +29,5 @@ profit-history.json
 favorites.json
 selected-orders.json
 selected-coin.json
+notified-fills.json
+score-history.json

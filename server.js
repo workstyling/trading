@@ -2358,7 +2358,10 @@ app.post('/api/deploy', (req, res) => {
   // бы их при следующем pull. Снимаем копию до pull и возвращаем после:
   // содержимое сервера всегда важнее содержимого репозитория.
   const PROTECTED = ['settings.json', 'profit-history.json', 'favorites.json',
-    'selected-orders.json', 'selected-coin.json'];
+    'selected-orders.json', 'selected-coin.json',
+    // Добавлены после того, как коммит случайно затащил их в индекс и pull
+    // на сервере упёрся в «untracked working tree files would be overwritten»
+    'notified-fills.json', 'score-history.json'];
   const backup = new Map();
   for (const f of PROTECTED) {
     try {
@@ -2388,8 +2391,12 @@ app.post('/api/deploy', (req, res) => {
       // рабочей копии и повторяем, содержимое всё равно вернём из копии.
       const msg = String(pullErr.stdout || '') + String(pullErr.stderr || '') + pullErr.message;
       if (/local changes|would be overwritten/i.test(msg)) {
+        // Мешать может двумя способами: локальными правками отслеживаемого
+        // файла и НЕотслеживаемым файлом, который входящий коммит хочет
+        // создать. Копия уже снята, поэтому убираем и то и другое.
         for (const f of PROTECTED) {
           try { execSync(`git checkout -- ${f}`, { cwd: __dirname }); } catch { }
+          try { fs.unlinkSync(path.join(__dirname, f)); } catch { }
         }
         out = execSync('git pull', { cwd: __dirname, timeout: 60000 }).toString();
         out = 'повтор после сброса защищённых файлов\n' + out;
