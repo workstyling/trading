@@ -13763,9 +13763,24 @@ Requirements:
           : rgm.above
             ? (dd > 0 ? ` <b>и уходит вверх</b> (${_sgn(dd)} за скан)` : ` <b>но сползает к EMA20</b> (${_sgn(dd)} за скан)`)
             : (dd > 0 ? ` <b>и подходит к EMA20</b> (${_sgn(dd)} за скан)` : ` <b>и уходит вниз</b> (${_sgn(dd)} за скан)`);
-        const regimeBar = !rgm ? '' : rgm.above
-          ? `<div class="ss-regime-bar ok"><span>▲</span><span><b>Рынок за нас</b> — BTC на ${rgm.distPct}% выше EMA20 (1ч)${trend}. <span class="ss-rb-note">Входы разрешены.</span></span></div>`
-          : `<div class="ss-regime-bar"><span>▼</span><span><b>Рынок против</b> — BTC на ${Math.abs(rgm.distPct)}% ниже EMA20 (1ч)${trend}. <span class="ss-rb-note">Входы не выдаются: ниже EMA20 ожидание −0.211% против +0.239% выше. Баллы сжаты в 0–60, порядок сохранён.</span></span></div>`;
+        // Полоса должна отражать ВЕСЬ режим, а не только часовое условие.
+        // После добавления недельного условия она осталась бы писать «входы
+        // разрешены» при отрицательной неделе, когда входов на самом деле нет.
+        const weekOk = rgm && rgm.ret7 != null && rgm.ret7 > 0;
+        const hourOk = rgm && rgm.above;
+        const bothOk = hourOk && weekOk;
+        const weekTxt = rgm && rgm.ret7 != null
+          ? `неделя ${rgm.ret7 >= 0 ? '+' : ''}${rgm.ret7}%` : 'неделя не посчитана';
+        const hourTxt = rgm
+          ? `BTC ${rgm.above ? 'на ' + rgm.distPct + '% выше' : 'на ' + Math.abs(rgm.distPct) + '% ниже'} EMA20 (1ч)`
+          : '';
+        const regimeBar = !rgm ? '' : bothOk
+          ? `<div class="ss-regime-bar ok"><span>▲</span><span><b>Рынок за нас</b> — ${hourTxt}${trend}, ${weekTxt}. <span class="ss-rb-note">Входы разрешены.</span></span></div>`
+          : `<div class="ss-regime-bar"><span>▼</span><span><b>Рынок против</b> — ${hourTxt}${trend}, ${weekTxt}. <span class="ss-rb-note">Входы не выдаются: ` +
+            (!hourOk && !weekOk ? 'не выполнены оба условия режима — час и неделя.'
+              : !hourOk ? 'ниже EMA20 ожидание −0.211% против +0.239% выше.'
+              : 'при отрицательной неделе BTC ожидание −0.500% при профит-факторе 0.61, убыток на всех трёх отрезках.') +
+            ` Баллы сжаты в 0–60, порядок сохранён.</span></span></div>`;
         body.innerHTML = regimeBar + `<table class="tg-table"><thead><tr>
             <th>COIN</th><th title="Балл 0–100. Полоса под числом — насколько близко до входа. При закрытом режиме шкала сжата в 0–60.">SCORE</th>
             <th title="Сколько из условий гейта выполнено">ГЕЙТ</th>

@@ -4904,11 +4904,12 @@
           : k.includes('памп') ? 'откат' : k.includes('Ликвидность') ? 'объём'
           : k.includes('BTC') ? 'BTC' : k.slice(0, 12);
         const regimeBar = !rgm ? '' : `<div style="display:flex;align-items:center;gap:6px;padding:5px 8px;margin-bottom:6px;border-radius:6px;font-size:10px;line-height:1.3;${
-          rgm.above ? 'background:rgba(74,222,128,0.06);border:1px solid rgba(74,222,128,0.2);color:#86efac;'
+          (rgm.above && rgm.ret7 > 0) ? 'background:rgba(74,222,128,0.06);border:1px solid rgba(74,222,128,0.2);color:#86efac;'
                     : 'background:rgba(255,107,107,0.07);border:1px solid rgba(255,107,107,0.22);color:#ffa8a8;'}">
-          <span>${rgm.above ? '▲' : '▼'}</span><span><b>${rgm.above ? 'Рынок за нас' : 'Рынок против'}</b> — BTC ${
-            rgm.above ? 'на ' + rgm.distPct + '% выше' : 'на ' + Math.abs(rgm.distPct) + '% ниже'} EMA20. <span style="color:#7c8698;font-weight:400;">${
-            rgm.above ? 'Входы разрешены.' : 'Входы не выдаются, баллы сжаты в 0–60.'}${
+          <span>${(rgm.above && rgm.ret7 > 0) ? '▲' : '▼'}</span><span><b>${(rgm.above && rgm.ret7 > 0) ? 'Рынок за нас' : 'Рынок против'}</b> — BTC ${
+            rgm.above ? 'на ' + rgm.distPct + '% выше' : 'на ' + Math.abs(rgm.distPct) + '% ниже'} EMA20${
+            rgm.ret7 != null ? ', неделя ' + (rgm.ret7 >= 0 ? '+' : '') + rgm.ret7 + '%' : ''}. <span style="color:#7c8698;font-weight:400;">${
+            (rgm.above && rgm.ret7 > 0) ? 'Входы разрешены.' : 'Входы не выдаются, баллы сжаты в 0–60.'}${
               rgm.distDelta != null && Math.abs(rgm.distDelta) >= 0.02
                 ? ` ${rgm.distDelta > 0 ? '↑' : '↓'} ${rgm.distDelta > 0 ? '+' : ''}${rgm.distDelta}% за скан.` : ''}</span></span></div>`;
         body.innerHTML = regimeBar + `<table style="width:100%;border-collapse:collapse;">
