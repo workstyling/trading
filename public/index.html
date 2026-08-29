@@ -7010,6 +7010,43 @@
     // на фиксированную сумму тратит деньги ВВЕРХ по стакану: на тонкой монете
     // сумма уходит за несколько уровней, и реальная средняя цена оказывается
     // хуже лучшего ask. Строка под панелью это уже считает — теперь и диалог.
+    // Куда идёт рынок прямо сейчас.
+    //
+    // Диалог и так опрашивает стакан раз в секунду — складываем цены в
+    // короткую историю и показываем направление. Перед рыночным ордером это
+    // важнее любой другой цифры: если цена падает, секунда ожидания дешевле
+    // спреда, а если растёт — наоборот. Одна мгновенная цена этого не говорит.
+    function renderTrend(hist) {
+      if (!hist || hist.length < 2) {
+        return '<span style="color:var(--t2);">жду второй замер…</span>';
+      }
+      const now = hist[hist.length - 1].p;
+      const first = hist[0].p;
+      // за последние ~5 секунд, если столько накопилось
+      const backIdx = Math.max(0, hist.length - 6);
+      const recent = hist[backIdx].p;
+      const dRecent = recent > 0 ? (now / recent - 1) * 100 : 0;
+      const dAll = first > 0 ? (now / first - 1) * 100 : 0;
+      const secs = Math.round((hist[hist.length - 1].t - hist[0].t) / 1000);
+      const up = dRecent > 0.001, down = dRecent < -0.001;
+      const col = up ? 'var(--green)' : down ? 'var(--red,#ff6b6b)' : 'var(--t2)';
+      const arrow = up ? '▲' : down ? '▼' : '=';
+      const word = up ? 'растёт' : down ? 'падает' : 'стоит';
+
+      // мини-график по накопленным точкам
+      const blocks = '\u2581\u2582\u2583\u2584\u2585\u2586\u2587\u2588';
+      const ps = hist.map(x => x.p);
+      const lo = Math.min(...ps), hi = Math.max(...ps);
+      const spark = hi > lo
+        ? ps.slice(-24).map(v => blocks[Math.min(7, Math.floor((v - lo) / (hi - lo) * 7.999))]).join('')
+        : blocks[3].repeat(Math.min(24, ps.length));
+
+      return `<span style="color:${col};font-weight:700;">${arrow} ${word}</span> ` +
+        `<span style="color:${col};">${dRecent >= 0 ? '+' : ''}${dRecent.toFixed(3)}%</span> ` +
+        `<span style="color:var(--t2);font-size:11px;">за 5с · ${dAll >= 0 ? '+' : ''}${dAll.toFixed(3)}% за ${secs}с</span><br>` +
+        `<span style="color:${col};font-family:monospace;letter-spacing:-1px;font-size:13px;">${spark}</span>`;
+    }
+
     function walkAsks(asks, usd) {
       let left = usd, qty = 0, levels = 0;
       for (const [pxStr, szStr] of asks || []) {
@@ -7053,6 +7090,7 @@
       document.body.appendChild(overlay);
 
       let timer = null;
+      const hist = [];   // {t, p} — история лучшего ask по тикам диалога
       const stop = () => { if (timer) clearInterval(timer); timer = null; overlay.remove(); };
 
       async function tick() {
@@ -7061,6 +7099,10 @@
         try {
           const book = await cbGet(`https://api.exchange.coinbase.com/products/${productId}/book?level=2`, 900);
           const bestAsk = parseFloat(book.asks?.[0]?.[0]) || 0;
+          if (bestAsk > 0) {
+            hist.push({ t: Date.now(), p: bestAsk });
+            if (hist.length > 40) hist.shift();
+          }
           const bestBid = parseFloat(book.bids?.[0]?.[0]) || 0;
           const w = walkAsks(book.asks, quoteSize);
           const avg = w.qty > 0 ? w.spent / w.qty : 0;
@@ -7071,6 +7113,8 @@
           const vsLimitPct = bestBid > 0
             ? ((avg * (1 + feePct / 100)) / (bestBid * (1 + limitFeePct / 100)) - 1) * 100 : 0;
           box.innerHTML =
+            `<div style="margin-bottom:8px;padding:6px 8px;border-radius:6px;background:rgba(255,255,255,0.04);">` +
+            `<span style="color:var(--t2);font-size:11px;">Рынок сейчас:</span><br>${renderTrend(hist)}</div>` +
             `Средняя цена исполнения: <b>$${fmtPrice(avg)}</b>` +
             (slip > 0.005 ? ` <span style="color:var(--yellow);">(проскальзывание ${slip.toFixed(3)}%)</span>` : '') + `<br>` +
             `Пройдёт уровней стакана: <b>${w.levels}</b><br>` +
@@ -8652,6 +8696,7 @@
 
       const feePct = parseFloat(tradingSettings.marketFee) || 0.25;
       let timer = null;
+      const hist = [];   // {t, p} — история лучшего bid по тикам диалога
       const stop = () => { if (timer) clearInterval(timer); timer = null; overlay.remove(); };
 
       async function tick() {
@@ -8659,6 +8704,11 @@
         if (!box) return;
         try {
           const book = await cbGet(`https://api.exchange.coinbase.com/products/${productId}/book?level=2`, 900);
+          const bidTop = parseFloat(book.bids?.[0]?.[0]) || 0;
+          if (bidTop > 0) {
+            hist.push({ t: Date.now(), p: bidTop });
+            if (hist.length > 40) hist.shift();
+          }
           const w = walkBook(book.bids, qty);
           const fee = w.gross * feePct / 100;
           const net = w.gross - fee;
@@ -8669,6 +8719,8 @@
           const slip = bestBid > 0 ? (1 - avgFill / bestBid) * 100 : 0;
           const col = profit == null ? 'var(--t0)' : profit >= 0 ? 'var(--green)' : 'var(--red,#ff6b6b)';
           box.innerHTML =
+            `<div style="margin-bottom:8px;padding:6px 8px;border-radius:6px;background:rgba(255,255,255,0.04);">` +
+            `<span style="color:var(--t2);font-size:11px;">Рынок сейчас:</span><br>${renderTrend(hist)}</div>` +
             `Средняя цена исполнения: <b>$${fmtPrice(avgFill)}</b>` +
             (slip > 0.005 ? ` <span style="color:var(--yellow);">(проскальзывание ${slip.toFixed(3)}%)</span>` : '') + `<br>` +
             `Пройдёт уровней стакана: <b>${w.levels}</b><br>` +
