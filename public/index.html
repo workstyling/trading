@@ -6604,6 +6604,35 @@
     // ========== BUY PANEL ==========
     const SELECTED_COIN_KEY = 'selectedBuyCoin';
     let selectedBuyCoin = safeStorage.getItem(SELECTED_COIN_KEY) || 'BTC';
+
+    // Выбор монеты хранится на сервере: он общий с мобильной и переживает
+    // очистку кэша. localStorage остаётся как мгновенный источник при
+    // отрисовке, чтобы не ждать сети, но истина — на сервере.
+    async function saveSelectedCoinToServer(coin) {
+      try {
+        await fetch('/api/selected-coin', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ coin })
+        });
+      } catch { }
+    }
+    async function loadSelectedCoinFromServer() {
+      try {
+        const r = await fetch('/api/selected-coin');
+        const j = await r.json();
+        if (!j.success || !j.coin || j.coin === selectedBuyCoin) return;
+        selectedBuyCoin = j.coin;
+        safeStorage.setItem(SELECTED_COIN_KEY, j.coin);
+        const inp = document.getElementById('buyCoin');
+        if (inp) inp.value = j.coin;
+        const lbl = document.getElementById('selectedCoinLabel');
+        if (lbl) lbl.textContent = j.coin;
+        if (typeof updateBuyPanelPrices === 'function') updateBuyPanelPrices();
+      } catch { }
+    }
+    // Только при открытии страницы. Периодически тянуть нельзя: монета
+    // сменилась бы под пальцем перед нажатием BUY.
+    loadSelectedCoinFromServer();
     let buyPanelPrices = { bid: 0, ask: 0 };
 
     function _loadTVScript(cb) {
@@ -6879,6 +6908,7 @@
         if (data.id) {
           selectedBuyCoin = coin;
           safeStorage.setItem(SELECTED_COIN_KEY, coin);
+          saveSelectedCoinToServer(coin);
           input.value = coin;
           input.classList.add('valid');
           setTimeout(() => input.classList.remove('valid'), 1000);

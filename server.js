@@ -162,6 +162,30 @@ app.post('/save-selected-orders', (req, res) => {
 });
 
 // API: Get profit history
+// Выбранная монета. Жила только в localStorage, причём под разными ключами
+// на десктопе и на мобильной, поэтому не синхронизировалась и терялась при
+// очистке кэша — а сбросившийся к BTC выбор рядом с кнопками продажи это не
+// косметика.
+const selectedCoinFile = path.join(__dirname, 'selected-coin.json');
+app.get('/api/selected-coin', (req, res) => {
+  try {
+    const d = fs.existsSync(selectedCoinFile) ? JSON.parse(fs.readFileSync(selectedCoinFile, 'utf8')) : {};
+    res.json({ success: true, coin: d.coin || null, at: d.at || null });
+  } catch { res.json({ success: true, coin: null, at: null }); }
+});
+
+app.post('/api/selected-coin', (req, res) => {
+  try {
+    const raw = String((req.body || {}).coin || '').trim().toUpperCase();
+    // Тикеры Coinbase — латиница, цифры и дефис. Мусор в этот файл не пишем.
+    if (!/^[A-Z0-9-]{1,15}$/.test(raw)) {
+      return res.json({ success: false, error: 'Некорректный тикер' });
+    }
+    fs.writeFileSync(selectedCoinFile, JSON.stringify({ coin: raw, at: Date.now() }));
+    res.json({ success: true, coin: raw });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
 app.get('/api/favorites', (req, res) => {
   try {
     const coins = fs.existsSync(favoritesFile) ? JSON.parse(fs.readFileSync(favoritesFile, 'utf8')) : [];

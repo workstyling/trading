@@ -1953,6 +1953,29 @@
     const savedCoin = localStorage.getItem('mobileTradeCoin');
     if (savedCoin) document.getElementById('coinInput').value = savedCoin;
 
+    // Выбор монеты общий с десктопом и хранится на сервере: раньше на каждой
+    // вёрстке был свой ключ в localStorage, и они не знали друг о друге.
+    async function saveSelectedCoinToServer(coin) {
+      try {
+        await api('/api/selected-coin', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ coin })
+        });
+      } catch { }
+    }
+    (async () => {
+      try {
+        const r = await api('/api/selected-coin');
+        if (!r || !r.success || !r.coin) return;
+        const inp = document.getElementById('coinInput');
+        if (inp && inp.value.trim().toUpperCase() !== r.coin) {
+          inp.value = r.coin;
+          localStorage.setItem('mobileTradeCoin', r.coin);
+          if (typeof updatePrices === 'function') updatePrices();
+        }
+      } catch { }
+    })();
+
     // Load saved buy size
     const savedBuySize = localStorage.getItem('buySize');
     if (savedBuySize) {
@@ -1963,6 +1986,7 @@
       const coin = document.getElementById('coinInput').value.trim().toUpperCase();
       if (coin) {
         localStorage.setItem('mobileTradeCoin', coin);
+        saveSelectedCoinToServer(coin);
         connectPriceWs();
         toast('Saved: ' + coin);
       }
@@ -1972,6 +1996,7 @@
       if (document.activeElement) document.activeElement.blur();
       document.getElementById('coinInput').value = coin;
       localStorage.setItem('mobileTradeCoin', coin);
+      saveSelectedCoinToServer(coin);
       connectPriceWs();
       window.scrollTo({ top: 0, behavior: 'smooth' });
       toast(coin + ' selected');
