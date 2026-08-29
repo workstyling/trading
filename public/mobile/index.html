@@ -135,6 +135,12 @@
     }
     .trade-btn:active { transform: scale(.97); }
     /* Покупка по рынку — свой цвет: мгновенно и необратимо */
+    .mon-sell-btn.mkt {
+      background: rgba(245, 158, 11, 0.16);
+      border: 1px solid rgba(245, 158, 11, 0.55);
+      color: #f5a524;
+    }
+
     .btn-mkt {
       background: rgba(245, 158, 11, 0.14);
       border: 1px solid rgba(245, 158, 11, 0.5);
@@ -2511,7 +2517,10 @@
         // Sell All button
         if (totalFilled > 0) {
           const totalFilledStr = totalFilled.toFixed(totalFilled < 1 ? 8 : 6);
-          html += `<div style="margin-top:8px;"><button class="mon-sell-btn all" style="width:100%;padding:10px;" onclick="sellAtAsk('${pair}','${totalFilledStr}',${avgBuy},${totalUSD})">SELL ALL ${coin}</button></div>`;
+          html += `<div style="margin-top:8px;display:flex;gap:6px;">
+            <button class="mon-sell-btn all" style="flex:1;padding:10px;" onclick="sellAtAsk('${pair}','${totalFilledStr}',${avgBuy},${totalUSD})">SELL ALL ${coin}</button>
+            <button class="mon-sell-btn mkt" style="flex:0 0 84px;padding:10px;" onclick="sellAllMarketM('${pair}','${totalFilledStr}','${coin}',${totalUSD})">MKT</button>
+          </div>`;
         }
 
         html += `</div>`;
@@ -2538,6 +2547,93 @@
       });
       if (r.success) { toast('Sell order created!'); loadOrders().then(updateMonitor); }
       else toast(r.error || (r.details?.error_response?.message) || 'Failed', 'error');
+    }
+
+    // Продажа всей позиции ПО РЫНКУ с живым пересчётом, как на десктопе.
+    // Считаем проходом по стакану: крупная позиция не влезает в верхний
+    // уровень, и оценка по лучшему bid завышала бы выручку тем сильнее,
+    // чем больше объём.
+    function walkBookM(bids, size) {
+      let left = size, gross = 0, levels = 0;
+      for (const [p, q] of bids || []) {
+        const px = parseFloat(p), sz = parseFloat(q);
+        if (!(px > 0) || !(sz > 0)) continue;
+        const take = Math.min(left, sz);
+        gross += take * px; left -= take; levels++;
+        if (left <= 0) break;
+      }
+      return { gross, filled: size - left, short: left > 0, levels };
+    }
+
+    async function sellAllMarketM(pair, size, coin, actualCost) {
+      const qty = parseFloat(size);
+      if (!(qty > 0)) { toast('Нечего продавать', 'error'); return; }
+      const cost = parseFloat(actualCost) || 0;
+      const feePct = parseFloat(tradingSettings.marketFee) || 0.25;
+
+      const ov = document.createElement('div');
+      ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;';
+      ov.innerHTML = `<div style="background:#12151c;border:1px solid rgba(245,158,11,0.4);border-radius:12px;padding:16px;max-width:340px;width:100%;">
+        <div style="color:#f5a524;font-weight:700;margin-bottom:8px;">Продать всё по рынку</div>
+        <div style="font-size:13px;color:#cfd6e4;"><b>${coin}</b> — ${qty} шт., РЕАЛЬНАЯ продажа.</div>
+        <div id="msLiveM" style="font-size:12.5px;color:#cfd6e4;margin-top:10px;font-variant-numeric:tabular-nums;">Считаю по стакану…</div>
+        <div style="font-size:10.5px;color:#7c8698;margin-top:8px;">Обновляется каждую секунду. Отменить нельзя.</div>
+        <div style="display:flex;gap:8px;margin-top:14px;">
+          <button id="msCancelM" style="flex:1;padding:10px;border-radius:8px;border:1px solid #333;background:transparent;color:#aab;">Отмена</button>
+          <button id="msOkM" style="flex:1;padding:10px;border-radius:8px;border:none;background:#f5a524;color:#1a1200;font-weight:700;">Продать</button>
+        </div></div>`;
+      document.body.appendChild(ov);
+
+      let timer = null;
+      const stop = () => { if (timer) clearInterval(timer); timer = null; ov.remove(); };
+
+      async function tick() {
+        const box = document.getElementById('msLiveM');
+        if (!box) return;
+        try {
+          const book = await cbGet(`https://api.exchange.coinbase.com/products/${pair}/book?level=2`, 900);
+          const w = walkBookM(book.bids, qty);
+          const fee = w.gross * feePct / 100;
+          const net = w.gross - fee;
+          const avg = w.filled > 0 ? w.gross / w.filled : 0;
+          const best = parseFloat(book.bids?.[0]?.[0]) || 0;
+          const slip = best > 0 ? (1 - avg / best) * 100 : 0;
+          const profit = cost > 0 ? net - cost : null;
+          const pct = cost > 0 ? profit / cost * 100 : null;
+          const col = profit == null ? '#cfd6e4' : profit >= 0 ? '#4ade80' : '#ff6b6b';
+          box.innerHTML = `Средняя: <b>$${fmt(avg)}</b>` + (slip > 0.005 ? ` (просk. ${slip.toFixed(3)}%)` : '') + `<br>` +
+            `Уровней стакана: <b>${w.levels}</b><br>` +
+            `Выручка: <b>$${w.gross.toFixed(2)}</b> − комиссия <b>$${fee.toFixed(2)}</b><br>` +
+            `На руки: <b>$${net.toFixed(2)}</b>` +
+            (cost > 0 ? `<br>Потрачено: <b>$${cost.toFixed(2)}</b><br>
+              <span style="color:${col};font-weight:700;font-size:15px;">${profit >= 0 ? '+' : ''}$${profit.toFixed(2)} (${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%)</span>` : '') +
+            (w.short ? `<br><span style="color:#ff6b6b;">Стакана не хватает на весь объём</span>` : '');
+        } catch {
+          box.innerHTML = '<span style="color:#f5c518;">Стакан недоступен</span>';
+        }
+      }
+      await tick();
+      timer = setInterval(tick, 1000);
+
+      document.getElementById('msCancelM').onclick = stop;
+      document.getElementById('msOkM').onclick = async () => {
+        const b = document.getElementById('msOkM');
+        b.disabled = true; b.textContent = '...';
+        if (timer) { clearInterval(timer); timer = null; }
+        const r = await api('/api/market-sell', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ productId: pair, size })
+        });
+        if (r && r.success) {
+          ov.remove();
+          toast('Продано по рынку');
+          loadBalance(); loadOrders().then(updateMonitor);
+        } else {
+          toast((r && r.error) || 'Не удалось', 'error');
+          b.disabled = false; b.textContent = 'Продать';
+          timer = setInterval(tick, 1000);
+        }
+      };
     }
 
     async function sellAtAsk(pair, size, avgBuyPrice, actualCost) {

@@ -5613,6 +5613,14 @@
     }
     .buy-btn.mkt:disabled { opacity: 0.55 !important; cursor: default; }
 
+    /* Рыночная продажа всего — тот же оранжевый, что у рыночной покупки */
+    .sell-all-btn.mkt {
+      background: linear-gradient(135deg, #f59e0b, #f97316) !important;
+      color: #1a1200 !important;
+      border: none !important;
+    }
+    .sell-all-btn.mkt:hover { filter: brightness(1.1) !important; }
+
     .buy-limit-btn, .tracker-toggle-btn, .at-add-btn, .telegram-btn {
       border: 1px solid rgba(0, 242, 254, 0.3) !important;
       background: rgba(0, 242, 254, 0.05) !important;
@@ -8534,6 +8542,116 @@
       }
     }
 
+    // Продажа всей позиции ПО РЫНКУ, с живым пересчётом прибыли.
+    //
+    // Считаем не по лучшему bid, а проходя стакан вглубь: крупная позиция
+    // не влезает в верхний уровень, и «прибыль по best bid» была бы враньём
+    // тем большим, чем больше объём. Цифры обновляются раз в секунду, пока
+    // окно открыто, чтобы решение принималось по текущему рынку, а не по
+    // тому, каким он был в момент нажатия.
+    function walkBook(bids, size) {
+      let left = size, gross = 0, levels = 0, worst = null;
+      for (const [pxStr, szStr] of bids || []) {
+        const px = parseFloat(pxStr), sz = parseFloat(szStr);
+        if (!(px > 0) || !(sz > 0)) continue;
+        const take = Math.min(left, sz);
+        gross += take * px;
+        left -= take;
+        levels++;
+        worst = px;
+        if (left <= 0) break;
+      }
+      // Стакан кончился раньше объёма — честно говорим, что оценка неполная
+      return { gross, filled: size - left, short: left > 0, levels, worst };
+    }
+
+    async function sellAllMarket(productId, size, coin, actualCost) {
+      const qty = parseFloat(size);
+      if (!(qty > 0)) { showCustomAlert('Нечего продавать', true); return; }
+      const cost = parseFloat(actualCost) || 0;
+
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay';
+      overlay.innerHTML = `
+        <div class="modal-box">
+          <div class="modal-title">⚠️ Продать всё по рынку</div>
+          <div class="modal-body">
+            <b>${coin}</b> — <b>${fmtSize(qty)}</b> шт., это <b>РЕАЛЬНАЯ</b> продажа.<br><br>
+            <div id="msLive" style="font-variant-numeric:tabular-nums;">Считаю по стакану…</div>
+            <div style="color:var(--t2);font-size:11px;margin-top:8px;">
+              Цифры обновляются каждую секунду. Исполнится мгновенно, отменить нельзя.
+            </div>
+          </div>
+          <div class="modal-buttons">
+            <button class="modal-btn modal-btn-cancel" id="msCancel">Cancel</button>
+            <button class="modal-btn modal-btn-confirm" id="msConfirm">Продать</button>
+          </div>
+        </div>`;
+      document.body.appendChild(overlay);
+
+      const feePct = parseFloat(tradingSettings.marketFee) || 0.25;
+      let timer = null;
+      const stop = () => { if (timer) clearInterval(timer); timer = null; overlay.remove(); };
+
+      async function tick() {
+        const box = document.getElementById('msLive');
+        if (!box) return;
+        try {
+          const book = await cbGet(`https://api.exchange.coinbase.com/products/${productId}/book?level=2`, 900);
+          const w = walkBook(book.bids, qty);
+          const fee = w.gross * feePct / 100;
+          const net = w.gross - fee;
+          const profit = cost > 0 ? net - cost : null;
+          const pct = cost > 0 ? profit / cost * 100 : null;
+          const avgFill = w.filled > 0 ? w.gross / w.filled : 0;
+          const bestBid = parseFloat(book.bids?.[0]?.[0]) || 0;
+          const slip = bestBid > 0 ? (1 - avgFill / bestBid) * 100 : 0;
+          const col = profit == null ? 'var(--t0)' : profit >= 0 ? 'var(--green)' : 'var(--red,#ff6b6b)';
+          box.innerHTML =
+            `Средняя цена исполнения: <b>$${fmtPrice(avgFill)}</b>` +
+            (slip > 0.005 ? ` <span style="color:var(--yellow);">(проскальзывание ${slip.toFixed(3)}%)</span>` : '') + `<br>` +
+            `Пройдёт уровней стакана: <b>${w.levels}</b><br>` +
+            `Выручка: <b>$${w.gross.toFixed(2)}</b><br>` +
+            `Комиссия ${feePct}%: <b>−$${fee.toFixed(2)}</b><br>` +
+            `Получишь на руки: <b>$${net.toFixed(2)}</b><br>` +
+            (cost > 0
+              ? `Потрачено было: <b>$${cost.toFixed(2)}</b><br>` +
+                `<span style="color:${col};font-weight:700;font-size:15px;">` +
+                `${profit >= 0 ? '+' : ''}$${profit.toFixed(2)} (${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%)</span>`
+              : `<span style="color:var(--t2);">Стоимость покупки неизвестна — прибыль не посчитать.</span>`) +
+            (w.short ? `<br><span style="color:var(--red,#ff6b6b);">Стакана не хватает на весь объём: оценка по ${fmtSize(w.filled)} шт.</span>` : '');
+        } catch (e) {
+          box.innerHTML = '<span style="color:var(--yellow);">Стакан недоступен, цифры не обновляются.</span>';
+        }
+      }
+      await tick();
+      timer = setInterval(tick, 1000);
+
+      overlay.querySelector('#msCancel').onclick = stop;
+      overlay.onclick = (e) => { if (e.target === overlay) stop(); };
+      overlay.querySelector('#msConfirm').onclick = async () => {
+        const btn = overlay.querySelector('#msConfirm');
+        btn.disabled = true; btn.textContent = '...';
+        if (timer) { clearInterval(timer); timer = null; }
+        try {
+          const r = await fetch('/api/market-sell', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ productId, size })
+          });
+          const j = await r.json();
+          if (!j.success) { showCustomAlert(j.error || 'Продажа отклонена', true); btn.disabled = false; btn.textContent = 'Продать'; timer = setInterval(tick, 1000); return; }
+          overlay.remove();
+          showCustomAlert(`${coin}: продано по рынку`);
+          loadUsdBalance();
+          setTimeout(loadLatestOrders, 1000);
+        } catch (e) {
+          showCustomAlert('Ошибка: ' + e.message, true);
+          btn.disabled = false; btn.textContent = 'Продать';
+          timer = setInterval(tick, 1000);
+        }
+      };
+    }
+
     async function sellAllCoin(productId, size, avgBuyPrice, actualCost) {
       await sellAtCurrentAsk(productId, size, avgBuyPrice, actualCost);
     }
@@ -11075,7 +11193,7 @@ Requirements:
         const isFav = favoriteCoins.has(coin);
         h += `<div class="coin-group" data-coin="${coin}" data-coin-pair="${pair}">
           <h4><a href="https://www.tradingview.com/chart/?symbol=COINBASE%3A${coin}USD" target="_blank">${pair}</a>${todayBadge} <span onclick="toggleFavoriteCoin('${coin}')" title="${isFav ? 'Remove from favorites' : 'Add to favorites'}" style="cursor:pointer;font-size:16px;opacity:${isFav ? '1' : '0.25'};padding:0 6px;color:${isFav ? '#f5c518' : 'inherit'};">★</span><button class="select-coin-btn" onclick="selectCoinForBuy('${coin}')" title="Set for Buy">⬆</button></h4>
-          <div class="balance">Selected: ${fmtSize(totalFilled)} ${coin} <span id="realBal_${coin}" style="color:var(--t2);font-size:10px;">(loading real balance...)</span> ${totalFilled > 0 ? `<button class="sell-all-btn" onclick="sellAllCoin('${pair}', '${totalFilled}', ${avgBuyPrice}, ${totalUSD})">SELL ALL</button> <button id="bew_${coin}" onclick="toggleBeWatch('${coin}','${pair}',${totalFilled},${totalUSD})" title="Telegram-алерт, когда Limit P&L дойдёт до 0 (сработает один раз и выключится)" style="padding:3px 8px;border:1px solid ${_beWatches[coin] ? 'var(--yellow)' : 'rgba(255,255,255,0.25)'};border-radius:5px;background:${_beWatches[coin] ? 'rgba(245,197,24,0.15)' : 'transparent'};color:${_beWatches[coin] ? 'var(--yellow)' : '#889'};font-size:10px;font-weight:600;cursor:pointer;">🔔 BE${_beWatches[coin] ? ' ON' : ''}</button>` : ''} <button class="${btnClass}" onclick="saveGroupProfit('${coin}', ${groupProfit.toFixed(2)}, '${filledBuys.map(o => o.order_id).join(',')}', '${filledSells.map(o => o.order_id).join(',')}', ${buyCreatedDate ? `'${buyCreatedDate}'` : 'null'})" ${btnDisabled ? 'disabled' : ''}>${btnText}</button>
+          <div class="balance">Selected: ${fmtSize(totalFilled)} ${coin} <span id="realBal_${coin}" style="color:var(--t2);font-size:10px;">(loading real balance...)</span> ${totalFilled > 0 ? `<button class="sell-all-btn" onclick="sellAllCoin('${pair}', '${totalFilled}', ${avgBuyPrice}, ${totalUSD})">SELL ALL</button> <button class="sell-all-btn mkt" onclick="sellAllMarket('${pair}', '${totalFilled}', '${coin}', ${totalUSD})" title="Продать всё ПО РЫНКУ. Диалог покажет реальную цену исполнения по стакану и прибыль, обновляя их каждую секунду.">MKT</button> <button id="bew_${coin}" onclick="toggleBeWatch('${coin}','${pair}',${totalFilled},${totalUSD})" title="Telegram-алерт, когда Limit P&L дойдёт до 0 (сработает один раз и выключится)" style="padding:3px 8px;border:1px solid ${_beWatches[coin] ? 'var(--yellow)' : 'rgba(255,255,255,0.25)'};border-radius:5px;background:${_beWatches[coin] ? 'rgba(245,197,24,0.15)' : 'transparent'};color:${_beWatches[coin] ? 'var(--yellow)' : '#889'};font-size:10px;font-weight:600;cursor:pointer;">🔔 BE${_beWatches[coin] ? ' ON' : ''}</button>` : ''} <button class="${btnClass}" onclick="saveGroupProfit('${coin}', ${groupProfit.toFixed(2)}, '${filledBuys.map(o => o.order_id).join(',')}', '${filledSells.map(o => o.order_id).join(',')}', ${buyCreatedDate ? `'${buyCreatedDate}'` : 'null'})" ${btnDisabled ? 'disabled' : ''}>${btnText}</button>
           ${totalFilled > 0 ? `<span style="margin-left:10px;display:inline-flex;align-items:center;gap:4px;">
             <input type="text" id="limitSellPrice_${coin}" placeholder="Limit price" style="width:90px;padding:3px 6px;background:var(--s3);border:1px solid var(--b1);border-radius:5px;color:var(--t0);font-family:'JetBrains Mono',monospace;font-size:11px;outline:none;" autocomplete="off">
             <button onclick="sellAllLimit('${pair}','${totalFilled}','${coin}')" style="padding:3px 10px;border:1px solid var(--yellow);border-radius:5px;background:transparent;color:var(--yellow);font-size:10px;font-weight:600;cursor:pointer;">Sell Limit</button>

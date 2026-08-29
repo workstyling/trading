@@ -193,6 +193,55 @@ app.post('/save-profit-history', (req, res) => {
   }
 });
 
+// API: Рыночная продажа всей позиции.
+// placeMarketSell уже был, но только для внутреннего аварийного стопа
+// авто-выхода. Здесь он же выставлен наружу под кнопку.
+app.post('/api/market-sell', async (req, res) => {
+  try {
+    const { productId, size } = req.body || {};
+    const sz = parseFloat(size);
+    if (!productId || !(sz > 0)) {
+      return res.json({ success: false, error: 'Нужны productId и размер больше нуля' });
+    }
+    // Сверяем с реальным остатком: продать больше, чем есть, нельзя, а
+    // расхождение обычно значит, что часть уже продана в другой вкладке.
+    let available = null;
+    try {
+      const coin = String(productId).split('-')[0];
+      const accounts = [];
+      let cursor;
+      do {
+        const params = { limit: 250 };
+        if (cursor) params.cursor = cursor;
+        const result = await client.listAccounts(params);
+        const data = typeof result === 'string' ? JSON.parse(result) : result;
+        accounts.push(...(data.accounts || []));
+        cursor = data.has_next ? data.cursor : null;
+      } while (cursor);
+      const acc = accounts.find(a => a.currency === coin);
+      available = acc ? parseFloat(acc.available_balance?.value || 0) : null;
+      if (available != null && sz > available * 1.0001) {
+        return res.json({
+          success: false,
+          error: `На балансе ${available} ${coin}, продать ${sz} нельзя. Обнови страницу.`,
+        });
+      }
+    } catch (e) {
+      // Сверку не удалось выполнить — это не повод отказывать: биржа всё
+      // равно отклонит ордер сверх остатка. Но в логе должно остаться.
+      console.warn('[market-sell] баланс не сверен:', e.message);
+    }
+    console.log('Creating MARKET sell:', productId, sz);
+    const orderId = await placeMarketSell(productId, sz);
+    if (!orderId) return res.json({ success: false, error: 'Биржа не вернула id ордера' });
+    console.log('Market sell created, ID:', orderId);
+    res.json({ success: true, orderId });
+  } catch (error) {
+    console.error('Market sell error:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // API: Create limit sell order
 app.post('/create-sell-order', async (req, res) => {
   try {
