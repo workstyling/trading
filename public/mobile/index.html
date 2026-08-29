@@ -2578,6 +2578,7 @@
       ov.innerHTML = `<div style="background:#12151c;border:1px solid rgba(245,158,11,0.4);border-radius:12px;padding:16px;max-width:340px;width:100%;">
         <div style="color:#f5a524;font-weight:700;margin-bottom:8px;">Продать всё по рынку</div>
         <div style="font-size:13px;color:#cfd6e4;"><b>${coin}</b> — ${qty} шт., РЕАЛЬНАЯ продажа.</div>
+        <div id="msWarnM"></div>
         <div id="msLiveM" style="font-size:12.5px;color:#cfd6e4;margin-top:10px;font-variant-numeric:tabular-nums;">Считаю по стакану…</div>
         <div style="font-size:10.5px;color:#7c8698;margin-top:8px;">Обновляется каждую секунду. Отменить нельзя.</div>
         <div style="display:flex;gap:8px;margin-top:14px;">
@@ -2651,10 +2652,11 @@
           }
           if (fresh.profit < 0) {
             lossAck = true;
-            const box = document.getElementById('msLiveM');
+            // Отдельный контейнер: msLiveM перерисовывается каждую секунду
+            const box = document.getElementById('msWarnM');
             if (box) {
               box.innerHTML =
-                `<div style="padding:9px;border-radius:8px;background:rgba(255,107,107,0.12);border:1px solid rgba(255,107,107,0.45);">` +
+                `<div style="padding:9px;border-radius:8px;margin-top:10px;background:rgba(255,107,107,0.12);border:1px solid rgba(255,107,107,0.45);">` +
                 `<div style="color:#ff6b6b;font-weight:700;margin-bottom:5px;">Это продажа В УБЫТОК</div>` +
                 `Перепроверено сейчас:<br>Средняя <b>$${fmt(fresh.avg)}</b><br>` +
                 `Получишь <b>$${fresh.net.toFixed(2)}</b> против <b>$${cost.toFixed(2)}</b><br>` +

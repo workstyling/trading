@@ -8682,6 +8682,7 @@
           <div class="modal-title">⚠️ Продать всё по рынку</div>
           <div class="modal-body">
             <b>${coin}</b> — <b>${fmtSize(qty)}</b> шт., это <b>РЕАЛЬНАЯ</b> продажа.<br><br>
+            <div id="msWarn"></div>
             <div id="msLive" style="font-variant-numeric:tabular-nums;">Считаю по стакану…</div>
             <div style="color:var(--t2);font-size:11px;margin-top:8px;">
               Цифры обновляются каждую секунду. Исполнится мгновенно, отменить нельзя.
@@ -8781,10 +8782,13 @@
           }
           if (fresh.profit < 0) {
             lossAcknowledged = true;
-            const box = document.getElementById('msLive');
+            // Отдельный контейнер, а не msLive: секундный тик перерисовывает
+            // msLive целиком и через мгновение стёр бы предупреждение —
+            // проверено, оно исчезало примерно за секунду.
+            const box = document.getElementById('msWarn');
             if (box) {
               box.innerHTML =
-                `<div style="padding:10px;border-radius:8px;background:rgba(255,107,107,0.12);border:1px solid rgba(255,107,107,0.45);">` +
+                `<div style="padding:10px;border-radius:8px;margin-bottom:10px;background:rgba(255,107,107,0.12);border:1px solid rgba(255,107,107,0.45);">` +
                 `<div style="color:var(--red,#ff6b6b);font-weight:700;margin-bottom:6px;">Это продажа В УБЫТОК</div>` +
                 `Перепроверено прямо сейчас, по свежему стакану:<br>` +
                 `Средняя цена: <b>$${fmtPrice(fresh.avg)}</b><br>` +
