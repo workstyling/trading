@@ -7019,7 +7019,8 @@
         `Цена ask: <b>$${fmtPrice(ask)}</b>${spreadPct != null ? ` · спред <b>${spreadPct.toFixed(3)}%</b>` : ''}<br>` +
         `Получишь примерно <b>${qty < 1 ? qty.toFixed(6) : qty.toFixed(3)} ${coin}</b><br>` +
         `Комиссия рынка <b>${feePct}%</b> ≈ <b>$${fee.toFixed(2)}</b><br>` +
-        `Дороже лимитки по bid на <b>${vsLimit.toFixed(2)}%</b> ≈ <b>$${vsLimitUsd.toFixed(2)}</b><br><br>` +
+        `Спред к лимитке по bid: <b>${vsLimit.toFixed(2)}%</b> ≈ <b>$${vsLimitUsd.toFixed(2)}</b><br>` +
+        `<span style="color:var(--t2);font-size:11px;">Полная переплата против лимитки больше — добавь проскальзывание по стакану и разницу комиссий; она в строке под панелью.</span><br><br>` +
         `<span style="color:var(--yellow);">Исполнится мгновенно. Отменить нельзя.</span>`,
         async () => {
           const btn = document.getElementById('buyMktBtn');
@@ -7091,6 +7092,29 @@
         showCustomAlert('BUY button not found', true);
         return;
       }
+
+      // Подтверждение, как у покупки по рынку. Лимитка мягче — её можно
+      // отменить, — но это всё равно реальный ордер, и в диалоге видно то,
+      // что после нажатия уже не переспросишь: по какому уровню стакана
+      // выставляемся и насколько это ниже рынка.
+      const askNow = buyPanelPrices.ask > 0 ? buyPanelPrices.ask : limitPrice;
+      const qty = quoteSize / limitPrice;
+      const feePct = parseFloat(tradingSettings.tradeFee) || 0.06;
+      const belowAsk = askNow > 0 ? (1 - limitPrice / askNow) * 100 : 0;
+      const okToSend = await new Promise(resolve => {
+        showConfirmModal('Купить лимиткой',
+          `<b>${selectedBuyCoin}</b> на <b>$${quoteSize.toFixed(2)}</b> — это <b>РЕАЛЬНЫЙ</b> ордер.<br><br>` +
+          `Цена лимитки: <b>$${fmtPrice(limitPrice)}</b>` +
+          (bidLvl > 0 ? ` <span style="color:var(--yellow);">(уровень стакана −${bidLvl})</span>` : ' (лучший bid)') + `<br>` +
+          `Получишь примерно <b>${qty < 1 ? qty.toFixed(6) : qty.toFixed(3)} ${selectedBuyCoin}</b><br>` +
+          `Комиссия лимитки <b>${feePct}%</b> ≈ <b>$${(quoteSize * feePct / 100).toFixed(2)}</b><br>` +
+          `Ниже лучшего ask на <b>${belowAsk.toFixed(2)}%</b> — это спред, который ты не платишь.<br>` +
+          `<span style="color:var(--t2);font-size:11px;">Строка под панелью показывает больше: там ещё проскальзывание по стакану и разница комиссий.</span><br><br>` +
+          `<span style="color:var(--t2);">Исполнится, только если цена дойдёт. Можно отменить.</span>`,
+          () => resolve(true), () => resolve(false));
+      });
+      if (!okToSend) return;
+
       btn.disabled = true;
       btn.textContent = '...';
       try {
