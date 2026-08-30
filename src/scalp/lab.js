@@ -316,10 +316,14 @@ function buildBrief(trades, meta) {
       // verified» выписывался трижды подряд, «Within 10% of its 14-day high»
       // дважды. Раздел, который существует ровно чтобы не предлагать одно и
       // то же по кругу, сам показывал одно и то же по кругу.
+      // Пустой список — это «состав неизвестен», а не «условий нет». Сразу
+      // после перезапуска сканер ещё не отдал liveChecks, и последнее
+      // поколение отчитывалось об удалении всех девяти условий разом.
+      const nonEmpty = (a) => (Array.isArray(a) && a.length) ? a : null;
       const shown = gens.slice(-6);
-      const was = g.gateWas || null;
+      const was = nonEmpty(g.gateWas);
       const nextGen = shown[k + 1];
-      const now = nextGen ? (nextGen.gateWas || null) : ((meta && meta.liveChecks) || null);
+      const now = nextGen ? nonEmpty(nextGen.gateWas) : nonEmpty(meta && meta.liveChecks);
       if (was && now) {
         const added = now.filter(x => !was.includes(x));
         const removed = was.filter(x => !now.includes(x));
