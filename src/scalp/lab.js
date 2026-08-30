@@ -309,8 +309,17 @@ function buildBrief(trades, meta) {
         (g.stats ? `, win ${g.stats.winRate}%, ${g.stats.avgPct >= 0 ? '+' : ''}${g.stats.avgPct}% per trade` : ''));
       // Что конкретно изменилось в гейте. Без этого раздел «уже внедрено»
       // говорил «код менялся» и не мешал предложить ровно то же ещё раз.
+      //
+      // Сравнивать надо со СЛЕДУЮЩИМ поколением, а не с сегодняшним гейтом.
+      // Раньше здесь стоял живой состав условий для всех строк сразу, и одна
+      // правка числилась добавленной во всех поколениях до неё: «Spread
+      // verified» выписывался трижды подряд, «Within 10% of its 14-day high»
+      // дважды. Раздел, который существует ровно чтобы не предлагать одно и
+      // то же по кругу, сам показывал одно и то же по кругу.
+      const shown = gens.slice(-6);
       const was = g.gateWas || null;
-      const now = (meta && meta.liveChecks) || null;
+      const nextGen = shown[k + 1];
+      const now = nextGen ? (nextGen.gateWas || null) : ((meta && meta.liveChecks) || null);
       if (was && now) {
         const added = now.filter(x => !was.includes(x));
         const removed = was.filter(x => !now.includes(x));
@@ -341,7 +350,13 @@ function buildBrief(trades, meta) {
     }
     lines.push('');
   if (archived && archived.n) {
-    lines.push(`- Archived prior-generation trades: **${archived.n}**, ${archived.winRate}% wins, **${d(archived.avgPct)}%** per trade.`);
+    // Ниже пяти сделок процент побед — это шум: две сделки дают «100% wins»,
+    // и раздел выглядит как измерение там, где измерять нечего.
+    if (archived.n >= 5) {
+      lines.push(`- Archived prior-generation trades: **${archived.n}**, ${archived.winRate}% wins, **${d(archived.avgPct)}%** per trade.`);
+    } else {
+      lines.push(`- Archived prior-generation trades: **${archived.n}** — too few to carry a win rate.`);
+    }
     lines.push('- They are retained for audit only and do not measure the current gate.');
     lines.push('');
   }
