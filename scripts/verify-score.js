@@ -29,18 +29,24 @@ function recompute(r, regimeAbove) {
   if (!isNaN(fromHi) && fromHi < -10) sc -= 35;
   if (range4 != null && !isNaN(range4) && range4 >= 8) sc -= 12;
   if (runUp != null && !isNaN(runUp) && runUp > 15) sc -= 15;
-  // Спред стал жёстким условием: неизвестный спред это НЕ проход. Потолок 44
-  // теперь ловит оба случая — и широкий спред, и отсутствующий.
+  // Спред — жёсткое условие: неизвестный спред это НЕ проход. Но потолок 44
+  // за неизвестный спред применяется только к тому, кому он реально мешает
+  // войти, то есть когда все прочие условия монеты выполнены. Иначе весь
+  // список схлопывался бы в один балл: сканер запрашивает стакан лишь у
+  // кандидатов, у остальных спред просто не измерен.
   const spreadKnown = Number.isFinite(spread) && spread >= 0;
   const wide = spreadKnown && spread > 0.4;
   const missing = !spreadKnown;
   if (wide) sc -= 15;
 
-  const allOk = r.checks.filter(c => c.k.indexOf('BTC') === -1 && c.k.indexOf('Неделя') === -1).every(c => c.ok);
+  // Условия самой монеты — без двух проверок режима, их добавляет сканер
+  const own = r.checks.filter(c => c.k.indexOf('BTC') === -1 && c.k.indexOf('Неделя') === -1);
+  const allOk = own.every(c => c.ok);
+  const otherOk = (spreadKnown && !wide) ? allOk : own.filter(c => c.ok).length === own.length - 1;
   const clamp = (v) => {
     let x = v;
     if (!liquid) x = Math.min(x, 39);
-    if (wide || missing) x = Math.min(x, 44);
+    if (wide || (missing && otherOk)) x = Math.min(x, 44);
     if (!allOk) x = Math.min(x, 74);
     x = Math.max(0, Math.min(100, Math.round(x)));
     if (!regimeAbove) x = Math.max(0, Math.round(x * 0.6));
