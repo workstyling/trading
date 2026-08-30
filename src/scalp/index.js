@@ -199,8 +199,18 @@ function calcScalpScore(s, vol24, spreadPct) {
   const missingSpread = !spreadKnown;
   if (wideSpread) sc -= 15;
 
+  // Сканер запрашивает стакан только у кандидатов (rangePos<0.4 и цена выше
+  // EMA9): по запросу на каждую из сотни монет каждые четыре минуты лимит
+  // Coinbase не выдержит. Значит у монеты, которая и так далеко от входа,
+  // спред просто не измеряли, и штрафовать её за это неправильно — 37 из 40
+  // строк схлопывались в один балл 44, и список ожидания переставал
+  // ранжироваться. Опускаем балл только там, где неизвестный спред реально
+  // решает исход: когда все прочие условия выполнены. Безопасность цела —
+  // `pass` по-прежнему требует проверенного спреда, а настоящий кандидат
+  // всегда попадает под условие near и стакан получает.
+  const otherOk = spreadOk ? allOk : passed === checks.length - 1;
   if (!liquid) sc = Math.min(sc, 39);
-  if (wideSpread || missingSpread) sc = Math.min(sc, 44);
+  if (wideSpread || (missingSpread && otherOk)) sc = Math.min(sc, 44);
   // Потолок для непрошедших: 77+ ⇔ вход, тот же инвариант, что у REV.
   // Считаем от checks.length, а не от числа — условий стало шесть.
   if (!allOk) sc = Math.min(sc, 74);
@@ -213,7 +223,9 @@ function calcScalpScore(s, vol24, spreadPct) {
   else if (allOk) tag = 'ВХОД';
   else if (passed === checks.length - 1) tag = 'БЛИЗКО';
   else tag = 'ЖДАТЬ';
-  if (missingSpread && liquid) tag = '\u0421\u041f\u0420\u0415\u0414 \u041d/\u0414';
+  // «СПРЕД Н/Д» только там, где спред и правда мешает войти. Иначе
+  // ярлык врал: BTC на 77% диапазона с RSI 69 стоит совсем не из-за спреда.
+  if (missingSpread && liquid && otherOk) tag = 'СПРЕД Н/Д';
 
   return {
     score: sc, tag, pass: allOk, passed, checks,
