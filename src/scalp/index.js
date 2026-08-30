@@ -1,20 +1,8 @@
 /**
- * SCALP SCORE — краткосрочный сигнал, горизонт 2-6 часов.
- * ────────────────────────────────────────────────────────────────────────
- * Веса и условия взяты из бэктеста на 28 252 сэмплах (109 монет, 7 дней,
- * свечи 5m, цель +1.38% / стоп −1.5%, проход вперёд без заглядывания).
+ * SCALP SCORE — a 2–6 hour structural candidate.
  *
- * Что показал бэктест:
- *   • горизонт 20-60 минут НЕ РАБОТАЕТ: средний ход за час 0.177%,
- *     комиссия круга 0.25% — сигнал физически не окупает исполнение
- *     (ожидание базы −0.130% на сделку)
- *   • 3 часа — всё ещё минус (−0.038%)
- *   • 6 часов — впервые плюс (+0.014% база)
- *   • «купить провал» вредит и здесь: RSI<30 даёт −11пп, провал за 30мин −4пп,
- *     «у дна + объём» −6пп. То же, что на дневном горизонте.
- *   • лучшая связка: у дна 4ч диапазона + RSI вышел из перепроданности
- *     + цена выше EMA9 → 68% побед, ожидание +0.199% на сделку;
- *     на плохом отрезке рынка не теряет (−0.007%), на остальных +0.23 и +0.52%
+ * Local conditions and trade authorization are separate: authorization requires
+ * a matching result in scalp-gate-validation.json.
  */
 
 const CB = 'https://api.exchange.coinbase.com';
@@ -106,6 +94,9 @@ async function fetchScalpSignals(coin) {
     ? (closes[i - 48] / closes[i - 288] - 1) * 100
     : null;
 
+  // Exact distance from the 4h high; the lab uses this as an observation,
+  // so it must not approximate a percent change with range position.
+  const dropFromHigh4Pct = hi > 0 ? (hi - px) / hi * 100 : null;
   // Насколько монета ниже своей вершины за 14 дней.
   //
   // Условие «не после пампа» смотрит только сутки, и монета, выросшая
@@ -140,6 +131,7 @@ async function fetchScalpSignals(coin) {
     rsiRecover: rMin != null && rNow != null && rMin < 30 && rNow > rMin + 3,
     rangePos: Math.round(rangePos * 100) / 100,
     range4Pct: range4Pct != null ? Math.round(range4Pct * 10) / 10 : null,
+    dropFromHigh4Pct: dropFromHigh4Pct != null ? Math.round(dropFromHigh4Pct * 100) / 100 : null,
     runUp24: runUp24 != null ? Math.round(runUp24 * 10) / 10 : null,
     fromHigh14: fromHigh14 != null ? Math.round(fromHigh14 * 10) / 10 : null,
     low4h: lo, high4h: hi,
@@ -151,12 +143,16 @@ async function fetchScalpSignals(coin) {
 }
 
 /**
- * Скоринг. Гейт из 4 условий — ровно та связка, что показала +0.199%
- * на сделку при 68% побед, плюс ликвидность (иначе исполнение съест сигнал).
+ * Structural score only. `pass` means that local checks pass; it is not
+ * permission to enter until independent historical validation is attached.
  */
 function calcScalpScore(s, vol24, spreadPct) {
   if (!s) return null;
   const liquid = vol24 >= 500e3;
+  // A short target cannot assume that an unavailable ticker has a tight spread.
+  // Unknown or malformed bid/ask is a failed entry check, never an approval.
+  const spreadKnown = Number.isFinite(spreadPct) && spreadPct >= 0;
+  const spreadOk = spreadKnown && spreadPct <= 0.4;
   // `k` — подпись в интерфейсе, `en` — та же проверка по-английски: задание
   // для Claude Code собирается на английском, и раньше туда протекала
   // кириллица, которая на пути через shell превращалась в мусор.
@@ -173,6 +169,7 @@ function calcScalpScore(s, vol24, spreadPct) {
     // с условием по режиму: отсутствие сведений это не разрешение.
     { k: 'Не глубже 10% под вершиной 14д', en: 'Within 10% of its 14-day high', ok: s.fromHigh14 != null && s.fromHigh14 >= -10, v: s.fromHigh14 != null ? s.fromHigh14 + '%' : 'нет данных' },
     { k: 'Ликвидность ≥ $500K', en: 'Liquidity >= $500K', ok: liquid, v: '$' + Math.round(vol24 / 1e3) + 'K' },
+    { k: 'Спред проверен и ≤0.4%', en: 'Spread verified and <=0.4%', ok: spreadOk, v: spreadKnown ? spreadPct.toFixed(2) + '%' : 'нет данных' },
   ];
   const passed = checks.filter(x => x.ok).length;
   const allOk = passed === checks.length;
@@ -198,14 +195,15 @@ function calcScalpScore(s, vol24, spreadPct) {
   if (s.runUp24 != null && s.runUp24 > 15) sc -= 15;
 
   // Спред критичен: цель всего 1.38%, широкий спред съедает её на входе-выходе
-  let wideSpread = false;
-  if (spreadPct != null && spreadPct > 0.4) { sc -= 15; wideSpread = true; }
+  const wideSpread = spreadKnown && !spreadOk;
+  const missingSpread = !spreadKnown;
+  if (wideSpread) sc -= 15;
 
   if (!liquid) sc = Math.min(sc, 39);
-  if (wideSpread) sc = Math.min(sc, 44);
+  if (wideSpread || missingSpread) sc = Math.min(sc, 44);
   // Потолок для непрошедших: 77+ ⇔ вход, тот же инвариант, что у REV.
   // Считаем от checks.length, а не от числа — условий стало шесть.
-  if (!allOk || wideSpread) sc = Math.min(sc, 74);
+  if (!allOk) sc = Math.min(sc, 74);
   sc = Math.max(0, Math.min(100, Math.round(sc)));
 
   let tag;
@@ -215,15 +213,18 @@ function calcScalpScore(s, vol24, spreadPct) {
   else if (allOk) tag = 'ВХОД';
   else if (passed === checks.length - 1) tag = 'БЛИЗКО';
   else tag = 'ЖДАТЬ';
+  if (missingSpread && liquid) tag = '\u0421\u041f\u0420\u0415\u0414 \u041d/\u0414';
 
   return {
-    score: sc, tag, pass: allOk && !wideSpread, passed, checks,
+    score: sc, tag, pass: allOk, passed, checks,
     rsi: s.rsi5, rangePos: s.rangePos, volX: s.volX,
-    range4Pct: s.range4Pct, runUp24: s.runUp24,
+    range4Pct: s.range4Pct, dropFromHigh4Pct: s.dropFromHigh4Pct, runUp24: s.runUp24,
     // Отдаём числами: лаборатория раньше выковыривала rsiMin регуляркой из
     // русского текста проверки и молча получала NaN при правке формулировки
     rsiMin: s.rsiMin1h, rsiRecover: !!s.rsiRecover,
-    aboveE9: !!s.aboveE9, spreadPct: spreadPct != null ? Math.round(spreadPct * 100) / 100 : null,
+    aboveE9: !!s.aboveE9,
+    spreadPct: spreadKnown ? Math.round(spreadPct * 100) / 100 : null,
+    spreadVerified: spreadKnown,
   };
 }
 

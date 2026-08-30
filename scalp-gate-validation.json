@@ -1,0 +1,636 @@
+{
+  "version": 1,
+  "fingerprint": "f1cb8ec08c7d",
+  "generatedAt": "2026-08-30T12:24:29.806Z",
+  "config": {
+    "days": 7,
+    "minVolume": 500000,
+    "maxCoins": 110,
+    "targetPct": 2,
+    "slPct": 6,
+    "feeSidePct": 0.25,
+    "maxHoldHours": 48,
+    "cooldownHours": 4
+  },
+  "scope": {
+    "universeAsOf": "2026-08-30T12:24:29.806Z",
+    "selectedCoins": [
+      {
+        "coin": "BTC",
+        "volume": 198808195.41
+      },
+      {
+        "coin": "ETH",
+        "volume": 79485600.52
+      },
+      {
+        "coin": "SOL",
+        "volume": 62667716.34
+      },
+      {
+        "coin": "XRP",
+        "volume": 61172714.65
+      },
+      {
+        "coin": "ZEC",
+        "volume": 53296571.96
+      },
+      {
+        "coin": "HNT",
+        "volume": 19737693.82
+      },
+      {
+        "coin": "UNI",
+        "volume": 11232177.19
+      },
+      {
+        "coin": "SUI",
+        "volume": 9251970.41
+      },
+      {
+        "coin": "DOGE",
+        "volume": 8831657.94
+      },
+      {
+        "coin": "LINK",
+        "volume": 8104330.13
+      },
+      {
+        "coin": "ADA",
+        "volume": 7348738.32
+      },
+      {
+        "coin": "TRUMP",
+        "volume": 6597225.52
+      },
+      {
+        "coin": "NEAR",
+        "volume": 5733554.79
+      },
+      {
+        "coin": "TAO",
+        "volume": 4533803.11
+      },
+      {
+        "coin": "LTC",
+        "volume": 3876849.68
+      },
+      {
+        "coin": "XLM",
+        "volume": 3870216.23
+      },
+      {
+        "coin": "ENA",
+        "volume": 3672501.95
+      },
+      {
+        "coin": "LIGHTER",
+        "volume": 3289067.72
+      },
+      {
+        "coin": "AAVE",
+        "volume": 2968205.66
+      },
+      {
+        "coin": "VVV",
+        "volume": 2918305.72
+      },
+      {
+        "coin": "ICP",
+        "volume": 2483327.4
+      },
+      {
+        "coin": "ONDO",
+        "volume": 2439815.3
+      },
+      {
+        "coin": "PENGU",
+        "volume": 2343647.03
+      },
+      {
+        "coin": "AVAX",
+        "volume": 2262350.89
+      },
+      {
+        "coin": "HBAR",
+        "volume": 2205821.32
+      },
+      {
+        "coin": "DASH",
+        "volume": 1928877.39
+      },
+      {
+        "coin": "WLD",
+        "volume": 1807358.65
+      },
+      {
+        "coin": "BICO",
+        "volume": 1728726.23
+      },
+      {
+        "coin": "FET",
+        "volume": 1593869.23
+      },
+      {
+        "coin": "FARTCOIN",
+        "volume": 1525567.62
+      },
+      {
+        "coin": "BCH",
+        "volume": 1512710.52
+      },
+      {
+        "coin": "AERO",
+        "volume": 1471485.32
+      },
+      {
+        "coin": "NKN",
+        "volume": 1454490.52
+      },
+      {
+        "coin": "ZORA",
+        "volume": 1445172.04
+      },
+      {
+        "coin": "HIGH",
+        "volume": 1317073.57
+      },
+      {
+        "coin": "NCT",
+        "volume": 1045001.68
+      },
+      {
+        "coin": "POL",
+        "volume": 1036230.92
+      },
+      {
+        "coin": "XPL",
+        "volume": 1026048.34
+      },
+      {
+        "coin": "STX",
+        "volume": 1020222.07
+      },
+      {
+        "coin": "WIF",
+        "volume": 1017406.01
+      },
+      {
+        "coin": "VET",
+        "volume": 959861.51
+      },
+      {
+        "coin": "USELESS",
+        "volume": 934798.22
+      },
+      {
+        "coin": "ZKP",
+        "volume": 928572.68
+      },
+      {
+        "coin": "O",
+        "volume": 914401.7
+      },
+      {
+        "coin": "BNB",
+        "volume": 905289.26
+      },
+      {
+        "coin": "RENDER",
+        "volume": 903770.3
+      },
+      {
+        "coin": "BASECAT",
+        "volume": 902374.17
+      },
+      {
+        "coin": "SWELL",
+        "volume": 867392.78
+      },
+      {
+        "coin": "FIL",
+        "volume": 841369.83
+      },
+      {
+        "coin": "TRAC",
+        "volume": 826893.98
+      },
+      {
+        "coin": "MDT",
+        "volume": 826562.95
+      },
+      {
+        "coin": "MON",
+        "volume": 820129.82
+      },
+      {
+        "coin": "DOT",
+        "volume": 813090.56
+      },
+      {
+        "coin": "SPX",
+        "volume": 745678.92
+      },
+      {
+        "coin": "INJ",
+        "volume": 690819.3
+      },
+      {
+        "coin": "CHIP",
+        "volume": 674459.72
+      },
+      {
+        "coin": "GHST",
+        "volume": 665554.29
+      },
+      {
+        "coin": "XAN",
+        "volume": 662548.24
+      },
+      {
+        "coin": "SEI",
+        "volume": 654730.58
+      },
+      {
+        "coin": "STRK",
+        "volume": 647153.26
+      },
+      {
+        "coin": "GRVT",
+        "volume": 627719.06
+      },
+      {
+        "coin": "CRV",
+        "volume": 622460.56
+      },
+      {
+        "coin": "BONK",
+        "volume": 620775.02
+      },
+      {
+        "coin": "MORPHO",
+        "volume": 606936.61
+      },
+      {
+        "coin": "TON",
+        "volume": 577021.99
+      },
+      {
+        "coin": "OP",
+        "volume": 572421.64
+      },
+      {
+        "coin": "APT",
+        "volume": 545253.59
+      },
+      {
+        "coin": "AUCTION",
+        "volume": 510603.63
+      }
+    ],
+    "usableCoins": 30,
+    "modeledChecks": [
+      "Bottom of 4h range (<25%)",
+      "RSI 5m recovering off its low",
+      "Price above EMA9 (5m)",
+      "4h range no wider than 8%",
+      "Not after a pump (24h run-up <=15%)",
+      "Within 10% of its 14-day high",
+      "Liquidity >= current $500K proxy",
+      "BTC above EMA20 (1h)",
+      "BTC 7-day return positive"
+    ],
+    "caveats": [
+      "Historical bid/ask snapshots are unavailable, so the mandatory live spread check is not replayed.",
+      "Coin liquidity and universe membership use the current Coinbase snapshot; this is a survivorship proxy.",
+      "OHLC cannot order a candle that touches both target and stop; the simulator counts it as a stop."
+    ]
+  },
+  "overall": {
+    "name": "Current structural gate",
+    "n": 45,
+    "winRate": 66.7,
+    "avgPct": -0.648,
+    "profitFactor": 0.61,
+    "tp": 30,
+    "sl": 8,
+    "time": 7,
+    "clusters": {
+      "clusters": 22,
+      "avgPct": -0.678,
+      "positivePct": 63.6
+    },
+    "segments": [
+      {
+        "segment": 1,
+        "from": "2026-08-23T20:20:00.000Z",
+        "to": "2026-08-25T07:48:20.333Z",
+        "n": 21,
+        "winRate": 76.2,
+        "avgPct": -0.236,
+        "profitFactor": 0.83,
+        "tp": 16,
+        "sl": 4,
+        "time": 1
+      },
+      {
+        "segment": 2,
+        "from": "2026-08-25T07:48:20.333Z",
+        "to": "2026-08-26T19:16:40.666Z",
+        "n": 5,
+        "winRate": 60,
+        "avgPct": -1.029,
+        "profitFactor": 0.47,
+        "tp": 3,
+        "sl": 1,
+        "time": 1
+      },
+      {
+        "segment": 3,
+        "from": "2026-08-26T19:16:40.666Z",
+        "to": "2026-08-28T06:45:01.000Z",
+        "n": 19,
+        "winRate": 57.9,
+        "avgPct": -1.002,
+        "profitFactor": 0.46,
+        "tp": 11,
+        "sl": 3,
+        "time": 5
+      }
+    ],
+    "positiveSegments": 0
+  },
+  "variants": [
+    {
+      "name": "Current structural gate",
+      "n": 45,
+      "winRate": 66.7,
+      "avgPct": -0.648,
+      "profitFactor": 0.61,
+      "tp": 30,
+      "sl": 8,
+      "time": 7,
+      "clusters": {
+        "clusters": 22,
+        "avgPct": -0.678,
+        "positivePct": 63.6
+      },
+      "segments": [
+        {
+          "segment": 1,
+          "from": "2026-08-23T20:20:00.000Z",
+          "to": "2026-08-25T07:48:20.333Z",
+          "n": 21,
+          "winRate": 76.2,
+          "avgPct": -0.236,
+          "profitFactor": 0.83,
+          "tp": 16,
+          "sl": 4,
+          "time": 1
+        },
+        {
+          "segment": 2,
+          "from": "2026-08-25T07:48:20.333Z",
+          "to": "2026-08-26T19:16:40.666Z",
+          "n": 5,
+          "winRate": 60,
+          "avgPct": -1.029,
+          "profitFactor": 0.47,
+          "tp": 3,
+          "sl": 1,
+          "time": 1
+        },
+        {
+          "segment": 3,
+          "from": "2026-08-26T19:16:40.666Z",
+          "to": "2026-08-28T06:45:01.000Z",
+          "n": 19,
+          "winRate": 57.9,
+          "avgPct": -1.002,
+          "profitFactor": 0.46,
+          "tp": 11,
+          "sl": 3,
+          "time": 5
+        }
+      ],
+      "positiveSegments": 0
+    },
+    {
+      "name": "Hypothesis: RSI 40-50",
+      "n": 36,
+      "winRate": 75,
+      "avgPct": 0.023,
+      "profitFactor": 1.02,
+      "tp": 27,
+      "sl": 4,
+      "time": 5,
+      "clusters": {
+        "clusters": 19,
+        "avgPct": 0.313,
+        "positivePct": 73.7
+      },
+      "segments": [
+        {
+          "segment": 1,
+          "from": "2026-08-23T20:20:00.000Z",
+          "to": "2026-08-25T07:48:20.333Z",
+          "n": 17,
+          "winRate": 82.4,
+          "avgPct": 0.294,
+          "profitFactor": 1.32,
+          "tp": 14,
+          "sl": 2,
+          "time": 1
+        },
+        {
+          "segment": 2,
+          "from": "2026-08-25T07:48:20.333Z",
+          "to": "2026-08-26T19:16:40.666Z",
+          "n": 4,
+          "winRate": 75,
+          "avgPct": 0.331,
+          "profitFactor": 1.42,
+          "tp": 3,
+          "sl": 0,
+          "time": 1
+        },
+        {
+          "segment": 3,
+          "from": "2026-08-26T19:16:40.666Z",
+          "to": "2026-08-28T06:45:01.000Z",
+          "n": 15,
+          "winRate": 66.7,
+          "avgPct": -0.367,
+          "profitFactor": 0.73,
+          "tp": 10,
+          "sl": 2,
+          "time": 3
+        }
+      ],
+      "positiveSegments": 2
+    },
+    {
+      "name": "Hypothesis: range4 <4%",
+      "n": 20,
+      "winRate": 45,
+      "avgPct": -1.802,
+      "profitFactor": 0.27,
+      "tp": 9,
+      "sl": 5,
+      "time": 6,
+      "clusters": {
+        "clusters": 12,
+        "avgPct": -1.486,
+        "positivePct": 50
+      },
+      "segments": [
+        {
+          "segment": 1,
+          "from": "2026-08-24T00:55:00.000Z",
+          "to": "2026-08-25T09:43:20.333Z",
+          "n": 7,
+          "winRate": 42.9,
+          "avgPct": -2.078,
+          "profitFactor": 0.24,
+          "tp": 3,
+          "sl": 2,
+          "time": 2
+        },
+        {
+          "segment": 2,
+          "from": "2026-08-25T09:43:20.333Z",
+          "to": "2026-08-26T18:31:40.666Z",
+          "n": 2,
+          "winRate": 100,
+          "avgPct": 1.491,
+          "profitFactor": null,
+          "tp": 2,
+          "sl": 0,
+          "time": 0
+        },
+        {
+          "segment": 3,
+          "from": "2026-08-26T18:31:40.666Z",
+          "to": "2026-08-28T03:20:01.000Z",
+          "n": 11,
+          "winRate": 36.4,
+          "avgPct": -2.225,
+          "profitFactor": 0.2,
+          "tp": 4,
+          "sl": 3,
+          "time": 4
+        }
+      ],
+      "positiveSegments": 1
+    },
+    {
+      "name": "Hypothesis: exclude flat pre-range run-up",
+      "n": 26,
+      "winRate": 65.4,
+      "avgPct": -0.96,
+      "profitFactor": 0.5,
+      "tp": 17,
+      "sl": 6,
+      "time": 3,
+      "clusters": {
+        "clusters": 19,
+        "avgPct": -0.547,
+        "positivePct": 68.4
+      },
+      "segments": [
+        {
+          "segment": 1,
+          "from": "2026-08-23T20:20:00.000Z",
+          "to": "2026-08-25T07:48:20.333Z",
+          "n": 14,
+          "winRate": 64.3,
+          "avgPct": -1.099,
+          "profitFactor": 0.47,
+          "tp": 9,
+          "sl": 4,
+          "time": 1
+        },
+        {
+          "segment": 2,
+          "from": "2026-08-25T07:48:20.333Z",
+          "to": "2026-08-26T19:16:40.666Z",
+          "n": 3,
+          "winRate": 66.7,
+          "avgPct": -1.163,
+          "profitFactor": 0.46,
+          "tp": 2,
+          "sl": 1,
+          "time": 0
+        },
+        {
+          "segment": 3,
+          "from": "2026-08-26T19:16:40.666Z",
+          "to": "2026-08-28T06:45:01.000Z",
+          "n": 9,
+          "winRate": 66.7,
+          "avgPct": -0.676,
+          "profitFactor": 0.6,
+          "tp": 6,
+          "sl": 1,
+          "time": 2
+        }
+      ],
+      "positiveSegments": 0
+    },
+    {
+      "name": "Hypothesis: drop from 4h high >=4%",
+      "n": 13,
+      "winRate": 84.6,
+      "avgPct": 0.266,
+      "profitFactor": 1.27,
+      "tp": 11,
+      "sl": 2,
+      "time": 0,
+      "clusters": {
+        "clusters": 12,
+        "avgPct": 0.164,
+        "positivePct": 83.3
+      },
+      "segments": [
+        {
+          "segment": 1,
+          "from": "2026-08-23T20:35:00.000Z",
+          "to": "2026-08-25T07:58:20.333Z",
+          "n": 8,
+          "winRate": 87.5,
+          "avgPct": 0.496,
+          "profitFactor": 1.61,
+          "tp": 7,
+          "sl": 1,
+          "time": 0
+        },
+        {
+          "segment": 2,
+          "from": "2026-08-25T07:58:20.333Z",
+          "to": "2026-08-26T19:21:40.666Z",
+          "n": 1,
+          "winRate": 0,
+          "avgPct": -6.469,
+          "profitFactor": 0,
+          "tp": 0,
+          "sl": 1,
+          "time": 0
+        },
+        {
+          "segment": 3,
+          "from": "2026-08-26T19:21:40.666Z",
+          "to": "2026-08-28T06:45:01.000Z",
+          "n": 4,
+          "winRate": 100,
+          "avgPct": 1.491,
+          "profitFactor": null,
+          "tp": 4,
+          "sl": 0,
+          "time": 0
+        }
+      ],
+      "positiveSegments": 2
+    }
+  ],
+  "elapsedSeconds": 185.6
+}

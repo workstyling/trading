@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "node start.js",
+    "validate:scalp": "node src/scalp/validate-gate.js",
     "start": "node start.js"
   },
   "dependencies": {

@@ -277,10 +277,13 @@ function buildBrief(trades, meta) {
   lines.push('');
   lines.push('- `src/scalp/index.js` — `calcScalpScore()`: gate conditions and scoring');
   lines.push('- `src/scalp/scanner.js` — `applyRegime()`: the hard BTC regime condition');
-  lines.push('- `src/scalp/backtest.js`, `exits.js`, `research.js` — how to re-check on history');
+  lines.push('- `src/scalp/validate-gate.js` — reproducible check of the current structural gate');
+  lines.push('- `src/scalp/backtest.js`, `exits.js`, `research.js` — exploratory research tools');
   lines.push('');
   // Условия читаются из живого расчёта, а не вписаны сюда руками: иначе
   // после правки алгоритма задание описывало бы прошлую версию.
+  const historical = (meta && meta.historical) || null;
+  const archived = (meta && meta.archivedStats) || null;
   const live = (meta && meta.liveChecks) || [];
   if (live.length) {
     lines.push(`Current gate — ${live.length} conditions (read from the running scanner):`);
@@ -330,13 +333,19 @@ function buildBrief(trades, meta) {
     // новом — то есть утверждение было неверным ровно тогда, когда это важно.
     const stale = (meta && meta.staleCount) || 0;
     if (stale) {
-      lines.push(`Of the trades below, ${stale} were OPENED before the last generation change`);
-      lines.push('and closed after it. They are counted, but they did not test the change.');
+      lines.push(`${stale} trades were opened before the last generation change and are archived.`);
+      lines.push('They are excluded from conclusions about the current gate.');
     } else {
       lines.push('The numbers below were collected AFTER the last change — they test what it');
       lines.push('did, they are not a repeat of the earlier analysis.');
     }
     lines.push('');
+  if (archived && archived.n) {
+    lines.push(`- Archived prior-generation trades: **${archived.n}**, ${archived.winRate}% wins, **${d(archived.avgPct)}%** per trade.`);
+    lines.push('- They are retained for audit only and do not measure the current gate.');
+    lines.push('');
+  }
+
   }
   lines.push('## What the live trades produced');
   lines.push('');
@@ -371,6 +380,16 @@ function buildBrief(trades, meta) {
       }
       lines.push('Come back once trades start closing. Nothing here can be acted on yet.');
     }
+    lines.push('');
+    if (historical && historical.overall && historical.overall.n) {
+      const hist = historical.overall;
+      lines.push(`Historical validation for this fingerprint: **${d(hist.avgPct)}%** per trade, PF ${hist.profitFactor ?? 'n/a'}, ${hist.positiveSegments}/3 positive segments (n=${hist.n}).`);
+      if (!(hist.avgPct > 0 && hist.profitFactor > 1 && hist.positiveSegments === 3)) {
+        lines.push('It does not validate live entries. The paper journal remains on only to collect a fresh independent cohort.');
+      }
+    } else {
+      lines.push('No sufficient historical validation matches this fingerprint yet. Run `npm run validate:scalp -- 7 500000`.');
+    }
     return lines.join('\n');
   }
   lines.push(`- Trades collected: **${base.n}**` + (meta && meta.since ? ` over ${meta.since}` : ''));
@@ -379,16 +398,9 @@ function buildBrief(trades, meta) {
   lines.push(`- Total: **${d(base.totalUsd)}$**` + (base.avgHoldH != null ? `, average hold ${base.avgHoldH}h` : ''));
   lines.push(`- Worst trade: **${base.worstPct}%**`);
   lines.push('');
-  // База именно скальп-гейта: +0.199% при 68% побед (28 252 сэмпла, 6ч горизонт).
-  // Раньше здесь стояло +0.914% — это число из теста стопов для paper-бота,
-  // и задание всегда докладывало, что гейт сломан.
-  // Эталон пересчитан. Раньше здесь стояло +0.199% при 68% побед — цифра с
-  // ОДНОЙ недели, на которой гейт калибровался. Прогон на 25 днях и 927
-  // входах по текущему гейту дал -0.103% при 60% побед и профит-факторе 0.90,
-  // причём положителен только последний из трёх отрезков. Сравнивать живые
-  // результаты со старым числом значило докладывать тревожное расхождение
-  // там, где живые данные как раз СОВПАДАЮТ с историей.
-  const BASE_EXP = 0.101, BASE_WIN = 66;
+  // Do not keep a static benchmark here. A historical result is usable only
+  // when its saved fingerprint matches the running gate and its assumptions
+  // are shown next to the result.
   // Кучность: без неё выборка выглядит втрое-вчетверо надёжнее, чем она есть
   const cl = clusterStats(trades);
   if (cl) {
@@ -404,18 +416,21 @@ function buildBrief(trades, meta) {
       lines.push('');
     }
   }
-  lines.push(`Backtest over 60 days, 1383 entries on the CURRENT gate (weekly-return`);
-  lines.push(`condition included): **${d(BASE_EXP)}%** per trade at ${BASE_WIN}% wins, profit factor 1.10.`);
-  lines.push('The edge is real but thin — roughly 0.1% against a 0.25% round trip. Without');
-  lines.push('the weekly condition the same gate measured -0.103% at PF 0.90, so most of');
-  lines.push('what the gate has is that one filter.');
-  lines.push('');
-  lines.push('A live result far ABOVE this figure means the market is unusually kind, not');
-  lines.push('that the gate is better than measured. Expect reversion toward the backtest.');
-  lines.push('');
-  const drift = Math.round((base.avgPct - BASE_EXP) * 1000) / 1000;
-  lines.push(`Live data differs from that by **${d(drift)} pp** on result and ` +
-    `**${d(base.winRate - BASE_WIN)} pp** on win rate.`);
+  if (historical && historical.overall && historical.overall.n) {
+    const hist = historical.overall;
+    lines.push(`Reproducible structural validation for this fingerprint: **${d(hist.avgPct)}%** per trade at ${hist.winRate}% wins, PF ${hist.profitFactor ?? 'n/a'} (n=${hist.n}).`);
+    const bySegment = (hist.segments || []).filter(s => Number.isFinite(s.avgPct))
+      .map(s => `S${s.segment}: ${d(s.avgPct)}%`).join(', ');
+    if (bySegment) lines.push(`Three time segments: ${bySegment}.`);
+    if (historical.scope && Array.isArray(historical.scope.caveats) && historical.scope.caveats.length) {
+      lines.push(`Caveat: ${historical.scope.caveats[0]}`);
+    }
+    const drift = Math.round((base.avgPct - hist.avgPct) * 1000) / 1000;
+    lines.push(`Current live cohort differs from that result by **${d(drift)} pp**.`);
+  } else {
+    lines.push('No reproducible historical validation matches this exact gate fingerprint yet.');
+    lines.push('Run `npm run validate:scalp -- 7 500000` before tuning any threshold.');
+  }
   lines.push('');
 
   // ── Причины выхода ───────────────────────────────────────────────────
@@ -686,7 +701,7 @@ function buildBrief(trades, meta) {
   lines.push('## Hard requirement');
   lines.push('');
   lines.push('Run every change against historical data first');
-  lines.push('(`node src/scalp/backtest.js 7 500000`) and check stability across three time');
+  lines.push('(`npm run validate:scalp -- 7 500000`) and check stability across three time');
   lines.push('segments. Do not accept changes that improve only the overall result but do');
   lines.push('not hold across segments — that already happened with the "signal age" idea');
   lines.push('and with the EMA9 exit.');

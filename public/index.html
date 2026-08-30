@@ -13690,8 +13690,9 @@ Requirements:
             </div></td>
             ${(() => {
               const x = c.sc;
+              const tag = x && x.tag === 'ВХОД' ? 'СТРУКТУРА' : (x ? x.tag : '…');
               const col = !x ? '#667'
-                : x.tag === 'ВХОД' ? '#4cc9f0'
+                : tag === 'СТРУКТУРА' ? '#4cc9f0'
                 : x.tag === 'БЛИЗКО' ? '#f5c518'
                 : x.tag === 'ШИРОКИЙ СПРЕД' ? '#f55'
                 : '#8892a0';
@@ -13699,13 +13700,11 @@ Requirements:
                 ? `СКАЛЬП ${x.score}/100 — гейт ${x.passed}/${x.checks.length}&#10;` +
                   x.checks.map(y => `${y.ok ? '✓' : '✗'} ${y.k}: ${y.v}`).join('&#10;') +
                   (x.spreadPct != null ? `&#10;спред: ${x.spreadPct}%` : '') +
-                  `&#10;&#10;Правило: 86+ = ВХОД. Горизонт 2–6 часов, цель — поле «Цель %».&#10;` +
-                  `Откалиброван на 28 тыс. сэмплов (свечи 5m): 68% побед.&#10;` +
-                  `Вход 20–60 минут проверен и НЕ работает: ход за час 0.18%&#10;при комиссии круга 0.25%.`
+                  `&#10;&#10;86+ подтверждает только структуру гейта. Статус разрешения входов смотри в полном скальп-сканере.`
                 : 'Скальп ещё не посчитан (обновляется раз в 3 минуты)';
               return `<td style="text-align:center;"><div title="${tip}" style="cursor:help;display:inline-flex;flex-direction:column;align-items:center;gap:1px;">
                 <span style="font-weight:800;color:${col};font-size:13px;">${x ? x.score : '—'}</span>
-                <span style="font-size:7px;font-weight:800;color:${col};background:${col}22;padding:1px 4px;border-radius:4px;letter-spacing:0.03em;white-space:nowrap;">${x ? x.tag : '…'}</span>
+                <span style="font-size:7px;font-weight:800;color:${col};background:${col}22;padding:1px 4px;border-radius:4px;letter-spacing:0.03em;white-space:nowrap;">${tag}</span>
                 ${x ? `<span style="font-size:7px;color:#667;letter-spacing:0.06em;">${x.checks.map(y => y.ok ? '●' : '○').join('')}</span>` : ''}
               </div></td>`;
             })()}
@@ -13716,7 +13715,7 @@ Requirements:
             </td>
           </tr>`;
         }).join('');
-        body.innerHTML = `<table class="tg-table"><thead><tr><th>#</th><th>COIN</th><th>30D%</th><th>VOL 24H</th><th>MCAP</th>${SHOW_OLD_BUY ? '<th title="Старый рейтинг отскока (0–10): подтверждение разворота после 30д падения + микро-откат для входа">BUY</th>' : ''}<th title="Свинг-сигнал, горизонт 1–3 дня. Веса откалиброваны бэктестом на 1635 сигналах (свечи 4H). Гейт 4/4: просадка −32…−50%, цена выше EMA20 4H, RSI вышел из перепроданности, объём ≥ $500K. Покупать при 77 и выше — это ровно вердикт ВХОД. При 4/4 win-rate 44% против базовых 37%.">СВИНГ<br><span style="font-size:8px;color:#556;font-weight:400;text-transform:none;letter-spacing:0;">1–3 дня</span></th><th title="Краткосрочный сигнал, горизонт 2–6 часов, цель задаётся полем «Цель %» (по умолчанию +2%). Откалиброван на 28 252 сэмплах (свечи 5m, 109 монет). Гейт 6/6: у дна 4-часового диапазона, RSI 5m вышел из перепроданности, цена выше EMA9 5m, диапазон 4ч не шире 8%, роста до входа не больше 15%, объём ≥ $500K. Плюс седьмое условие в сканере: BTC выше EMA20 1ч. ВАЖНО: горизонт 20–60 минут проверен и не работает — средний ход за час 0.18% против комиссии круга 0.25%.">СКАЛЬП<br><span style="font-size:8px;color:#556;font-weight:400;text-transform:none;letter-spacing:0;">2–6 часов</span></th><th>MONTH</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+        body.innerHTML = `<table class="tg-table"><thead><tr><th>#</th><th>COIN</th><th>30D%</th><th>VOL 24H</th><th>MCAP</th>${SHOW_OLD_BUY ? '<th title="Старый рейтинг отскока (0–10): подтверждение разворота после 30д падения + микро-откат для входа">BUY</th>' : ''}<th title="Свинг-сигнал, горизонт 1–3 дня. Веса откалиброваны бэктестом на 1635 сигналах (свечи 4H). Гейт 4/4: просадка −32…−50%, цена выше EMA20 4H, RSI вышел из перепроданности, объём ≥ $500K. Покупать при 77 и выше — это ровно вердикт ВХОД. При 4/4 win-rate 44% против базовых 37%.">СВИНГ<br><span style="font-size:8px;color:#556;font-weight:400;text-transform:none;letter-spacing:0;">1–3 дня</span></th><th title="Структурный скальп-сигнал 2–6 часов. 86+ означает выполнение условий, но не разрешение сделки. Исторический статус и разрешение отображаются в блоке «Скальп по рынку».">СКАЛЬП<br><span style="font-size:8px;color:#556;font-weight:400;text-transform:none;letter-spacing:0;">2–6 часов</span></th><th>MONTH</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
         const u = document.getElementById('tlUpdated');
         if (u && j.updatedAt) u.textContent = new Date(j.updatedAt).toLocaleTimeString();
         // Синхронизация вотча (в т.ч. автогашение кнопки после срабатывания на сервере)
@@ -13737,6 +13736,7 @@ Requirements:
         const j = await r.json();
         if (btn) { btn.disabled = false; btn.classList.remove('spinning'); }
 
+        const validation = j.validation || { ready: false, state: 'missing' };
         // Режим рынка
         const rg = document.getElementById('ssRegime');
         if (rg) {
@@ -13745,8 +13745,7 @@ Requirements:
           rg.className = 'ss-dot' + (m ? (m.above ? ' ok' : ' bad') : '');
           rg.title = m
             ? `BTC ${m.above ? 'выше' : 'ниже'} EMA20 на часовых: ${m.distPct >= 0 ? '+' : ''}${m.distPct}%.\n` +
-              `Замерено на 1119 сигналах: выше EMA20 — 72% побед и +0.239% на сделку, ниже — 54% и −0.211%.\n` +
-              `Ниже EMA20 входы не выдаются: там ожидание отрицательное.`
+              `Это структурное условие. Статус исторической проверки показан в панели скальпа.`
             : 'Режим рынка ещё не посчитан';
         }
         // Прогресс и свежесть
@@ -13803,13 +13802,19 @@ Requirements:
           ? `BTC ${rgm.above ? 'на ' + rgm.distPct + '% выше' : 'на ' + Math.abs(rgm.distPct) + '% ниже'} EMA20 (1ч)`
           : '';
         const regimeBar = !rgm ? '' : bothOk
-          ? `<div class="ss-regime-bar ok"><span>▲</span><span><b>Рынок за нас</b> — ${hourTxt}${trend}, ${weekTxt}. <span class="ss-rb-note">Входы разрешены.</span></span></div>`
+          ? `<div class="ss-regime-bar ok"><span>▲</span><span><b>Рынок за нас</b> — ${hourTxt}${trend}, ${weekTxt}. <span class="ss-rb-note">${validation.ready ? 'Историческая проверка также разрешает входы.' : 'Структурный проход есть, но вход требует отдельной исторической проверки.'}</span></span></div>`
           : `<div class="ss-regime-bar"><span>▼</span><span><b>Рынок против</b> — ${hourTxt}${trend}, ${weekTxt}. <span class="ss-rb-note">Входы не выдаются: ` +
             (!hourOk && !weekOk ? 'не выполнены оба условия режима — час и неделя.'
-              : !hourOk ? 'ниже EMA20 ожидание −0.211% против +0.239% выше.'
-              : 'при отрицательной неделе BTC ожидание −0.500% при профит-факторе 0.61, убыток на всех трёх отрезках.') +
+              : !hourOk ? 'BTC ниже EMA20 (1ч).'
+              : 'недельная доходность BTC не положительна.') +
             ` Баллы сжаты в 0–60, порядок сохранён.</span></span></div>`;
-        body.innerHTML = regimeBar + `<table class="tg-table"><thead><tr>
+        const validationNote = validation.state === 'missing'
+          ? 'Нет актуального прогона для этой версии кода. Запусти npm run validate:scalp -- 7 500000.'
+          : `Проверка 7д: ${validation.n} входов, ${validation.avgPct >= 0 ? '+' : ''}${validation.avgPct}% на сделку, PF ${validation.profitFactor}, положительных отрезков ${validation.positiveSegments}/3.`;
+        const validationBar = validation.ready
+          ? `<div class="ss-regime-bar ok"><span>✓</span><span><b>Историческая проверка пройдена.</b> ${validationNote}</span></div>`
+          : `<div class="ss-regime-bar" style="border-color:rgba(248,113,113,.55);"><span style="color:#f87171;">⚠</span><span><b style="color:#f87171;">Входы и алерты заблокированы.</b> ${validationNote} Paper-журнал продолжает собирать независимые данные.</span></div>`;
+        body.innerHTML = regimeBar + validationBar + `<table class="tg-table"><thead><tr>
             <th>COIN</th><th title="Балл 0–100. Полоса под числом — насколько близко до входа. При закрытом режиме шкала сжата в 0–60.">SCORE</th>
             <th title="Сколько из условий гейта выполнено">ГЕЙТ</th>
             <th title="Позиция в 4-часовом диапазоне: 0% = у самого дна. Залитая часть дорожки — зона входа (нижние 25%).">У ДНА</th>
@@ -13824,20 +13829,24 @@ Requirements:
             // так таблица из списка наблюдения становится списком ожидания.
             const own = x.tagOwn || x.tag;
             const miss = (own === 'БЛИЗКО' && x.checks) ? x.checks.find(c => !c.ok) : null;
-            const tg = (x.tagOwn === 'ВХОД' && !x.pass) ? 'ЖДЁТ РЫНКА'
+            const notValidated = !!(x.pass && !x.tradeReady);
+            const tg = notValidated ? 'НЕ ПРОВЕРЕНО'
+              : (x.tagOwn === 'ВХОД' && !x.pass) ? 'ЖДЁТ РЫНКА'
               : miss ? 'ждёт ' + _shortCheck(miss.k) : own;
-            const col = tg === 'ВХОД' ? '#4cc9f0' : tg === 'ЖДЁТ РЫНКА' ? '#5ba9c4' : (tg === 'БЛИЗКО' || miss) ? '#f5c518'
+            const col = tg === 'НЕ ПРОВЕРЕНО' ? '#f87171'
+              : tg === 'ВХОД' ? '#4cc9f0' : tg === 'ЖДЁТ РЫНКА' ? '#5ba9c4' : (tg === 'БЛИЗКО' || miss) ? '#f5c518'
               : tg === 'ШИРОКИЙ СПРЕД' || tg === 'ПОСЛЕ ПАМПА' ? '#ff6b6b'
               : tg === 'НЕЛИКВИД' ? '#8892a0' : '#7c8698';
             const tip = `SCALP ${x.score}/100 — гейт ${x.passed}/${x.checks.length}&#10;` +
               x.checks.map(y => `${y.ok ? '✓' : '✗'} ${y.k}: ${y.v}`).join('&#10;') +
               (x.scoreRaw != null ? `&#10;&#10;Без учёта режима рынка балл ${x.scoreRaw}.` : '') +
               (x.scorePrev != null ? `&#10;Прошлый скан: ${x.scorePrev} (${x.scoreDelta >= 0 ? '+' : ''}${x.scoreDelta}).` : '') +
-              `&#10;&#10;Правило: 86+ = ВХОД. Горизонт 2–6 часов.`;
+              `&#10;&#10;86+ подтверждает только структуру гейта; для входа нужна положительная историческая проверка. Горизонт 2–6 часов.` +
+              (notValidated ? `&#10;Историческая проверка: ${validation.state === 'missing' ? 'нет актуального прогона' : 'не пройдена'}.` : '');
             const sprCol = x.spreadPct == null ? '#667' : x.spreadPct > 0.4 ? '#f55' : x.spreadPct > 0.15 ? '#f5c518' : '#00e5a0';
             const posPct = Math.round(x.rangePos * 100);
             const posCol = x.rangePos < 0.25 ? '#4ade80' : '#7c8698';
-            return `<tr style="cursor:pointer;${x.pass ? 'background:rgba(76,201,240,0.10);box-shadow:inset 3px 0 0 #4cc9f0;' : ''}" onclick="selectCoinForBuy('${x.coin}')" title="Выбрать ${x.coin} для покупки">
+            return `<tr style="cursor:pointer;${x.tradeReady ? 'background:rgba(76,201,240,0.10);box-shadow:inset 3px 0 0 #4cc9f0;' : ''}" onclick="selectCoinForBuy('${x.coin}')" title="Выбрать ${x.coin} для покупки">
               <td class="tg-coin" style="font-size:12px;">${x.coin}<br><span style="color:#555;font-size:10px;font-weight:400;">$${px(x.price)}</span></td>
               <td><div class="ss-score" title="${tip}">
                 <span class="ss-score-n" style="color:${col};">${x.score}${_scoreTrend(x.scoreDelta)}</span>
@@ -15029,18 +15038,23 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
         }
 
         const st = j.stats;
+        const historical = j.historical && j.historical.overall ? j.historical.overall : null;
+        const currentOpenRows = (j.open || []).filter(t => t.gen !== 'old');
+        const currentOpenGate = currentOpenRows.filter(t => !t.shadow).length;
+        const currentOpenShadows = currentOpenRows.filter(t => t.shadow).length;
+        const currentClosed = j.currentClosedCount != null ? j.currentClosedCount : j.closedCount;
+        const archivedClosed = j.staleClosedCount || 0;
+        const currentShadows = j.currentShadowCount != null ? j.currentShadowCount : j.shadowCount;
+        const histWin = historical ? `история n=${historical.n}: ${historical.winRate}%` : 'история: не проверена';
+        const histAvg = historical ? `история: ${historical.avgPct >= 0 ? '+' : ''}${historical.avgPct}%` : 'история: не проверена';
         const sEl = document.getElementById('labStats');
         if (sEl) {
           sEl.innerHTML = `<div style="display:flex;gap:10px;flex-wrap:wrap;">
             ${_jStatCard('Статус', _labEnabled ? '<span style="color:var(--green);">РАБОТАЕТ</span>' : '<span style="color:var(--t2);">СТОП</span>', j.hoursRunning ? `${j.hoursRunning} ч в работе` : '')}
-            ${_jStatCard('Открыто', j.open.length, j.open.filter(t => t.shadow).length ? `${j.open.filter(t => !t.shadow).length} по гейту + ${j.open.filter(t => t.shadow).length} контроль` : '')}
-            ${_jStatCard('Закрыто', j.closedCount, j.shadowCount ? `+ ${j.shadowCount} контрольных` : '')}
-            ${/* Эталон пересчитан: 68% и +0.199% — цифры с одной недели калибровки.
-                  Прогон на 25 днях и 927 входах по текущему гейту дал 60% и -0.103%
-                  при профит-факторе 0.90. Карточка показывала старые числа и
-                  противоречила заданию под ней. */''}
-            ${_jStatCard('Winrate', st ? st.winRate + '%' : '—', 'бэктест 25д: 60%')}
-            ${_jStatCard('На сделку', st ? (st.avgPct >= 0 ? '+' : '') + st.avgPct + '%' : '—', 'бэктест 25д: −0.103%')}
+            ${_jStatCard('Открыто', currentOpenRows.length, currentOpenShadows ? `${currentOpenGate} по гейту + ${currentOpenShadows} контроль` : '')}
+            ${_jStatCard('Закрыто (текущий)', currentClosed, `${archivedClosed ? `+ ${archivedClosed} до правки` : ''}${currentShadows ? `${archivedClosed ? ' · ' : ''}+ ${currentShadows} контрольных` : ''}`)}
+            ${_jStatCard('Winrate', st ? st.winRate + '%' : '—', histWin)}
+            ${_jStatCard('На сделку', st ? (st.avgPct >= 0 ? '+' : '') + st.avgPct + '%' : '—', histAvg)}
             ${_jStatCard('Итого', st ? _jPnlCell(st.totalUsd) : '—', st && st.avgHoldH != null ? `среднее ${st.avgHoldH} ч` : '')}
           </div>`;
         }
@@ -15068,7 +15082,7 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
           }
           // Разрезы по условиям входа — требуют больше данных
           if (!j.enough) {
-            html += `<div style="color:var(--t2);font-size:12px;">Сделок по гейту ${j.closedCount}. Для разрезов нужно минимум 15.</div>`;
+            html += `<div style="color:var(--t2);font-size:12px;">Сделок по текущему гейту ${currentClosed}. Для разрезов нужно минимум 15.</div>`;
           } else if (!j.observations.length) {
             html += `<div style="color:var(--t2);font-size:12px;">Расхождений в разрезах нет: гейт работает одинаково во всех замеренных условиях.</div>`;
           } else {

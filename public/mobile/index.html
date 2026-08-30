@@ -4847,7 +4847,8 @@
             ${SHOW_OLD_BUY_M ? `<td style="text-align:center;padding:6px 2px;"><span style="font-weight:800;color:${rbCol};font-size:12px;">${c.rb ?? '—'}</span><br><span style="font-size:6.5px;font-weight:800;color:${rbCol};background:${rbCol}22;padding:1px 3px;border-radius:3px;">${c.rbTag || ''}</span></td>` : ''}
             <td style="text-align:center;padding:6px 2px;"><span style="font-weight:800;color:${rvCol};font-size:12px;">${rv ? rv.score : '—'}</span><br><span style="font-size:6.5px;font-weight:800;color:${rvCol};background:${rvCol}22;padding:1px 3px;border-radius:3px;white-space:nowrap;">${rv ? rv.tag : '…'}</span></td>
             ${(() => { const x = c.sc;
-              const col = !x ? '#667' : x.tag === 'ВХОД' ? '#4cc9f0' : x.tag === 'БЛИЗКО' ? '#f5c518' : x.tag === 'ШИРОКИЙ СПРЕД' ? '#f55' : '#8892a0';
+              const sTag = x && x.tag === 'ВХОД' ? 'СТРУКТУРА' : (x ? x.tag : '…');
+          const col = !x ? '#667' : sTag === 'СТРУКТУРА' ? '#4cc9f0' : x.tag === 'БЛИЗКО' ? '#f5c518' : x.tag === 'ШИРОКИЙ СПРЕД' ? '#f55' : '#8892a0';
               return `<td style="text-align:center;padding:6px 2px;"><span style="font-weight:800;color:${col};font-size:12px;">${x ? x.score : '—'}</span><br><span style="font-size:6.5px;font-weight:800;color:${col};background:${col}22;padding:1px 3px;border-radius:3px;white-space:nowrap;">${x ? x.tag : '…'}</span></td>`;
             })()}
             <td style="text-align:right;padding:6px 2px;white-space:nowrap;">
@@ -4927,16 +4928,23 @@
           : k.includes('EMA9') ? 'EMA9' : k.includes('Диапазон') ? 'диапазон'
           : k.includes('памп') ? 'откат' : k.includes('Ликвидность') ? 'объём'
           : k.includes('вершиной') ? 'у вершины' : k.includes('Неделя') ? 'неделю' : k.includes('BTC') ? 'BTC' : k.slice(0, 12);
+        // Тот же запрет, что на десктопе. Без него телефон звал бы покупать
+        // там, где большой экран уже пишет «НЕ ПРОВЕРЕНО».
+        const vld = j.validation || { ready: false, state: 'missing' };
+        const vldNote = vld.state === 'missing'
+          ? 'Нет прогона для этой версии кода.'
+          : `Проверка: ${vld.n} входов, ${vld.avgPct >= 0 ? '+' : ''}${vld.avgPct}% на сделку, PF ${vld.profitFactor}, отрезков ${vld.positiveSegments}/3.`;
+        const vldBar = vld.ready ? '' : `<div style="display:flex;align-items:center;gap:6px;padding:5px 8px;margin-bottom:6px;border-radius:6px;font-size:10px;line-height:1.3;background:rgba(255,107,107,0.07);border:1px solid rgba(248,113,113,0.45);color:#ffa8a8;"><span>⚠</span><span><b>Входы и алерты заблокированы.</b> ${vldNote}</span></div>`;
         const regimeBar = !rgm ? '' : `<div style="display:flex;align-items:center;gap:6px;padding:5px 8px;margin-bottom:6px;border-radius:6px;font-size:10px;line-height:1.3;${
           (rgm.above && rgm.ret7 > 0) ? 'background:rgba(74,222,128,0.06);border:1px solid rgba(74,222,128,0.2);color:#86efac;'
                     : 'background:rgba(255,107,107,0.07);border:1px solid rgba(255,107,107,0.22);color:#ffa8a8;'}">
           <span>${(rgm.above && rgm.ret7 > 0) ? '▲' : '▼'}</span><span><b>${(rgm.above && rgm.ret7 > 0) ? 'Рынок за нас' : 'Рынок против'}</b> — BTC ${
             rgm.above ? 'на ' + rgm.distPct + '% выше' : 'на ' + Math.abs(rgm.distPct) + '% ниже'} EMA20${
             rgm.ret7 != null ? ', неделя ' + (rgm.ret7 >= 0 ? '+' : '') + rgm.ret7 + '%' : ''}. <span style="color:#7c8698;font-weight:400;">${
-            (rgm.above && rgm.ret7 > 0) ? 'Входы разрешены.' : 'Входы не выдаются, баллы сжаты в 0–60.'}${
+            (rgm.above && rgm.ret7 > 0) ? (vld.ready ? 'Входы разрешены.' : 'Структура сходится, но историческая проверка не пройдена.') : 'Входы не выдаются, баллы сжаты в 0–60.'}${
               rgm.distDelta != null && Math.abs(rgm.distDelta) >= 0.02
                 ? ` ${rgm.distDelta > 0 ? '↑' : '↓'} ${rgm.distDelta > 0 ? '+' : ''}${rgm.distDelta}% за скан.` : ''}</span></span></div>`;
-        body.innerHTML = regimeBar + `<table style="width:100%;border-collapse:collapse;">
+        body.innerHTML = regimeBar + vldBar + `<table style="width:100%;border-collapse:collapse;">
           <thead><tr style="border-bottom:1px solid #222;">
             <th style="color:#666;font-size:9px;text-align:left;padding:4px 3px;">COIN</th>
             <th style="color:#666;font-size:9px;text-align:center;padding:4px 2px;">SCORE</th>
@@ -4950,12 +4958,15 @@
             // «БЛИЗКО» значит ровно одно непройденное условие — пишем какое
             const own = x.tagOwn || x.tag;
             const miss = (own === 'БЛИЗКО' && x.checks) ? x.checks.find(c => !c.ok) : null;
-            const tg = (x.tagOwn === 'ВХОД' && !x.pass) ? 'ЖДЁТ РЫНКА'
+            const notValidated = !!(x.pass && !x.tradeReady);
+            const tg = notValidated ? 'НЕ ПРОВЕРЕНО'
+              : (x.tagOwn === 'ВХОД' && !x.pass) ? 'ЖДЁТ РЫНКА'
               : miss ? 'ждёт ' + _shortCheckM(miss.k) : own;
-            const col = tg === 'ВХОД' ? '#4cc9f0' : tg === 'ЖДЁТ РЫНКА' ? '#5ba9c4' : (own === 'БЛИЗКО' || miss) ? '#f5c518'
+            const col = tg === 'НЕ ПРОВЕРЕНО' ? '#f87171'
+              : tg === 'ВХОД' ? '#4cc9f0' : tg === 'ЖДЁТ РЫНКА' ? '#5ba9c4' : (own === 'БЛИЗКО' || miss) ? '#f5c518'
               : tg === 'ШИРОКИЙ СПРЕД' || tg === 'ПОСЛЕ ПАМПА' ? '#ff6b6b' : '#7c8698';
             const inP = _paperCoinsM.has(x.coin);
-            return `<tr style="border-bottom:1px solid rgba(255,255,255,0.03);${x.pass ? 'background:rgba(76,201,240,0.12);' : ''}" onclick="selectCoin('${x.coin}')">
+            return `<tr style="border-bottom:1px solid rgba(255,255,255,0.03);${x.tradeReady ? 'background:rgba(76,201,240,0.12);' : ''}" onclick="selectCoin('${x.coin}')">
               <td style="padding:6px 3px;"><span style="color:var(--blue);font-weight:700;font-size:11px;">${x.coin}</span><br><span style="color:#555;font-size:9px;">$${px(x.price)}</span></td>
               <td style="text-align:center;padding:6px 2px;"><span style="font-weight:800;color:${col};font-size:12px;font-variant-numeric:tabular-nums;">${x.score}${
                 x.scoreDelta ? `<span style="font-size:7px;margin-left:1px;color:${x.scoreDelta > 0 ? '#4ade80' : '#f87171'};">${x.scoreDelta > 0 ? '▲' : '▼'}${Math.abs(x.scoreDelta)}</span>` : ''}</span>

@@ -15,6 +15,10 @@ top-losers-cache.json
 reversal-*.json
 scalp-watch.json
 scalp-*.json
+# Кроме результата валидации гейта: его отпечаток привязан к коду, поэтому
+# он обязан ехать на сервер вместе с этим кодом. Без файла сервер считает
+# проверку отсутствующей и блокирует входы навсегда.
+!scalp-gate-validation.json
 calibration-log.json
 scalp-exits.json
 scalp-lab.json

@@ -4284,10 +4284,7 @@ async function attachReversal(list) {
 
 // ══════════════════════════════════════════════════════════════════
 // ═══ SCALP SCORE — краткосрочный сигнал, горизонт 2-6 часов ═══
-// Бэктест (28 252 сэмпла, 109 монет, свечи 5m): горизонт 20-60 минут
-// невозможен — средний ход за час 0.177% против комиссии круга 0.25%.
-// Первый плюс появляется на 6 часах. Лучшая связка: у дна 4ч диапазона
-// + RSI вышел из перепроданности + цена выше EMA9 → 68% побед.
+// Historical claims are not embedded here. The current gate is authorized only by scalp-gate-validation.json.
 // ══════════════════════════════════════════════════════════════════
 const scalp = require('./src/scalp');
 
@@ -4336,12 +4333,29 @@ setTimeout(attachScalp, 50_000);
 // ══════════════════════════════════════════════════════════════════
 const scalpScanner = require('./src/scalp/scanner');
 
-const scalpScan = { running: false, progress: 0, scanned: 0, total: 0, at: 0, results: [], regime: null };
+const scalpScan = { running: false, progress: 0, scanned: 0, total: 0, at: 0, results: [], regime: null, validation: null };
 // Прошлый скан: по нему считаем, куда движется балл монеты и режим рынка.
 // Держим здесь, а НЕ в src/scalp/*, потому что отпечаток гейта хэширует те
 // файлы — добавление показательной мелочи туда обнулило бы поколение
 // лаборатории, а это ровно то, что мы только что чинили.
 const scalpPrev = { scores: new Map(), distPct: null, at: 0 };
+
+function scalpValidationStatus() {
+  const result = loadGateValidation(gateFingerprint());
+  const overall = result && result.overall;
+  if (!overall) return { ready: false, state: 'missing' };
+  const ready = overall.avgPct > 0 && overall.profitFactor > 1 && overall.positiveSegments === 3;
+  return {
+    ready,
+    state: ready ? 'passed' : 'failed',
+    fingerprint: result.fingerprint,
+    generatedAt: result.generatedAt,
+    n: overall.n,
+    avgPct: overall.avgPct,
+    profitFactor: overall.profitFactor,
+    positiveSegments: overall.positiveSegments,
+  };
+}
 
 async function runScalpScan() {
   if (scalpScan.running) return;
@@ -4356,11 +4370,13 @@ async function runScalpScan() {
         scalpScan.progress = total ? Math.round(done / total * 100) : 0;
       },
     });
+    const validation = scalpValidationStatus();
     // Тренд балла: до перезаписи результатов сравниваем с прошлым сканом
     for (const r of out.results) {
       const was = scalpPrev.scores.get(r.coin);
       r.scorePrev = was != null ? was : null;
       r.scoreDelta = was != null ? r.score - was : null;
+      r.tradeReady = !!(r.pass && validation.ready);
     }
     if (out.regime) {
       out.regime.distPrev = scalpPrev.distPct;
@@ -4374,8 +4390,10 @@ async function runScalpScan() {
     scalpScan.results = out.results;
     scalpScan.regime = out.regime;
     scalpScan.at = out.at;
-    const entries = out.results.filter(r => r.pass);
-    console.log(`[scalp-scan] ${out.results.length}/${out.total} монет, входов: ${entries.length}` +
+    scalpScan.validation = validation;
+    const structuralEntries = out.results.filter(r => r.pass);
+    const entries = out.results.filter(r => r.tradeReady);
+    console.log(`[scalp-scan] ${out.results.length}/${out.total} монет, структурных: ${structuralEntries.length}, разрешено: ${entries.length}, validation=${validation.state}` +
       (out.regime ? ` · BTC ${out.regime.above ? 'выше' : 'НИЖЕ'} EMA20 (${out.regime.distPct}%)` : ''));
   } catch (e) { console.error('[scalp-scan]', e.message); }
   finally { scalpScan.running = false; scalpScan.progress = 100; }
@@ -4388,7 +4406,10 @@ app.get('/api/scalp-scan', (req, res) => {
   const minScore = parseFloat(req.query.minScore) || 0;
   const onlyPass = req.query.pass === '1';
   let results = scalpScan.results;
-  if (onlyPass) results = results.filter(r => r.pass);
+  const validation = scalpScan.validation || scalpValidationStatus();
+  // `pass` is only the raw structure. The public pass filter must not bypass
+  // the independently validated-entry gate.
+  if (onlyPass) results = results.filter(r => r.tradeReady);
   else if (minScore > 0) results = results.filter(r => r.score >= minScore);
   res.json({
     success: true,
@@ -4396,7 +4417,9 @@ app.get('/api/scalp-scan', (req, res) => {
     scanned: scalpScan.scanned, total: scalpScan.total,
     at: scalpScan.at, agoSec: scalpScan.at ? Math.round((Date.now() - scalpScan.at) / 1000) : null,
     regime: scalpScan.regime,
-    entries: scalpScan.results.filter(r => r.pass).length,
+    validation,
+    entries: scalpScan.results.filter(r => r.tradeReady).length,
+    structuralEntries: scalpScan.results.filter(r => r.pass).length,
     results: results.slice(0, 40),
     watch: scalpWatchArmed,
     watchLoop: scalpLoopOn,
@@ -4411,6 +4434,17 @@ app.get('/api/scalp-scan', (req, res) => {
 // ══════════════════════════════════════════════════════════════════
 const lab = require('./src/scalp/lab');
 const LAB_FILE = path.join(__dirname, 'scalp-lab.json');
+
+const GATE_VALIDATION_FILE = path.join(__dirname, 'scalp-gate-validation.json');
+function loadGateValidation(fingerprint) {
+  try {
+    const result = JSON.parse(fs.readFileSync(GATE_VALIDATION_FILE, 'utf8'));
+    if (!fingerprint || result.fingerprint !== fingerprint || !result.config || result.config.days < 7 || !result.overall || result.overall.n < 30) return null;
+    return result;
+  } catch {
+    return null;
+  }
+}
 
 // Отпечаток кода гейта. Любая правка в этих файлах меняет хэш — значит
 // собранные до неё сделки относятся к прошлой версии алгоритма и мешать их
@@ -4601,8 +4635,7 @@ async function labTick() {
             runUp24: r.runUp24 != null ? r.runUp24 : null,
             // Насколько цена уже отошла от вершины 4ч диапазона: при
             // rangePos у дна это глубина падения, которую мы ловим
-            dropFromHigh: (r.range4Pct != null && r.rangePos != null)
-              ? Math.round(r.range4Pct * (1 - r.rangePos) * 100) / 100 : null,
+            dropFromHigh: r.dropFromHigh4Pct != null ? r.dropFromHigh4Pct : null,
           },
         });
         changed = true;
@@ -4627,22 +4660,32 @@ app.get('/api/lab', (req, res) => {
   // приняла бы пару условий за одно
   const shadows = closedAll.filter(t => t.shadow && !t.far);
   const farShadows = closedAll.filter(t => t.far);
+  const currentClosed = closed.filter(t => t.gen !== 'old');
+  const staleClosed = closed.filter(t => t.gen === 'old');
+  const currentShadows = shadows.filter(t => t.gen !== 'old');
+  const currentFarShadows = farShadows.filter(t => t.gen !== 'old');
   const open = labState.trades.filter(t => !t.closedAt).map(t => ({
     ...t, pnlPct: t.last ? Math.round(((t.last / t.entry - 1) * 100 - paperLimitFee() * 200) * 100) / 100 : null,
   }));
+  const currentOpen = open.filter(t => t.gen !== 'old');
   const since = labState.startedAt ? Math.round((Date.now() - labState.startedAt) / 3600000) : 0;
-  const { base, observations, enough } = lab.findObservations(closed);
-  const conditions = lab.checkConditions(closed, shadows);
+  const { base, observations, enough } = lab.findObservations(currentClosed);
+  const conditions = lab.checkConditions(currentClosed, currentShadows);
+  const historical = loadGateValidation(labState.fingerprint);
   res.json({
     success: true,
     enabled: labState.enabled, startedAt: labState.startedAt, hoursRunning: since,
     budget: labState.budget,
-    open, closedCount: closed.length, shadowCount: shadows.length, farCount: farShadows.length,
+    open, currentOpenCount: currentOpen.length, staleOpenCount: open.length - currentOpen.length,
+    closedCount: closed.length, currentClosedCount: currentClosed.length, staleClosedCount: staleClosed.length,
+    shadowCount: shadows.length, currentShadowCount: currentShadows.length,
+    farCount: farShadows.length, currentFarCount: currentFarShadows.length,
     closed: closed.slice(-40).reverse(),
-    stats: base, observations, enough, conditions,
+    stats: base, allStats: lab.agg(closed), observations, enough, conditions,
+    historical,
     generations: (labState.generations || []).slice(-10).reverse(),
     fingerprint: labState.fingerprint,
-    brief: lab.buildBrief(closed, {
+    brief: lab.buildBrief(currentClosed, {
       since: since ? `${since}h` : null,
       generations: labState.generations || [],
       conditions,
@@ -4651,25 +4694,27 @@ app.get('/api/lab', (req, res) => {
       liveChecks: (scalpScan.results[0] && scalpScan.results[0].checks || []).map(c => c.en || c.k),
       fingerprint: labState.fingerprint,
       // Сколько из закрытых открылись ещё при прошлом поколении
-      staleCount: closed.filter(t => t.gen === 'old').length,
+      staleCount: staleClosed.length,
+      historical,
+      archivedStats: lab.agg(staleClosed),
       // Пик/дно и причины выхода — по ним задание считает, что дала бы другая
       // цель и другой стоп, не запуская новый бэктест
-      exits: closed.map(t => ({ why: t.why, mfe: t.mfe, mae: t.mae, pnlPct: t.pnlPct, holdH: t.holdH })),
-      farGroup: lab.aggFar(farShadows),
+      exits: currentClosed.map(t => ({ why: t.why, mfe: t.mfe, mae: t.mae, pnlPct: t.pnlPct, holdH: t.holdH })),
+      farGroup: lab.aggFar(currentFarShadows),
       // Что сейчас в полёте: пока ничего не закрылось, задание должно
       // показывать работу, а не пустую строку «сделок нет»
       openNow: (() => {
-        if (!open.length) return null;
-        const hrs = open.map(t => (Date.now() - t.openedAt) / 3600000);
-        const mfes = open.map(t => t.mfe).filter(Number.isFinite);
-        const maes = open.map(t => t.mae).filter(Number.isFinite);
-        const cl = lab.clusters(open);
+        if (!currentOpen.length) return null;
+        const hrs = currentOpen.map(t => (Date.now() - t.openedAt) / 3600000);
+        const mfes = currentOpen.map(t => t.mfe).filter(Number.isFinite);
+        const maes = currentOpen.map(t => t.mae).filter(Number.isFinite);
+        const cl = lab.clusters(currentOpen);
         return {
-          n: open.length,
-          gate: open.filter(t => !t.shadow).length,
-          shadow: open.filter(t => t.shadow && !t.far).length,
-          far: open.filter(t => t.far).length,
-          up: open.filter(t => t.pnlPct > 0).length,
+          n: currentOpen.length,
+          gate: currentOpen.filter(t => !t.shadow).length,
+          shadow: currentOpen.filter(t => t.shadow && !t.far).length,
+          far: currentOpen.filter(t => t.far).length,
+          up: currentOpen.filter(t => t.pnlPct > 0).length,
           oldestH: Math.round(Math.max(...hrs) * 10) / 10,
           youngestH: Math.round(Math.min(...hrs) * 10) / 10,
           bestMfe: mfes.length ? Math.max(...mfes) : null,
@@ -4789,10 +4834,9 @@ const NL = String.fromCharCode(10);
 
 // Общий сбор кандидатов для обоих режимов алерта
 function scalpAlertPool() {
-  const pool = [
-    ...scalpScan.results.filter(r => r.pass),
-    ...topLosersCache.data.filter(c => c.sc && c.sc.pass).map(c => ({ ...c.sc, coin: c.coin, pair: c.pair, price: c.price, vol24: c.vol24 })),
-  ];
+  const validation = scalpScan.validation || scalpValidationStatus();
+  if (!validation.ready) return [];
+  const pool = scalpScan.results.filter(r => r.tradeReady);
   const best = new Map();
   for (const r of pool) if (!best.has(r.coin) || best.get(r.coin).score < r.score) best.set(r.coin, r);
   return [...best.values()].sort((a, b) => b.score - a.score);
@@ -4854,6 +4898,10 @@ setInterval(async () => {
     const ranked = scalpAlertPool();
     if (!ranked.length) return;
     const c = ranked[0];
+    // Берём тот же объект, что и пул. Раньше в текст подставлялся
+    // scalpScan.validation напрямую, а до первого скана он null — обращение
+    // к .n роняло обработчик в catch, и алерт молча не уходил.
+    const vld = scalpScan.validation || scalpValidationStatus();
     const sent = await sendTelegram(
       `⚡ <b>SCALP ВХОД</b> — <b>${c.pair}</b>\n` +
       `Рейтинг <b>${c.score}/100</b> · гейт пройден · горизонт 2–6 часов\n` +
@@ -4861,9 +4909,9 @@ setInterval(async () => {
       c.checks.map(x => `${x.ok ? '✅' : '❌'} ${escTg(x.k)}: ${escTg(x.v)}`).join('\n') + '\n' +
       `💵 Цена: $${fmtPxAe(c.price)}` + (c.spreadPct != null ? ` · спред ${c.spreadPct}%` : '') +
       (c.vol24 ? ` · объём $${Math.round(c.vol24 / 1e3)}K` : '') + '\n\n' +
-      `<i>Гейт откалиброван на 28 тыс. сэмплов: 68% побед, ожидание +0.2%\n` +
-      `на сделку при цели +1.38%. Режим рынка учтён: ниже EMA20 по BTC\n` +
-      `сигналы не выдаются, там ожидание отрицательное. Вход лимиткой.</i>\n` +
+      `<i>Текущая версия прошла историческую проверку: n=${vld.n}, ${vld.avgPct >= 0 ? '+' : ''}${vld.avgPct}% на сделку, PF ${vld.profitFactor}.\n` +
+      `Структурные условия и режим BTC выполнены. Вход лимиткой.</i>\n` +
+      `<i>Проверка не гарантирует результат отдельной сделки.</i>\n` +
       `(одноразовый алерт — выключен)`, 'HTML');
     // Снимаем ТОЛЬКО если сообщение действительно ушло. Раньше алерт
     // выключался при любом исходе, и отказ Telegram выглядел так, будто
@@ -5035,7 +5083,7 @@ try { calibLog = JSON.parse(fs.readFileSync(CALIB_FILE, 'utf8')); } catch { }
 // Ожидания из бэктестов — с чем сравниваем факт
 const CALIB_BASELINE = {
   swing: { winRate: 44, expPct: 0.27, note: 'гейт REV 4/4, горизонт 1–3 дня, 1635 сэмплов' },
-  scalp: { winRate: 68, expPct: 0.20, note: 'гейт SCALP 4/4 + BTC выше EMA20, 28 252 сэмпла' },
+  scalp: { winRate: null, expPct: null, note: 'requires a matching historical validation' },
 };
 
 function buildCalibrationReport() {
@@ -5067,6 +5115,7 @@ function buildCalibrationReport() {
       ? { n: journalClosed.length, winRate: Math.round(journalClosed.filter(t => t.pnl > 0).length / journalClosed.length * 100), totalUsd: Math.round(journalClosed.reduce((a, t) => a + t.pnl, 0) * 100) / 100 }
       : null,
     baseline: CALIB_BASELINE,
+    scalpValidation: scalpValidationStatus(),
     regime: scalpScan.regime ? { btcAbove: scalpScan.regime.above, distPct: scalpScan.regime.distPct } : null,
   };
 }
