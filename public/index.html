@@ -5965,11 +5965,6 @@
     </div>
   </div>
   <div class="container">
-    <input type="hidden" id="apiKey" value="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">
-    <input type="hidden" id="cerebrasKey" value="csk-ptmn4y2rw4ynk8xfyv2phc4k4ppxcwek6v5mpnx42w3mwffj">
-    <input type="hidden" id="openrouterKey"
-      value="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">
-    <input type="hidden" id="geminiKey" value="">
 
     <div class="tab-nav">
       <button class="tab-btn active" data-tab="trading" onclick="switchTab('trading')">Trading</button>
@@ -6026,8 +6021,6 @@
                    а место они занимали в строке, на которую смотрят при торговле.
                    Поля скрыты, а не удалены — значения по-прежнему читаются и
                    сохраняются на сервер тем же кодом. -->
-              <input type="hidden" id="tgToken" autocomplete="off">
-              <input type="hidden" id="tgChat" autocomplete="off">
             </div>
           </div>
           <div id="buyPanel">
@@ -6321,9 +6314,7 @@
             </div>
           </div>
         </div>
-        <input type="text" id="query" placeholder="Type a message and press Enter..." autocomplete="off"
-          autocorrect="off" spellcheck="false">
-        <div id="chat"></div>
+        <!-- Manual AI chat removed: trade execution stays separate from AI advice. -->
       </div>
     </div>
     </div><!-- /tab-trading -->
@@ -6439,19 +6430,6 @@
       if (typeof renderFilteredOrders === 'function') renderFilteredOrders();
     }
 
-    const chat = document.getElementById('chat');
-    const queryInput = document.getElementById('query');
-    const apiKeyInput = document.getElementById('apiKey');
-
-    function addMessage(text, sender, cls) {
-      const div = document.createElement('div');
-      div.className = 'msg ' + sender + (cls ? ' ' + cls : '');
-      div.textContent = text;
-      chat.appendChild(div);
-      chat.scrollTop = chat.scrollHeight;
-      return div;
-    }
-
     function formatPrice(v) {
       return parseFloat(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 8 });
     }
@@ -6461,7 +6439,18 @@
       showToast(message, isError ? 'error' : 'success');
     }
 
-    // ========== TRADING SETTINGS ==========
+        async function sendServerTelegramAlert(kind, text) {
+      const response = await fetch('/api/telegram/client-alert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind, text })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.success) throw new Error(data.error || 'Telegram alert failed');
+      return data;
+    }
+
+// ========== TRADING SETTINGS ==========
     // Стартовые значения комиссий. Раньше здесь стоял СТАРЫЙ тариф
     // (0.06 / 0.125), ровно вдвое ниже действующего (0.125 / 0.25). Пока не
     // ответит /get-settings, вся арифметика комиссий считалась по половине
@@ -6483,9 +6472,6 @@
           paintFeeChip();
           const blEl = document.getElementById('bidLevelInput');
           if (blEl) blEl.value = tradingSettings.bidLevel || 0;
-          const tgT = document.getElementById('tgToken'), tgC = document.getElementById('tgChat');
-          if (tgT) tgT.value = tradingSettings.telegramToken || '';
-          if (tgC) tgC.value = tradingSettings.telegramChat || '';
         }
       } catch (e) {
         console.warn('Cannot load settings:', e.message);
@@ -6502,11 +6488,7 @@
       // /get-settings. Сохранение наценки в этот момент стирало бы токен
       // Telegram — и, поскольку полей на экране больше нет, вернуть его было бы
       // нечем.
-      const tgT = document.getElementById('tgToken')?.value?.trim();
-      const tgC = document.getElementById('tgChat')?.value?.trim();
       const body = { sellMarkup, tradeFee, marketFee, bidLevel };
-      if (tgT) body.telegramToken = tgT;
-      if (tgC) body.telegramChat = tgC;
       try {
         const res = await fetch('/save-settings', {
           method: 'POST',
@@ -6542,8 +6524,6 @@
     });
 
     loadSettings();
-    document.getElementById('tgToken')?.addEventListener('change', saveSettingsToServer);
-    document.getElementById('tgChat')?.addEventListener('change', saveSettingsToServer);
 
     // ── Алерт безубытка: Telegram-сообщение, когда Limit P&L монеты дойдёт до 0 (одноразовый) ──
     let _beWatches = {};
@@ -9489,11 +9469,7 @@ Requirements:
         `⏱️ Hold: 6-12 hours`;
 
       try {
-        await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text: message })
-        });
+        await sendServerTelegramAlert('tracked', message);
       } catch (e) {
         console.error('Telegram tracked order error:', e);
       }
@@ -9869,8 +9845,6 @@ Requirements:
     }
 
     // Telegram integration
-    const TELEGRAM_BOT_TOKEN = '8424757901:AAE6SIdQdbWrWU3XHn5xZbOxMSSp1kc24eQ';
-    const TELEGRAM_CHAT_ID = 1813047875;
 
     // ========== CHECKLIST MONITORING ==========
     let isMonitoring = false;
@@ -10149,15 +10123,7 @@ Requirements:
         `⏰ ${new Date().toLocaleString()}`;
 
       try {
-        await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: TELEGRAM_CHAT_ID,
-            text: message,
-            parse_mode: 'Markdown'
-          })
-        });
+        await sendServerTelegramAlert('checklist', message);
       } catch (e) {
         console.error('Telegram send error:', e);
       }
@@ -11245,14 +11211,7 @@ Requirements:
         `⚡ Действие:   ПОКУПАТЬ`;
 
       try {
-        await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: TELEGRAM_CHAT_ID,
-            text: message
-          })
-        });
+        await sendServerTelegramAlert('scalp', message);
       } catch (e) {
         console.error('Telegram scalp alert error:', e);
       }
@@ -14829,81 +14788,6 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
       }
     }
 
-    const chatHistory = [{ role: 'system', content: 'You are a helpful crypto trading assistant. Be concise.' }];
-
-    queryInput.addEventListener('keydown', async (e) => {
-      if (e.key !== 'Enter') return;
-      const text = queryInput.value.trim();
-      if (!text) return;
-
-      addMessage(text, 'user');
-      queryInput.value = '';
-      queryInput.disabled = true;
-      chatHistory.push({ role: 'user', content: text });
-      const loading = addMessage('Thinking...', 'ai', 'loading');
-
-      try {
-        // Multi-provider fallback: Cerebras → Groq → OpenRouter
-        const providers = [];
-        const cerebrasKey = document.getElementById('cerebrasKey').value.trim();
-        const groqKey = apiKeyInput.value.trim();
-        const orKey = document.getElementById('openrouterKey').value.trim();
-
-        // OpenRouter → Cerebras → Groq fallback
-        if (orKey) {
-          providers.push({ url: 'https://openrouter.ai/api/v1/chat/completions', key: orKey, model: 'meta-llama/llama-3.2-3b-instruct:free', name: 'LLaMA 3.2' });
-        }
-        if (cerebrasKey) {
-          providers.push({ url: 'https://api.cerebras.ai/v1/chat/completions', key: cerebrasKey, model: 'llama-3.3-70b', name: 'Cerebras' });
-        }
-        if (groqKey) {
-          providers.push({ url: 'https://api.groq.com/openai/v1/chat/completions', key: groqKey, model: 'llama-3.3-70b-versatile', name: 'Groq' });
-        }
-        if (providers.length === 0) throw new Error('No API keys configured');
-
-        let reply = null;
-        for (const p of providers) {
-          try {
-            const ctrl = new AbortController();
-            const to = setTimeout(() => ctrl.abort(), 30000);
-            const headers = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + p.key };
-            if (p.url.includes('openrouter')) {
-              headers['HTTP-Referer'] = window.location.origin;
-              headers['X-Title'] = 'Crypto Signal Lab';
-            }
-            const res = await fetch(p.url, {
-              method: 'POST',
-              headers,
-              body: JSON.stringify({ model: p.model, messages: chatHistory, temperature: 0.7, max_tokens: 1024 }),
-              signal: ctrl.signal
-            });
-            clearTimeout(to);
-            const data = await res.json();
-            console.log('Response:', JSON.stringify(data));
-            if (data.error) {
-              console.warn(`Chat ${p.name}:`, data.error.message || data.error);
-              throw new Error(data.error.message || JSON.stringify(data.error));
-            }
-            reply = data.choices[0].message.content;
-            console.log(`Chat via ${p.name}`);
-            break;
-          } catch (err) {
-            console.warn(`Chat ${p.name} error:`, err.message);
-            continue;
-          }
-        }
-
-        loading.remove();
-        if (!reply) throw new Error('All AI providers failed');
-        chatHistory.push({ role: 'assistant', content: reply });
-        addMessage(reply, 'ai');
-      } catch (err) {
-        loading.remove();
-        addMessage('Error: ' + err.message, 'ai');
-      }
-      queryInput.disabled = false;
-      queryInput.focus();
-    });
     // Click sound function
     function playClickSound() {
       try {

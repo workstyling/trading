@@ -22,6 +22,13 @@ const db = admin.database();
 
 const app = express();
 const server = http.createServer(app);
+const HOST = process.env.HOST || '127.0.0.1';
+const TRUSTED_ORIGINS = new Set(
+  String(process.env.TRUSTED_ORIGINS || '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean)
+);
 
 // Добавляем middleware для правильного MIME-типа JavaScript файлов
 app.use('/database.js', (req, res, next) => {
@@ -39,6 +46,29 @@ app.get('/', (req, res) => {
 app.use(express.static(path.join(__dirname, 'public'), { etag: false, lastModified: false }));
 app.use(express.json());
 
+// Only the same site (or explicitly configured origins) may call mutation APIs.
+function isTrustedOrigin(req) {
+  const origin = req.get('origin');
+  if (!origin) return true;
+  const host = req.get('host');
+  return origin === 'http://' + host || origin === 'https://' + host || TRUSTED_ORIGINS.has(origin);
+}
+
+app.use((req, res, next) => {
+  const origin = req.get('origin');
+  const trusted = isTrustedOrigin(req);
+  if (origin && trusted) {
+    res.header('Access-Control-Allow-Origin', origin);
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.header('Vary', 'Origin');
+  }
+  if (req.method === 'OPTIONS') return trusted ? res.sendStatus(204) : res.sendStatus(403);
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method) && origin && !trusted) {
+    return res.status(403).json({ success: false, error: 'Origin is not allowed' });
+  }
+  next();
+});
 app.post('/api/groq/chat', async (req, res) => {
   try {
     const prompt = String(req.body?.prompt ?? '').trim();
@@ -137,20 +167,54 @@ app.use('/firebase', express.static(path.join(__dirname, 'firebase-app')));
 // Serve React app
 app.use('/react', express.static(path.join(__dirname, 'react-app')));
 
-app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header(
-    'Access-Control-Allow-Headers',
-    'Origin, X-Requested-With, Content-Type, Accept'
-  );
-  next();
-});
 
-const API_KEY =
-  'organizations/013f206d-b29c-4c2a-a839-31f6d2ecc959/apiKeys/4e07dfe2-2ea6-4872-806a-21e5053a4e18';
-const API_SECRET =
-  '-----BEGIN EC PRIVATE KEY-----\nMHcCAQEEIPmGuws4R6uXGJeKMf2Jubnn+5A/d30zDp7bHjUEy5UuoAoGCCqGSM49\nAwEHoUQDQgAEMHSsv+2jCUDMgMTbGS+/bpA0r00k3xsqfR7plgr1dJAsxhkesNtV\n3lp2ctsXlTaJj6Pdx/MRuksJLdYgwkocPg==\n-----END EC PRIVATE KEY-----\n';
-const client = new RESTClient(API_KEY, API_SECRET);
+
+
+app.post('/api/telegram/price-alert', async (req, res) => {
+  const botToken = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.TELEGRAM_CHAT_ID;
+  if (!botToken || !chatId) {
+    return res.status(503).json({ success: false, error: 'Telegram is not configured on the server' });
+  }
+
+  const symbol = String(req.body?.symbol || '').trim().toUpperCase();
+  const currentPrice = Number(req.body?.currentPrice);
+  const targetPrice = Number(req.body?.targetPrice);
+  const orderId = req.body?.orderId ? String(req.body.orderId).slice(0, 128) : '';
+  if (!/^[A-Z0-9]{2,20}-USD$/.test(symbol) || !Number.isFinite(currentPrice) || !Number.isFinite(targetPrice) || currentPrice <= 0 || targetPrice <= 0) {
+    return res.status(400).json({ success: false, error: 'Invalid price alert payload' });
+  }
+
+  try {
+    const message = [
+      'Price Alert',
+      'Symbol: ' + symbol,
+      'Current price: $' + currentPrice,
+      'Target price: $' + targetPrice,
+      orderId ? 'Order ID: ' + orderId : '',
+      'Price target reached.'
+    ].filter(Boolean).join('\n');
+    const response = await fetch('https://api.telegram.org/bot' + botToken + '/sendMessage', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text: message, disable_web_page_preview: true })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.ok) {
+      return res.status(502).json({ success: false, error: payload.description || 'Telegram rejected the alert' });
+    }
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Telegram price alert error:', error.message);
+    res.status(502).json({ success: false, error: 'Telegram request failed' });
+  }
+});
+const API_KEY = process.env.CB_API_KEY;
+const API_SECRET = process.env.CB_API_SECRET;
+if (!API_KEY || !API_SECRET) {
+  console.warn('[config] Coinbase credentials are not configured; order endpoints are unavailable.');
+}
+const client = API_KEY && API_SECRET ? new RESTClient(API_KEY, API_SECRET) : null;
 
 // Хранилище для подключенных клиентов
 const clients = new Set();
@@ -1251,7 +1315,7 @@ function findAvailablePort(startPort, maxAttempts = 10) {
         });
       });
 
-      testServer.listen(port);
+      testServer.listen(port, HOST);
     }
 
     tryPort(currentPort);
@@ -1263,7 +1327,7 @@ const preferredPort = process.env.PORT || 3005;
 
 findAvailablePort(preferredPort)
   .then(port => {
-    server.listen(port, () => {
+    server.listen(port, HOST, () => {
       console.log(`Server running on http://localhost:${port}`);
     });
   })

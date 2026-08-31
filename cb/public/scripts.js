@@ -2575,76 +2575,11 @@ window.quickSellAtAsk = async function(coin, sizeStr) {
 window.createOrderFromCurrentData = createOrderFromCurrentData;
 
 // Обработчик callback'ов от Telegram
-async function handleTelegramCallback(callbackQuery) {
-    const botToken = '8424757901:AAE6SIdQdbWrWU3XHn5xZbOxMSSp1kc24eQ';
-    const { id, message, data } = callbackQuery;
-    
-    if (data === 'delete_message') {
-        try {
-            // Удаляем сообщение
-            const deleteResponse = await fetch(`https://api.telegram.org/bot${botToken}/deleteMessage`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    chat_id: message.chat.id,
-                    message_id: message.message_id
-                })
-            });
-            
-            const deleteResult = await deleteResponse.json();
-            
-            if (deleteResult.ok) {
-                console.log('✅ Message deleted successfully');
-                
-                // Отвечаем на callback, чтобы убрать "loading" с кнопки
-                await fetch(`https://api.telegram.org/bot${botToken}/answerCallbackQuery`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        callback_query_id: id,
-                        text: 'Сообщение удалено ✅'
-                    })
-                });
-            } else {
-                console.error('❌ Failed to delete message:', deleteResult);
-                
-                // Отвечаем на callback с ошибкой
-                await fetch(`https://api.telegram.org/bot${botToken}/answerCallbackQuery`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        callback_query_id: id,
-                        text: 'Ошибка удаления сообщения ❌',
-                        show_alert: true
-                    })
-                });
-            }
-        } catch (error) {
-            console.error('❌ Error handling callback:', error);
-            
-            // Отвечаем на callback с ошибкой
-            await fetch(`https://api.telegram.org/bot${botToken}/answerCallbackQuery`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    callback_query_id: id,
-                    text: 'Произошла ошибка ❌',
-                    show_alert: true
-                })
-            });
-        }
-    }
+async function handleTelegramCallback() {
+    // Browser-side polling is disabled so the bot token never reaches the client.
+    return false;
 }
 
-// Универсальные функции для работы с уведомлениями по ценам
 function savePriceAlert(symbol, targetPrice, orderId = null) {
     const alerts = getAllPriceAlerts();
     
@@ -2747,94 +2682,23 @@ function removeDuplicateAlerts() {
 
 // Функция отправки уведомления в Telegram
 function sendTelegramPriceAlert(symbol, currentPrice, targetPrice, orderId = null) {
-    const botToken = '8424757901:AAE6SIdQdbWrWU3XHn5xZbOxMSSp1kc24eQ';
-    const chatId = 1813047875;
-    const orderInfo = orderId ? `\nOrder ID: ${orderId}` : '';
-    const message = `🚨 Price Alert!\n\nSymbol: ${symbol}\nCurrent Price: $${currentPrice}\n-------\n🎯 **Target Price: $${targetPrice}\n-------\n**${orderInfo}\n\nPrice target reached!`;
-    
-    console.log('Sending Telegram message:', message);
-    
-    // Деактивируем кнопку сразу после отправки
-    let telegramButton = null;
-    if (orderId) {
-        telegramButton = document.querySelector(`button[onclick="sendTelegramMessage('${orderId}')"]`);
-        if (telegramButton) {
-            telegramButton.disabled = true;
-            telegramButton.textContent = '✅ Sent';
-            telegramButton.className = 'telegram-btn bg-gray-400 text-white font-bold py-1 px-2 rounded border-2 border-gray-300 cursor-not-allowed';
-            telegramButton.style.cssText = `
-                background: linear-gradient(135deg, #9ca3af, #6b7280);
-                border: 2px solid #d1d5db;
-                color: white;
-                font-weight: bold;
-                padding: 4px 8px;
-                border-radius: 6px;
-                cursor: not-allowed;
-                opacity: 0.7;
-                box-shadow: none;
-            `;
-        }
-    }
-    
-    return fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+    return fetch('/api/telegram/price-alert', {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-            chat_id: chatId,
-            text: message,
-            parse_mode: 'Markdown'
-        })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ symbol, currentPrice, targetPrice, orderId })
     })
-    .then(response => {
-        console.log('Telegram API response status:', response.status);
-        return response.json();
-    })
-    .then(data => {
-        if (data.ok) {
-            console.log('✅ Price alert sent to Telegram successfully:', data);
-            showCustomAlert('Telegram уведомление отправлено!', false);
-            
-            // Восстанавливаем кнопку через 3 секунды после успешной отправки
-            if (telegramButton) {
-                setTimeout(() => {
-                    telegramButton.disabled = false;
-                    telegramButton.textContent = 'Telegram';
-                    telegramButton.className = 'telegram-btn bg-blue-500 hover:bg-blue-600 text-white font-bold py-1 px-2 rounded border-2 border-blue-300';
-                    telegramButton.style.cssText = '';
-                }, 3000);
-            }
-        } else {
-            console.error('❌ Failed to send price alert to Telegram:', data);
-            showCustomAlert('Ошибка отправки в Telegram: ' + (data.description || 'Unknown error'), true);
-            
-            // Если ошибка, возвращаем кнопку в активное состояние немедленно
-            if (telegramButton) {
-                telegramButton.disabled = false;
-                telegramButton.textContent = 'Telegram';
-                telegramButton.className = 'telegram-btn bg-blue-500 hover:bg-blue-600 text-white font-bold py-1 px-2 rounded border-2 border-blue-300';
-                telegramButton.style.cssText = '';
-            }
-        }
+    .then(async (response) => {
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.success) throw new Error(data.error || ('HTTP ' + response.status));
+        showCustomAlert('Telegram alert sent', false);
         return data;
     })
-    .catch(error => {
-        console.error('❌ Error sending price alert to Telegram:', error);
-        showCustomAlert('Ошибка сети при отправке в Telegram: ' + error.message, true);
-        
-        // Если ошибка, возвращаем кнопку в активное состояние немедленно
-        if (telegramButton) {
-            telegramButton.disabled = false;
-            telegramButton.textContent = 'Telegram';
-            telegramButton.className = 'telegram-btn bg-blue-500 hover:bg-blue-600 text-white font-bold py-1 px-2 rounded border-2 border-blue-300';
-            telegramButton.style.cssText = '';
-        }
-        throw error;
+    .catch((error) => {
+        console.error('Telegram alert error:', error);
+        showCustomAlert('Telegram alert was not sent', true);
+        return { success: false, error: error.message };
     });
 }
-
-// Универсальная функция для установки уведомления из таблицы ордеров
 function setPriceAlertFromRow(rowElement) {
     try {
         // Извлекаем данные из строки таблицы
@@ -3429,28 +3293,8 @@ function displayOrderParameters(orderData) {
 let lastUpdateId = 0;
 
 async function pollTelegramUpdates() {
-    const botToken = '8424757901:AAE6SIdQdbWrWU3XHn5xZbOxMSSp1kc24eQ';
-    
-    try {
-        const response = await fetch(`https://api.telegram.org/bot${botToken}/getUpdates?offset=${lastUpdateId + 1}&timeout=10`);
-        const data = await response.json();
-        
-        if (data.ok && data.result.length > 0) {
-            for (const update of data.result) {
-                lastUpdateId = update.update_id;
-                
-                // Обрабатываем callback'и от inline-кнопок
-                if (update.callback_query) {
-                    await handleTelegramCallback(update.callback_query);
-                }
-            }
-        }
-    } catch (error) {
-        console.error('❌ Error polling Telegram updates:', error);
-    }
-    
-    // Повторяем через 3 секунды
-    setTimeout(pollTelegramUpdates, 3000);
+    // Telegram updates must be handled on the server, never with a browser token.
+    return false;
 }
 
 // Handle order creation

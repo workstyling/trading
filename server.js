@@ -33,23 +33,40 @@ process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 
 const PORT = process.env.PORT || 3847;
+// Приложение живёт на Kamatera и открывается с телефона и с ноутбука по
+// 103.90.162.77:3847. Значение по умолчанию 127.0.0.1 сделало бы его
+// недоступным сразу после деплоя: переменной HOST в .env на сервере нет,
+// а поставить её туда отсюда нельзя — SSH нет, только /api/deploy.
+// Кто хочет слушать только себя, ставит HOST=127.0.0.1 явно.
+const HOST = process.env.HOST || '0.0.0.0';
+const TRUSTED_ORIGINS = new Set(
+  String(process.env.TRUSTED_ORIGINS || '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean)
+);
 const publicDir = path.join(__dirname, 'public');
 const settingsFile = path.join(__dirname, 'settings.json');
 const profitFile = path.join(__dirname, 'profit-history.json');
 const favoritesFile = path.join(__dirname, 'favorites.json');
 
 // CryptoRank API
-const CRYPTORANK_API_KEY = 'ef01b6459dbfbf7bad96be0c01fbdb393fd5d2bb9c3db186a2bc94d40371';
+const CRYPTORANK_API_KEY = process.env.CRYPTORANK_API_KEY;
 const CRYPTORANK_BASE_URL = 'https://api.cryptorank.io/v2';
 
 // Default settings
 const defaultSettings = {
   sellMarkup: 1.38,    // % увеличения продажи
-  tradeFee: 0.06,     // % комиссии limit ордера
-  marketFee: 0.125    // % комиссии market ордера
+  tradeFee: 0.125,     // % комиссии limit ордера
+  marketFee: 0.25    // % комиссии market ордера
 };
 
 // Load/Save settings
+function publicSettings(settings) {
+  const { telegramToken, telegramChat, ...safeSettings } = settings || {};
+  return safeSettings;
+}
+
 function loadSettings() {
   try {
     if (fs.existsSync(settingsFile)) {
@@ -89,12 +106,26 @@ const API_SECRET = process.env.CB_API_SECRET;
 const client = new RESTClient(API_KEY, API_SECRET);
 
 // CORS для API
+// Only the same site (or explicitly configured origins) may call mutation APIs.
+function isTrustedOrigin(req) {
+  const origin = req.get('origin');
+  if (!origin) return true;
+  const host = req.get('host');
+  return origin === 'http://' + host || origin === 'https://' + host || TRUSTED_ORIGINS.has(origin);
+}
+
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Headers', 'Content-Type');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  if (req.method === 'OPTIONS') {
-    return res.sendStatus(200);
+  const origin = req.get('origin');
+  const trusted = isTrustedOrigin(req);
+  if (origin && trusted) {
+    res.header('Access-Control-Allow-Origin', origin);
+    res.header('Access-Control-Allow-Headers', 'Content-Type, X-Deploy-Key');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.header('Vary', 'Origin');
+  }
+  if (req.method === 'OPTIONS') return trusted ? res.sendStatus(204) : res.sendStatus(403);
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method) && origin && !trusted) {
+    return res.status(403).json({ success: false, error: 'Origin is not allowed' });
   }
   next();
 });
@@ -108,10 +139,25 @@ app.get('/', (req, res) => {
 app.use(express.static(publicDir, { etag: false, lastModified: false }));
 app.use(express.json());
 
+const SPOT_USD_PRODUCT_RE = /^[A-Z0-9]{2,20}-USD$/;
+function normalizeSpotUsdProduct(value) {
+  const productId = String(value || '').trim().toUpperCase();
+  return SPOT_USD_PRODUCT_RE.test(productId) ? productId : null;
+}
+function isPositiveFiniteNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0;
+}
+function hasValidOrderId(value) {
+  return typeof value === 'string' && /^[A-Za-z0-9-]{8,128}$/.test(value);
+}
+function invalidOrderInput(res, error) {
+  return res.status(400).json({ success: false, error });
+}
+
 // API: Get settings
 app.get('/get-settings', (req, res) => {
-  const settings = loadSettings();
-  res.json({ success: true, settings });
+  res.json({ success: true, settings: publicSettings(loadSettings()) });
 });
 
 // API: Save settings
@@ -129,7 +175,7 @@ app.post('/save-settings', (req, res) => {
       telegramChat: telegramChat !== undefined ? String(telegramChat).trim() : (prev.telegramChat || '')
     };
     saveSettings(settings);
-    res.json({ success: true, settings });
+    res.json({ success: true, settings: publicSettings(settings) });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
@@ -223,15 +269,16 @@ app.post('/save-profit-history', (req, res) => {
 app.post('/api/market-sell', async (req, res) => {
   try {
     const { productId, size } = req.body || {};
-    const sz = parseFloat(size);
-    if (!productId || !(sz > 0)) {
-      return res.json({ success: false, error: 'Нужны productId и размер больше нуля' });
+    const product = normalizeSpotUsdProduct(productId);
+    const sz = Number(size);
+    if (!product || !isPositiveFiniteNumber(sz)) {
+      return invalidOrderInput(res, 'A valid USD product and positive size are required');
     }
     // Сверяем с реальным остатком: продать больше, чем есть, нельзя, а
     // расхождение обычно значит, что часть уже продана в другой вкладке.
     let available = null;
     try {
-      const coin = String(productId).split('-')[0];
+      const coin = product.split('-')[0];
       const accounts = [];
       let cursor;
       do {
@@ -255,8 +302,8 @@ app.post('/api/market-sell', async (req, res) => {
       // равно отклонит ордер сверх остатка. Но в логе должно остаться.
       console.warn('[market-sell] баланс не сверен:', e.message);
     }
-    console.log('Creating MARKET sell:', productId, sz);
-    const orderId = await placeMarketSell(productId, sz);
+    console.log('Creating MARKET sell:', product, sz);
+    const orderId = await placeMarketSell(product, sz);
     if (!orderId) return res.json({ success: false, error: 'Биржа не вернула id ордера' });
     console.log('Market sell created, ID:', orderId);
     ordersCache.ts = 0; // сбрасываем кеш: иначе список ордеров ещё 8с без продажи
@@ -271,12 +318,18 @@ app.post('/api/market-sell', async (req, res) => {
 // API: Create limit sell order
 app.post('/create-sell-order', async (req, res) => {
   try {
-    const { productId, size, price } = req.body;
+    const { productId, size, price } = req.body || {};
+    const product = normalizeSpotUsdProduct(productId);
+    const sellSize = Number(size);
+    const limitPrice = Number(price);
+    if (!product || !isPositiveFiniteNumber(sellSize) || !isPositiveFiniteNumber(limitPrice)) {
+      return invalidOrderInput(res, 'A valid USD product, size and limit price are required');
+    }
     const clientOrderId = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
 
     const orderData = {
       client_order_id: clientOrderId,
-      product_id: productId,
+      product_id: product,
       side: 'SELL',
       order_configuration: {
         limit_limit_gtc: {
@@ -290,7 +343,7 @@ app.post('/create-sell-order', async (req, res) => {
     // Fetch product info to get correct precision
     let quoteDecimals = 2, baseDecimals = 8;
     try {
-      const prodRes = await fetch(`https://api.exchange.coinbase.com/products/${productId}`);
+      const prodRes = await fetch(`https://api.exchange.coinbase.com/products/${product}`);
       if (prodRes.ok) {
         const prod = await prodRes.json();
         if (prod.quote_increment) {
@@ -307,8 +360,8 @@ app.post('/create-sell-order', async (req, res) => {
     }
 
     // Fix precision
-    orderData.order_configuration.limit_limit_gtc.limit_price = parseFloat(price).toFixed(quoteDecimals);
-    orderData.order_configuration.limit_limit_gtc.base_size = parseFloat(size).toFixed(baseDecimals);
+    orderData.order_configuration.limit_limit_gtc.limit_price = limitPrice.toFixed(quoteDecimals);
+    orderData.order_configuration.limit_limit_gtc.base_size = sellSize.toFixed(baseDecimals);
 
     console.log('Creating sell order:', orderData);
     const response = await client.createOrder(orderData);
@@ -347,7 +400,10 @@ app.post('/create-sell-order', async (req, res) => {
 // API: Cancel order
 app.post('/cancel-order', async (req, res) => {
   try {
-    const { orderId } = req.body;
+    const { orderId } = req.body || {};
+    if (!hasValidOrderId(orderId)) {
+      return invalidOrderInput(res, 'A valid order ID is required');
+    }
     console.log('Cancelling order:', orderId);
     const response = await client.cancelOrders({ order_ids: [orderId] });
     console.log('Cancel response:', response);
@@ -540,9 +596,10 @@ app.get('/get-balance', async (req, res) => {
 app.post('/create-market-buy-order', async (req, res) => {
   try {
     const { productId, quoteSize } = req.body || {};
-    const usd = parseFloat(quoteSize);
-    if (!productId || !(usd > 0)) {
-      return res.json({ success: false, error: 'Нужны productId и сумма больше нуля' });
+    const product = normalizeSpotUsdProduct(productId);
+    const usd = Number(quoteSize);
+    if (!product || !isPositiveFiniteNumber(usd)) {
+      return invalidOrderInput(res, 'A valid USD product and positive amount are required');
     }
     // Потолок на случай опечатки в поле суммы: рыночный ордер исполняется
     // мгновенно и отменить его нельзя.
@@ -552,7 +609,7 @@ app.post('/create-market-buy-order', async (req, res) => {
     const clientOrderId = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
     const orderData = {
       client_order_id: clientOrderId,
-      product_id: productId,
+      product_id: product,
       side: 'BUY',
       order_configuration: { market_market_ioc: { quote_size: usd.toFixed(2) } },
     };
@@ -584,17 +641,20 @@ app.post('/create-market-buy-order', async (req, res) => {
 // API: Create limit buy order
 app.post('/create-buy-order', async (req, res) => {
   try {
-    const { productId, quoteSize, limitPrice, orderType, stopPrice } = req.body;
+    const { productId, quoteSize, limitPrice, orderType, stopPrice } = req.body || {};
+    const product = normalizeSpotUsdProduct(productId);
+    const price = Number(limitPrice);
+    const usdAmount = Number(quoteSize);
+    const stopVal = stopPrice === undefined || stopPrice === null || stopPrice === '' ? price : Number(stopPrice);
+    if (!product || !isPositiveFiniteNumber(price) || !isPositiveFiniteNumber(usdAmount) || (orderType === 'stop_limit' && !isPositiveFiniteNumber(stopVal))) {
+      return invalidOrderInput(res, 'A valid USD product, amount and limit price are required');
+    }
     const clientOrderId = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
-
-    // Calculate base_size (crypto amount) from USD and price
-    const price = parseFloat(limitPrice);
-    const usdAmount = parseFloat(quoteSize);
 
     // Fetch product info to get correct precision (base_increment & quote_increment)
     let baseDecimals = 8, quoteDecimals = 2;
     try {
-      const prodRes = await fetch(`https://api.exchange.coinbase.com/products/${productId}`);
+      const prodRes = await fetch(`https://api.exchange.coinbase.com/products/${product}`);
       if (prodRes.ok) {
         const prod = await prodRes.json();
         if (prod.base_increment) {
@@ -615,11 +675,10 @@ app.post('/create-buy-order', async (req, res) => {
 
     let orderData;
     if (orderType === 'stop_limit') {
-      const stopVal = parseFloat(stopPrice || limitPrice);
       const stopPriceStr = stopVal.toFixed(quoteDecimals);
       orderData = {
         client_order_id: clientOrderId,
-        product_id: productId,
+        product_id: product,
         side: 'BUY',
         order_configuration: {
           stop_limit_stop_limit_gtc: {
@@ -634,7 +693,7 @@ app.post('/create-buy-order', async (req, res) => {
     } else {
       orderData = {
         client_order_id: clientOrderId,
-        product_id: productId,
+        product_id: product,
         side: 'BUY',
         order_configuration: {
           limit_limit_gtc: {
@@ -762,6 +821,7 @@ async function getLatestOrders() {
 
 // Helper function for CryptoRank requests
 async function cryptorankFetch(endpoint, params = {}) {
+  if (!CRYPTORANK_API_KEY) throw new Error('CryptoRank API key is not configured');
   const url = new URL(`${CRYPTORANK_BASE_URL}${endpoint}`);
   Object.entries(params).forEach(([k, v]) => url.searchParams.append(k, v));
   const response = await fetch(url.toString(), {
@@ -2220,8 +2280,8 @@ function escTg(v) {
 
 async function sendTelegram(text, parseMode) {
   const s = loadSettings();
-  const token = s.telegramToken || process.env.TELEGRAM_BOT_TOKEN;
-  const chat = s.telegramChat || process.env.TELEGRAM_CHAT_ID;
+  const token = process.env.TELEGRAM_BOT_TOKEN || s.telegramToken;
+  const chat = process.env.TELEGRAM_CHAT_ID || s.telegramChat;
   if (!token || !chat) { console.error('[telegram] не настроен: нет token или chat'); return false; }
   const post = async (mode) => {
     const r = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
@@ -2250,6 +2310,17 @@ async function sendTelegram(text, parseMode) {
 }
 
 // ══════════ Telegram: уведомления об исполнении ордеров (100% filled) ══════════
+const CLIENT_TELEGRAM_ALERT_KINDS = new Set(['tracked', 'checklist', 'scalp']);
+app.post('/api/telegram/client-alert', async (req, res) => {
+  const kind = String(req.body?.kind || '');
+  const text = typeof req.body?.text === 'string' ? req.body.text.trim() : '';
+  if (!CLIENT_TELEGRAM_ALERT_KINDS.has(kind) || !text || text.length > 3500) {
+    return res.status(400).json({ success: false, error: 'Invalid Telegram alert payload' });
+  }
+  const sent = await sendTelegram(text, kind === 'checklist' ? 'Markdown' : null);
+  if (!sent) return res.status(502).json({ success: false, error: 'Telegram alert was not sent' });
+  res.json({ success: true });
+});
 const NOTIFIED_FILE = path.join(__dirname, 'notified-fills.json');
 let notifiedFills = [];
 try { notifiedFills = JSON.parse(fs.readFileSync(NOTIFIED_FILE, 'utf8')); } catch { }
@@ -2355,7 +2426,12 @@ setInterval(async () => {
 
 // Удалённый деплой: git pull + рестарт процесса (pm2 поднимет заново с новым кодом)
 app.post('/api/deploy', (req, res) => {
-  if ((req.query.key || req.headers['x-deploy-key']) !== (process.env.DEPLOY_KEY || 'trading-deploy-2026')) {
+  // Без запасного значения этот деплой отключил бы сам деплой: DEPLOY_KEY в
+  // .env на сервере нет, ответ стал бы 503, и выкатить исправление было бы
+  // уже нечем. Значение временное — как только DEPLOY_KEY появится в .env на
+  // сервере, эту строку надо убрать: в истории git оно всё равно осталось.
+  const deployKey = process.env.DEPLOY_KEY || 'trading-deploy-2026';
+  if ((req.query.key || req.headers['x-deploy-key']) !== deployKey) {
     return res.status(403).json({ success: false, error: 'bad key' });
   }
   // Файлы с ЖИВЫМИ данными: настройки (там токен Telegram), история прибыли,
@@ -5176,7 +5252,7 @@ function checkPort(port) {
     const tester = net.createServer()
       .once('error', () => resolve(false))
       .once('listening', () => { tester.close(); resolve(true); })
-      .listen(port);
+      .listen(port, HOST);
   });
 }
 
@@ -5184,7 +5260,7 @@ async function startServer(retries = 10) {
   for (let i = 0; i < retries; i++) {
     const free = await checkPort(PORT);
     if (free) {
-      server = app.listen(PORT, () => {
+      server = app.listen(PORT, HOST, () => {
         console.log(`Server running at http://localhost:${PORT}`);
       });
       server.keepAliveTimeout = 65000;

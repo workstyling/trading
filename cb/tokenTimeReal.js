@@ -77,61 +77,6 @@ export async function tokenTimeReal() {
     }
   };
 
-  document.addEventListener('keydown', async function(e) {
-    if (e.key === 'Shift') {
-      const activeRow = document.querySelector('.active-row');
-      if (activeRow) {
-        const coin = activeRow.getAttribute('data-coin');
-        const textarea = document.getElementById('claude-analysis');
-        textarea.value = `Загружаем данные для ${coin}...`;
-
-        try {
-          const endDate = new Date();
-          const startDate = new Date(endDate - 7 * 24 * 60 * 60 * 1000);
-          
-          const response = await fetch(`https://api.exchange.coinbase.com/products/${coin}-USD/candles?granularity=3600&start=${startDate.toISOString()}&end=${endDate.toISOString()}`);
-          const data = await response.json();
-
-          const formattedData = data.map(candle => ({
-            time: new Date(candle[0] * 1000).toISOString(),
-            open: candle[1],
-            high: candle[2],
-            low: candle[3],
-            close: candle[4],
-            volume: candle[5]
-          }));
-
-          textarea.value = `Анализируем данные ${coin}...`;
-
-          const claudeResponse = await fetch('https://api.anthropic.com/v1/messages', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-api-key': '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',
-              'anthropic-version': '2023-06-01'
-            },
-            body: JSON.stringify({
-              model: 'claude-3-sonnet-20240229',
-              messages: [{
-                role: 'user',
-                content: `Проанализируй данные торгов ${coin} за последнюю неделю и предоставь подробный анализ на русском языке. Обрати внимание на движения цены, тренды, объемы торгов и потенциальные торговые возможности. Вот данные: ${JSON.stringify(formattedData)}`
-              }],
-              max_tokens: 1000
-            })
-          });
-
-          const analysis = await claudeResponse.json();
-          textarea.value = analysis.content[0].text;
-          textarea.scrollIntoView({ behavior: 'smooth', block: 'start' });
-
-        } catch (error) {
-          console.error('Error analyzing token:', error);
-          textarea.value = `Ошибка анализа ${coin}: ${error.message}`;
-        }
-      }
-    }
-  });
-
   worker.postMessage({
     type: 'start',
     config: {
