@@ -1,9 +1,9 @@
 {
   "version": 1,
   "fingerprint": "e7ec11e56a13",
-  "generatedAt": "2026-08-31T21:49:44.298Z",
+  "generatedAt": "2026-08-31T21:55:50.894Z",
   "config": {
-    "days": 7,
+    "days": 14,
     "minVolume": 500000,
     "maxCoins": 110,
     "targetPct": 2,
@@ -13,211 +13,219 @@
     "cooldownHours": 4
   },
   "scope": {
-    "universeAsOf": "2026-08-31T21:49:44.298Z",
+    "universeAsOf": "2026-08-31T21:55:50.894Z",
     "selectedCoins": [
       {
         "coin": "BTC",
-        "volume": 657616287.12
+        "volume": 657866348.87
       },
       {
         "coin": "ETH",
-        "volume": 238848984.44
+        "volume": 238951380.29
       },
       {
         "coin": "XRP",
-        "volume": 146985971.89
+        "volume": 147161762.37
       },
       {
         "coin": "SOL",
-        "volume": 127177310.45
+        "volume": 127268650.97
       },
       {
         "coin": "ZEC",
-        "volume": 87325000.92
+        "volume": 87396497.94
       },
       {
         "coin": "HYPE",
-        "volume": 56798064.46
+        "volume": 57135035.24
+      },
+      {
+        "coin": "SKR",
+        "volume": 24312499.38
       },
       {
         "coin": "DOGE",
-        "volume": 22714762.8
+        "volume": 22739616.94
       },
       {
         "coin": "SUI",
-        "volume": 19568962.65
+        "volume": 19596673.68
       },
       {
         "coin": "LINK",
-        "volume": 15673876.91
+        "volume": 15665984.54
       },
       {
         "coin": "ADA",
-        "volume": 15264597.66
+        "volume": 15301869.37
       },
       {
         "coin": "HNT",
-        "volume": 13626803.8
+        "volume": 13727418.75
       },
       {
         "coin": "PUMP",
-        "volume": 13620542.71
+        "volume": 13665236.34
       },
       {
         "coin": "UNI",
-        "volume": 13096167.62
+        "volume": 13055298.62
+      },
+      {
+        "coin": "ZORA",
+        "volume": 12898294.02
       },
       {
         "coin": "USELESS",
-        "volume": 9619024.25
+        "volume": 9663791.34
       },
       {
         "coin": "XLM",
-        "volume": 9603178.65
+        "volume": 9627965.21
+      },
+      {
+        "coin": "NEAR",
+        "volume": 7916990.44
       },
       {
         "coin": "TAO",
-        "volume": 6644524.62
+        "volume": 6648805.18
       },
       {
         "coin": "TRUMP",
-        "volume": 6154267.19
+        "volume": 6166475.55
       },
       {
         "coin": "LTC",
-        "volume": 6013730.8
+        "volume": 6021525.05
       },
       {
         "coin": "AVAX",
-        "volume": 5283977.27
+        "volume": 5296969.34
       },
       {
         "coin": "DASH",
-        "volume": 4946441.25
+        "volume": 4956433.22
       },
       {
         "coin": "DOT",
-        "volume": 4205730.01
+        "volume": 4211286.26
       },
       {
         "coin": "HBAR",
-        "volume": 4000829.77
-      },
-      {
-        "coin": "ENA",
-        "volume": 3848846.82
+        "volume": 4007765.94
       },
       {
         "coin": "ONDO",
-        "volume": 3848152.04
+        "volume": 3854546.87
+      },
+      {
+        "coin": "ENA",
+        "volume": 3852741.02
       },
       {
         "coin": "VVV",
-        "volume": 3706302.66
+        "volume": 3724366.36
       },
       {
         "coin": "CRV",
-        "volume": 3481374.21
+        "volume": 3523677.38
       },
       {
         "coin": "LIGHTER",
-        "volume": 3339764.82
+        "volume": 3350141.67
       },
       {
         "coin": "FARTCOIN",
-        "volume": 3104750.93
+        "volume": 3109187.31
       },
       {
         "coin": "AAVE",
-        "volume": 2947183.99
+        "volume": 2955223.76
       },
       {
-        "coin": "BASECAT",
-        "volume": 2881963.91
+        "coin": "BCH",
+        "volume": 2565050.54
       },
       {
         "coin": "MDT",
-        "volume": 2511240.82
+        "volume": 2500225
       },
       {
         "coin": "PENGU",
-        "volume": 2295944.93
+        "volume": 2345835.69
       },
       {
         "coin": "POL",
-        "volume": 2267311.26
-      },
-      {
-        "coin": "FLOCK",
-        "volume": 2224729.26
+        "volume": 2266190.73
       },
       {
         "coin": "ARB",
-        "volume": 2170218.61
+        "volume": 2257192.26
       },
       {
         "coin": "FLR",
-        "volume": 2152524.69
+        "volume": 2212538.02
       },
       {
         "coin": "AERO",
-        "volume": 2131523.01
+        "volume": 2133676.91
+      },
+      {
+        "coin": "BICO",
+        "volume": 2024620.4
       },
       {
         "coin": "MORPHO",
-        "volume": 1983116.07
-      },
-      {
-        "coin": "BNB",
-        "volume": 1900783.19
+        "volume": 1981174.39
       },
       {
         "coin": "XPL",
         "volume": 1879731.19
       },
       {
+        "coin": "OP",
+        "volume": 1787671.84
+      },
+      {
+        "coin": "BONK",
+        "volume": 1786062.85
+      },
+      {
         "coin": "FIL",
-        "volume": 1773922.85
+        "volume": 1775879.83
       },
       {
         "coin": "PEPE",
-        "volume": 1751013.04
-      },
-      {
-        "coin": "OP",
-        "volume": 1705965.38
-      },
-      {
-        "coin": "STX",
-        "volume": 1678789.43
+        "volume": 1765636.36
       },
       {
         "coin": "ICP",
-        "volume": 1650338.56
+        "volume": 1658975.51
       },
       {
         "coin": "FET",
-        "volume": 1597919.11
+        "volume": 1602623.11
       },
       {
         "coin": "WIF",
-        "volume": 1543547.54
-      },
-      {
-        "coin": "MON",
-        "volume": 1538786.16
+        "volume": 1547495.47
       },
       {
         "coin": "WLD",
-        "volume": 1455356.28
+        "volume": 1462075.1
       },
       {
         "coin": "TON",
-        "volume": 1440098.38
+        "volume": 1444892.36
       },
       {
         "coin": "ZKC",
-        "volume": 1292405.4
+        "volume": 1299826.05
+      },
+      {
+        "coin": "INJ",
+        "volume": 1271697.61
       },
       {
         "coin": "ZRO",
@@ -225,59 +233,59 @@
       },
       {
         "coin": "JTO",
-        "volume": 1164817.93
+        "volume": 1171830.43
       },
       {
         "coin": "JASMY",
-        "volume": 1163362.04
+        "volume": 1163495.8
       },
       {
         "coin": "CRO",
-        "volume": 1140122.65
+        "volume": 1143886.57
       },
       {
         "coin": "POND",
         "volume": 1137389.91
       },
       {
+        "coin": "AXL",
+        "volume": 1057950.44
+      },
+      {
         "coin": "APT",
-        "volume": 1038415.53
+        "volume": 1039471.66
       },
       {
         "coin": "VET",
-        "volume": 897369.22
+        "volume": 897850.39
       },
       {
         "coin": "RENDER",
-        "volume": 884526.37
+        "volume": 885875.3
       },
       {
         "coin": "CFG",
-        "volume": 884315.71
+        "volume": 884707.14
       },
       {
         "coin": "GHST",
         "volume": 872597.56
       },
       {
+        "coin": "KTA",
+        "volume": 840483.1
+      },
+      {
         "coin": "SPX",
-        "volume": 840367.88
-      },
-      {
-        "coin": "SEI",
-        "volume": 793134.82
-      },
-      {
-        "coin": "BNKR",
-        "volume": 759356.71
+        "volume": 839710.19
       },
       {
         "coin": "ZEN",
         "volume": 754308.85
       },
       {
-        "coin": "PENDLE",
-        "volume": 742627.92
+        "coin": "BNKR",
+        "volume": 752177.17
       },
       {
         "coin": "LA",
@@ -285,42 +293,42 @@
       },
       {
         "coin": "CHIP",
-        "volume": 657341.61
+        "volume": 657875.92
       },
       {
         "coin": "ATOM",
-        "volume": 649516.37
+        "volume": 653575.43
       },
       {
         "coin": "ALGO",
-        "volume": 633637.48
+        "volume": 636327.07
       },
       {
-        "coin": "BOBBOB",
-        "volume": 611591.4
+        "coin": "CVX",
+        "volume": 622660.05
       },
       {
         "coin": "QNT",
-        "volume": 610773.94
+        "volume": 614665.32
       },
       {
         "coin": "GRVT",
-        "volume": 573451.39
+        "volume": 573452.5
       },
       {
         "coin": "TIA",
-        "volume": 570888.08
+        "volume": 572026.75
       },
       {
         "coin": "APE",
-        "volume": 513353.35
+        "volume": 515260.08
       },
       {
         "coin": "SHIB",
-        "volume": 507539.65
+        "volume": 507541.32
       }
     ],
-    "usableCoins": 19,
+    "usableCoins": 56,
     "modeledChecks": [
       "Bottom of 4h range (<25%)",
       "RSI 5m recovering off its low",
@@ -340,216 +348,216 @@
   },
   "overall": {
     "name": "Current structural gate",
-    "n": 25,
-    "winRate": 52,
-    "avgPct": -1.298,
-    "profitFactor": 0.41,
-    "tp": 13,
-    "sl": 6,
-    "time": 6,
+    "n": 110,
+    "winRate": 85.5,
+    "avgPct": 0.782,
+    "profitFactor": 2.1,
+    "tp": 94,
+    "sl": 9,
+    "time": 7,
     "clusters": {
-      "clusters": 14,
-      "avgPct": -1.308,
-      "positivePct": 50
+      "clusters": 43,
+      "avgPct": 0.434,
+      "positivePct": 76.7
     },
     "segments": [
       {
         "segment": 1,
-        "from": "2026-08-24T22:50:00.000Z",
-        "to": "2026-08-26T01:28:20.333Z",
-        "n": 6,
-        "winRate": 33.3,
-        "avgPct": -3.02,
-        "profitFactor": 0.16,
-        "tp": 2,
-        "sl": 3,
-        "time": 1
-      },
-      {
-        "segment": 2,
-        "from": "2026-08-26T01:28:20.333Z",
-        "to": "2026-08-27T04:06:40.666Z",
-        "n": 3,
-        "winRate": 100,
-        "avgPct": 1.745,
-        "profitFactor": null,
-        "tp": 3,
-        "sl": 0,
+        "from": "2026-08-17T22:25:00.000Z",
+        "to": "2026-08-21T09:11:40.333Z",
+        "n": 58,
+        "winRate": 98.3,
+        "avgPct": 1.608,
+        "profitFactor": 15.95,
+        "tp": 57,
+        "sl": 1,
         "time": 0
       },
       {
-        "segment": 3,
-        "from": "2026-08-27T04:06:40.666Z",
-        "to": "2026-08-28T06:45:01.000Z",
-        "n": 16,
-        "winRate": 50,
-        "avgPct": -1.223,
-        "profitFactor": 0.42,
-        "tp": 8,
+        "segment": 2,
+        "from": "2026-08-21T09:11:40.333Z",
+        "to": "2026-08-24T19:58:20.666Z",
+        "n": 29,
+        "winRate": 82.8,
+        "avgPct": 0.577,
+        "profitFactor": 1.67,
+        "tp": 24,
         "sl": 3,
+        "time": 2
+      },
+      {
+        "segment": 3,
+        "from": "2026-08-24T19:58:20.666Z",
+        "to": "2026-08-28T06:45:01.000Z",
+        "n": 23,
+        "winRate": 56.5,
+        "avgPct": -1.04,
+        "profitFactor": 0.49,
+        "tp": 13,
+        "sl": 5,
         "time": 5
       }
     ],
-    "positiveSegments": 1
+    "positiveSegments": 2
   },
   "variants": [
     {
       "name": "Current structural gate",
-      "n": 25,
-      "winRate": 52,
-      "avgPct": -1.298,
-      "profitFactor": 0.41,
-      "tp": 13,
-      "sl": 6,
-      "time": 6,
+      "n": 110,
+      "winRate": 85.5,
+      "avgPct": 0.782,
+      "profitFactor": 2.1,
+      "tp": 94,
+      "sl": 9,
+      "time": 7,
       "clusters": {
-        "clusters": 14,
-        "avgPct": -1.308,
-        "positivePct": 50
+        "clusters": 43,
+        "avgPct": 0.434,
+        "positivePct": 76.7
       },
       "segments": [
         {
           "segment": 1,
-          "from": "2026-08-24T22:50:00.000Z",
-          "to": "2026-08-26T01:28:20.333Z",
-          "n": 6,
-          "winRate": 33.3,
-          "avgPct": -3.02,
-          "profitFactor": 0.16,
-          "tp": 2,
-          "sl": 3,
-          "time": 1
-        },
-        {
-          "segment": 2,
-          "from": "2026-08-26T01:28:20.333Z",
-          "to": "2026-08-27T04:06:40.666Z",
-          "n": 3,
-          "winRate": 100,
-          "avgPct": 1.745,
-          "profitFactor": null,
-          "tp": 3,
-          "sl": 0,
+          "from": "2026-08-17T22:25:00.000Z",
+          "to": "2026-08-21T09:11:40.333Z",
+          "n": 58,
+          "winRate": 98.3,
+          "avgPct": 1.608,
+          "profitFactor": 15.95,
+          "tp": 57,
+          "sl": 1,
           "time": 0
         },
         {
-          "segment": 3,
-          "from": "2026-08-27T04:06:40.666Z",
-          "to": "2026-08-28T06:45:01.000Z",
-          "n": 16,
-          "winRate": 50,
-          "avgPct": -1.223,
-          "profitFactor": 0.42,
-          "tp": 8,
+          "segment": 2,
+          "from": "2026-08-21T09:11:40.333Z",
+          "to": "2026-08-24T19:58:20.666Z",
+          "n": 29,
+          "winRate": 82.8,
+          "avgPct": 0.577,
+          "profitFactor": 1.67,
+          "tp": 24,
           "sl": 3,
+          "time": 2
+        },
+        {
+          "segment": 3,
+          "from": "2026-08-24T19:58:20.666Z",
+          "to": "2026-08-28T06:45:01.000Z",
+          "n": 23,
+          "winRate": 56.5,
+          "avgPct": -1.04,
+          "profitFactor": 0.49,
+          "tp": 13,
+          "sl": 5,
           "time": 5
         }
       ],
-      "positiveSegments": 1
+      "positiveSegments": 2
     },
     {
       "name": "Hypothesis: RSI 40-50",
-      "n": 19,
-      "winRate": 63.2,
-      "avgPct": -0.39,
-      "profitFactor": 0.74,
-      "tp": 12,
-      "sl": 3,
-      "time": 4,
+      "n": 77,
+      "winRate": 85.7,
+      "avgPct": 0.831,
+      "profitFactor": 2.25,
+      "tp": 66,
+      "sl": 6,
+      "time": 5,
       "clusters": {
-        "clusters": 11,
-        "avgPct": 0.083,
-        "positivePct": 63.6
+        "clusters": 35,
+        "avgPct": 0.817,
+        "positivePct": 80
       },
       "segments": [
         {
           "segment": 1,
-          "from": "2026-08-24T22:50:00.000Z",
-          "to": "2026-08-26T01:28:20.333Z",
-          "n": 4,
-          "winRate": 50,
-          "avgPct": -1.412,
-          "profitFactor": 0.38,
-          "tp": 2,
-          "sl": 1,
-          "time": 1
-        },
-        {
-          "segment": 2,
-          "from": "2026-08-26T01:28:20.333Z",
-          "to": "2026-08-27T04:06:40.666Z",
-          "n": 3,
+          "from": "2026-08-18T02:55:00.000Z",
+          "to": "2026-08-21T12:11:40.333Z",
+          "n": 35,
           "winRate": 100,
           "avgPct": 1.745,
           "profitFactor": null,
-          "tp": 3,
+          "tp": 35,
           "sl": 0,
           "time": 0
         },
         {
+          "segment": 2,
+          "from": "2026-08-21T12:11:40.333Z",
+          "to": "2026-08-24T21:28:20.666Z",
+          "n": 25,
+          "winRate": 80,
+          "avgPct": 0.39,
+          "profitFactor": 1.39,
+          "tp": 20,
+          "sl": 3,
+          "time": 2
+        },
+        {
           "segment": 3,
-          "from": "2026-08-27T04:06:40.666Z",
+          "from": "2026-08-24T21:28:20.666Z",
           "to": "2026-08-28T06:45:01.000Z",
-          "n": 12,
-          "winRate": 58.3,
-          "avgPct": -0.583,
-          "profitFactor": 0.64,
-          "tp": 7,
-          "sl": 2,
+          "n": 17,
+          "winRate": 64.7,
+          "avgPct": -0.404,
+          "profitFactor": 0.74,
+          "tp": 11,
+          "sl": 3,
           "time": 3
         }
       ],
-      "positiveSegments": 1
+      "positiveSegments": 2
     },
     {
       "name": "Hypothesis: range4 <4%",
-      "n": 15,
-      "winRate": 40,
-      "avgPct": -1.828,
-      "profitFactor": 0.28,
-      "tp": 6,
+      "n": 60,
+      "winRate": 83.3,
+      "avgPct": 0.753,
+      "profitFactor": 2.07,
+      "tp": 50,
       "sl": 4,
-      "time": 5,
+      "time": 6,
       "clusters": {
-        "clusters": 9,
-        "avgPct": -1.544,
-        "positivePct": 44.4
+        "clusters": 25,
+        "avgPct": 0.353,
+        "positivePct": 76
       },
       "segments": [
         {
           "segment": 1,
-          "from": "2026-08-24T22:50:00.000Z",
-          "to": "2026-08-26T00:20:00.333Z",
-          "n": 3,
-          "winRate": 33.3,
-          "avgPct": -2.465,
-          "profitFactor": 0.19,
-          "tp": 1,
-          "sl": 1,
-          "time": 1
-        },
-        {
-          "segment": 2,
-          "from": "2026-08-26T00:20:00.333Z",
-          "to": "2026-08-27T01:50:00.666Z",
-          "n": 2,
+          "from": "2026-08-18T02:35:00.000Z",
+          "to": "2026-08-21T10:50:00.333Z",
+          "n": 42,
           "winRate": 100,
           "avgPct": 1.745,
           "profitFactor": null,
-          "tp": 2,
+          "tp": 42,
           "sl": 0,
           "time": 0
         },
         {
+          "segment": 2,
+          "from": "2026-08-21T10:50:00.333Z",
+          "to": "2026-08-24T19:05:00.666Z",
+          "n": 4,
+          "winRate": 50,
+          "avgPct": -0.738,
+          "profitFactor": 0.54,
+          "tp": 2,
+          "sl": 0,
+          "time": 2
+        },
+        {
           "segment": 3,
-          "from": "2026-08-27T01:50:00.666Z",
+          "from": "2026-08-24T19:05:00.666Z",
           "to": "2026-08-28T03:20:01.000Z",
-          "n": 10,
-          "winRate": 30,
-          "avgPct": -2.352,
-          "profitFactor": 0.18,
-          "tp": 3,
-          "sl": 3,
+          "n": 14,
+          "winRate": 42.9,
+          "avgPct": -1.796,
+          "profitFactor": 0.29,
+          "tp": 6,
+          "sl": 4,
           "time": 4
         }
       ],
@@ -557,106 +565,106 @@
     },
     {
       "name": "Hypothesis: exclude flat pre-range run-up",
-      "n": 14,
-      "winRate": 57.1,
-      "avgPct": -1.361,
-      "profitFactor": 0.42,
-      "tp": 8,
-      "sl": 4,
-      "time": 2,
+      "n": 69,
+      "winRate": 87,
+      "avgPct": 0.819,
+      "profitFactor": 2.17,
+      "tp": 60,
+      "sl": 6,
+      "time": 3,
       "clusters": {
-        "clusters": 12,
-        "avgPct": -1.065,
-        "positivePct": 58.3
+        "clusters": 32,
+        "avgPct": 0.47,
+        "positivePct": 78.1
       },
       "segments": [
         {
           "segment": 1,
-          "from": "2026-08-24T22:50:00.000Z",
-          "to": "2026-08-26T01:28:20.333Z",
-          "n": 5,
-          "winRate": 40,
-          "avgPct": -3.043,
-          "profitFactor": 0.19,
-          "tp": 2,
-          "sl": 3,
-          "time": 0
-        },
-        {
-          "segment": 2,
-          "from": "2026-08-26T01:28:20.333Z",
-          "to": "2026-08-27T04:06:40.666Z",
-          "n": 1,
+          "from": "2026-08-17T22:25:00.000Z",
+          "to": "2026-08-21T09:11:40.333Z",
+          "n": 35,
           "winRate": 100,
           "avgPct": 1.745,
           "profitFactor": null,
-          "tp": 1,
+          "tp": 35,
           "sl": 0,
           "time": 0
         },
         {
+          "segment": 2,
+          "from": "2026-08-21T09:11:40.333Z",
+          "to": "2026-08-24T19:58:20.666Z",
+          "n": 20,
+          "winRate": 80,
+          "avgPct": 0.327,
+          "profitFactor": 1.31,
+          "tp": 16,
+          "sl": 3,
+          "time": 1
+        },
+        {
           "segment": 3,
-          "from": "2026-08-27T04:06:40.666Z",
+          "from": "2026-08-24T19:58:20.666Z",
           "to": "2026-08-28T06:45:01.000Z",
-          "n": 8,
-          "winRate": 62.5,
-          "avgPct": -0.699,
-          "profitFactor": 0.61,
-          "tp": 5,
-          "sl": 1,
+          "n": 14,
+          "winRate": 64.3,
+          "avgPct": -0.791,
+          "profitFactor": 0.59,
+          "tp": 9,
+          "sl": 3,
           "time": 2
         }
       ],
-      "positiveSegments": 1
+      "positiveSegments": 2
     },
     {
       "name": "Hypothesis: drop from 4h high >=4%",
-      "n": 6,
-      "winRate": 66.7,
-      "avgPct": -0.915,
-      "profitFactor": 0.56,
-      "tp": 4,
-      "sl": 2,
+      "n": 23,
+      "winRate": 87,
+      "avgPct": 0.704,
+      "profitFactor": 1.87,
+      "tp": 20,
+      "sl": 3,
       "time": 0,
       "clusters": {
-        "clusters": 6,
-        "avgPct": -0.915,
-        "positivePct": 66.7
+        "clusters": 18,
+        "avgPct": 0.637,
+        "positivePct": 83.3
       },
       "segments": [
         {
           "segment": 1,
-          "from": "2026-08-25T07:15:00.000Z",
-          "to": "2026-08-26T07:05:00.333Z",
-          "n": 2,
-          "winRate": 0,
-          "avgPct": -6.235,
-          "profitFactor": 0,
-          "tp": 0,
+          "from": "2026-08-20T03:40:00.000Z",
+          "to": "2026-08-22T20:41:40.333Z",
+          "n": 10,
+          "winRate": 90,
+          "avgPct": 0.947,
+          "profitFactor": 2.52,
+          "tp": 9,
+          "sl": 1,
+          "time": 0
+        },
+        {
+          "segment": 2,
+          "from": "2026-08-22T20:41:40.333Z",
+          "to": "2026-08-25T13:43:20.666Z",
+          "n": 9,
+          "winRate": 77.8,
+          "avgPct": -0.028,
+          "profitFactor": 0.98,
+          "tp": 7,
           "sl": 2,
           "time": 0
         },
         {
-          "segment": 2,
-          "from": "2026-08-26T07:05:00.333Z",
-          "to": "2026-08-27T06:55:00.666Z",
-          "n": 2,
-          "winRate": 100,
-          "avgPct": 1.745,
-          "profitFactor": null,
-          "tp": 2,
-          "sl": 0,
-          "time": 0
-        },
-        {
           "segment": 3,
-          "from": "2026-08-27T06:55:00.666Z",
+          "from": "2026-08-25T13:43:20.666Z",
           "to": "2026-08-28T06:45:01.000Z",
-          "n": 2,
+          "n": 4,
           "winRate": 100,
           "avgPct": 1.745,
           "profitFactor": null,
-          "tp": 2,
+          "tp": 4,
           "sl": 0,
           "time": 0
         }
@@ -664,5 +672,5 @@
       "positiveSegments": 2
     }
   ],
-  "elapsedSeconds": 198.6
+  "elapsedSeconds": 337.4
 }
