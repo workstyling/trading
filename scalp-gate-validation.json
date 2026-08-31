@@ -1,330 +1,326 @@
 {
   "version": 1,
   "fingerprint": "e7ec11e56a13",
-  "generatedAt": "2026-08-30T22:46:34.887Z",
+  "generatedAt": "2026-08-31T21:49:44.298Z",
   "config": {
     "days": 7,
     "minVolume": 500000,
     "maxCoins": 110,
     "targetPct": 2,
     "slPct": 6,
-    "feeSidePct": 0.25,
+    "feeSidePct": 0.125,
     "maxHoldHours": 48,
     "cooldownHours": 4
   },
   "scope": {
-    "universeAsOf": "2026-08-30T22:46:34.887Z",
+    "universeAsOf": "2026-08-31T21:49:44.298Z",
     "selectedCoins": [
       {
         "coin": "BTC",
-        "volume": 264790139.41
+        "volume": 657616287.12
       },
       {
         "coin": "ETH",
-        "volume": 126291118.15
+        "volume": 238848984.44
       },
       {
         "coin": "XRP",
-        "volume": 81461666.6
+        "volume": 146985971.89
       },
       {
         "coin": "SOL",
-        "volume": 73282641.51
+        "volume": 127177310.45
       },
       {
         "coin": "ZEC",
-        "volume": 66968533.98
-      },
-      {
-        "coin": "HNT",
-        "volume": 31405690.55
+        "volume": 87325000.92
       },
       {
         "coin": "HYPE",
-        "volume": 29309880.21
-      },
-      {
-        "coin": "SKR",
-        "volume": 17356096.4
-      },
-      {
-        "coin": "UNI",
-        "volume": 16170083.67
+        "volume": 56798064.46
       },
       {
         "coin": "DOGE",
-        "volume": 14075544.77
-      },
-      {
-        "coin": "LINK",
-        "volume": 11946082.55
-      },
-      {
-        "coin": "PUMP",
-        "volume": 11649027.98
+        "volume": 22714762.8
       },
       {
         "coin": "SUI",
-        "volume": 11097926.73
+        "volume": 19568962.65
+      },
+      {
+        "coin": "LINK",
+        "volume": 15673876.91
       },
       {
         "coin": "ADA",
-        "volume": 9555380.15
+        "volume": 15264597.66
       },
       {
-        "coin": "TRUMP",
-        "volume": 7211674.48
+        "coin": "HNT",
+        "volume": 13626803.8
       },
       {
-        "coin": "NEAR",
-        "volume": 7047993.09
+        "coin": "PUMP",
+        "volume": 13620542.71
       },
       {
-        "coin": "XLM",
-        "volume": 5207349.54
-      },
-      {
-        "coin": "TAO",
-        "volume": 4521695.72
-      },
-      {
-        "coin": "ZORA",
-        "volume": 4506445.38
-      },
-      {
-        "coin": "LTC",
-        "volume": 4297601.78
-      },
-      {
-        "coin": "ZKC",
-        "volume": 4229214.09
-      },
-      {
-        "coin": "LIGHTER",
-        "volume": 3802819.32
-      },
-      {
-        "coin": "ENA",
-        "volume": 3752321.94
-      },
-      {
-        "coin": "VVV",
-        "volume": 3380167.35
-      },
-      {
-        "coin": "AAVE",
-        "volume": 3292997.05
-      },
-      {
-        "coin": "AVAX",
-        "volume": 3097065.74
-      },
-      {
-        "coin": "ONDO",
-        "volume": 2745551.4
-      },
-      {
-        "coin": "HBAR",
-        "volume": 2737168.6
-      },
-      {
-        "coin": "BASECAT",
-        "volume": 2730774.76
-      },
-      {
-        "coin": "AERO",
-        "volume": 2265086.26
-      },
-      {
-        "coin": "DASH",
-        "volume": 2248898.96
-      },
-      {
-        "coin": "BCH",
-        "volume": 2203692.6
-      },
-      {
-        "coin": "FARTCOIN",
-        "volume": 2053377.18
-      },
-      {
-        "coin": "BICO",
-        "volume": 1949949.8
-      },
-      {
-        "coin": "ICP",
-        "volume": 1944774.04
-      },
-      {
-        "coin": "FET",
-        "volume": 1921610.02
-      },
-      {
-        "coin": "WLD",
-        "volume": 1598526.67
-      },
-      {
-        "coin": "DOT",
-        "volume": 1465848.59
+        "coin": "UNI",
+        "volume": 13096167.62
       },
       {
         "coin": "USELESS",
-        "volume": 1393102.46
+        "volume": 9619024.25
       },
       {
-        "coin": "HIGH",
-        "volume": 1391572.79
+        "coin": "XLM",
+        "volume": 9603178.65
       },
       {
-        "coin": "POL",
-        "volume": 1360174.11
+        "coin": "TAO",
+        "volume": 6644524.62
       },
       {
-        "coin": "OP",
-        "volume": 1238350.12
+        "coin": "TRUMP",
+        "volume": 6154267.19
       },
       {
-        "coin": "FIL",
-        "volume": 1233954.35
+        "coin": "LTC",
+        "volume": 6013730.8
       },
       {
-        "coin": "VET",
-        "volume": 1204643.56
+        "coin": "AVAX",
+        "volume": 5283977.27
       },
       {
-        "coin": "STX",
-        "volume": 1187398.42
+        "coin": "DASH",
+        "volume": 4946441.25
       },
       {
-        "coin": "WIF",
-        "volume": 1121035.69
+        "coin": "DOT",
+        "volume": 4205730.01
       },
       {
-        "coin": "NCT",
-        "volume": 1106483.02
+        "coin": "HBAR",
+        "volume": 4000829.77
       },
       {
-        "coin": "CRO",
-        "volume": 1078429.61
+        "coin": "ENA",
+        "volume": 3848846.82
+      },
+      {
+        "coin": "ONDO",
+        "volume": 3848152.04
+      },
+      {
+        "coin": "VVV",
+        "volume": 3706302.66
       },
       {
         "coin": "CRV",
-        "volume": 1002150.25
+        "volume": 3481374.21
       },
       {
-        "coin": "AUCTION",
-        "volume": 999929.86
+        "coin": "LIGHTER",
+        "volume": 3339764.82
       },
       {
-        "coin": "XPL",
-        "volume": 997912.28
+        "coin": "FARTCOIN",
+        "volume": 3104750.93
       },
       {
-        "coin": "PEPE",
-        "volume": 990058.45
+        "coin": "AAVE",
+        "volume": 2947183.99
       },
       {
-        "coin": "BONK",
-        "volume": 983513.14
-      },
-      {
-        "coin": "PENDLE",
-        "volume": 884442.13
-      },
-      {
-        "coin": "RENDER",
-        "volume": 863159.85
-      },
-      {
-        "coin": "STRK",
-        "volume": 814289.87
-      },
-      {
-        "coin": "NKN",
-        "volume": 791081.67
+        "coin": "BASECAT",
+        "volume": 2881963.91
       },
       {
         "coin": "MDT",
-        "volume": 788950.96
+        "volume": 2511240.82
       },
       {
-        "coin": "POND",
-        "volume": 770235.75
+        "coin": "PENGU",
+        "volume": 2295944.93
+      },
+      {
+        "coin": "POL",
+        "volume": 2267311.26
+      },
+      {
+        "coin": "FLOCK",
+        "volume": 2224729.26
+      },
+      {
+        "coin": "ARB",
+        "volume": 2170218.61
+      },
+      {
+        "coin": "FLR",
+        "volume": 2152524.69
+      },
+      {
+        "coin": "AERO",
+        "volume": 2131523.01
       },
       {
         "coin": "MORPHO",
-        "volume": 768943.89
+        "volume": 1983116.07
       },
       {
-        "coin": "ZRO",
-        "volume": 763401.71
+        "coin": "BNB",
+        "volume": 1900783.19
       },
       {
-        "coin": "APT",
-        "volume": 756014.23
+        "coin": "XPL",
+        "volume": 1879731.19
       },
       {
-        "coin": "TRAC",
-        "volume": 733888.52
+        "coin": "FIL",
+        "volume": 1773922.85
+      },
+      {
+        "coin": "PEPE",
+        "volume": 1751013.04
+      },
+      {
+        "coin": "OP",
+        "volume": 1705965.38
+      },
+      {
+        "coin": "STX",
+        "volume": 1678789.43
+      },
+      {
+        "coin": "ICP",
+        "volume": 1650338.56
+      },
+      {
+        "coin": "FET",
+        "volume": 1597919.11
+      },
+      {
+        "coin": "WIF",
+        "volume": 1543547.54
       },
       {
         "coin": "MON",
-        "volume": 732452.11
+        "volume": 1538786.16
       },
       {
-        "coin": "INJ",
-        "volume": 683405.77
-      },
-      {
-        "coin": "CHIP",
-        "volume": 668762.31
+        "coin": "WLD",
+        "volume": 1455356.28
       },
       {
         "coin": "TON",
-        "volume": 637493.66
+        "volume": 1440098.38
       },
       {
-        "coin": "ORCA",
-        "volume": 613662.85
+        "coin": "ZKC",
+        "volume": 1292405.4
       },
       {
-        "coin": "ZKP",
-        "volume": 613265.93
+        "coin": "ZRO",
+        "volume": 1225803.99
       },
       {
-        "coin": "ETC",
-        "volume": 596771.69
+        "coin": "JTO",
+        "volume": 1164817.93
       },
       {
-        "coin": "KEYCAT",
-        "volume": 586826.25
+        "coin": "JASMY",
+        "volume": 1163362.04
+      },
+      {
+        "coin": "CRO",
+        "volume": 1140122.65
+      },
+      {
+        "coin": "POND",
+        "volume": 1137389.91
+      },
+      {
+        "coin": "APT",
+        "volume": 1038415.53
+      },
+      {
+        "coin": "VET",
+        "volume": 897369.22
+      },
+      {
+        "coin": "RENDER",
+        "volume": 884526.37
+      },
+      {
+        "coin": "CFG",
+        "volume": 884315.71
+      },
+      {
+        "coin": "GHST",
+        "volume": 872597.56
       },
       {
         "coin": "SPX",
-        "volume": 584030.56
+        "volume": 840367.88
       },
       {
-        "coin": "ZK",
-        "volume": 530546.31
+        "coin": "SEI",
+        "volume": 793134.82
       },
       {
-        "coin": "GRVT",
-        "volume": 515430.41
+        "coin": "BNKR",
+        "volume": 759356.71
       },
       {
-        "coin": "TNSR",
-        "volume": 513232.8
+        "coin": "ZEN",
+        "volume": 754308.85
       },
       {
-        "coin": "AST",
-        "volume": 513122
+        "coin": "PENDLE",
+        "volume": 742627.92
+      },
+      {
+        "coin": "LA",
+        "volume": 680401.01
+      },
+      {
+        "coin": "CHIP",
+        "volume": 657341.61
+      },
+      {
+        "coin": "ATOM",
+        "volume": 649516.37
       },
       {
         "coin": "ALGO",
-        "volume": 508691.34
+        "volume": 633637.48
+      },
+      {
+        "coin": "BOBBOB",
+        "volume": 611591.4
+      },
+      {
+        "coin": "QNT",
+        "volume": 610773.94
+      },
+      {
+        "coin": "GRVT",
+        "volume": 573451.39
+      },
+      {
+        "coin": "TIA",
+        "volume": 570888.08
+      },
+      {
+        "coin": "APE",
+        "volume": 513353.35
+      },
+      {
+        "coin": "SHIB",
+        "volume": 507539.65
       }
     ],
-    "usableCoins": 29,
+    "usableCoins": 19,
     "modeledChecks": [
       "Bottom of 4h range (<25%)",
       "RSI 5m recovering off its low",
@@ -344,329 +340,329 @@
   },
   "overall": {
     "name": "Current structural gate",
-    "n": 40,
-    "winRate": 62.5,
-    "avgPct": -1.014,
-    "profitFactor": 0.48,
-    "tp": 25,
-    "sl": 9,
+    "n": 25,
+    "winRate": 52,
+    "avgPct": -1.298,
+    "profitFactor": 0.41,
+    "tp": 13,
+    "sl": 6,
     "time": 6,
     "clusters": {
-      "clusters": 20,
-      "avgPct": -0.928,
-      "positivePct": 60
+      "clusters": 14,
+      "avgPct": -1.308,
+      "positivePct": 50
     },
     "segments": [
       {
         "segment": 1,
-        "from": "2026-08-23T22:35:00.000Z",
-        "to": "2026-08-25T09:18:20.333Z",
-        "n": 21,
-        "winRate": 66.7,
-        "avgPct": -0.994,
-        "profitFactor": 0.5,
-        "tp": 14,
-        "sl": 6,
+        "from": "2026-08-24T22:50:00.000Z",
+        "to": "2026-08-26T01:28:20.333Z",
+        "n": 6,
+        "winRate": 33.3,
+        "avgPct": -3.02,
+        "profitFactor": 0.16,
+        "tp": 2,
+        "sl": 3,
         "time": 1
       },
       {
         "segment": 2,
-        "from": "2026-08-25T09:18:20.333Z",
-        "to": "2026-08-26T20:01:40.666Z",
-        "n": 2,
-        "winRate": 50,
-        "avgPct": -0.828,
-        "profitFactor": 0.47,
-        "tp": 1,
+        "from": "2026-08-26T01:28:20.333Z",
+        "to": "2026-08-27T04:06:40.666Z",
+        "n": 3,
+        "winRate": 100,
+        "avgPct": 1.745,
+        "profitFactor": null,
+        "tp": 3,
         "sl": 0,
-        "time": 1
+        "time": 0
       },
       {
         "segment": 3,
-        "from": "2026-08-26T20:01:40.666Z",
+        "from": "2026-08-27T04:06:40.666Z",
         "to": "2026-08-28T06:45:01.000Z",
-        "n": 17,
-        "winRate": 58.8,
-        "avgPct": -1.059,
-        "profitFactor": 0.45,
-        "tp": 10,
+        "n": 16,
+        "winRate": 50,
+        "avgPct": -1.223,
+        "profitFactor": 0.42,
+        "tp": 8,
         "sl": 3,
-        "time": 4
+        "time": 5
       }
     ],
-    "positiveSegments": 0
+    "positiveSegments": 1
   },
   "variants": [
     {
       "name": "Current structural gate",
-      "n": 40,
-      "winRate": 62.5,
-      "avgPct": -1.014,
-      "profitFactor": 0.48,
-      "tp": 25,
-      "sl": 9,
+      "n": 25,
+      "winRate": 52,
+      "avgPct": -1.298,
+      "profitFactor": 0.41,
+      "tp": 13,
+      "sl": 6,
       "time": 6,
       "clusters": {
-        "clusters": 20,
-        "avgPct": -0.928,
-        "positivePct": 60
+        "clusters": 14,
+        "avgPct": -1.308,
+        "positivePct": 50
       },
       "segments": [
         {
           "segment": 1,
-          "from": "2026-08-23T22:35:00.000Z",
-          "to": "2026-08-25T09:18:20.333Z",
-          "n": 21,
-          "winRate": 66.7,
-          "avgPct": -0.994,
-          "profitFactor": 0.5,
-          "tp": 14,
-          "sl": 6,
-          "time": 1
-        },
-        {
-          "segment": 2,
-          "from": "2026-08-25T09:18:20.333Z",
-          "to": "2026-08-26T20:01:40.666Z",
-          "n": 2,
-          "winRate": 50,
-          "avgPct": -0.828,
-          "profitFactor": 0.47,
-          "tp": 1,
-          "sl": 0,
-          "time": 1
-        },
-        {
-          "segment": 3,
-          "from": "2026-08-26T20:01:40.666Z",
-          "to": "2026-08-28T06:45:01.000Z",
-          "n": 17,
-          "winRate": 58.8,
-          "avgPct": -1.059,
-          "profitFactor": 0.45,
-          "tp": 10,
+          "from": "2026-08-24T22:50:00.000Z",
+          "to": "2026-08-26T01:28:20.333Z",
+          "n": 6,
+          "winRate": 33.3,
+          "avgPct": -3.02,
+          "profitFactor": 0.16,
+          "tp": 2,
           "sl": 3,
-          "time": 4
-        }
-      ],
-      "positiveSegments": 0
-    },
-    {
-      "name": "Hypothesis: RSI 40-50",
-      "n": 32,
-      "winRate": 68.8,
-      "avgPct": -0.533,
-      "profitFactor": 0.66,
-      "tp": 22,
-      "sl": 6,
-      "time": 4,
-      "clusters": {
-        "clusters": 18,
-        "avgPct": -0.247,
-        "positivePct": 66.7
-      },
-      "segments": [
-        {
-          "segment": 1,
-          "from": "2026-08-23T22:35:00.000Z",
-          "to": "2026-08-25T09:18:20.333Z",
-          "n": 17,
-          "winRate": 70.6,
-          "avgPct": -0.642,
-          "profitFactor": 0.62,
-          "tp": 12,
-          "sl": 4,
           "time": 1
         },
         {
           "segment": 2,
-          "from": "2026-08-25T09:18:20.333Z",
-          "to": "2026-08-26T20:01:40.666Z",
-          "n": 2,
-          "winRate": 50,
-          "avgPct": -0.828,
-          "profitFactor": 0.47,
-          "tp": 1,
-          "sl": 0,
-          "time": 1
-        },
-        {
-          "segment": 3,
-          "from": "2026-08-26T20:01:40.666Z",
-          "to": "2026-08-28T06:45:01.000Z",
-          "n": 13,
-          "winRate": 69.2,
-          "avgPct": -0.344,
-          "profitFactor": 0.75,
-          "tp": 9,
-          "sl": 2,
-          "time": 2
-        }
-      ],
-      "positiveSegments": 0
-    },
-    {
-      "name": "Hypothesis: range4 <4%",
-      "n": 17,
-      "winRate": 41.2,
-      "avgPct": -2.147,
-      "profitFactor": 0.22,
-      "tp": 7,
-      "sl": 5,
-      "time": 5,
-      "clusters": {
-        "clusters": 11,
-        "avgPct": -1.779,
-        "positivePct": 45.5
-      },
-      "segments": [
-        {
-          "segment": 1,
-          "from": "2026-08-24T00:55:00.000Z",
-          "to": "2026-08-25T09:43:20.333Z",
-          "n": 7,
-          "winRate": 42.9,
-          "avgPct": -2.078,
-          "profitFactor": 0.24,
-          "tp": 3,
-          "sl": 2,
-          "time": 2
-        },
-        {
-          "segment": 2,
-          "from": "2026-08-25T09:43:20.333Z",
-          "to": "2026-08-26T18:31:40.666Z",
-          "n": 1,
+          "from": "2026-08-26T01:28:20.333Z",
+          "to": "2026-08-27T04:06:40.666Z",
+          "n": 3,
           "winRate": 100,
-          "avgPct": 1.491,
+          "avgPct": 1.745,
           "profitFactor": null,
-          "tp": 1,
+          "tp": 3,
           "sl": 0,
           "time": 0
         },
         {
           "segment": 3,
-          "from": "2026-08-26T18:31:40.666Z",
-          "to": "2026-08-28T03:20:01.000Z",
-          "n": 9,
-          "winRate": 33.3,
-          "avgPct": -2.604,
-          "profitFactor": 0.16,
-          "tp": 3,
+          "from": "2026-08-27T04:06:40.666Z",
+          "to": "2026-08-28T06:45:01.000Z",
+          "n": 16,
+          "winRate": 50,
+          "avgPct": -1.223,
+          "profitFactor": 0.42,
+          "tp": 8,
           "sl": 3,
+          "time": 5
+        }
+      ],
+      "positiveSegments": 1
+    },
+    {
+      "name": "Hypothesis: RSI 40-50",
+      "n": 19,
+      "winRate": 63.2,
+      "avgPct": -0.39,
+      "profitFactor": 0.74,
+      "tp": 12,
+      "sl": 3,
+      "time": 4,
+      "clusters": {
+        "clusters": 11,
+        "avgPct": 0.083,
+        "positivePct": 63.6
+      },
+      "segments": [
+        {
+          "segment": 1,
+          "from": "2026-08-24T22:50:00.000Z",
+          "to": "2026-08-26T01:28:20.333Z",
+          "n": 4,
+          "winRate": 50,
+          "avgPct": -1.412,
+          "profitFactor": 0.38,
+          "tp": 2,
+          "sl": 1,
+          "time": 1
+        },
+        {
+          "segment": 2,
+          "from": "2026-08-26T01:28:20.333Z",
+          "to": "2026-08-27T04:06:40.666Z",
+          "n": 3,
+          "winRate": 100,
+          "avgPct": 1.745,
+          "profitFactor": null,
+          "tp": 3,
+          "sl": 0,
+          "time": 0
+        },
+        {
+          "segment": 3,
+          "from": "2026-08-27T04:06:40.666Z",
+          "to": "2026-08-28T06:45:01.000Z",
+          "n": 12,
+          "winRate": 58.3,
+          "avgPct": -0.583,
+          "profitFactor": 0.64,
+          "tp": 7,
+          "sl": 2,
           "time": 3
         }
       ],
       "positiveSegments": 1
     },
     {
-      "name": "Hypothesis: exclude flat pre-range run-up",
-      "n": 26,
-      "winRate": 61.5,
-      "avgPct": -1.266,
-      "profitFactor": 0.42,
-      "tp": 16,
-      "sl": 7,
-      "time": 3,
+      "name": "Hypothesis: range4 <4%",
+      "n": 15,
+      "winRate": 40,
+      "avgPct": -1.828,
+      "profitFactor": 0.28,
+      "tp": 6,
+      "sl": 4,
+      "time": 5,
       "clusters": {
-        "clusters": 16,
-        "avgPct": -0.965,
-        "positivePct": 62.5
+        "clusters": 9,
+        "avgPct": -1.544,
+        "positivePct": 44.4
       },
       "segments": [
         {
           "segment": 1,
-          "from": "2026-08-23T22:35:00.000Z",
-          "to": "2026-08-25T09:18:20.333Z",
-          "n": 17,
-          "winRate": 58.8,
-          "avgPct": -1.579,
-          "profitFactor": 0.36,
-          "tp": 10,
-          "sl": 6,
+          "from": "2026-08-24T22:50:00.000Z",
+          "to": "2026-08-26T00:20:00.333Z",
+          "n": 3,
+          "winRate": 33.3,
+          "avgPct": -2.465,
+          "profitFactor": 0.19,
+          "tp": 1,
+          "sl": 1,
           "time": 1
         },
         {
           "segment": 2,
-          "from": "2026-08-25T09:18:20.333Z",
-          "to": "2026-08-26T20:01:40.666Z",
-          "n": 0,
-          "winRate": null,
-          "avgPct": null,
+          "from": "2026-08-26T00:20:00.333Z",
+          "to": "2026-08-27T01:50:00.666Z",
+          "n": 2,
+          "winRate": 100,
+          "avgPct": 1.745,
           "profitFactor": null,
-          "tp": 0,
+          "tp": 2,
           "sl": 0,
           "time": 0
         },
         {
           "segment": 3,
-          "from": "2026-08-26T20:01:40.666Z",
-          "to": "2026-08-28T06:45:01.000Z",
-          "n": 9,
-          "winRate": 66.7,
-          "avgPct": -0.676,
-          "profitFactor": 0.6,
-          "tp": 6,
-          "sl": 1,
-          "time": 2
+          "from": "2026-08-27T01:50:00.666Z",
+          "to": "2026-08-28T03:20:01.000Z",
+          "n": 10,
+          "winRate": 30,
+          "avgPct": -2.352,
+          "profitFactor": 0.18,
+          "tp": 3,
+          "sl": 3,
+          "time": 4
         }
       ],
-      "positiveSegments": 0
+      "positiveSegments": 1
     },
     {
-      "name": "Hypothesis: drop from 4h high >=4%",
-      "n": 13,
-      "winRate": 84.6,
-      "avgPct": 0.266,
-      "profitFactor": 1.27,
-      "tp": 11,
-      "sl": 2,
-      "time": 0,
+      "name": "Hypothesis: exclude flat pre-range run-up",
+      "n": 14,
+      "winRate": 57.1,
+      "avgPct": -1.361,
+      "profitFactor": 0.42,
+      "tp": 8,
+      "sl": 4,
+      "time": 2,
       "clusters": {
         "clusters": 12,
-        "avgPct": 0.164,
-        "positivePct": 83.3
+        "avgPct": -1.065,
+        "positivePct": 58.3
       },
       "segments": [
         {
           "segment": 1,
-          "from": "2026-08-23T22:35:00.000Z",
-          "to": "2026-08-25T09:18:20.333Z",
+          "from": "2026-08-24T22:50:00.000Z",
+          "to": "2026-08-26T01:28:20.333Z",
+          "n": 5,
+          "winRate": 40,
+          "avgPct": -3.043,
+          "profitFactor": 0.19,
+          "tp": 2,
+          "sl": 3,
+          "time": 0
+        },
+        {
+          "segment": 2,
+          "from": "2026-08-26T01:28:20.333Z",
+          "to": "2026-08-27T04:06:40.666Z",
+          "n": 1,
+          "winRate": 100,
+          "avgPct": 1.745,
+          "profitFactor": null,
+          "tp": 1,
+          "sl": 0,
+          "time": 0
+        },
+        {
+          "segment": 3,
+          "from": "2026-08-27T04:06:40.666Z",
+          "to": "2026-08-28T06:45:01.000Z",
           "n": 8,
-          "winRate": 75,
-          "avgPct": -0.499,
-          "profitFactor": 0.69,
-          "tp": 6,
+          "winRate": 62.5,
+          "avgPct": -0.699,
+          "profitFactor": 0.61,
+          "tp": 5,
+          "sl": 1,
+          "time": 2
+        }
+      ],
+      "positiveSegments": 1
+    },
+    {
+      "name": "Hypothesis: drop from 4h high >=4%",
+      "n": 6,
+      "winRate": 66.7,
+      "avgPct": -0.915,
+      "profitFactor": 0.56,
+      "tp": 4,
+      "sl": 2,
+      "time": 0,
+      "clusters": {
+        "clusters": 6,
+        "avgPct": -0.915,
+        "positivePct": 66.7
+      },
+      "segments": [
+        {
+          "segment": 1,
+          "from": "2026-08-25T07:15:00.000Z",
+          "to": "2026-08-26T07:05:00.333Z",
+          "n": 2,
+          "winRate": 0,
+          "avgPct": -6.235,
+          "profitFactor": 0,
+          "tp": 0,
           "sl": 2,
           "time": 0
         },
         {
           "segment": 2,
-          "from": "2026-08-25T09:18:20.333Z",
-          "to": "2026-08-26T20:01:40.666Z",
-          "n": 0,
-          "winRate": null,
-          "avgPct": null,
+          "from": "2026-08-26T07:05:00.333Z",
+          "to": "2026-08-27T06:55:00.666Z",
+          "n": 2,
+          "winRate": 100,
+          "avgPct": 1.745,
           "profitFactor": null,
-          "tp": 0,
+          "tp": 2,
           "sl": 0,
           "time": 0
         },
         {
           "segment": 3,
-          "from": "2026-08-26T20:01:40.666Z",
+          "from": "2026-08-27T06:55:00.666Z",
           "to": "2026-08-28T06:45:01.000Z",
-          "n": 5,
+          "n": 2,
           "winRate": 100,
-          "avgPct": 1.491,
+          "avgPct": 1.745,
           "profitFactor": null,
-          "tp": 5,
+          "tp": 2,
           "sl": 0,
           "time": 0
         }
       ],
-      "positiveSegments": 1
+      "positiveSegments": 2
     }
   ],
-  "elapsedSeconds": 205.6
+  "elapsedSeconds": 198.6
 }

@@ -13768,9 +13768,21 @@ Requirements:
               : !hourOk ? 'BTC ниже EMA20 (1ч).'
               : 'недельная доходность BTC не положительна.') +
             ` Баллы сжаты в 0–60, порядок сохранён.</span></span></div>`;
-        const validationNote = validation.state === 'missing'
-          ? 'Нет актуального прогона для этой версии кода. Запусти npm run validate:scalp -- 7 500000.'
-          : `Проверка 7д: ${validation.n} входов, ${validation.avgPct >= 0 ? '+' : ''}${validation.avgPct}% на сделку, PF ${validation.profitFactor}, положительных отрезков ${validation.positiveSegments}/3.`;
+        // «Прогона нет» и «прогон есть, но про другой эксперимент» лечатся
+        // по-разному. Раньше оба показывались одинаково и советовали
+        // перезапустить валидатор — во втором случае он записал бы ровно тот
+        // же несовпадающий файл, и совет уводил в круг.
+        const validationNote = validation.state === 'restart_required'
+          ? 'Код гейта на диске новее того, что выполняется. Нужен перезапуск сервера.'
+          : validation.state !== 'missing'
+          ? `Проверка 7д: ${validation.n} входов, ${validation.avgPct >= 0 ? '+' : ''}${validation.avgPct}% на сделку, PF ${validation.profitFactor}, положительных отрезков ${validation.positiveSegments}/3.`
+          : validation.why === 'params'
+          ? `Прогон есть, но он про другой эксперимент: ${validation.detail}. Пересчитай с теми же параметрами, которыми считает лаборатория.`
+          : validation.why === 'fingerprint'
+          ? `Прогон сделан для другой версии кода (${validation.detail}). Запусти npm run validate:scalp -- 7 500000.`
+          : validation.why === 'too_small'
+          ? `Прогон слишком мал: ${validation.detail}. Нужно не меньше 30 сделок за 7 дней.`
+          : 'Прогона для этой версии кода нет. Запусти npm run validate:scalp -- 7 500000.';
         const validationBar = validation.ready
           ? `<div class="ss-regime-bar ok"><span>✓</span><span><b>Историческая проверка пройдена.</b> ${validationNote}</span></div>`
           : `<div class="ss-regime-bar" style="border-color:rgba(248,113,113,.55);"><span style="color:#f87171;">⚠</span><span><b style="color:#f87171;">Входы и алерты заблокированы.</b> ${validationNote} Paper-журнал продолжает собирать независимые данные.</span></div>`;

@@ -4438,9 +4438,13 @@ function scalpValidationStatus() {
       diskFingerprint: diskFingerprint || null,
     };
   }
-  const result = loadGateValidation(fingerprint);
+  const found = inspectGateValidation(fingerprint);
+  const result = found.result;
   const overall = result && result.overall;
-  if (!overall) return { ready: false, state: 'missing' };
+  // Причину несовпадения отдаём наружу: интерфейс иначе советует перезапустить
+  // валидатор там, где это не поможет — например когда прогон сделан с другой
+  // комиссией, чем та, которой лаборатория считает сделки.
+  if (!overall) return { ready: false, state: 'missing', why: found.why, detail: found.detail || null };
   const ready = overall.avgPct > 0 && overall.profitFactor > 1 && overall.positiveSegments === 3;
   return {
     ready,
@@ -4534,21 +4538,38 @@ const LAB_FILE = path.join(__dirname, 'scalp-lab.json');
 const LAB_MAX_HOLD_H = 48;
 
 const GATE_VALIDATION_FILE = path.join(__dirname, 'scalp-gate-validation.json');
-function loadGateValidation(fingerprint) {
+// Возвращает {result} при совпадении, либо {why, detail} — почему не подошло.
+// Разделение нужно интерфейсу: «прогона нет» и «прогон есть, но про другой
+// эксперимент» лечатся по-разному, а раньше оба показывались как «нет
+// прогона» и советовали перезапустить валидатор, что во втором случае
+// ничего не меняло — он бы записал тот же самый несовпадающий файл.
+function inspectGateValidation(fingerprint) {
+  let result;
   try {
-    const result = JSON.parse(fs.readFileSync(GATE_VALIDATION_FILE, 'utf8'));
-    if (!fingerprint || result.fingerprint !== fingerprint || !result.config || result.config.days < 7 || !result.overall || result.overall.n < 30) return null;
-    const execution = currentLabExecution();
-    // The entry rules alone are not enough. A validation with another target,
-    // stop, fee, or holding window describes a different experiment.
-    if (!sameNumber(result.config.targetPct, execution.targetPct) ||
-        !sameNumber(result.config.slPct, execution.slPct) ||
-        !sameNumber(result.config.feeSidePct, execution.feePct * 100) ||
-        !sameNumber(result.config.maxHoldHours, execution.maxHoldH)) return null;
-    return result;
+    result = JSON.parse(fs.readFileSync(GATE_VALIDATION_FILE, 'utf8'));
   } catch {
-    return null;
+    return { why: 'missing' };
   }
+  if (!fingerprint || result.fingerprint !== fingerprint) {
+    return { why: 'fingerprint', detail: `прогон для ${result.fingerprint || 'неизвестного кода'}, сейчас ${fingerprint || '?'}` };
+  }
+  if (!result.config || result.config.days < 7 || !result.overall || result.overall.n < 30) {
+    return { why: 'too_small', detail: `${(result.overall && result.overall.n) || 0} сделок за ${(result.config && result.config.days) || 0} дней` };
+  }
+  const execution = currentLabExecution();
+  // Одних правил входа мало: прогон с другой целью, стопом, комиссией или
+  // окном удержания описывает другой эксперимент.
+  const diffs = [];
+  if (!sameNumber(result.config.targetPct, execution.targetPct)) diffs.push(`цель ${result.config.targetPct}% против ${execution.targetPct}%`);
+  if (!sameNumber(result.config.slPct, execution.slPct)) diffs.push(`стоп ${result.config.slPct}% против ${execution.slPct}%`);
+  if (!sameNumber(result.config.feeSidePct, execution.feePct * 100)) diffs.push(`комиссия ${result.config.feeSidePct}% против ${Math.round(execution.feePct * 1e5) / 1e3}%`);
+  if (!sameNumber(result.config.maxHoldHours, execution.maxHoldH)) diffs.push(`удержание ${result.config.maxHoldHours}ч против ${execution.maxHoldH}ч`);
+  if (diffs.length) return { why: 'params', detail: diffs.join(', ') };
+  return { result };
+}
+
+function loadGateValidation(fingerprint) {
+  return inspectGateValidation(fingerprint).result || null;
 }
 
 // Отпечаток кода гейта. Любая правка в этих файлах меняет хэш — значит
