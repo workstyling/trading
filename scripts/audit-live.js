@@ -100,8 +100,11 @@ function ema(v, p) {
   ok(typeof scan.watchLoop === 'boolean', 'состояние непрерывного отдаётся', String(scan.watchLoop));
   const st = await j(BASE + '/get-settings');
   const tg = st && st.settings;
-  ok(!!(tg && tg.telegramToken && tg.telegramChat), 'Telegram настроен');
-  ok(!(scan.watchLoop || scan.watch) || !!(tg && tg.telegramToken), 'алерт не включён без Telegram');
+  // Токен наружу больше не отдаётся — он лежал в HTML на виду. Спрашиваем
+  // сервер о факте настройки, а не о самом значении.
+  ok(tg && tg.telegramToken === undefined, 'токен Telegram наружу не отдаётся');
+  ok(!!(tg && tg.telegramConfigured), 'Telegram настроен');
+  ok(!(scan.watchLoop || scan.watch) || !!(tg && tg.telegramConfigured), 'алерт не включён без Telegram');
 
   console.log('\n=== PAPER / ЦЕЛИ ===');
   const paper = await j(BASE + '/api/paper');

@@ -64,6 +64,14 @@ const defaultSettings = {
 // Load/Save settings
 function publicSettings(settings) {
   const { telegramToken, telegramChat, ...safeSettings } = settings || {};
+  // Сам токен наружу не отдаём, но отдаём факт его наличия. Иначе ни
+  // интерфейс, ни проверки не могут отличить «Telegram настроен» от
+  // «настройка потерялась при деплое», а алерты молчат одинаково в обоих
+  // случаях — ровно та немая поломка, которую мы уже однажды ловили.
+  safeSettings.telegramConfigured = !!(
+    (process.env.TELEGRAM_BOT_TOKEN || telegramToken) &&
+    (process.env.TELEGRAM_CHAT_ID || telegramChat)
+  );
   return safeSettings;
 }
 
