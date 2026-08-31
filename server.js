@@ -5450,7 +5450,10 @@ function clearSafeLabTrades(req, res) {
   const checks = (scalpScan.results[0] && scalpScan.results[0].checks || [])
     .map(check => check.en || check.k);
   labState.trades = [];
-  labState.cohortId = makeLabCohortId(runtime.runtimeFingerprint, Date.now());
+  const execution = currentLabExecution();
+  labState.cohortId = makeExecutionAwareCohortId(runtime.runtimeFingerprint, Date.now(), execution);
+  labState.executionFingerprint = labExecutionFingerprint(execution);
+  labState.executionSnapshot = snapshotLabExecution(execution);
   labState.fingerprint = runtime.runtimeFingerprint || null;
   labState.gateSnapshot = checks.length ? checks : null;
   labState.startedAt = labState.enabled ? Date.now() : 0;
