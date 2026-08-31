@@ -79,8 +79,14 @@ function ema(v, p) {
     ok(tpBad.length === 0, 'сделки по цели прибыльные', tpBad.map(t => t.coin).join(','));
     const slBad = closed.filter(t => t.why === 'SL' && t.pnlPct > 0);
     ok(slBad.length === 0, 'сделки по стопу убыточные', slBad.map(t => t.coin).join(','));
-    ok(lab.closedCount === closed.length || closed.length === 40, 'счётчик закрытых сходится',
-      lab.closedCount + ' против ' + closed.length);
+    // closed[] теперь только текущая когорта, прошлые версии гейта лежат в
+    // archivedClosed[]. closedCount считает обе, поэтому сравнивать его с
+    // длиной closed[] больше нельзя — проверяем настоящий инвариант.
+    ok(lab.closedCount === (lab.currentClosedCount || 0) + (lab.staleClosedCount || 0),
+      'счётчик закрытых = текущие + архивные',
+      lab.closedCount + ' против ' + (lab.currentClosedCount || 0) + '+' + (lab.staleClosedCount || 0));
+    ok(closed.length === Math.min(40, lab.currentClosedCount || 0),
+      'closed[] отдаёт текущую когорту', closed.length + ' против ' + (lab.currentClosedCount || 0));
     const b = lab.brief || '';
     ok(b.length > 300, 'задание формируется', b.length + ' символов');
     ok(!/[а-яА-Я]/.test(b), 'задание без кириллицы');

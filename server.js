@@ -4786,6 +4786,8 @@ function archiveCurrentLabCohort(reason, nextFingerprint, nextChecks, note) {
   labState.cohortId = makeExecutionAwareCohortId(nextFingerprint, now, nextExecution);
   labState.fingerprint = nextFingerprint || null;
   labState.gateSnapshot = Array.isArray(nextChecks) && nextChecks.length ? [...nextChecks] : null;
+  labState.executionFingerprint = labExecutionFingerprint(nextExecution);
+  labState.executionSnapshot = snapshotLabExecution(nextExecution);
   labState.startedAt = now;
   return true;
 }
@@ -4807,6 +4809,21 @@ function reconcileLabCohort(liveChecks, runtime) {
   }
   if (labState.runtimeMismatch) { labState.runtimeMismatch = null; changed = true; }
   const nextFingerprint = runtime.runtimeFingerprint;
+  const nextExecution = currentLabExecution();
+  const nextExecutionFingerprint = labExecutionFingerprint(nextExecution);
+  if (!labState.fingerprint ||
+      labState.executionFingerprint !== nextExecutionFingerprint) {
+    archiveCurrentLabCohort(
+      labState.executionFingerprint === 'legacy-unknown'
+        ? 'legacy journal has no frozen execution configuration'
+        : 'execution configuration changed',
+      nextFingerprint,
+      liveChecks,
+      'Execution parameters changed or were unverified; prior cohort archived for audit.',
+      nextExecution
+    );
+    changed = true;
+  }
   if (!labState.fingerprint) {
     labState.fingerprint = nextFingerprint;
     changed = true;
