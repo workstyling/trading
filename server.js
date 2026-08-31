@@ -4425,7 +4425,20 @@ const scalpScan = { running: false, progress: 0, scanned: 0, total: 0, at: 0, re
 const scalpPrev = { scores: new Map(), distPct: null, at: 0 };
 
 function scalpValidationStatus() {
-  const result = loadGateValidation(gateFingerprint());
+  // The scanner modules are loaded once by Node. A later disk hash may refer
+  // to code that is not yet executing in this process.
+  const fingerprint = typeof RUNTIME_GATE_FINGERPRINT === 'string'
+    ? RUNTIME_GATE_FINGERPRINT : gateFingerprint();
+  const diskFingerprint = gateFingerprint();
+  if (!fingerprint || fingerprint !== diskFingerprint) {
+    return {
+      ready: false,
+      state: 'restart_required',
+      fingerprint: fingerprint || null,
+      diskFingerprint: diskFingerprint || null,
+    };
+  }
+  const result = loadGateValidation(fingerprint);
   const overall = result && result.overall;
   if (!overall) return { ready: false, state: 'missing' };
   const ready = overall.avgPct > 0 && overall.profitFactor > 1 && overall.positiveSegments === 3;
@@ -4518,12 +4531,20 @@ app.get('/api/scalp-scan', (req, res) => {
 // ══════════════════════════════════════════════════════════════════
 const lab = require('./src/scalp/lab');
 const LAB_FILE = path.join(__dirname, 'scalp-lab.json');
+const LAB_MAX_HOLD_H = 48;
 
 const GATE_VALIDATION_FILE = path.join(__dirname, 'scalp-gate-validation.json');
 function loadGateValidation(fingerprint) {
   try {
     const result = JSON.parse(fs.readFileSync(GATE_VALIDATION_FILE, 'utf8'));
     if (!fingerprint || result.fingerprint !== fingerprint || !result.config || result.config.days < 7 || !result.overall || result.overall.n < 30) return null;
+    const execution = currentLabExecution();
+    // The entry rules alone are not enough. A validation with another target,
+    // stop, fee, or holding window describes a different experiment.
+    if (!sameNumber(result.config.targetPct, execution.targetPct) ||
+        !sameNumber(result.config.slPct, execution.slPct) ||
+        !sameNumber(result.config.feeSidePct, execution.feePct * 100) ||
+        !sameNumber(result.config.maxHoldHours, execution.maxHoldH)) return null;
     return result;
   } catch {
     return null;
@@ -4557,9 +4578,130 @@ function gateFingerprint() {
 // только требовало решения там, где решать нечего. $1000 — чтобы долларовые
 // итоги читались без нулей после запятой.
 const LAB_BUDGET = 1000;
-let labState = { enabled: false, startedAt: 0, budget: LAB_BUDGET, trades: [], briefAt: 0 };
+const LAB_SCHEMA_VERSION = 2;
+const LAB_MAX_TRADES = 5000;
+// Captured once at process start. The scanner modules are loaded once too.
+const RUNTIME_GATE_FINGERPRINT = gateFingerprint();
+let labState = {
+  schemaVersion: LAB_SCHEMA_VERSION, enabled: false, startedAt: 0, budget: LAB_BUDGET,
+  trades: [], briefAt: 0, generations: [], gateSnapshot: null, cohortId: null, runtimeMismatch: null,
+  executionFingerprint: null, executionSnapshot: null,
+};
 try { labState = { ...labState, ...JSON.parse(fs.readFileSync(LAB_FILE, 'utf8')) }; } catch { }
+function finiteNumber(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+function sameNumber(a, b) {
+  const left = finiteNumber(a), right = finiteNumber(b);
+  return left != null && right != null && Math.abs(left - right) < 1e-9;
+}
+function currentLabExecution() {
+  return {
+    targetPct: paperTargetPct(),
+    slPct: paperBot.slPct != null ? paperBot.slPct : PAPER_CFG.slPct,
+    feePct: paperLimitFee(),
+    maxHoldH: LAB_MAX_HOLD_H,
+    executionModel: 'ask-entry / limit-target / observed-bid-stop-time-v2',
+  };
+}
+function labExecutionFingerprint(execution = currentLabExecution()) {
+  return [
+    finiteNumber(execution.targetPct),
+    finiteNumber(execution.slPct),
+    finiteNumber(execution.feePct),
+    finiteNumber(execution.maxHoldH),
+    execution.executionModel || 'unknown',
+  ].join('|');
+}
+function snapshotLabExecution(execution = currentLabExecution()) {
+  return {
+    targetPct: finiteNumber(execution.targetPct),
+    slPct: finiteNumber(execution.slPct),
+    feePct: finiteNumber(execution.feePct),
+    maxHoldH: finiteNumber(execution.maxHoldH),
+    executionModel: execution.executionModel || 'unknown',
+  };
+}
+function makeExecutionAwareCohortId(fingerprint, at = Date.now(), execution = currentLabExecution()) {
+  return makeLabCohortId(fingerprint, at) + ':' + labExecutionFingerprint(execution);
+}
+function makeLabCohortId(fingerprint, at = Date.now()) {
+  return String(fingerprint || 'unknown') + ':' + at;
+}
+function labExecutionForTrade(trade) {
+  const fallback = currentLabExecution();
+  return {
+    targetPct: finiteNumber(trade && trade.targetPct) ?? fallback.targetPct,
+    slPct: finiteNumber(trade && trade.slPct) ?? fallback.slPct,
+    feePct: finiteNumber(trade && trade.feePct) ?? fallback.feePct,
+    maxHoldH: finiteNumber(trade && trade.maxHoldH) ?? fallback.maxHoldH,
+    executionModel: trade && trade.executionModel || fallback.executionModel,
+  };
+}
+function freezeLabExecution(trade, fallback = currentLabExecution()) {
+  let changed = false;
+  for (const [key, value] of Object.entries({
+    targetPct: fallback.targetPct, slPct: fallback.slPct,
+    feePct: fallback.feePct, maxHoldH: fallback.maxHoldH,
+  })) {
+    if (finiteNumber(trade[key]) == null) { trade[key] = value; changed = true; }
+  }
+  if (!trade.executionModel) { trade.executionModel = fallback.executionModel; changed = true; }
+  if (!trade.executionCapturedAt) { trade.executionCapturedAt = Date.now(); changed = true; }
+  return changed;
+}
+function labPnl(trade, price) {
+  const execution = labExecutionForTrade(trade);
+  const entry = finiteNumber(trade && trade.entry);
+  const budget = finiteNumber(trade && trade.budget);
+  const exit = finiteNumber(price);
+  if (!(entry > 0) || !(budget > 0) || !(exit > 0)) return null;
+  const qty = finiteNumber(trade.qty) ?? budget * (1 - execution.feePct) / entry;
+  return Math.round((qty * exit * (1 - execution.feePct) - budget) * 100) / 100;
+}
+function labRuntimeStatus() {
+  const diskFingerprint = gateFingerprint();
+  const runtimeFingerprint = RUNTIME_GATE_FINGERPRINT;
+  const matched = !!runtimeFingerprint && runtimeFingerprint === diskFingerprint;
+  return {
+    state: matched ? 'ready' : 'restart_required',
+    matched, runtimeFingerprint, diskFingerprint,
+    message: matched ? null : 'Gate files changed after this Node process started. Restart before collecting new entries.',
+  };
+}
+function sameGateChecks(a, b) {
+  return Array.isArray(a) && Array.isArray(b) && JSON.stringify(a) === JSON.stringify(b);
+}
+function isCurrentLabTrade(trade) {
+  if (!trade || trade.archivedAt ||
+      trade.provenance === 'legacy-unverified' ||
+      trade.gateFingerprint === 'legacy-unknown') return false;
+  return !!trade && trade.cohortId === labState.cohortId && !trade.archivedAt;
+}
+function normalizeLabState() {
+  let changed = false;
+  if (!Array.isArray(labState.trades)) { labState.trades = []; changed = true; }
+  if (!Array.isArray(labState.generations)) { labState.generations = []; changed = true; }
+  if (!labState.executionFingerprint) {
+    labState.executionFingerprint = 'legacy-unknown';
+    changed = true;
+  }
+  const legacyCohort = labState.cohortId || makeLabCohortId(labState.fingerprint || 'legacy-unknown', labState.startedAt || Date.now());
+  if (!labState.cohortId) { labState.cohortId = legacyCohort; changed = true; }
+  for (const trade of labState.trades) {
+    if (!trade.cohortId) { trade.cohortId = legacyCohort; changed = true; }
+    // Old rows cannot prove the version actually loaded by their process.
+    if (!trade.gateFingerprint) { trade.gateFingerprint = 'legacy-unknown'; trade.provenance = 'legacy-unverified'; changed = true; }
+    if (trade.gen === 'old' && !trade.archivedReason) { trade.archivedReason = 'archived by legacy journal'; changed = true; }
+    if (freezeLabExecution(trade)) { trade.executionInferred = true; changed = true; }
+  }
+  if (labState.schemaVersion !== LAB_SCHEMA_VERSION) { labState.schemaVersion = LAB_SCHEMA_VERSION; changed = true; }
+  return changed;
+}
+
 labState.budget = LAB_BUDGET;
+const labStateDirty = normalizeLabState();
 
 // Заметки поколений раньше приходили кириллицей через shell и доезжали
 // побитыми (?????? и U+FFFD). Текст теперь пишется по-английски, а уже
@@ -4580,8 +4722,93 @@ for (const g of labState.generations || []) {
   }
 }
 function saveLab() {
-  try { fs.writeFileSync(LAB_FILE, JSON.stringify({ ...labState, trades: labState.trades.slice(-800) }, null, 2)); }
-  catch (e) { console.error('[lab] save', e.message); }
+  const stored = { ...labState, schemaVersion: LAB_SCHEMA_VERSION, trades: labState.trades.slice(-LAB_MAX_TRADES) };
+  let tempFile = null;
+  try {
+    tempFile = LAB_FILE + '.' + process.pid + '.' + Date.now() + '.tmp';
+    fs.writeFileSync(tempFile, JSON.stringify(stored, null, 2), 'utf8');
+    fs.renameSync(tempFile, LAB_FILE);
+  } catch (e) {
+    if (tempFile) { try { fs.unlinkSync(tempFile); } catch { } }
+    console.error('[lab] save', e.message);
+  }
+}
+if (labStateDirty) saveLab();
+
+function archiveCurrentLabCohort(reason, nextFingerprint, nextChecks, note) {
+  const nextExecution = arguments.length > 4 && arguments[4]
+    ? arguments[4] : currentLabExecution();
+  const now = Date.now();
+  const oldCohort = labState.cohortId;
+  const cohortTrades = labState.trades.filter(t => t.cohortId === oldCohort && !t.archivedAt);
+  const completedPassers = cohortTrades.filter(t => t.closedAt && !t.shadow);
+  const { base, observations } = lab.findObservations(completedPassers);
+  if (cohortTrades.length) {
+    labState.generations.push({
+      at: now, auto: true, note: note || reason, reason,
+      from: labState.fingerprint || null, to: nextFingerprint || null,
+      cohortId: oldCohort, gateWas: labState.gateSnapshot || null,
+      executionFingerprintWas: labState.executionFingerprint || null,
+      executionWas: labState.executionSnapshot || null,
+      trades: completedPassers.length, rawTrades: cohortTrades.length,
+      openAtArchive: cohortTrades.filter(t => !t.closedAt).length,
+      stats: base, observations: (observations || []).slice(0, 10),
+    });
+    labState.generations = labState.generations.slice(-50);
+  }
+  for (const trade of cohortTrades) {
+    trade.gen = 'old';
+    trade.archivedAt = now;
+    trade.archivedReason = reason;
+  }
+  labState.cohortId = makeLabCohortId(nextFingerprint, now);
+  labState.cohortId = makeExecutionAwareCohortId(nextFingerprint, now, nextExecution);
+  labState.fingerprint = nextFingerprint || null;
+  labState.gateSnapshot = Array.isArray(nextChecks) && nextChecks.length ? [...nextChecks] : null;
+  labState.startedAt = now;
+  return true;
+}
+function reconcileLabCohort(liveChecks, runtime) {
+  let changed = false;
+  if (!runtime.matched) {
+    const previous = labState.runtimeMismatch;
+    if (!previous ||
+        previous.runtimeFingerprint !== (runtime.runtimeFingerprint || null) ||
+        previous.diskFingerprint !== (runtime.diskFingerprint || null) ||
+        previous.message !== runtime.message) {
+      labState.runtimeMismatch = {
+        at: Date.now(), runtimeFingerprint: runtime.runtimeFingerprint || null,
+        diskFingerprint: runtime.diskFingerprint || null, message: runtime.message,
+      };
+      changed = true;
+    }
+    return { changed, entriesAllowed: false };
+  }
+  if (labState.runtimeMismatch) { labState.runtimeMismatch = null; changed = true; }
+  const nextFingerprint = runtime.runtimeFingerprint;
+  if (!labState.fingerprint) {
+    labState.fingerprint = nextFingerprint;
+    changed = true;
+  } else if (labState.fingerprint !== nextFingerprint) {
+    archiveCurrentLabCohort(
+      'runtime gate fingerprint changed after a server restart', nextFingerprint, liveChecks,
+      'Gate runtime changed after restart; prior cohort archived for audit.'
+    );
+    changed = true;
+  }
+  if (Array.isArray(liveChecks) && liveChecks.length) {
+    if (!Array.isArray(labState.gateSnapshot) || !labState.gateSnapshot.length) {
+      labState.gateSnapshot = [...liveChecks];
+      changed = true;
+    } else if (!sameGateChecks(labState.gateSnapshot, liveChecks)) {
+      archiveCurrentLabCohort(
+        'saved gate checks differ from the running scanner', nextFingerprint, liveChecks,
+        'Saved gate snapshot did not match the loaded scanner; prior cohort archived as invalid for the current gate.'
+      );
+      changed = true;
+    }
+  }
+  return { changed, entriesAllowed: true };
 }
 
 // Открываем виртуальные сделки на входах гейта. Отдельно от Paper Bot,
@@ -4731,10 +4958,181 @@ async function labTick() {
   } catch (e) { console.error('[lab]', e.message); }
   finally { labTickRunning = false; }
 }
-setInterval(labTick, 60_000);
-setTimeout(labTick, 90_000);
+setInterval(labTickSafe, 60_000);
+
+// Safe journal loop. It intentionally keeps managing archived open positions,
+// but it never admits a new entry while source files and loaded scanner differ.
+let labTickSafeRunning = false;
+async function labTickSafe() {
+  if (labTickSafeRunning) return;
+  labTickSafeRunning = true;
+  try {
+    let changed = false;
+    const liveChecks = (scalpScan.results[0] && scalpScan.results[0].checks || [])
+      .map(c => c.en || c.k);
+    const runtime = labRuntimeStatus();
+    const cohort = reconcileLabCohort(liveChecks, runtime);
+    changed = changed || cohort.changed;
+
+    for (const trade of labState.trades.filter(t => !t.closedAt)) {
+      try {
+        if (freezeLabExecution(trade)) {
+          trade.executionInferred = true;
+          changed = true;
+        }
+        const tickerResponse = await fetch(
+          `https://api.exchange.coinbase.com/products/${trade.pair}/ticker`,
+          { headers: { 'User-Agent': 'trading-app/1.0' } }
+        );
+        if (!tickerResponse.ok) continue;
+        const ticker = await tickerResponse.json();
+        const bid = parseFloat(ticker.bid || ticker.price);
+        if (!(bid > 0)) continue;
+
+        if (finiteNumber(trade.last) !== bid) {
+          trade.last = bid;
+          changed = true;
+        }
+        const gainPct = (bid - trade.entry) / trade.entry * 100;
+        const mfe = Math.round(gainPct * 100) / 100;
+        if (trade.mfe == null || mfe > trade.mfe) {
+          trade.mfe = mfe;
+          changed = true;
+        }
+        if (trade.mae == null || mfe < trade.mae) {
+          trade.mae = mfe;
+          changed = true;
+        }
+
+        const execution = labExecutionForTrade(trade);
+        const targetPrice = trade.entry * (1 + execution.targetPct / 100);
+        const stopPrice = trade.entry * (1 - execution.slPct / 100);
+        const close = (exit, why, details = {}) => {
+          const closedAt = Date.now();
+          trade.exit = exit;
+          trade.closedAt = closedAt;
+          trade.why = why;
+          trade.exitModel = execution.executionModel;
+          Object.assign(trade, details);
+          const pnl = labPnl(trade, exit);
+          trade.pnl = pnl;
+          trade.pnlPct = pnl != null && trade.budget > 0
+            ? Math.round(pnl / trade.budget * 10000) / 100 : null;
+          trade.holdH = Math.round((closedAt - trade.openedAt) / 3600000 * 10) / 10;
+          changed = true;
+          console.log(`[lab] ${trade.coin} ${why}: ${trade.pnlPct}%`);
+        };
+
+        // A target is a limit exit: once bid crosses it, target is fillable.
+        if (gainPct >= execution.targetPct) {
+          close(targetPrice, 'TP', { limitPrice: targetPrice, exitObservedBid: bid });
+        // A stop is only a trigger in this paper model; the simulated fill is
+        // the observed bid, including a gap through the intended stop price.
+        } else if (execution.slPct > 0 && gainPct <= -execution.slPct) {
+          close(bid, 'SL', {
+            stopPrice,
+            exitObservedBid: bid,
+            stopSlippagePct: stopPrice > 0
+              ? Math.round((bid / stopPrice - 1) * 10000) / 100 : null,
+          });
+        } else if ((Date.now() - trade.openedAt) / 3600000 >= execution.maxHoldH) {
+          close(bid, 'TIME', { exitObservedBid: bid });
+        }
+      } catch (e) {
+        console.warn(`[lab] ticker ${trade.coin}:`, e.message);
+      }
+      await sleep(120);
+    }
+
+    if (labState.enabled && cohort.entriesAllowed) {
+      const results = Array.isArray(scalpScan.results) ? scalpScan.results : [];
+      // This is a structural-gate experiment. tradeReady remains recorded so
+      // research rows cannot be mistaken for authorised trading signals.
+      const passers = results.filter(candidate => candidate.pass);
+      const currentOpen = labState.trades.filter(t => !t.closedAt && isCurrentLabTrade(t));
+      const openShadows = currentOpen.filter(t => t.shadow && !t.far).length;
+      const openFar = currentOpen.filter(t => t.far).length;
+      const nearMiss = results
+        .filter(candidate => !candidate.pass && candidate.checks &&
+          candidate.passed === candidate.checks.length - 1)
+        .slice(0, Math.max(0, 12 - openShadows));
+      const farMiss = results
+        .filter(candidate => !candidate.pass && candidate.checks &&
+          candidate.passed === candidate.checks.length - 2)
+        .slice(0, Math.max(0, 6 - openFar));
+
+      for (const candidate of [...passers, ...nearMiss, ...farMiss]) {
+        const isShadow = !candidate.pass;
+        const isFar = isShadow && candidate.passed === candidate.checks.length - 2;
+        if (labState.trades.some(t => t.coin === candidate.coin && !t.closedAt)) continue;
+
+        const recent = [...labState.trades].reverse()
+          .find(t => t.coin === candidate.coin && t.closedAt);
+        const cooldown = (isShadow ? 6 : 4) * 3600 * 1000;
+        if (recent && Date.now() - recent.closedAt < cooldown) continue;
+
+        const ask = await fetchBestAsk(candidate.pair);
+        if (!(ask > 0)) continue;
+
+        const failed = isShadow
+          ? candidate.checks.filter(c => !c.ok).map(c => c.en || c.k) : [];
+        const now = Date.now();
+        const execution = currentLabExecution();
+        const validation = scalpScan.validation || scalpValidationStatus();
+        const candidateChecks = Array.isArray(candidate.checks)
+          ? candidate.checks.map(c => ({ k: c.k || null, en: c.en || c.k || null, ok: !!c.ok }))
+          : [];
+        const fee = execution.feePct;
+        const budget = labState.budget;
+        labState.trades.push({
+          id: `lab_${now}_${candidate.coin}`,
+          coin: candidate.coin, pair: candidate.pair,
+          entry: ask, last: ask,
+          qty: budget * (1 - fee) / ask,
+          budget, openedAt: now,
+          shadow: isShadow, far: isFar,
+          entryKind: isFar ? 'wider-control' : isShadow ? 'near-control' : 'structural-gate',
+          structuralPass: !!candidate.pass, tradeReady: !!candidate.tradeReady,
+          missing: failed.length ? failed.join(' + ') : null,
+          cohortId: labState.cohortId,
+          gateFingerprint: RUNTIME_GATE_FINGERPRINT,
+          gateChecks: candidateChecks,
+          gateCheckNames: liveChecks.length ? [...liveChecks] : null,
+          provenance: 'runtime-captured-v2',
+          validationState: validation.state || 'missing',
+          validationFingerprint: validation.fingerprint || null,
+          entryScanAt: scalpScan.at || null,
+          entrySignalAgeSec: scalpScan.at ? Math.round((now - scalpScan.at) / 1000) : null,
+          targetPct: execution.targetPct, slPct: execution.slPct,
+          feePct: execution.feePct, maxHoldH: execution.maxHoldH,
+          executionModel: execution.executionModel, executionCapturedAt: now,
+          mfe: 0, mae: 0,
+          ctx: {
+            score: candidate.score, rangePos: candidate.rangePos, rsi: candidate.rsi,
+            rsiMin: candidate.rsiMin != null ? candidate.rsiMin : null,
+            spreadPct: candidate.spreadPct, vol24: candidate.vol24, volX: candidate.volX,
+            btcDist: scalpScan.regime ? scalpScan.regime.distPct : null,
+            hourUtc: new Date().getUTCHours(),
+            range4Pct: candidate.range4Pct != null ? candidate.range4Pct : null,
+            runUp24: candidate.runUp24 != null ? candidate.runUp24 : null,
+            dropFromHigh: candidate.dropFromHigh4Pct != null ? candidate.dropFromHigh4Pct : null,
+          },
+        });
+        changed = true;
+        console.log(`[lab] ${isFar ? 'wider-control' : isShadow ? 'near-control' : 'structural-gate'} ${candidate.coin} @ $${ask}`);
+      }
+    }
+    if (changed) saveLab();
+  } catch (e) {
+    console.error('[lab safe]', e.message);
+  } finally {
+    labTickSafeRunning = false;
+  }
+}
+setTimeout(labTickSafe, 90_000);
 
 app.get('/api/lab', (req, res) => {
+  return sendSafeLabApi(req, res);
   // Контрольная группа считается отдельно: она нужна для проверки условий,
   // а не для оценки самого гейта
   const closedAll = labState.trades.filter(t => t.closedAt);
@@ -4815,6 +5213,7 @@ app.get('/api/lab', (req, res) => {
 });
 
 app.post('/api/lab/config', (req, res) => {
+  return updateSafeLabConfig(req, res);
   const { enabled } = req.body || {};
   if (enabled !== undefined) {
     const on = !!enabled;
@@ -4827,6 +5226,7 @@ app.post('/api/lab/config', (req, res) => {
 });
 
 app.delete('/api/lab/trades', (req, res) => {
+  return clearSafeLabTrades(req, res);
   labState.trades = [];
   labState.startedAt = labState.enabled ? Date.now() : 0;
   saveLab();
@@ -4837,6 +5237,7 @@ app.delete('/api/lab/trades', (req, res) => {
 // вместе с наблюдениями, сбор начинается заново. Иначе следующее задание
 // повторяло бы то, что уже сделано, на старых данных.
 app.post('/api/lab/applied', (req, res) => {
+  return recordSafeLabApplied(req, res);
   let note = String((req.body || {}).note || '').slice(0, 2000);
   // Не записываем заведомо битый текст: одна такая заметка уже осела в архиве
   // и с тех пор показывалась в каждом задании
@@ -4868,6 +5269,187 @@ app.post('/api/lab/applied', (req, res) => {
 
 // ── Одноразовый Telegram-алерт по scalp-гейту (отдельная кнопка) ──
 const SCALP_WATCH_FILE = path.join(__dirname, 'scalp-watch.json');
+
+// API helpers for the safe journal loop. All current statistics are scoped to
+// an explicit cohort; older and legacy rows remain available only as archive.
+function labApiPayload() {
+  const runtime = labRuntimeStatus();
+  const scannerChecks = (scalpScan.results[0] && scalpScan.results[0].checks || [])
+    .map(check => check.en || check.k);
+  const reconciliation = reconcileLabCohort(scannerChecks, runtime);
+  if (reconciliation.changed) saveLab();
+  const current = trade => isCurrentLabTrade(trade);
+  const closedAll = labState.trades.filter(trade => trade.closedAt);
+  const closedGate = closedAll.filter(trade => !trade.shadow);
+  const shadows = closedAll.filter(trade => trade.shadow && !trade.far);
+  const farShadows = closedAll.filter(trade => trade.far);
+  const currentClosed = closedGate.filter(current);
+  const staleClosed = closedGate.filter(trade => !current(trade));
+  const currentShadows = shadows.filter(current);
+  const currentFarShadows = farShadows.filter(current);
+  const open = labState.trades.filter(trade => !trade.closedAt).map(trade => {
+    const pnl = finiteNumber(trade.last) != null ? labPnl(trade, trade.last) : null;
+    return {
+      ...trade,
+      pnl,
+      pnlPct: pnl != null && trade.budget > 0
+        ? Math.round(pnl / trade.budget * 10000) / 100 : null,
+      isCurrent: current(trade),
+    };
+  });
+  const currentOpen = open.filter(trade => trade.isCurrent);
+  const staleOpen = open.filter(trade => !trade.isCurrent);
+  const since = labState.startedAt
+    ? Math.round((Date.now() - labState.startedAt) / 3600000) : 0;
+  const analysis = lab.findObservations(currentClosed);
+  const conditions = lab.checkConditions(currentClosed, currentShadows);
+  const historical = runtime.matched
+    ? loadGateValidation(runtime.runtimeFingerprint) : null;
+  const liveChecks = (scalpScan.results[0] && scalpScan.results[0].checks || [])
+    .map(check => check.en || check.k);
+
+  return {
+    success: true,
+    enabled: labState.enabled,
+    entryBlocked: !runtime.matched,
+    runtime,
+    cohort: {
+      id: labState.cohortId || null,
+      fingerprint: labState.fingerprint || null,
+      checks: labState.gateSnapshot || null,
+    },
+    execution: currentLabExecution(),
+    startedAt: labState.startedAt,
+    hoursRunning: since,
+    budget: labState.budget,
+    open,
+    currentOpen,
+    currentOpenCount: currentOpen.length,
+    staleOpenCount: staleOpen.length,
+    closedCount: closedGate.length,
+    currentClosedCount: currentClosed.length,
+    staleClosedCount: staleClosed.length,
+    shadowCount: shadows.length,
+    currentShadowCount: currentShadows.length,
+    farCount: farShadows.length,
+    currentFarCount: currentFarShadows.length,
+    closed: currentClosed.slice(-40).reverse(),
+    archivedClosed: staleClosed.slice(-40).reverse(),
+    stats: analysis.base,
+    allStats: lab.agg(currentClosed),
+    archivedStats: lab.agg(staleClosed),
+    observations: analysis.observations,
+    enough: analysis.enough,
+    conditions,
+    historical,
+    generations: (labState.generations || []).slice(-10).reverse(),
+    fingerprint: runtime.runtimeFingerprint || null,
+    diskFingerprint: runtime.diskFingerprint || null,
+    brief: lab.buildBrief(currentClosed, {
+      since: since ? since + 'h' : null,
+      generations: labState.generations || [],
+      conditions,
+      liveChecks,
+      fingerprint: runtime.runtimeFingerprint || null,
+      staleCount: staleClosed.length,
+      historical,
+      archivedStats: lab.agg(staleClosed),
+      runtime,
+      cohortId: labState.cohortId || null,
+      exits: currentClosed.map(trade => ({
+        why: trade.why, mfe: trade.mfe, mae: trade.mae,
+        pnlPct: trade.pnlPct, holdH: trade.holdH,
+      })),
+      farGroup: lab.aggFar(currentFarShadows),
+      openNow: (() => {
+        if (!currentOpen.length) return null;
+        const hours = currentOpen.map(trade => (Date.now() - trade.openedAt) / 3600000);
+        const mfes = currentOpen.map(trade => trade.mfe).filter(Number.isFinite);
+        const maes = currentOpen.map(trade => trade.mae).filter(Number.isFinite);
+        const clusters = lab.clusters(currentOpen);
+        return {
+          n: currentOpen.length,
+          gate: currentOpen.filter(trade => !trade.shadow).length,
+          shadow: currentOpen.filter(trade => trade.shadow && !trade.far).length,
+          far: currentOpen.filter(trade => trade.far).length,
+          up: currentOpen.filter(trade => trade.pnlPct > 0).length,
+          oldestH: Math.round(Math.max(...hours) * 10) / 10,
+          youngestH: Math.round(Math.min(...hours) * 10) / 10,
+          bestMfe: mfes.length ? Math.max(...mfes) : null,
+          worstMae: maes.length ? Math.min(...maes) : null,
+          clusters: clusters.length,
+          biggest: clusters.length ? Math.max(...clusters.map(cluster => cluster.length)) : 0,
+        };
+      })(),
+      targetPct: currentLabExecution().targetPct,
+      slPct: currentLabExecution().slPct,
+      feePct: currentLabExecution().feePct * 2,
+    }),
+  };
+}
+function sendSafeLabApi(req, res) {
+  res.json(labApiPayload());
+}
+function updateSafeLabConfig(req, res) {
+  const body = req.body || {};
+  if (body.enabled !== undefined) {
+    const enabled = !!body.enabled;
+    if (enabled && !labState.enabled) labState.startedAt = labState.startedAt || Date.now();
+    labState.enabled = enabled;
+  }
+  saveLab();
+  const runtime = labRuntimeStatus();
+  res.json({
+    success: true,
+    enabled: labState.enabled,
+    budget: labState.budget,
+    entryBlocked: !runtime.matched,
+    runtime,
+  });
+}
+function clearSafeLabTrades(req, res) {
+  const runtime = labRuntimeStatus();
+  const checks = (scalpScan.results[0] && scalpScan.results[0].checks || [])
+    .map(check => check.en || check.k);
+  labState.trades = [];
+  labState.cohortId = makeLabCohortId(runtime.runtimeFingerprint, Date.now());
+  labState.fingerprint = runtime.runtimeFingerprint || null;
+  labState.gateSnapshot = checks.length ? checks : null;
+  labState.startedAt = labState.enabled ? Date.now() : 0;
+  saveLab();
+  res.json({ success: true });
+}
+function recordSafeLabApplied(req, res) {
+  let note = String((req.body || {}).note || '').slice(0, 2000);
+  if (isMojibake(note)) {
+    return res.status(400).json({
+      success: false,
+      error: 'Note arrived garbled. Send it as UTF-8, in English.',
+    });
+  }
+  const runtime = labRuntimeStatus();
+  if (!runtime.matched) {
+    return res.status(409).json({
+      success: false,
+      error: 'Restart required: source gate differs from the loaded scanner.',
+      runtime,
+    });
+  }
+  const checks = (scalpScan.results[0] && scalpScan.results[0].checks || [])
+    .map(check => check.en || check.k);
+  archiveCurrentLabCohort(
+    'manual application acknowledged',
+    runtime.runtimeFingerprint,
+    checks,
+    note || 'Manual application acknowledged; prior cohort archived for audit.'
+  );
+  saveLab();
+  res.json({
+    success: true,
+    generation: (labState.generations || []).length,
+    cohortId: labState.cohortId,
+  });
+}
 let scalpWatchArmed = false;
 // Непрерывный режим: шлёт по каждому новому входу, пока не выключишь.
 // scalpSent — по какой монете и по какой цене уже сообщали. Повторный

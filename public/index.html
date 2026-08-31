@@ -6333,6 +6333,7 @@
             Пока включена, сервер сам открывает виртуальную сделку на каждом срабатывании гейта и запоминает условия входа: позицию в диапазоне, RSI и глубину его ямы, спред, объём и его всплеск, ширину 4ч диапазона, рост за сутки до входа, глубину падения от вершины, запас BTC над EMA20, час. Из закрытых сделок собирает расхождения и формулирует, что стоит поправить в алгоритме. Работает при закрытом браузере, пока не выключишь. Сумма сделки фиксирована ($1000) — выводы строятся на процентах.
           </div>
           <div id="labStats" style="margin-bottom:12px;"></div>
+          <div id="labRuntimeNotice" style="margin-bottom:10px;"></div>
           <div id="labObservations" style="margin-bottom:12px;"></div>
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
             <span style="font-size:12px;font-weight:600;color:var(--t0);">Готовое задание для Claude Code</span>
@@ -14827,6 +14828,7 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
 
     /* ═══════════════ ЛАБОРАТОРИЯ СТРАТЕГИИ (вкладка Journal) ═══════════════ */
     let _labEnabled = false, _labBrief = '', _labPollTimer = null;
+    let _labRuntimeBlocked = false;
     // Автообновление: только когда лаборатория работает и вкладка Journal открыта
     function _labSchedulePoll() {
       clearTimeout(_labPollTimer);
@@ -14846,6 +14848,12 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
       b.style.borderColor = _labEnabled ? 'var(--green)' : '';
       b.style.color = _labEnabled ? 'var(--green)' : '';
       b.style.background = _labEnabled ? 'rgba(0,229,160,0.12)' : '';
+      if (_labRuntimeBlocked) {
+        b.textContent = '⚠ Нужен перезапуск';
+        b.style.borderColor = '#f59e0b';
+        b.style.color = '#fbbf24';
+        b.style.background = 'rgba(245,158,11,0.12)';
+      }
     }
     async function toggleLab() {
       try {
@@ -14856,6 +14864,13 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
         const j = await r.json();
         if (j.success) {
           _labEnabled = j.enabled; _paintLabBtn();
+          _labRuntimeBlocked = !!j.entryBlocked || !!(j.runtime && j.runtime.matched === false);
+          _paintLabBtn();
+          if (_labRuntimeBlocked && _labEnabled) {
+            showCustomAlert('Лаборатория включена, но новые входы заблокированы: код гейта на диске новее того, что выполняется. Нужен перезапуск сервера.', true);
+            loadLab();
+            return;
+          }
           showCustomAlert(_labEnabled
             ? 'Лаборатория запущена: сервер будет открывать сделку на каждом входе гейта, пока не остановишь'
             : 'Лаборатория остановлена. Открытые сделки продолжат вестись до цели или стопа.');
@@ -14909,9 +14924,26 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
     async function loadLab() {
       try {
         const r = await fetch('/api/lab');
+        if (!r.ok) throw new Error('Journal API unavailable');
         const j = await r.json();
         if (!j.success) return;
         _labEnabled = j.enabled; _paintLabBtn();
+        const runtime = j.runtime || {};
+        _labRuntimeBlocked = !!j.entryBlocked || runtime.matched === false;
+        _paintLabBtn();
+        const runtimeEl = document.getElementById('labRuntimeNotice');
+        if (runtimeEl) {
+          if (_labRuntimeBlocked) {
+            runtimeEl.textContent = 'Новые входы временно заблокированы: код гейта на диске не совпадает с тем, что выполняется в этом процессе. Открытые сделки продолжают вестись. Нужен перезапуск сервера.';
+            runtimeEl.style.cssText = 'margin-bottom:10px;padding:9px 11px;border:1px solid rgba(245,158,11,.65);border-radius:7px;background:rgba(245,158,11,.10);color:#fbbf24;font-size:12px;';
+          } else if (j.cohort && j.cohort.id) {
+            runtimeEl.textContent = 'Текущая когорта: ' + (j.cohort.fingerprint || 'без отпечатка') + '. Сделки прошлых версий гейта в выводы не идут.';
+            runtimeEl.style.cssText = 'margin-bottom:10px;color:var(--t2);font-size:11px;';
+          } else {
+            runtimeEl.textContent = '';
+            runtimeEl.style.cssText = 'margin-bottom:10px;';
+          }
+        }
         _labBrief = j.brief || '';
         const pre = document.getElementById('labBrief');
         if (pre) pre.textContent = _labBrief;
@@ -14923,7 +14955,7 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
 
         const st = j.stats;
         const historical = j.historical && j.historical.overall ? j.historical.overall : null;
-        const currentOpenRows = (j.open || []).filter(t => t.gen !== 'old');
+        const currentOpenRows = Array.isArray(j.currentOpen) ? j.currentOpen : (j.open || []).filter(t => t.isCurrent);
         const currentOpenGate = currentOpenRows.filter(t => !t.shadow).length;
         const currentOpenShadows = currentOpenRows.filter(t => t.shadow).length;
         const currentClosed = j.currentClosedCount != null ? j.currentClosedCount : j.closedCount;
@@ -14931,6 +14963,12 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
         const currentShadows = j.currentShadowCount != null ? j.currentShadowCount : j.shadowCount;
         const histWin = historical ? `история n=${historical.n}: ${historical.winRate}%` : 'история: не проверена';
         const histAvg = historical ? `история: ${historical.avgPct >= 0 ? '+' : ''}${historical.avgPct}%` : 'история: не проверена';
+        const labStatus = _labRuntimeBlocked
+          ? '<span style="color:#fbbf24;">НУЖЕН ПЕРЕЗАПУСК</span>'
+          : (_labEnabled ? '<span style="color:var(--green);">РАБОТАЕТ</span>' : '<span style="color:var(--t2);">СТОП</span>');
+        const labStatusHint = _labRuntimeBlocked
+          ? 'новые входы заблокированы'
+          : (j.hoursRunning ? j.hoursRunning + ' ч в работе' : '');
         const sEl = document.getElementById('labStats');
         if (sEl) {
           sEl.innerHTML = `<div style="display:flex;gap:10px;flex-wrap:wrap;">

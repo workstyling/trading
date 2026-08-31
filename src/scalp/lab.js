@@ -268,6 +268,15 @@ function buildBrief(trades, meta) {
   const d = (v) => (v >= 0 ? '+' : '') + v;
 
   lines.push('# Task: improve the scalp gate using live data');
+  const runtime = meta && meta.runtime;
+  if (runtime && !runtime.matched) {
+    lines.push('## Runtime safety stop');
+    lines.push('');
+    lines.push('The gate source files differ from the scanner loaded in this Node process.');
+    lines.push('New paper entries are blocked until the server is restarted; existing positions are still managed.');
+    lines.push('Do not use this cohort to validate the source currently on disk.');
+    lines.push('');
+  }
   lines.push('');
   lines.push('Below are results from paper trades opened automatically on every scalp gate');
   lines.push('trigger. This is an independent check on thresholds that were calibrated on a');
