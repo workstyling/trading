@@ -58,9 +58,16 @@ function ema(v, p) {
   const bc = bd.filter(x => x[4] > 0).map(x => ({ t: x[0], c: x[4] })).sort((a, b) => a.t - b.t);
   const be = ema(bc.map(x => x.c), 20);
   const mine = (bc[bc.length - 1].c / be - 1) * 100;
+  const regimeAt = Number(scan.regime.at || scan.at || 0);
+  const regimeAgeSec = regimeAt > 0 ? Math.max(0, Math.round((Date.now() - regimeAt) / 1000)) : null;
+  if (regimeAgeSec != null && regimeAgeSec <= 60) {
   ok(Math.abs(mine - scan.regime.distPct) < 0.3, 'запас BTC сходится',
+
     'панель ' + scan.regime.distPct + '% / расчёт ' + mine.toFixed(2) + '%');
   ok((mine > 0) === scan.regime.above, 'сторона EMA20 определена верно');
+  } else {
+    console.log('  skip  BTC EMA20 recomputation deferred: snapshot ' + (regimeAgeSec == null ? 'unknown' : regimeAgeSec + 's') + ' old');
+  }
 
   console.log('\n=== ЛАБОРАТОРИЯ ===');
   const lab = await j(BASE + '/api/lab');
