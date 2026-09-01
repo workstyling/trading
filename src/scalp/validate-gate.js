@@ -54,7 +54,7 @@ function configuredExit() {
   try { settings = JSON.parse(fs.readFileSync(path.join(ROOT, 'settings.json'), 'utf8')); } catch { }
   const targetPct = Number.isFinite(Number(paper.targetPct)) ? Number(paper.targetPct) : 2;
   const slPct = Number.isFinite(Number(paper.slPct)) ? Number(paper.slPct) : 6;
-  const feeSidePct = Number.isFinite(Number(settings.tradeFee)) ? Number(settings.tradeFee) : 0.06;
+  const feeSidePct = Number.isFinite(Number(settings.tradeFee)) ? Number(settings.tradeFee) : 0.125;
   return { targetPct, slPct, feeSidePct: Math.max(0, feeSidePct) };
 }
 

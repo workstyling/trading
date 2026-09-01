@@ -6012,10 +6012,10 @@
                    и не редактируются. Два поля с подписями съедали ширину, из-за
                    чего Chat ID уезжал за край. Теперь это одна плашка, а сами
                    поля скрыты — весь расчётный код читает их по-прежнему. -->
-              <input type="hidden" id="tradeFee" value="0.06">
-              <input type="hidden" id="marketFee" value="0.125">
+              <input type="hidden" id="tradeFee" value="0.125">
+              <input type="hidden" id="marketFee" value="0.25">
               <span class="fee-chip" id="feeChip" title="Комиссии из твоего тарифа Coinbase: лимитный ордер / рыночный. Обновляются сами по 30-дневному объёму.">
-                fee <b id="feeChipVal">0.06 / 0.125</b>%
+                fee <b id="feeChipVal">0.125 / 0.25</b>%
               </span>
               <!-- Токен и chat id Telegram убраны из панели: их задают один раз,
                    а место они занимали в строке, на которую смотрят при торговле.
@@ -6394,6 +6394,38 @@
       removeItem: (key) => { try { localStorage.removeItem(key); } catch { } }
     };
 
+    const APP_TOKEN_STORAGE_KEY = 'tradingAppToken';
+    const nativeFetch = window.fetch.bind(window);
+    function getAppToken() {
+      try { return sessionStorage.getItem(APP_TOKEN_STORAGE_KEY) || ''; } catch { return ''; }
+    }
+    function setAppToken(token) {
+      try { sessionStorage.setItem(APP_TOKEN_STORAGE_KEY, token); } catch { }
+    }
+    function isSameOriginRequest(input) {
+      const raw = input instanceof Request ? input.url : input instanceof URL ? input.href : String(input);
+      try { return new URL(raw, window.location.href).origin === window.location.origin; } catch { return false; }
+    }
+    async function fetchWithAppToken(input, init) {
+      const sameOrigin = isSameOriginRequest(input);
+      const token = sameOrigin ? getAppToken() : '';
+      let requestInit = init;
+      if (sameOrigin && token) {
+        const headers = new Headers((init && init.headers) || (input instanceof Request ? input.headers : undefined));
+        headers.set('X-App-Token', token);
+        requestInit = { ...(init || {}), headers };
+      }
+      const response = await nativeFetch(input, requestInit);
+      if (!sameOrigin || response.status !== 401) return response;
+      const payload = await response.clone().json().catch(() => null);
+      if (!payload || !payload.authRequired) return response;
+      const entered = window.prompt('Enter the app access token');
+      if (!entered || !entered.trim()) return response;
+      setAppToken(entered.trim());
+      return fetchWithAppToken(input, init);
+    }
+    window.fetch = fetchWithAppToken;
+
     // Toast notification system
     function showToast(message, type = 'info') {
       const container = document.getElementById('toastContainer');
@@ -6481,8 +6513,8 @@
 
     async function saveSettingsToServer() {
       const sellMarkup = parseFloat(document.getElementById('sellMarkup').value) || 1.38;
-      const tradeFee = parseFloat(document.getElementById('tradeFee').value) || 0.06;
-      const marketFee = parseFloat(document.getElementById('marketFee').value) || 0.125;
+      const tradeFee = parseFloat(document.getElementById('tradeFee').value) || 0.125;
+      const marketFee = parseFloat(document.getElementById('marketFee').value) || 0.25;
       const bidLevel = Math.min(0, Math.max(-20, parseInt(document.getElementById('bidLevelInput')?.value, 10) || 0));
       // Пустое значение НЕ отправляем: сервер отличает undefined (не трогать)
       // от пустой строки (стереть), а скрытые поля пусты до того, как ответит
@@ -6513,13 +6545,13 @@
     });
 
     document.getElementById('tradeFee').addEventListener('input', () => {
-      tradingSettings.tradeFee = parseFloat(document.getElementById('tradeFee').value) || 0.06;
+      tradingSettings.tradeFee = parseFloat(document.getElementById('tradeFee').value) || 0.125;
       updateSelectedOrdersView();
       saveSettingsToServer();
     });
 
     document.getElementById('marketFee').addEventListener('input', () => {
-      tradingSettings.marketFee = parseFloat(document.getElementById('marketFee').value) || 0.125;
+      tradingSettings.marketFee = parseFloat(document.getElementById('marketFee').value) || 0.25;
       updateSelectedOrdersView();
       saveSettingsToServer();
     });
@@ -14941,7 +14973,8 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
         if (!j.success) return;
         _labEnabled = j.enabled; _paintLabBtn();
         const runtime = j.runtime || {};
-        _labRuntimeBlocked = !!j.entryBlocked || runtime.matched === false;
+        const hasRuntimeStatus = !!j.runtime && typeof j.runtime.matched === 'boolean';
+        _labRuntimeBlocked = !hasRuntimeStatus || !!j.entryBlocked || runtime.matched === false;
         _paintLabBtn();
         const runtimeEl = document.getElementById('labRuntimeNotice');
         if (runtimeEl) {
@@ -15032,7 +15065,14 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
           oEl.innerHTML = html;
         }
         _labSchedulePoll();
-      } catch { }
+      } catch {
+        const runtimeEl = document.getElementById('labRuntimeNotice');
+        if (runtimeEl) {
+          runtimeEl.textContent = 'Lab data is temporarily unavailable. Retrying automatically.';
+          runtimeEl.style.cssText = 'margin-bottom:10px;padding:9px 11px;border:1px solid rgba(248,113,113,.65);border-radius:7px;background:rgba(248,113,113,.10);color:#fca5a5;font-size:12px;';
+        }
+        _labSchedulePoll();
+      }
     }
 
     /* ═══════════════════ TRADE JOURNAL (вкладка Journal) ═══════════════════ */
@@ -15588,7 +15628,7 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
     function getFeePct() {
       const el = document.getElementById('tradeFee');
       const v = parseFloat(el?.value);
-      return isFinite(v) && v >= 0 ? v : 0.075;
+      return isFinite(v) && v >= 0 ? v : 0.125;
     }
 
     async function buyMoonCoin(coin) {

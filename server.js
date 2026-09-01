@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const { RESTClient } = require('./cb/dist/rest/index.js');
 const predictor = require('./src/predictor');
 
@@ -45,6 +46,17 @@ const TRUSTED_ORIGINS = new Set(
     .map((origin) => origin.trim())
     .filter(Boolean)
 );
+const APP_API_TOKEN = String(process.env.APP_API_TOKEN || '');
+const DEPLOY_KEY = String(process.env.DEPLOY_KEY || '');
+
+function constantTimeTokenEquals(provided, expected) {
+  if (!expected || typeof provided !== 'string') return false;
+  const actualBuffer = Buffer.from(provided);
+  const expectedBuffer = Buffer.from(expected);
+  return actualBuffer.length === expectedBuffer.length &&
+    crypto.timingSafeEqual(actualBuffer, expectedBuffer);
+}
+
 const publicDir = path.join(__dirname, 'public');
 const settingsFile = path.join(__dirname, 'settings.json');
 const profitFile = path.join(__dirname, 'profit-history.json');
@@ -117,7 +129,7 @@ const client = new RESTClient(API_KEY, API_SECRET);
 // Only the same site (or explicitly configured origins) may call mutation APIs.
 function isTrustedOrigin(req) {
   const origin = req.get('origin');
-  if (!origin) return true;
+  if (!origin) return false;
   const host = req.get('host');
   return origin === 'http://' + host || origin === 'https://' + host || TRUSTED_ORIGINS.has(origin);
 }
@@ -127,13 +139,17 @@ app.use((req, res, next) => {
   const trusted = isTrustedOrigin(req);
   if (origin && trusted) {
     res.header('Access-Control-Allow-Origin', origin);
-    res.header('Access-Control-Allow-Headers', 'Content-Type, X-Deploy-Key');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, X-App-Token, X-Deploy-Key');
     res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.header('Vary', 'Origin');
   }
   if (req.method === 'OPTIONS') return trusted ? res.sendStatus(204) : res.sendStatus(403);
-  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method) && origin && !trusted) {
-    return res.status(403).json({ success: false, error: 'Origin is not allowed' });
+  const isMutation = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method);
+  if (isMutation && req.path !== '/api/deploy') {
+    if (!trusted) return res.status(403).json({ success: false, error: 'Origin is not allowed' });
+    if (APP_API_TOKEN && !constantTimeTokenEquals(req.get('x-app-token'), APP_API_TOKEN)) {
+      return res.status(401).json({ success: false, authRequired: true, error: 'App token is required' });
+    }
   }
   next();
 });
@@ -145,7 +161,7 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(publicDir, 'index.html'));
 });
 app.use(express.static(publicDir, { etag: false, lastModified: false }));
-app.use(express.json());
+app.use(express.json({ limit: '100kb' }));
 
 const SPOT_USD_PRODUCT_RE = /^[A-Z0-9]{2,20}-USD$/;
 function normalizeSpotUsdProduct(value) {
@@ -2438,8 +2454,11 @@ app.post('/api/deploy', (req, res) => {
   // .env на сервере нет, ответ стал бы 503, и выкатить исправление было бы
   // уже нечем. Значение временное — как только DEPLOY_KEY появится в .env на
   // сервере, эту строку надо убрать: в истории git оно всё равно осталось.
-  const deployKey = process.env.DEPLOY_KEY || 'trading-deploy-2026';
-  if ((req.query.key || req.headers['x-deploy-key']) !== deployKey) {
+  const deployKey = DEPLOY_KEY;
+  if (!deployKey) {
+    return res.status(503).json({ success: false, error: 'DEPLOY_KEY is not configured' });
+  }
+  if (!constantTimeTokenEquals(String(req.query.key || req.headers['x-deploy-key'] || ''), deployKey)) {
     return res.status(403).json({ success: false, error: 'bad key' });
   }
   // Файлы с ЖИВЫМИ данными: настройки (там токен Telegram), история прибыли,
@@ -4007,7 +4026,7 @@ const PAPER_CFG = { slPct: 6, tpPct: 5, beAfterPct: 2.5, trailAfterPct: 4, trail
 // Комиссия лимитного ордера из настроек — paper эмулирует лимитку, а не рынок
 function paperLimitFee() {
   const s = loadSettings();
-  return (parseFloat(s.tradeFee) || 0.06) / 100;
+  return (parseFloat(s.tradeFee) || defaultSettings.tradeFee) / 100;
 }
 // Цель paper/лаборатории отвязана от Sell Markup: тот управляет РЕАЛЬНЫМИ
 // продажами, менять его ради эксперимента нельзя.
@@ -4037,13 +4056,27 @@ function paperTargetPrice(pos) {
 }
 
 // Лучший ask — вход эмулируем так, будто сразу купил лимиткой по лучшему предложению
-async function fetchBestAsk(productId) {
+const latestBestQuotes = new Map();
+async function fetchBestQuote(productId) {
   try {
-    const r = await fetch(`https://api.exchange.coinbase.com/products/${productId}/ticker`, { headers: { 'User-Agent': 'trading-app/1.0' } });
-    if (!r.ok) return 0;
-    const t = await r.json();
-    return parseFloat(t.ask || t.price || t.bid) || 0;
-  } catch { return 0; }
+    const response = await fetch(`https://api.exchange.coinbase.com/products/${productId}/ticker`, { headers: { 'User-Agent': 'trading-app/1.0' } });
+    if (!response.ok) return null;
+    const ticker = await response.json();
+    const bid = parseFloat(ticker.bid);
+    const ask = parseFloat(ticker.ask);
+    if (!(bid > 0) || !(ask > 0) || bid > ask) return null;
+    const mid = (ask + bid) / 2;
+    const spreadPct = (ask - bid) / mid * 100;
+    if (!Number.isFinite(spreadPct) || spreadPct < 0) return null;
+    return { ask, bid, spreadPct: Math.round(spreadPct * 1000) / 1000, at: Date.now() };
+  } catch { return null; }
+}
+
+async function fetchBestAsk(productId) {
+  const quote = await fetchBestQuote(productId);
+  if (!quote) return 0;
+  latestBestQuotes.set(productId, quote);
+  return quote.ask;
 }
 
 // Собрать позицию по текущим настройкам — общий код для ручного и автоматического входа
@@ -4424,7 +4457,7 @@ const scalpScan = { running: false, progress: 0, scanned: 0, total: 0, at: 0, re
 // лаборатории, а это ровно то, что мы только что чинили.
 const scalpPrev = { scores: new Map(), distPct: null, at: 0 };
 
-function scalpValidationStatus() {
+function scalpValidationStatusLegacy() {
   // The scanner modules are loaded once by Node. A later disk hash may refer
   // to code that is not yet executing in this process.
   const fingerprint = typeof RUNTIME_GATE_FINGERPRINT === 'string'
@@ -4455,6 +4488,42 @@ function scalpValidationStatus() {
     avgPct: overall.avgPct,
     profitFactor: overall.profitFactor,
     positiveSegments: overall.positiveSegments,
+  };
+}
+
+
+function scalpValidationStatus() {
+  const fingerprint = typeof RUNTIME_GATE_FINGERPRINT === 'string'
+    ? RUNTIME_GATE_FINGERPRINT : gateFingerprint();
+  const diskFingerprint = gateFingerprint();
+  if (!fingerprint || fingerprint !== diskFingerprint) {
+    return {
+      ready: false, state: 'restart_required', fingerprint: fingerprint || null,
+      diskFingerprint: diskFingerprint || null,
+    };
+  }
+  const found = inspectGateValidation(fingerprint);
+  const result = found.result;
+  const overall = result && result.overall;
+  if (!overall) {
+    return { ready: false, state: 'missing', why: found.why, detail: found.detail || null };
+  }
+  const structuralReady = overall.avgPct > 0 && overall.profitFactor > 1 &&
+    overall.positiveSegments === 3;
+  const modeledChecks = Array.isArray(result.scope && result.scope.modeledChecks)
+    ? result.scope.modeledChecks : [];
+  const partialReplay = !modeledChecks.includes('Spread verified and <=0.4%');
+  return {
+    ready: partialReplay ? false : structuralReady,
+    structuralReady,
+    state: partialReplay ? 'partial' : structuralReady ? 'passed' : 'failed',
+    fingerprint: result.fingerprint, generatedAt: result.generatedAt,
+    n: overall.n, avgPct: overall.avgPct, profitFactor: overall.profitFactor,
+    positiveSegments: overall.positiveSegments,
+    scope: partialReplay ? 'structural-only' : 'complete',
+    detail: partialReplay
+      ? 'Historical replay omits the mandatory live spread check; it cannot authorize live entries.'
+      : null,
   };
 }
 
@@ -4502,6 +4571,15 @@ async function runScalpScan() {
 setInterval(runScalpScan, 4 * 60 * 1000);
 setTimeout(runScalpScan, 75_000);
 
+app.use('/api/scalp-scan', (req, res, next) => {
+  const validation = scalpValidationStatus();
+  scalpScan.validation = validation;
+  for (const result of scalpScan.results) {
+    result.tradeReady = !!(result.pass && validation.ready);
+  }
+  next();
+});
+
 app.get('/api/scalp-scan', (req, res) => {
   if (req.query.refresh === '1' && !scalpScan.running) runScalpScan();
   const minScore = parseFloat(req.query.minScore) || 0;
@@ -4537,6 +4615,8 @@ const lab = require('./src/scalp/lab');
 const LAB_FILE = path.join(__dirname, 'scalp-lab.json');
 const LAB_MAX_HOLD_H = 48;
 
+const LAB_MAX_SCAN_AGE_MS = 5 * 60 * 1000;
+const LAB_MAX_ENTRY_SPREAD_PCT = 0.4;
 const GATE_VALIDATION_FILE = path.join(__dirname, 'scalp-gate-validation.json');
 // Возвращает {result} при совпадении, либо {why, detail} — почему не подошло.
 // Разделение нужно интерфейсу: «прогона нет» и «прогон есть, но про другой
@@ -4743,7 +4823,7 @@ for (const g of labState.generations || []) {
   }
 }
 function saveLab() {
-  const stored = { ...labState, schemaVersion: LAB_SCHEMA_VERSION, trades: labState.trades.slice(-LAB_MAX_TRADES) };
+  const stored = { ...labState, schemaVersion: LAB_SCHEMA_VERSION, trades: labState.trades };
   let tempFile = null;
   try {
     tempFile = LAB_FILE + '.' + process.pid + '.' + Date.now() + '.tmp';
@@ -5002,6 +5082,11 @@ setInterval(labTickSafe, 60_000);
 // but it never admits a new entry while source files and loaded scanner differ.
 let labTickSafeRunning = false;
 async function labTickSafe() {
+  return labTickSafeV2();
+}
+
+// Retained only for comparison while migrating existing paper-journal data.
+async function labTickLegacy() {
   if (labTickSafeRunning) return;
   labTickSafeRunning = true;
   try {
@@ -5168,6 +5253,231 @@ async function labTickSafe() {
   }
 }
 setTimeout(labTickSafe, 90_000);
+
+let labTickSafeV2Running = false;
+function currentScalpChecks() {
+  return (scalpScan.results[0] && scalpScan.results[0].checks || [])
+    .map(check => check.en || check.k);
+}
+function labScanIsFresh(scanAt, now = Date.now()) {
+  const at = finiteNumber(scanAt);
+  return at != null && now >= at && now - at <= LAB_MAX_SCAN_AGE_MS;
+}
+function markLabTimeExitPending(trade, execution, now = Date.now()) {
+  const openedAt = finiteNumber(trade.openedAt);
+  const dueAt = openedAt != null && execution.maxHoldH > 0
+    ? openedAt + execution.maxHoldH * 3600000 : null;
+  const due = dueAt != null && now >= dueAt;
+  if (!due) return false;
+  let changed = false;
+  if (finiteNumber(trade.timeExitDueAt) == null) {
+    trade.timeExitDueAt = dueAt;
+    changed = true;
+  }
+  if (trade.exitPendingReason !== 'TIME_QUOTE_UNAVAILABLE') {
+    trade.exitPendingReason = 'TIME_QUOTE_UNAVAILABLE';
+    changed = true;
+  }
+  return changed;
+}
+async function labTickSafeV2() {
+  if (labTickSafeV2Running) return;
+  labTickSafeV2Running = true;
+  try {
+    let changed = false;
+    const liveChecks = currentScalpChecks();
+    const runtime = labRuntimeStatus();
+    const cohort = reconcileLabCohort(liveChecks, runtime);
+    changed = changed || cohort.changed;
+
+    for (const trade of labState.trades.filter(item => !item.closedAt)) {
+      let execution = null;
+      const now = Date.now();
+      const markTimePending = () => {
+        if (execution && markLabTimeExitPending(trade, execution, Date.now())) changed = true;
+      };
+      try {
+        if (freezeLabExecution(trade)) {
+          trade.executionInferred = true;
+          changed = true;
+        }
+        execution = labExecutionForTrade(trade);
+        const tickerResponse = await fetch(
+          'https://api.exchange.coinbase.com/products/' + trade.pair + '/ticker',
+          { headers: { 'User-Agent': 'trading-app/1.0' } }
+        );
+        if (!tickerResponse.ok) {
+          markTimePending();
+          continue;
+        }
+        const ticker = await tickerResponse.json();
+        const bid = parseFloat(ticker.bid);
+        if (!(bid > 0)) {
+          markTimePending();
+          continue;
+        }
+        const observedAt = Date.now();
+        if (finiteNumber(trade.last) !== bid) {
+          trade.last = bid;
+          changed = true;
+        }
+        if (finiteNumber(trade.lastBidAt) !== observedAt) {
+          trade.lastBidAt = observedAt;
+          changed = true;
+        }
+        const gainPct = (bid - trade.entry) / trade.entry * 100;
+        const observedGain = Math.round(gainPct * 100) / 100;
+        if (trade.mfe == null || observedGain > trade.mfe) {
+          trade.mfe = observedGain;
+          changed = true;
+        }
+        if (trade.mae == null || observedGain < trade.mae) {
+          trade.mae = observedGain;
+          changed = true;
+        }
+
+        const targetPrice = trade.entry * (1 + execution.targetPct / 100);
+        const stopPrice = trade.entry * (1 - execution.slPct / 100);
+        const close = (exit, why, details = {}) => {
+          const closedAt = Date.now();
+          trade.exit = exit;
+          trade.closedAt = closedAt;
+          trade.why = why;
+          trade.exitModel = execution.executionModel;
+          if (trade.exitPendingReason) delete trade.exitPendingReason;
+          Object.assign(trade, details);
+          const pnl = labPnl(trade, exit);
+          trade.pnl = pnl;
+          trade.pnlPct = pnl != null && trade.budget > 0
+            ? Math.round(pnl / trade.budget * 10000) / 100 : null;
+          trade.holdH = Math.round((closedAt - trade.openedAt) / 3600000 * 10) / 10;
+          changed = true;
+          console.log('[lab] ' + trade.coin + ' ' + why + ': ' + trade.pnlPct + '%');
+        };
+
+        // A quote first observed after the holding deadline cannot prove that a
+        // target was filled before it. Close it as TIME to keep the journal
+        // conservative instead of crediting an unobserved late TP.
+        if (execution.maxHoldH > 0 && observedAt >= trade.openedAt + execution.maxHoldH * 3600000) {
+          const timeExitDueAt = finiteNumber(trade.timeExitDueAt) ||
+            (trade.openedAt + execution.maxHoldH * 3600000);
+          close(bid, 'TIME', {
+            exitObservedBid: bid, exitObservedBidAt: observedAt, timeExitDueAt,
+            timeExitDelayMin: Math.max(0, Math.round((observedAt - timeExitDueAt) / 60000)),
+          });
+        } else if (gainPct >= execution.targetPct) {
+          close(targetPrice, 'TP', {
+            limitPrice: targetPrice, exitObservedBid: bid, exitObservedBidAt: observedAt,
+          });
+        } else if (execution.slPct > 0 && gainPct <= -execution.slPct) {
+          close(bid, 'SL', {
+            stopPrice, exitObservedBid: bid, exitObservedBidAt: observedAt,
+            stopSlippagePct: stopPrice > 0
+              ? Math.round((bid / stopPrice - 1) * 10000) / 100 : null,
+          });
+        }
+      } catch (error) {
+        markTimePending();
+        console.warn('[lab] ticker ' + trade.coin + ':', error.message);
+      }
+      await sleep(120);
+    }
+
+    const scanAt = finiteNumber(scalpScan.at);
+    if (labState.enabled && cohort.entriesAllowed && labScanIsFresh(scanAt)) {
+      const entryCohortId = labState.cohortId;
+      const results = Array.isArray(scalpScan.results) ? scalpScan.results : [];
+      const passers = results.filter(candidate => candidate.pass);
+      const currentOpen = labState.trades.filter(trade => !trade.closedAt && isCurrentLabTrade(trade));
+      const openShadows = currentOpen.filter(trade => trade.shadow && !trade.far).length;
+      const openFar = currentOpen.filter(trade => trade.far).length;
+      const nearMiss = results
+        .filter(candidate => !candidate.pass && candidate.checks &&
+          candidate.passed === candidate.checks.length - 1)
+        .slice(0, Math.max(0, 12 - openShadows));
+      const farMiss = results
+        .filter(candidate => !candidate.pass && candidate.checks &&
+          candidate.passed === candidate.checks.length - 2)
+        .slice(0, Math.max(0, 6 - openFar));
+
+      for (const candidate of [...passers, ...nearMiss, ...farMiss]) {
+        const isShadow = !candidate.pass;
+        const isFar = isShadow && candidate.passed === candidate.checks.length - 2;
+        const failed = isShadow
+          ? candidate.checks.filter(check => !check.ok).map(check => check.en || check.k) : [];
+        if (failed.includes('Spread verified and <=0.4%')) continue;
+        if (labState.trades.some(trade => trade.coin === candidate.coin && !trade.closedAt)) continue;
+        const recent = [...labState.trades].reverse()
+          .find(trade => trade.coin === candidate.coin && trade.closedAt);
+        const cooldown = (isShadow ? 6 : 4) * 3600 * 1000;
+        if (recent && Date.now() - recent.closedAt < cooldown) continue;
+
+        const quote = await fetchBestQuote(candidate.pair);
+        if (!quote || quote.spreadPct > LAB_MAX_ENTRY_SPREAD_PCT) continue;
+
+        const entryRuntime = labRuntimeStatus();
+        const entryChecks = currentScalpChecks();
+        const entryCohort = reconcileLabCohort(entryChecks, entryRuntime);
+        changed = changed || entryCohort.changed;
+        if (!labState.enabled || !entryRuntime.matched || !entryCohort.entriesAllowed ||
+            labState.cohortId !== entryCohortId || finiteNumber(scalpScan.at) !== scanAt ||
+            !labScanIsFresh(scanAt)) continue;
+
+        const now = Date.now();
+        const executionAtEntry = currentLabExecution();
+        const validation = scalpValidationStatus();
+        const candidateChecks = Array.isArray(candidate.checks)
+          ? candidate.checks.map(check => ({
+            k: check.k || null, en: check.en || check.k || null, ok: !!check.ok,
+          })) : [];
+        const fee = executionAtEntry.feePct;
+        const budget = labState.budget;
+        const initialGain = Math.round((quote.bid - quote.ask) / quote.ask * 10000) / 100;
+        labState.trades.push({
+          id: 'lab_' + now + '_' + candidate.coin,
+          coin: candidate.coin, pair: candidate.pair,
+          entry: quote.ask, last: quote.bid, qty: budget * (1 - fee) / quote.ask,
+          entryBid: quote.bid, entrySpreadPct: quote.spreadPct, entryQuoteAt: quote.at,
+          scanSpreadPct: candidate.spreadPct,
+          budget, openedAt: now, shadow: isShadow, far: isFar,
+          entryKind: isFar ? 'wider-control' : isShadow ? 'near-control' : 'structural-gate',
+          structuralPass: !!candidate.pass, tradeReady: !!(candidate.pass && validation.ready),
+          missing: failed.length ? failed.join(' + ') : null,
+          cohortId: labState.cohortId, gateFingerprint: RUNTIME_GATE_FINGERPRINT,
+          gateChecks: candidateChecks, gateCheckNames: entryChecks.length ? [...entryChecks] : null,
+          provenance: 'runtime-captured-v3',
+          validationState: validation.state || 'missing',
+          validationFingerprint: validation.fingerprint || null,
+          entryScanAt: scanAt, entrySignalAgeSec: Math.round((now - scanAt) / 1000),
+          targetPct: executionAtEntry.targetPct, slPct: executionAtEntry.slPct,
+          feePct: executionAtEntry.feePct, maxHoldH: executionAtEntry.maxHoldH,
+          executionModel: executionAtEntry.executionModel, executionCapturedAt: now,
+          mfe: initialGain, mae: initialGain,
+          ctx: {
+            score: candidate.score, rangePos: candidate.rangePos, rsi: candidate.rsi,
+            rsiMin: candidate.rsiMin != null ? candidate.rsiMin : null,
+            spreadPct: quote.spreadPct, scanSpreadPct: candidate.spreadPct,
+            vol24: candidate.vol24, volX: candidate.volX,
+            btcDist: scalpScan.regime ? scalpScan.regime.distPct : null,
+            hourUtc: new Date().getUTCHours(),
+            range4Pct: candidate.range4Pct != null ? candidate.range4Pct : null,
+            runUp24: candidate.runUp24 != null ? candidate.runUp24 : null,
+            dropFromHigh: candidate.dropFromHigh4Pct != null ? candidate.dropFromHigh4Pct : null,
+          },
+        });
+        changed = true;
+        console.log('[lab] ' + (isFar ? 'wider-control' : isShadow ? 'near-control' : 'structural-gate') +
+          ' ' + candidate.coin + ' @ $' + quote.ask + ' (spread ' + quote.spreadPct + '%)');
+      }
+    }
+    if (changed) saveLab();
+  } catch (error) {
+    console.error('[lab safe]', error.message);
+  } finally {
+    labTickSafeV2Running = false;
+  }
+}
+
 
 app.get('/api/lab', (req, res) => {
   return sendSafeLabApi(req, res);
@@ -5541,9 +5851,12 @@ const NL = String.fromCharCode(10);
 
 // Общий сбор кандидатов для обоих режимов алерта
 function scalpAlertPool() {
-  const validation = scalpScan.validation || scalpValidationStatus();
+  const validation = scalpValidationStatus();
+  scalpScan.validation = validation;
   if (!validation.ready) return [];
-  const pool = scalpScan.results.filter(r => r.tradeReady);
+  const scanAge = Date.now() - finiteNumber(scalpScan.at);
+  if (!Number.isFinite(scanAge) || scanAge < 0 || scanAge > LAB_MAX_SCAN_AGE_MS) return [];
+  const pool = scalpScan.results.filter(r => r.pass);
   const best = new Map();
   for (const r of pool) if (!best.has(r.coin) || best.get(r.coin).score < r.score) best.set(r.coin, r);
   return [...best.values()].sort((a, b) => b.score - a.score);
@@ -5717,8 +6030,8 @@ app.get('/api/limit-advice/:coin', async (req, res) => {
     const vol24 = s ? (parseFloat(s.volume) || 0) * (parseFloat(s.last) || 0) : 0;
 
     const settings = loadSettings();
-    const limitFee = (parseFloat(settings.tradeFee) || 0.06) / 100;
-    const marketFee = (parseFloat(settings.marketFee) || 0.125) / 100;
+    const limitFee = (parseFloat(settings.tradeFee) || defaultSettings.tradeFee) / 100;
+    const marketFee = (parseFloat(settings.marketFee) || defaultSettings.marketFee) / 100;
     const target = parseFloat(settings.sellMarkup) || 1.38;
 
     // Варианты размещения: по ask (мгновенно), по bid, и глубже по стакану

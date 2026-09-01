@@ -99,7 +99,7 @@ const BUCKETS = {
  * пик и дно не хранят, — порядок событий, поэтому при совпадении считаем
  * срабатывание стопа (консервативно: так результат не завышается).
  */
-function sweepTargets(exits, fee, targets, stops) {
+function sweepTargetsLegacy(exits, fee, targets, stops) {
   const rows = [];
   const valid = exits.filter(e => Number.isFinite(e.mfe) && Number.isFinite(e.mae));
   if (valid.length < 5) return { rows, n: valid.length };
@@ -821,6 +821,13 @@ function checkConditions(passed, shadows, minN = 6) {
       };
     })
     .sort((a, b) => (b.n || 0) - (a.n || 0));
+}
+
+
+// MFE/MAE stop updating once the actual position exits, so they cannot
+// reconstruct a different target or stop. Do not rank unobserved exits.
+function sweepTargets(exits, fee, targets, stops) {
+  return { rows: [], n: 0, unavailable: true };
 }
 
 module.exports = { BUCKETS, agg, findObservations, buildBrief, checkConditions, sweepTargets, aggFar, clusters, clusterStats };
