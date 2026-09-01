@@ -1566,6 +1566,38 @@
     const BASE = window.location.origin;
     const SELECTED_KEY = 'mobileSelectedOrders';
     let selectedOrders = [];
+    const APP_TOKEN_STORAGE_KEY = 'tradingAppToken';
+    const nativeFetch = window.fetch.bind(window);
+    function getAppToken() {
+      try { return sessionStorage.getItem(APP_TOKEN_STORAGE_KEY) || ''; } catch { return ''; }
+    }
+    function setAppToken(token) {
+      try { sessionStorage.setItem(APP_TOKEN_STORAGE_KEY, token); } catch { }
+    }
+    function isSameOriginRequest(input) {
+      const raw = input instanceof Request ? input.url : input instanceof URL ? input.href : String(input);
+      try { return new URL(raw, window.location.href).origin === window.location.origin; } catch { return false; }
+    }
+    async function fetchWithAppToken(input, init) {
+      const sameOrigin = isSameOriginRequest(input);
+      const token = sameOrigin ? getAppToken() : '';
+      let requestInit = init;
+      if (sameOrigin && token) {
+        const headers = new Headers((init && init.headers) || (input instanceof Request ? input.headers : undefined));
+        headers.set('X-App-Token', token);
+        requestInit = { ...(init || {}), headers };
+      }
+      const response = await nativeFetch(input, requestInit);
+      if (!sameOrigin || response.status !== 401) return response;
+      const payload = await response.clone().json().catch(() => null);
+      if (!payload || !payload.authRequired) return response;
+      const entered = window.prompt('Enter the app access token');
+      if (!entered || !entered.trim()) return response;
+      setAppToken(entered.trim());
+      return fetchWithAppToken(input, init);
+    }
+    window.fetch = fetchWithAppToken;
+
 
     const FAVORITE_COINS_KEY = 'favoriteCoins';
     let favoriteCoins = new Set(JSON.parse(localStorage.getItem(FAVORITE_COINS_KEY) || '[]'));
