@@ -4622,6 +4622,7 @@ const LAB_MAX_HOLD_H = 48;
 
 const LAB_MAX_SCAN_AGE_MS = 5 * 60 * 1000;
 const LAB_MAX_ENTRY_SPREAD_PCT = 0.4;
+const LAB_BURST_GAP_MS = 30 * 60 * 1000;
 const GATE_VALIDATION_FILE = path.join(__dirname, 'scalp-gate-validation.json');
 // Возвращает {result} при совпадении, либо {why, detail} — почему не подошло.
 // Разделение нужно интерфейсу: «прогона нет» и «прогон есть, но про другой
@@ -4784,6 +4785,14 @@ function isCurrentLabTrade(trade) {
       trade.provenance === 'legacy-unverified' ||
       trade.gateFingerprint === 'legacy-unknown') return false;
   return !!trade && trade.cohortId === labState.cohortId && !trade.archivedAt;
+}
+function labBurstIdForEntry(openedAt, cohortId) {
+  const latest = labState.trades
+    .filter(trade => trade.cohortId === cohortId && typeof trade.burstId === 'string' &&
+      trade.burstId && finiteNumber(trade.openedAt) != null && trade.openedAt <= openedAt &&
+      openedAt - trade.openedAt <= LAB_BURST_GAP_MS)
+    .sort((a, b) => b.openedAt - a.openedAt)[0];
+  return latest ? latest.burstId : 'burst_' + cohortId + '_' + openedAt;
 }
 function normalizeLabState() {
   let changed = false;
@@ -5431,6 +5440,7 @@ async function labTickSafeV2() {
         const now = Date.now();
         const executionAtEntry = currentLabExecution();
         const validation = scalpValidationStatus();
+        const burstId = labBurstIdForEntry(now, entryCohortId);
         const candidateChecks = Array.isArray(candidate.checks)
           ? candidate.checks.map(check => ({
             k: check.k || null, en: check.en || check.k || null, ok: !!check.ok,
@@ -5449,8 +5459,9 @@ async function labTickSafeV2() {
           structuralPass: !!candidate.pass, tradeReady: !!(candidate.pass && validation.ready),
           missing: failed.length ? failed.join(' + ') : null,
           cohortId: labState.cohortId, gateFingerprint: RUNTIME_GATE_FINGERPRINT,
+          burstId,
           gateChecks: candidateChecks, gateCheckNames: entryChecks.length ? [...entryChecks] : null,
-          provenance: 'runtime-captured-v3',
+          provenance: 'runtime-captured-v4',
           validationState: validation.state || 'missing',
           validationFingerprint: validation.fingerprint || null,
           entryScanAt: scanAt, entrySignalAgeSec: Math.round((now - scanAt) / 1000),

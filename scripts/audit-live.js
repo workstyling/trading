@@ -86,6 +86,20 @@ function ema(v, p) {
     ok(tpBad.length === 0, 'сделки по цели прибыльные', tpBad.map(t => t.coin).join(','));
     const slBad = closed.filter(t => t.why === 'SL' && t.pnlPct > 0);
     ok(slBad.length === 0, 'сделки по стопу убыточные', slBad.map(t => t.coin).join(','));
+    const pnlBad = closed.filter(t => {
+      const entry = Number(t.entry), budget = Number(t.budget), exit = Number(t.exit);
+      const fee = Number(t.feePct), qty = Number.isFinite(Number(t.qty))
+        ? Number(t.qty) : budget * (1 - fee) / entry;
+      if (!(entry > 0 && budget > 0 && exit > 0 && fee >= 0 && qty > 0)) return true;
+      const expectedUsd = Math.round((qty * exit * (1 - fee) - budget) * 100) / 100;
+      const expectedPct = Math.round(expectedUsd / budget * 10000) / 100;
+      return Math.abs(Number(t.pnl) - expectedUsd) > 0.01 ||
+        Math.abs(Number(t.pnlPct) - expectedPct) > 0.01;
+    });
+    ok(pnlBad.length === 0, 'PnL закрытых совпадает с зафиксированной моделью', pnlBad.map(t => t.coin).join(','));
+    const burstTracked = [...open, ...closed].filter(t => t.provenance === 'runtime-captured-v4');
+    const burstBad = burstTracked.filter(t => typeof t.burstId !== 'string' || !t.burstId);
+    ok(burstBad.length === 0, 'новые записи сохраняют burstId', burstBad.map(t => t.coin).join(','));
     // closed[] теперь только текущая когорта, прошлые версии гейта лежат в
     // archivedClosed[]. closedCount считает обе, поэтому сравнивать его с
     // длиной closed[] больше нельзя — проверяем настоящий инвариант.

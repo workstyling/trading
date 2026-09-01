@@ -142,6 +142,16 @@ function sweepTargetsLegacy(exits, fee, targets, stops) {
 function clusters(trades, gapMin = 30) {
   const ts = (trades || []).filter(t => t.openedAt).sort((a, b) => a.openedAt - b.openedAt);
   if (!ts.length) return [];
+  // New rows retain their burst at entry. Once a cohort is fully tagged, this
+  // avoids changing its independent-event count when it is reported later.
+  if (ts.every(t => typeof t.burstId === 'string' && t.burstId)) {
+    const groups = new Map();
+    for (const trade of ts) {
+      if (!groups.has(trade.burstId)) groups.set(trade.burstId, []);
+      groups.get(trade.burstId).push(trade);
+    }
+    return [...groups.values()].sort((a, b) => a[0].openedAt - b[0].openedAt);
+  }
   const out = [[ts[0]]];
   for (let i = 1; i < ts.length; i++) {
     if (ts[i].openedAt - ts[i - 1].openedAt > gapMin * 60000) out.push([]);
