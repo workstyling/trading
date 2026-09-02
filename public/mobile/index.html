@@ -396,6 +396,18 @@
     .mon-sell-btn.ask:active { background: var(--yellow); color: #000; }
     .mon-sell-btn.all { border-color: var(--red); color: var(--red); }
     .mon-sell-btn.all:active { background: var(--red); color: #fff; }
+    .mon-profit-btn {
+      width: 100%; margin-top: 8px; padding: 9px 10px; border-radius: 6px;
+      font-size: 11px; font-weight: 700; font-family: 'JetBrains Mono', monospace; cursor: pointer;
+    }
+    .mon-profit-btn.profit-positive {
+      border: 1px solid rgba(74, 222, 128, 0.6); color: var(--green); background: rgba(74, 222, 128, 0.09);
+    }
+    .mon-profit-btn.profit-positive:active { background: var(--green); color: #000; }
+    .mon-profit-btn.profit-negative {
+      border: 1px solid rgba(238, 82, 83, 0.7); color: var(--loss); background: rgba(238, 82, 83, 0.10);
+    }
+    .mon-profit-btn.profit-negative:active { background: var(--loss); color: #fff; }
     .mon-deselect {
       padding: 4px 8px; border-radius: 5px; font-size: 10px; cursor: pointer;
       border: 1px solid var(--t3); background: transparent; color: var(--t2);
@@ -1167,11 +1179,11 @@
     }
 
     /* Buttons */
-    button, .btn, .trade-btn, .save-coin-btn, .amt-btn, .btn-limit, .filter-btn, .cancel-btn, .tg-refresh-btn, .at-add-btn, .mt-toggle-btn, .mt-buy-btn, .mon-sell-btn, .mon-deselect, .tg-track-btn {
+    button, .btn, .trade-btn, .save-coin-btn, .amt-btn, .btn-limit, .filter-btn, .cancel-btn, .tg-refresh-btn, .at-add-btn, .mt-toggle-btn, .mt-buy-btn, .mon-sell-btn, .mon-profit-btn, .mon-deselect, .tg-track-btn {
       transition: all 0.2s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
       cursor: pointer;
     }
-    button:active, .btn:active, .trade-btn:active, .save-coin-btn:active, .amt-btn:active, .btn-limit:active, .filter-btn:active, .cancel-btn:active, .tg-refresh-btn:active, .at-add-btn:active, .mt-toggle-btn:active, .mt-buy-btn:active, .mon-sell-btn:active, .mon-deselect:active, .tg-track-btn:active {
+    button:active, .btn:active, .trade-btn:active, .save-coin-btn:active, .amt-btn:active, .btn-limit:active, .filter-btn:active, .cancel-btn:active, .tg-refresh-btn:active, .at-add-btn:active, .mt-toggle-btn:active, .mt-buy-btn:active, .mon-sell-btn:active, .mon-profit-btn:active, .mon-deselect:active, .tg-track-btn:active {
       transform: scale(0.95) !important;
     }
 
@@ -1599,6 +1611,8 @@
     const BASE = window.location.origin;
     const SELECTED_KEY = 'mobileSelectedOrders';
     let selectedOrders = [];
+    let profitHistory = [];
+    let profitHistoryReady = false;
     const APP_TOKEN_STORAGE_KEY = 'tradingAppToken';
     const nativeFetch = window.fetch.bind(window);
     function getAppToken() {
@@ -2644,6 +2658,18 @@
         const marketPnL = totalFilled * bid * (1 - sellFeeM) - totalUSD;
         const pnlColor = limitPnL >= 0 ? 'var(--green)' : 'var(--loss)';
         const mktColor = marketPnL >= 0 ? 'var(--green)' : 'var(--loss)';
+        const filledBuys = orders.filter(order => order.side === 'BUY' && parseFloat(order.filled_size) > 0);
+        const filledSells = orders.filter(order => order.side === 'SELL' && parseFloat(order.filled_size) > 0);
+        const canSaveProfit = filledBuys.length > 0 && filledSells.length > 0;
+        const groupProfit = canSaveProfit ? -totalUSD : 0;
+        const profitOrderIds = [...filledBuys, ...filledSells].map(order => order.order_id);
+        const savedProfit = profitHistory.find(entry => {
+          const savedIds = [...(entry.buyOrders || []), ...(entry.sellOrders || [])];
+          return profitOrderIds.some(id => savedIds.includes(id));
+        });
+        const profitButton = canSaveProfit
+          ? `<button class="mon-profit-btn ${groupProfit >= 0 ? 'profit-positive' : 'profit-negative'}" onclick="saveGroupProfitM('${coin}',${groupProfit.toFixed(2)},'${filledBuys.map(order => order.order_id).join(',')}','${filledSells.map(order => order.order_id).join(',')}')">${savedProfit ? `Update Profit (was ${formatProfitM(savedProfit.profit)}) → ${formatProfitM(groupProfit)}` : `Save Profit ${formatProfitM(groupProfit)}`}</button>`
+          : '';
 
         const isFav = favoriteCoins.has(coin);
         html += `<div class="monitor-group" data-coin="${coin}">
@@ -2692,6 +2718,8 @@
             </div>
           </div>`;
         });
+
+        html += profitButton;
 
         // Sell All button
         if (totalFilled > 0) {
@@ -2984,7 +3012,9 @@
     async function loadProfit() {
       const r = await api('/get-profit-history');
       if (r.success) {
-        const history = r.history || [];
+        profitHistory = Array.isArray(r.history) ? r.history : [];
+        profitHistoryReady = true;
+        const history = profitHistory;
         let total = 0;
         history.forEach(h => total += parseFloat(h.profit || 0));
 
@@ -2998,14 +3028,14 @@
           const now = new Date();
           const isToday = d => { const x = new Date(d); return x.getFullYear() === now.getFullYear() && x.getMonth() === now.getMonth() && x.getDate() === now.getDate(); };
           let todaySum = 0;
-          history.forEach(h => { if (isToday(h.date)) todaySum += parseFloat(h.profit || 0); });
+          history.forEach(h => { if (isToday(h.soldAt || h.date)) todaySum += parseFloat(h.profit || 0); });
           tEl.textContent = 'today: ' + (todaySum >= 0 ? '+$' : '-$') + Math.abs(todaySum).toFixed(2);
           tEl.style.color = todaySum >= 0 ? '#00e5a0' : '#f55';
           tEl.style.background = todaySum >= 0 ? 'rgba(0,229,160,0.1)' : 'rgba(255,85,85,0.1)';
         }
 
         document.getElementById('profitList').innerHTML = history.length
-          ? history.sort((a, b) => new Date(b.date) - new Date(a.date)).map(h => {
+          ? history.slice().sort((a, b) => new Date(b.date) - new Date(a.date)).map(h => {
               const p = parseFloat(h.profit || 0);
               return `<div class="profit-item">
                 <div class="profit-item-left">
@@ -3016,7 +3046,110 @@
               </div>`;
             }).join('')
           : '<div class="empty">No profit history yet</div>';
+        if (allOrders.length) void updateMonitor();
       }
+    }
+
+    function formatProfitM(value) {
+      const amount = Number(value) || 0;
+      return `${amount >= 0 ? '+' : '-'}$${Math.abs(amount).toFixed(2)}`;
+    }
+
+    function profitOrderDetailsM(order) {
+      return {
+        order_id: order.order_id,
+        product_id: order.product_id,
+        side: order.side,
+        created_time: order.created_time || null,
+        last_fill_time: order.last_fill_time || null,
+        filled_size: order.filled_size,
+        average_filled_price: order.average_filled_price,
+        limit_price: order.limit_price || null
+      };
+    }
+
+    function sellTimeM(orders) {
+      let latest = 0;
+      orders.forEach(order => {
+        const time = new Date(order.last_fill_time || order.created_time || 0).getTime();
+        if (time > latest) latest = time;
+      });
+      return latest > 0 ? new Date(latest).toISOString() : null;
+    }
+
+    async function saveGroupProfitM(coin, profit, buyOrderIds, sellOrderIds) {
+      if (!profitHistoryReady) {
+        toast('Profit history is still loading', 'error');
+        return;
+      }
+      const nextProfit = Number(profit);
+      if (!Number.isFinite(nextProfit)) {
+        toast('Invalid profit value', 'error');
+        return;
+      }
+      const buyIds = String(buyOrderIds || '').split(',').filter(Boolean);
+      const sellIds = String(sellOrderIds || '').split(',').filter(Boolean);
+      if (!buyIds.length || !sellIds.length) {
+        toast('A filled buy and sell are required', 'error');
+        return;
+      }
+      const allIds = [...buyIds, ...sellIds];
+      const buys = allOrders.filter(order => buyIds.includes(order.order_id));
+      const sells = allOrders.filter(order => sellIds.includes(order.order_id));
+      const now = new Date().toISOString();
+      const buyTimes = buys.map(order => new Date(order.created_time || 0).getTime()).filter(time => Number.isFinite(time) && time > 0);
+      const createdDate = buyTimes.length ? new Date(Math.min(...buyTimes)).toISOString() : null;
+      const existing = profitHistory.find(entry => {
+        const savedIds = [...(entry.buyOrders || []), ...(entry.sellOrders || [])];
+        return allIds.some(id => savedIds.includes(id));
+      });
+      const historyBeforeSave = JSON.parse(JSON.stringify(profitHistory));
+
+      if (existing) {
+        Object.assign(existing, {
+          coin,
+          profit: nextProfit,
+          buyOrders: buyIds,
+          sellOrders: sellIds,
+          buyOrderDetails: buys.map(profitOrderDetailsM),
+          sellOrderDetails: sells.map(profitOrderDetailsM),
+          createdDate,
+          soldAt: sellTimeM(sells) || now,
+          date: now
+        });
+      } else {
+        profitHistory.push({
+          id: Date.now(),
+          coin,
+          profit: nextProfit,
+          buyOrders: buyIds,
+          sellOrders: sellIds,
+          buyOrderDetails: buys.map(profitOrderDetailsM),
+          sellOrderDetails: sells.map(profitOrderDetailsM),
+          createdDate,
+          soldAt: sellTimeM(sells) || now,
+          date: now,
+          sentToAccount: false
+        });
+      }
+
+      const saved = await api('/save-profit-history', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ history: profitHistory })
+      });
+      if (!saved.success) {
+        profitHistory = historyBeforeSave;
+        toast(saved.error || 'Failed to save profit', 'error');
+        return;
+      }
+      if (!existing) {
+        selectedOrders = selectedOrders.filter(id => !allIds.includes(id));
+        saveSelectedToServer();
+      }
+      await loadProfit();
+      await updateMonitor();
+      toast(`${existing ? 'Updated' : 'Saved'} ${coin}: ${formatProfitM(nextProfit)}`);
     }
 
     // ── Holdings ──
