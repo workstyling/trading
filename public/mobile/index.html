@@ -1432,8 +1432,11 @@
   <div class="panel active" id="panelTrade" data-tab="trade">
     <!-- Chart container — always above trade controls -->
     <div id="tvChartContainerM" style="display:none;margin-bottom:10px;border-radius:var(--r1);overflow:hidden;border:1px solid rgba(76,201,240,0.15);background:var(--s1);">
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 12px;border-bottom:1px solid rgba(255,255,255,0.05);">
-        <span id="tvChartCoinLabelM" style="font-size:13px;color:var(--blue);font-weight:700;">— · 15m</span>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 12px;border-bottom:1px solid rgba(255,255,255,0.05);">
+        <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0;flex-wrap:wrap;">
+          <span id="tvChartCoinLabelM" style="font-size:13px;color:var(--blue);font-weight:700;white-space:nowrap;">— · 15m</span>
+          <span id="tvChartContextM" title="Объём и изменение цены за последние 24 часа. Это факт, а не прогноз." style="font-size:10px;color:var(--t2);font-variant-numeric:tabular-nums;white-space:nowrap;">Vol 24h: … · 24ч: …</span>
+        </div>
         <button onclick="toggleTVChartMobile()" style="background:none;border:none;color:#94a3b8;cursor:pointer;font-size:20px;line-height:1;padding:0 4px;" title="Close">✕</button>
       </div>
       <div id="tvChartInnerM" style="height:360px;"></div>
@@ -1929,6 +1932,41 @@
     }
 
     let _tvChartVisibleM = false;
+
+    function _fmtChartVolumeM(value) {
+      if (!(value > 0)) return '—';
+      if (value >= 1e9) return '$' + (value / 1e9).toFixed(2) + 'B';
+      if (value >= 1e6) return '$' + (value / 1e6).toFixed(2) + 'M';
+      if (value >= 1e3) return '$' + Math.round(value / 1e3) + 'K';
+      return '$' + Math.round(value);
+    }
+
+    async function _updateChartContextM(coin) {
+      const context = document.getElementById('tvChartContextM');
+      if (!context) return;
+      context.dataset.coin = coin;
+      context.style.color = 'var(--t2)';
+      context.textContent = 'Vol 24h: … · 24ч: …';
+      try {
+        const response = await fetch(`https://api.exchange.coinbase.com/products/${coin}-USD/stats`);
+        if (!response.ok) throw new Error('stats unavailable');
+        const stats = await response.json();
+        if (context.dataset.coin !== coin) return;
+        const last = Number(stats.last);
+        const open = Number(stats.open);
+        const volumeUsd = Number(stats.volume) * last;
+        const changePct = open > 0 && last > 0 ? (last - open) / open * 100 : null;
+        const movement = changePct == null ? '24ч: —'
+          : changePct > 0.05 ? `24ч: ↑ рост +${changePct.toFixed(2)}%`
+          : changePct < -0.05 ? `24ч: ↓ снижение ${changePct.toFixed(2)}%`
+          : `24ч: → боковик ${changePct >= 0 ? '+' : ''}${changePct.toFixed(2)}%`;
+        context.textContent = `Vol 24h: ${_fmtChartVolumeM(volumeUsd)} · ${movement}`;
+        context.style.color = changePct > 0.05 ? '#4ade80' : changePct < -0.05 ? '#f87171' : 'var(--t2)';
+      } catch {
+        if (context.dataset.coin === coin) context.textContent = 'Vol 24h: — · 24ч: —';
+      }
+    }
+
     function toggleTVChartMobile() {
       const container = document.getElementById('tvChartContainerM');
       const btn = document.getElementById('tvChartToggleBtnM');
@@ -1952,6 +1990,7 @@
       if (btn) btn.innerHTML = '📉 Закрыть';
       const lbl = document.getElementById('tvChartCoinLabelM');
       if (lbl) lbl.textContent = coin + ' · 15m';
+      _updateChartContextM(coin);
       const symbol = `COINBASE:${coin}USD`;
       const wid = 'tvw_mobile_' + Date.now();
       document.getElementById('tvChartInnerM').innerHTML = `<div id="${wid}" style="height:360px;"></div>`;
