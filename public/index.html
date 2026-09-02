@@ -2250,6 +2250,12 @@
     /* Счётчик распирает строку: сумма прижата к левому краю, кнопки — к
        правому, вместо кучи в левом углу с пустотой на пол-панели */
     #scalpScanPanel .ss-found { flex: 1 1 auto; text-align: center; }
+    #microScalpPanel .tl-bar { flex-wrap: wrap; }
+    #microScalpPanel .tl-btn.tl-refresh { margin-left: 0; }
+    #msTelegramLabel {
+      flex: 0 0 100%; box-sizing: border-box; max-width: 100%;
+      white-space: normal; overflow-wrap: anywhere; line-height: 1.25;
+    }
     /* Поле суммы: подпись и ввод в одной капсуле, чтобы не рассыпались */
     .tl-money {
       display: inline-flex; align-items: stretch; height: 24px;
@@ -6229,7 +6235,7 @@
               <button class="tl-btn" id="msWatchBtn" onclick="toggleMicroScalpWatch()" title="Одноразовый Telegram-алерт для быстрого Paper-скальпа: после первого сетапа выключится">⚡ Алерт</button>
               <button class="tl-btn" id="msLoopBtn" onclick="toggleMicroScalpLoop()" title="Непрерывный Telegram-поток быстрых Paper-сетапов. Отдельно от скальпа 2–6 часов.">🔁 Поток</button>
               <button class="tl-btn tl-refresh" id="msRefreshBtn" onclick="refreshMicroScalp()" title="Запустить новый скан быстрых Paper-сетапов">⟳ Скан</button>
-              <span style="font-size:10px;color:#bf5af2;background:rgba(191,90,242,.10);border:1px solid rgba(191,90,242,.3);border-radius:6px;padding:4px 7px;">Telegram: «15–60 мин · Paper» · без ордеров</span>
+              <span id="msTelegramLabel" style="font-size:10px;color:#bf5af2;background:rgba(191,90,242,.10);border:1px solid rgba(191,90,242,.3);border-radius:6px;padding:4px 7px;">Telegram: «15–60 мин · Paper» · без ордеров</span>
             </div>
           </div>
           <div id="msBody"><div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">Первый быстрый скан после запуска…</div></div>
