@@ -6217,6 +6217,20 @@
           </div>
           <div id="ssBody"><div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">Первый скан через минуту после старта…</div></div>
         </div>
+        <div id="microScalpPanel" style="margin-bottom:14px;">
+          <div class="tl-head">
+            <div class="tl-head-top">
+              <span class="tl-name" style="color:#bf5af2;">⚡ Быстрый скальп</span>
+              <span class="tl-sub">Paper · 15–60 мин · цель +1% · стоп −1%</span>
+              <span class="tl-status"><span id="msAgo">—</span></span>
+            </div>
+            <div class="tl-bar">
+              <span id="msFound" class="ss-found"></span>
+              <span style="font-size:10px;color:#bf5af2;background:rgba(191,90,242,.10);border:1px solid rgba(191,90,242,.3);border-radius:6px;padding:4px 7px;">Только исследование · без ордеров</span>
+            </div>
+          </div>
+          <div id="msBody"><div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">Первый быстрый скан после запуска…</div></div>
+        </div>
         <div id="profitPanel">
           <div class="profit-header">
             <span class="profit-title">Total Profit <span id="todayProfit" style="margin-left:8px;font-size:11px;font-weight:700;color:#00e5a0;background:rgba(0,229,160,0.1);padding:2px 8px;border-radius:8px;" title="Прибыль за сегодня — по времени фактического исполнения продажи, а не по моменту сохранения записи. Купил вчера, продал сегодня — считается сюда. Продал вчера, а кнопку нажал сегодня — не считается.">today: $0.00</span></span>
@@ -6321,6 +6335,15 @@
 
     <div id="tab-journal" class="tab-pane">
       <div class="pred-card" style="margin-bottom:14px;">
+        <div id="microLabSection" style="margin-bottom:22px;padding-bottom:20px;border-bottom:1px solid rgba(255,255,255,0.08);">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
+            <span style="font-size:13px;font-weight:700;color:#bf5af2;">⚡ Быстрый скальп — Paper-лаборатория</span>
+            <span style="font-size:11px;color:var(--t2);">отдельная стратегия · горизонт 15–60 минут · без реальных ордеров</span>
+          </div>
+          <div style="color:var(--t2);font-size:11.5px;margin-bottom:10px;max-width:78ch;">Журнал полностью отделён от основного скальп-гейта: свой отпечаток стратегии, цель, стоп, сделки и статистика. Сигналы служат только для сбора независимых Paper-данных.</div>
+          <div id="microLabStats"></div>
+          <div id="microLabRows" style="margin-top:10px;"></div>
+        </div>
         <div id="labSection" style="margin-bottom:22px;padding-bottom:20px;border-bottom:1px solid rgba(255,255,255,0.08);">
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
             <span style="font-size:13px;font-weight:700;color:#4cc9f0;">🧪 Лаборатория стратегии</span>
@@ -13878,6 +13901,52 @@ Requirements:
     setInterval(loadScalpScan, 45_000);
     loadScalpScan();
 
+    async function loadMicroScalp() {
+      try {
+        const r = await fetch('/api/micro-scalp-scan');
+        if (!r.ok) return;
+        const j = await r.json();
+        if (!j.success) return;
+        const ago = document.getElementById('msAgo');
+        if (ago) ago.textContent = j.agoSec == null ? '—' : j.agoSec < 60 ? `${j.agoSec}с назад` : `${Math.round(j.agoSec / 60)}м назад`;
+        const found = document.getElementById('msFound');
+        if (found) {
+          found.textContent = j.total ? `${j.total} пар · ${j.entries} Paper setup` : '';
+          found.title = j.total ? `Просканировано ${j.total} ликвидных пар. Это исследовательские Paper-сигналы, не команда на покупку.` : '';
+        }
+        const body = document.getElementById('msBody');
+        if (!body) return;
+        const rows = (j.results || []).slice(0, 10);
+        if (!rows.length) {
+          body.innerHTML = `<div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">${j.scanning ? 'Сканирую быстрые сетапы…' : 'Недостаточно свежих данных для быстрых сетапов'}</div>`;
+          return;
+        }
+        const price = value => value == null ? '—' : value < 0.001 ? value.toFixed(8) : value < 1 ? value.toFixed(5) : value < 100 ? value.toFixed(3) : value.toFixed(2);
+        const volume = value => value >= 1e6 ? '$' + (value / 1e6).toFixed(1) + 'M' : '$' + Math.round((value || 0) / 1e3) + 'K';
+        body.innerHTML = `<div style="padding:6px 8px;margin-bottom:6px;border-radius:6px;font-size:10px;line-height:1.35;background:rgba(191,90,242,.07);border:1px solid rgba(191,90,242,.24);color:#d8b4fe;">Paper-лаборатория: условия и выходы пока не подтверждены историей. Реальных сделок, алертов и кнопок покупки здесь нет.</div>
+          <table class="tg-table" style="width:100%;"><thead><tr><th>COIN</th><th>SCORE</th><th>СЕТАП</th><th>RSI</th><th>ОТКАТ</th><th>VOL 24H</th></tr></thead><tbody>${rows.map(item => {
+            const setup = item.pass ? 'PAPER' : item.tag === 'NEAR' ? 'БЛИЗКО' : 'ЖДАТЬ';
+            const color = item.pass ? '#bf5af2' : item.tag === 'NEAR' ? '#f5c518' : '#7c8698';
+            const details = (item.checks || []).map(check => `${check.ok ? '✓' : '✕'} ${check.k}: ${check.v}`).join('\n')
+              .replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+            return `<tr title="${details}">
+              <td style="padding:6px 8px;"><span style="color:var(--blue);font-weight:700;">${item.coin}</span><br><span style="color:var(--t2);font-size:10px;">$${price(item.price)}</span></td>
+              <td style="text-align:center;font-weight:800;color:${color};">${item.score}<span style="display:block;width:34px;height:3px;border-radius:2px;background:rgba(255,255,255,.08);margin:3px auto;"><i style="display:block;width:${Math.max(2, Math.min(100, item.score))}%;height:100%;border-radius:2px;background:${color};"></i></span></td>
+              <td style="text-align:center;"><span style="font-size:8px;font-weight:800;color:${color};background:${color}22;padding:2px 4px;border-radius:4px;white-space:nowrap;">${setup}</span></td>
+              <td style="text-align:center;color:var(--t1);">${item.rsi ?? '—'}</td>
+              <td style="text-align:center;color:${item.pullbackPct != null && item.pullbackPct <= 1.5 ? 'var(--green)' : 'var(--t2)'};">${item.pullbackPct == null ? '—' : item.pullbackPct + '%'}</td>
+              <td style="text-align:right;color:var(--t2);font-size:11px;">${volume(item.vol24)}</td>
+            </tr>`;
+          }).join('')}</tbody></table>`;
+        if (j.scanning && !window._msPoll) {
+          window._msPoll = true;
+          setTimeout(() => { window._msPoll = false; loadMicroScalp(); }, 5000);
+        }
+      } catch { }
+    }
+    setInterval(loadMicroScalp, 60_000);
+    loadMicroScalp();
+
     // Короткое имя условия для строки таблицы: полные подписи не влезают
     function _shortCheck(k) {
       if (!k) return '?';
@@ -14859,7 +14928,7 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
       document.querySelectorAll('.tab-pane').forEach(p => p.classList.toggle('active', p.id === 'tab-' + name));
       try { safeStorage.setItem('activeTab', name); } catch {}
       // Вкладки Moonshots и Paper Bot убраны; их содержимое переехало в Journal
-      if (name === 'journal') { loadJournal(); loadLab(); loadPaper(); startPaperPoll(); }
+      if (name === 'journal') { loadJournal(); loadMicroLab(); loadLab(); loadPaper(); startPaperPoll(); }
       else stopPaperPoll();
     }
     // Restore last tab on load
@@ -14963,6 +15032,56 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
         }
         showCustomAlert('Браузер не дал скопировать. Текст выделен — нажми Ctrl+C', true);
       });
+    }
+
+    let _microLabPollTimer = null;
+    function _microLabSchedulePoll() {
+      clearTimeout(_microLabPollTimer);
+      const onJournal = document.getElementById('tab-journal')?.classList.contains('active');
+      if (!onJournal || document.hidden) return;
+      _microLabPollTimer = setTimeout(loadMicroLab, 30_000);
+    }
+    async function loadMicroLab() {
+      try {
+        const r = await fetch('/api/micro-scalp-lab');
+        if (!r.ok) throw new Error('Micro lab API unavailable');
+        const j = await r.json();
+        if (!j.success) return;
+        const execution = j.execution || {};
+        const stats = j.stats || {};
+        const runtimeBlocked = !!j.entryBlocked || j.runtime?.matched === false;
+        const statEl = document.getElementById('microLabStats');
+        if (statEl) {
+          const status = runtimeBlocked ? '<span style="color:#fbbf24;">НУЖЕН ПЕРЕЗАПУСК</span>' :
+            '<span style="color:var(--green);">СБОР ДАННЫХ</span>';
+          statEl.innerHTML = `<div style="display:flex;gap:10px;flex-wrap:wrap;">
+            ${_jStatCard('Статус', status, runtimeBlocked ? 'новые Paper-входы заблокированы' : `${j.hoursRunning || 0} ч в работе`)}
+            ${_jStatCard('Открыто', j.currentOpenCount || 0, 'макс. 3 одновременных позиции')}
+            ${_jStatCard('Закрыто', j.currentClosedCount || 0, `${j.bursts || 0} независимых импульсов`)}
+            ${_jStatCard('Средний', stats.avgPct == null ? '—' : `${stats.avgPct >= 0 ? '+' : ''}${stats.avgPct}%`, stats.n ? `wins ${stats.winRate}% · ${stats.n} сделок` : 'данные ещё копятся')}
+            ${_jStatCard('Правила', `+${execution.targetPct ?? '—'}% / −${execution.slPct ?? '—'}%`, `${execution.maxHoldMin ?? '—'} мин · комиссия учтена`)}
+          </div>`;
+        }
+        const rowsEl = document.getElementById('microLabRows');
+        if (rowsEl) {
+          const open = j.open || [];
+          const closed = j.closed || [];
+          const row = trade => {
+            const value = trade.pnlPct;
+            const color = value == null ? 'var(--t2)' : value >= 0 ? 'var(--green)' : 'var(--red)';
+            const state = trade.why || 'ОТКРЫТА';
+            const timing = trade.holdMin != null ? `${trade.holdMin} мин` : `${Math.max(0, Math.round((Date.now() - trade.openedAt) / 60000))} мин`;
+            return `<tr><td style="text-align:left;color:var(--t0);font-weight:700;">${trade.coin}</td><td>${state}</td><td>${timing}</td><td style="color:${color};font-weight:700;">${value == null ? '—' : `${value >= 0 ? '+' : ''}${value}%`}</td></tr>`;
+          };
+          rowsEl.innerHTML = open.length || closed.length ? `<table class="pred-table"><thead><tr><th style="text-align:left;">PAIR</th><th>СТАТУС</th><th>ВРЕМЯ</th><th>PnL</th></tr></thead><tbody>${open.map(row).join('')}${closed.slice(0, 8).map(row).join('')}</tbody></table>` :
+            '<div style="color:var(--t2);font-size:12px;">Журнал пуст: система ждёт первый Paper-сетап. Это нормально для строгого нового фильтра.</div>';
+        }
+      } catch {
+        const rowsEl = document.getElementById('microLabRows');
+        if (rowsEl) rowsEl.textContent = 'Данные быстрого Paper-журнала временно недоступны.';
+      } finally {
+        _microLabSchedulePoll();
+      }
     }
 
     async function loadLab() {

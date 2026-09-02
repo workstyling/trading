@@ -4616,6 +4616,94 @@ app.get('/api/scalp-scan', (req, res) => {
 // запоминает полный контекст. Из закрытых сделок собирает наблюдения
 // и готовый текст задания для доработки алгоритма.
 // ══════════════════════════════════════════════════════════════════
+const microScalpScanner = require('./src/micro-scalp/scanner');
+const { createMicroLab } = require('./src/micro-scalp/lab');
+const MICRO_SCALP_FILE = path.join(__dirname, 'micro-scalp-lab.json');
+const MICRO_SCAN_INTERVAL_MS = 2 * 60 * 1000;
+const MICRO_TICK_INTERVAL_MS = 30 * 1000;
+const MICRO_EXECUTION = Object.freeze({
+  targetPct: 1.0,
+  slPct: 1.0,
+  maxHoldMin: 60,
+  executionModel: 'ask-entry / limit-target / observed-bid-stop-time-v1',
+});
+function microScalpFingerprint() {
+  try {
+    const source = ['src/micro-scalp/scanner.js', 'src/micro-scalp/lab.js']
+      .map(file => fs.readFileSync(path.join(__dirname, file), 'utf8')).join('\n') +
+      JSON.stringify(MICRO_EXECUTION);
+    return crypto.createHash('sha1').update(source).digest('hex').slice(0, 12);
+  } catch {
+    return null;
+  }
+}
+const RUNTIME_MICRO_SCALP_FINGERPRINT = microScalpFingerprint();
+const microScalpScan = { running: false, progress: 0, scanned: 0, total: 0, at: 0, results: [] };
+function currentMicroScalpExecution() {
+  return { ...MICRO_EXECUTION, feePct: paperLimitFee() };
+}
+const microScalpLab = createMicroLab({
+  file: MICRO_SCALP_FILE,
+  runtimeFingerprint: RUNTIME_MICRO_SCALP_FINGERPRINT,
+  getDiskFingerprint: microScalpFingerprint,
+  getExecution: currentMicroScalpExecution,
+  fetchQuote: fetchBestQuote,
+  maxOpen: 3,
+  maxEntrySpreadPct: microScalpScanner.MAX_SPREAD_PCT,
+  log: message => console.log('[micro-lab] ' + message),
+});
+async function runMicroScalpScan() {
+  if (microScalpScan.running || !cbVolumeCache.size) return;
+  microScalpScan.running = true;
+  microScalpScan.progress = 0;
+  try {
+    const out = await microScalpScanner.scanMarket(cbVolumeCache, scalpScan.regime, {
+      maxCoins: 30,
+      onProgress: (done, total) => {
+        microScalpScan.scanned = done;
+        microScalpScan.total = total;
+        microScalpScan.progress = total ? Math.round(done / total * 100) : 0;
+      },
+    });
+    microScalpScan.results = out.results;
+    microScalpScan.total = out.total;
+    microScalpScan.at = out.at;
+    console.log(`[micro-scalp] ${out.results.length}/${out.total} pairs, paper setups: ${out.results.filter(result => result.pass).length}`);
+  } catch (error) {
+    console.error('[micro-scalp]', error.message);
+  } finally {
+    microScalpScan.running = false;
+    microScalpScan.progress = 100;
+  }
+}
+async function tickMicroScalpLab() {
+  try {
+    await microScalpLab.tick({ results: microScalpScan.results, scanAt: microScalpScan.at });
+  } catch (error) {
+    console.error('[micro-lab]', error.message);
+  }
+}
+setInterval(runMicroScalpScan, MICRO_SCAN_INTERVAL_MS);
+setTimeout(runMicroScalpScan, 95_000);
+setInterval(tickMicroScalpLab, MICRO_TICK_INTERVAL_MS);
+setTimeout(tickMicroScalpLab, 115_000);
+app.get('/api/micro-scalp-scan', (req, res) => {
+  res.json({
+    success: true,
+    scanning: microScalpScan.running,
+    progress: microScalpScan.progress,
+    scanned: microScalpScan.scanned,
+    total: microScalpScan.total,
+    at: microScalpScan.at,
+    agoSec: microScalpScan.at ? Math.round((Date.now() - microScalpScan.at) / 1000) : null,
+    entries: microScalpScan.results.filter(result => result.pass).length,
+    results: microScalpScan.results.slice(0, 15),
+    paperOnly: true,
+    execution: currentMicroScalpExecution(),
+  });
+});
+app.get('/api/micro-scalp-lab', (req, res) => res.json(microScalpLab.payload()));
+
 const lab = require('./src/scalp/lab');
 const LAB_FILE = path.join(__dirname, 'scalp-lab.json');
 const LAB_MAX_HOLD_H = 48;

@@ -1519,6 +1519,16 @@
     <div id="ssBodyM" style="margin-bottom:16px;"><div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">Первый скан через минуту…</div></div>
   </div>
 
+  <div style="margin:4px 0 16px;border-top:1px solid var(--b1);padding-top:12px;">
+    <div style="display:flex;align-items:center;gap:7px;margin-bottom:7px;">
+      <span style="font-weight:700;color:#bf5af2;font-size:13px;">⚡ Быстрый скальп</span>
+      <span style="font-size:10px;color:var(--t2);">Paper · 15–60 мин</span>
+      <span id="msAgoM" style="margin-left:auto;font-size:10px;color:var(--t2);">—</span>
+    </div>
+    <div style="font-size:10px;color:#d8b4fe;background:rgba(191,90,242,.07);border:1px solid rgba(191,90,242,.24);border-radius:6px;padding:5px 7px;margin-bottom:7px;">Только исследование: без кнопок покупки, реальных ордеров и алертов.</div>
+    <div id="msBodyM" style="color:var(--t2);font-size:11px;text-align:center;padding:8px;">Первый быстрый скан после запуска…</div>
+  </div>
+
   <!-- Profit Panel -->
   <div class="panel" id="panelProfit" data-tab="profit">
     <div class="profit-summary">
@@ -1543,6 +1553,13 @@
         <button id="mpToggle" onclick="mpTogglePaper()" style="padding:4px 12px;border-radius:8px;border:1px solid var(--b1);background:var(--s2);color:var(--t1);font-size:11px;font-weight:600;">...</button>
       </div>
       <div id="mpBody" style="font-size:12px;color:var(--t2);">Loading...</div>
+    </div>
+    <div style="margin-top:18px;border-top:1px solid var(--b1);padding-top:12px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+        <span style="font-size:13px;font-weight:700;color:#bf5af2;">⚡ Быстрый скальп — Paper</span>
+        <span id="mmlSummary" style="font-size:11px;color:var(--t1);"></span>
+      </div>
+      <div id="mmlBody" style="font-size:12px;color:var(--t2);">Loading...</div>
     </div>
   </div>
 
@@ -1759,6 +1776,22 @@
               <span style="color:var(--t0);font-weight:600;">${p.coin} <span style="color:var(--t2);font-weight:400;font-size:10px;">rb ${p.ctx && p.ctx.rb != null ? p.ctx.rb : '—'} · ${p.slStage || 'SL'}</span></span>
               <span style="color:${(p.pnl || 0) >= 0 ? 'var(--green)' : 'var(--red)'};font-weight:700;">${p.pnl != null ? (p.pnl >= 0 ? '+' : '−') + '$' + Math.abs(p.pnl).toFixed(2) + ' (' + (p.pnlPct >= 0 ? '+' : '') + p.pnlPct + '%)' : '—'}</span>
             </div>`).join('') : `<div>${_mpEnabled ? 'Бот активен, ждёт сигнал «ПОКУПАТЬ» в Top Losers.' : 'Бот выключен. Открытые позиции всё равно ведутся сервером.'}</div>`}`;
+        }
+      } catch { }
+      try {
+        const r = await fetch(BASE + '/api/micro-scalp-lab');
+        const j = await r.json();
+        if (j.success) {
+          const stats = j.stats || {};
+          const runtimeBlocked = !!j.entryBlocked || j.runtime?.matched === false;
+          const summary = document.getElementById('mmlSummary');
+          if (summary) summary.textContent = runtimeBlocked ? 'restart required' : `${j.currentClosedCount || 0} закрыто · ${j.currentOpenCount || 0} открыто`;
+          const body = document.getElementById('mmlBody');
+          if (body) {
+            const rows = [...(j.open || []), ...(j.closed || []).slice(0, 5)];
+            const execution = j.execution || {};
+            body.innerHTML = `<div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;"><span style="background:var(--s2);border-radius:8px;padding:4px 10px;">Средний: <b style="color:${stats.avgPct == null ? 'var(--t1)' : stats.avgPct >= 0 ? 'var(--green)' : 'var(--red)'};">${stats.avgPct == null ? '—' : `${stats.avgPct >= 0 ? '+' : ''}${stats.avgPct}%`}</b></span><span style="background:var(--s2);border-radius:8px;padding:4px 10px;">TP/SL: <b>+${execution.targetPct ?? '—'}% / −${execution.slPct ?? '—'}%</b></span></div>${runtimeBlocked ? '<div style="color:#fbbf24;">Новые Paper-входы ждут перезапуска сервера.</div>' : ''}${rows.length ? rows.map(trade => { const value = trade.pnlPct; const color = value == null ? 'var(--t2)' : value >= 0 ? 'var(--green)' : 'var(--red)'; return `<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--b0);"><span style="color:var(--t0);font-weight:600;">${trade.coin} <span style="color:var(--t2);font-size:10px;font-weight:400;">${trade.why || 'ОТКРЫТА'}</span></span><span style="color:${color};font-weight:700;">${value == null ? '—' : `${value >= 0 ? '+' : ''}${value}%`}</span></div>`; }).join('') : '<div>Журнал ждёт первый строгий Paper-сетап.</div>'}`;
+          }
         }
       } catch { }
     }
@@ -5014,6 +5047,34 @@
     }
     setInterval(loadScalpScanM, 45_000);
     loadScalpScanM();
+
+    async function loadMicroScalpM() {
+      try {
+        const j = await api('/api/micro-scalp-scan');
+        if (!j || !j.success) return;
+        const ago = document.getElementById('msAgoM');
+        if (ago) ago.textContent = j.agoSec == null ? '—' : j.agoSec < 60 ? `${j.agoSec}с` : `${Math.round(j.agoSec / 60)}м`;
+        const body = document.getElementById('msBodyM');
+        if (!body) return;
+        const rows = (j.results || []).slice(0, 7);
+        if (!rows.length) {
+          body.innerHTML = `<div style="padding:6px;">${j.scanning ? 'Сканирую…' : 'Свежих Paper-сетапов пока нет'}</div>`;
+          return;
+        }
+        const price = value => value == null ? '—' : value < 0.001 ? value.toFixed(8) : value < 1 ? value.toFixed(5) : value < 100 ? value.toFixed(3) : value.toFixed(2);
+        body.innerHTML = `<table style="width:100%;border-collapse:collapse;"><thead><tr style="border-bottom:1px solid var(--b1);"><th style="text-align:left;color:var(--t2);font-size:9px;padding:4px 3px;">COIN</th><th style="color:var(--t2);font-size:9px;padding:4px 2px;">SCORE</th><th style="color:var(--t2);font-size:9px;padding:4px 2px;">СТАТУС</th><th style="color:var(--t2);font-size:9px;padding:4px 2px;">RSI</th><th style="color:var(--t2);font-size:9px;padding:4px 2px;">ОТКАТ</th></tr></thead><tbody>${rows.map(item => {
+          const label = item.pass ? 'PAPER' : item.tag === 'NEAR' ? 'БЛИЗКО' : 'ЖДАТЬ';
+          const color = item.pass ? '#bf5af2' : item.tag === 'NEAR' ? '#f5c518' : '#7c8698';
+          return `<tr style="border-bottom:1px solid rgba(255,255,255,.03);"><td style="padding:6px 3px;"><span style="color:var(--blue);font-weight:700;font-size:11px;">${item.coin}</span><br><span style="font-size:9px;color:#555;">$${price(item.price)}</span></td><td style="text-align:center;color:${color};font-size:12px;font-weight:800;">${item.score}</td><td style="text-align:center;"><span style="font-size:7px;color:${color};font-weight:800;background:${color}22;padding:2px 3px;border-radius:3px;">${label}</span></td><td style="text-align:center;font-size:11px;color:var(--t1);">${item.rsi ?? '—'}</td><td style="text-align:center;font-size:10px;color:${item.pullbackPct != null && item.pullbackPct <= 1.5 ? 'var(--green)' : 'var(--t2)'};">${item.pullbackPct == null ? '—' : item.pullbackPct + '%'}</td></tr>`;
+        }).join('')}</tbody></table>`;
+        if (j.scanning && !window._msPollM) {
+          window._msPollM = true;
+          setTimeout(() => { window._msPollM = false; loadMicroScalpM(); }, 5000);
+        }
+      } catch { }
+    }
+    setInterval(loadMicroScalpM, 60_000);
+    loadMicroScalpM();
 
     // На телефоне фоновые вкладки замораживаются — при возврате сразу освежаем данные
     document.addEventListener('visibilitychange', () => {
