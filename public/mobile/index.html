@@ -58,6 +58,19 @@
     .header-balance {
       font-family: 'JetBrains Mono', monospace; font-size: 16px; font-weight: 700; color: var(--green);
     }
+    .volume-fee-bar {
+      display: flex; align-items: center; gap: 5px 8px; flex-wrap: wrap;
+      padding: 5px 12px; background: var(--s1); border-bottom: 1px solid var(--b0);
+      font-family: 'JetBrains Mono', monospace; font-size: 11px;
+    }
+    .volume-fee-group { display: inline-flex; align-items: baseline; gap: 5px; white-space: nowrap; }
+    .volume-fee-label { color: #888; font-size: 10px; }
+    .volume-fee-value { color: var(--t0); font-weight: 700; }
+    .volume-fee-tier { color: #888; font-size: 10px; white-space: nowrap; }
+    @media (max-width: 380px) {
+      .volume-fee-bar { gap: 4px 6px; padding: 5px 10px; font-size: 10px; }
+      .volume-fee-label, .volume-fee-tier { font-size: 9px; }
+    }
 
     /* ── Tab Bar ── */
     .tabs {
@@ -1387,15 +1400,11 @@
     <span class="header-balance" id="headerBalance">$0.00</span>
   </div>
   <!-- Vol + Fees bar -->
-  <div style="display:flex;align-items:center;gap:10px;padding:5px 12px;background:var(--s1);border-bottom:1px solid var(--b0);font-family:'JetBrains Mono',monospace;font-size:11px;flex-wrap:wrap;">
-    <span style="color:#888;font-size:10px;">30D VOL</span>
-    <span id="mVol30Val" style="font-weight:700;color:var(--t0);">—</span>
-    <span id="mVol30Tier" style="color:#888;font-size:10px;"></span>
-    <span style="color:#444;margin:0 2px;">|</span>
-    <span style="color:#888;font-size:10px;">Limit</span>
-    <span id="mLimitFee" style="color:var(--t0);">—%</span>
-    <span style="color:#888;font-size:10px;">Market</span>
-    <span id="mMarketFee" style="color:var(--t0);">—%</span>
+  <div class="volume-fee-bar">
+    <span class="volume-fee-group"><span class="volume-fee-label">30D VOL</span><span id="mVol30Val" class="volume-fee-value">—</span></span>
+    <span id="mVol30Tier" class="volume-fee-tier"></span>
+    <span class="volume-fee-group"><span class="volume-fee-label">Limit</span><span id="mLimitFee" class="volume-fee-value">—%</span></span>
+    <span class="volume-fee-group"><span class="volume-fee-label">Market</span><span id="mMarketFee" class="volume-fee-value">—%</span></span>
   </div>
 
   <!-- Tabs -->
