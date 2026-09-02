@@ -1933,11 +1933,23 @@
       const container = document.getElementById('tvChartContainerM');
       const btn = document.getElementById('tvChartToggleBtnM');
       if (!container) return;
-      _tvChartVisibleM = !_tvChartVisibleM;
-      container.style.display = _tvChartVisibleM ? 'block' : 'none';
-      btn.innerHTML = _tvChartVisibleM ? '📉 Закрыть' : '📈 Chart (15m)';
-      if (!_tvChartVisibleM) return;
-      const coin = (document.getElementById('coinInput')?.value || 'BTC').trim().toUpperCase();
+      if (_tvChartVisibleM) {
+        _tvChartVisibleM = false;
+        container.style.display = 'none';
+        if (btn) btn.innerHTML = '📈 Chart (15m)';
+        return;
+      }
+      _openTVChartMobile((document.getElementById('coinInput')?.value || 'BTC').trim().toUpperCase());
+    }
+
+    function _openTVChartMobile(coin) {
+      const container = document.getElementById('tvChartContainerM');
+      const btn = document.getElementById('tvChartToggleBtnM');
+      if (!container) return;
+      coin = (coin || 'BTC').trim().toUpperCase();
+      _tvChartVisibleM = true;
+      container.style.display = 'block';
+      if (btn) btn.innerHTML = '📉 Закрыть';
       const lbl = document.getElementById('tvChartCoinLabelM');
       if (lbl) lbl.textContent = coin + ' · 15m';
       const symbol = `COINBASE:${coin}USD`;
@@ -1945,7 +1957,9 @@
       document.getElementById('tvChartInnerM').innerHTML = `<div id="${wid}" style="height:360px;"></div>`;
       const init = () => new TradingView.widget({ autosize: true, symbol, interval: '15', timezone: 'Etc/UTC', theme: 'dark', style: '1', locale: 'en', backgroundColor: '#0a0b10', allow_symbol_change: false, save_image: false, hide_top_toolbar: false, container_id: wid, height: 360 });
       if (typeof TradingView === 'undefined') {
-        if (!document.getElementById('tv-js')) { const s = document.createElement('script'); s.id = 'tv-js'; s.src = 'https://s3.tradingview.com/tv.js'; s.onload = init; document.head.appendChild(s); }
+        const script = document.getElementById('tv-js');
+        if (script) script.addEventListener('load', init, { once: true });
+        else { const s = document.createElement('script'); s.id = 'tv-js'; s.src = 'https://s3.tradingview.com/tv.js'; s.onload = init; document.head.appendChild(s); }
       } else { init(); }
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
@@ -2132,6 +2146,15 @@
       if (typeof MultiTracker !== 'undefined' && MultiTracker.trackers && MultiTracker.trackers[coin]) {
         MultiTracker.selectCard(coin);
       }
+    }
+
+    // Клик в обеих скальп-таблицах только готовит Trade: выбранная монета,
+    // открытая вкладка и 15-минутный график. Ордер этим действием не создаётся.
+    function selectCoinForTradeM(coin) {
+      selectCoin(coin);
+      const tradeTab = document.querySelector('.tab[data-tab="trade"]');
+      if (tradeTab) tradeTab.click();
+      _openTVChartMobile(coin);
     }
 
     document.getElementById('coinInput').addEventListener('change', connectPriceWs);
@@ -5238,7 +5261,7 @@
               : tg === 'ВХОД' ? '#4cc9f0' : tg === 'ЖДЁТ РЫНКА' ? '#5ba9c4' : (own === 'БЛИЗКО' || miss) ? '#f5c518'
               : tg === 'ШИРОКИЙ СПРЕД' || tg === 'ПОСЛЕ ПАМПА' ? '#ff6b6b' : '#7c8698';
             const inP = _paperCoinsM.has(x.coin);
-            return `<tr style="border-bottom:1px solid rgba(255,255,255,0.03);${x.tradeReady ? 'background:rgba(76,201,240,0.12);' : ''}" onclick="selectCoin('${x.coin}')">
+            return `<tr style="border-bottom:1px solid rgba(255,255,255,0.03);${x.tradeReady ? 'background:rgba(76,201,240,0.12);' : ''}" onclick="selectCoinForTradeM('${x.coin}')" title="Выбрать ${x.coin} для покупки, открыть Trade и график 15m">
               <td style="padding:6px 3px;"><span style="color:var(--blue);font-weight:700;font-size:11px;">${x.coin}</span><br><span style="color:#555;font-size:9px;">$${px(x.price)}</span></td>
               <td style="text-align:center;padding:6px 2px;"><span style="font-weight:800;color:${col};font-size:12px;font-variant-numeric:tabular-nums;">${x.score}${
                 x.scoreDelta ? `<span style="font-size:7px;margin-left:1px;color:${x.scoreDelta > 0 ? '#4ade80' : '#f87171'};">${x.scoreDelta > 0 ? '▲' : '▼'}${Math.abs(x.scoreDelta)}</span>` : ''}</span>
@@ -5283,7 +5306,7 @@
         body.innerHTML = `<table style="width:100%;border-collapse:collapse;"><thead><tr style="border-bottom:1px solid var(--b1);"><th style="text-align:left;color:var(--t2);font-size:9px;padding:4px 3px;">COIN</th><th style="color:var(--t2);font-size:9px;padding:4px 2px;">SCORE</th><th style="color:var(--t2);font-size:9px;padding:4px 2px;">СТАТУС</th><th style="color:var(--t2);font-size:9px;padding:4px 2px;">RSI</th><th style="color:var(--t2);font-size:9px;padding:4px 2px;">ОТКАТ</th><th style="text-align:right;color:var(--t2);font-size:9px;padding:4px 3px;">VOL 24H</th></tr></thead><tbody>${rows.map(item => {
           const label = item.pass ? 'PAPER' : item.tag === 'NEAR' ? 'БЛИЗКО' : 'ЖДАТЬ';
           const color = item.pass ? '#bf5af2' : item.tag === 'NEAR' ? '#f5c518' : '#7c8698';
-          return `<tr style="border-bottom:1px solid rgba(255,255,255,.03);cursor:pointer;" onclick="selectCoin('${item.coin}')" title="Выбрать ${item.coin} для покупки"><td style="padding:6px 3px;"><span style="color:var(--blue);font-weight:700;font-size:11px;">${item.coin}</span><br><span style="font-size:9px;color:#555;">$${price(item.price)}</span></td><td style="text-align:center;color:${color};font-size:12px;font-weight:800;">${item.score}</td><td style="text-align:center;"><span style="font-size:7px;color:${color};font-weight:800;background:${color}22;padding:2px 3px;border-radius:3px;">${label}</span></td><td style="text-align:center;font-size:11px;color:var(--t1);">${item.rsi ?? '—'}</td><td style="text-align:center;font-size:10px;color:${item.pullbackPct != null && item.pullbackPct <= 1.5 ? 'var(--green)' : 'var(--t2)'};">${item.pullbackPct == null ? '—' : item.pullbackPct + '%'}</td><td style="text-align:right;padding:6px 3px;color:var(--t2);font-size:9px;white-space:nowrap;">${volume(item.vol24)}</td></tr>`;
+          return `<tr style="border-bottom:1px solid rgba(255,255,255,.03);cursor:pointer;" onclick="selectCoinForTradeM('${item.coin}')" title="Выбрать ${item.coin} для покупки, открыть Trade и график 15m"><td style="padding:6px 3px;"><span style="color:var(--blue);font-weight:700;font-size:11px;">${item.coin}</span><br><span style="font-size:9px;color:#555;">$${price(item.price)}</span></td><td style="text-align:center;color:${color};font-size:12px;font-weight:800;">${item.score}</td><td style="text-align:center;"><span style="font-size:7px;color:${color};font-weight:800;background:${color}22;padding:2px 3px;border-radius:3px;">${label}</span></td><td style="text-align:center;font-size:11px;color:var(--t1);">${item.rsi ?? '—'}</td><td style="text-align:center;font-size:10px;color:${item.pullbackPct != null && item.pullbackPct <= 1.5 ? 'var(--green)' : 'var(--t2)'};">${item.pullbackPct == null ? '—' : item.pullbackPct + '%'}</td><td style="text-align:right;padding:6px 3px;color:var(--t2);font-size:9px;white-space:nowrap;">${volume(item.vol24)}</td></tr>`;
         }).join('')}</tbody></table>`;
         if (j.scanning && !window._msPollM) {
           window._msPollM = true;

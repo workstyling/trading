@@ -7016,6 +7016,19 @@
       validateAndSelectCoin(coin);
     }
 
+    // Строки обеих таблиц скальпа — это навигация к покупке, а не команда
+    // выставить ордер. После проверки пары сразу показываем выбранную монету
+    // в Trade и её 15-минутный график.
+    async function selectCoinForTrade(coin) {
+      const selected = await validateAndSelectCoin(coin);
+      if (!selected) return false;
+      switchTab('trading');
+      _tvTGCurrentCoin = null;
+      _openSharedChart(coin);
+      document.getElementById('tvChartContainer')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return true;
+    }
+
     // Coin input event handlers
     const coinInput = document.getElementById('buyCoin');
     coinInput.addEventListener('blur', () => validateAndSelectCoin(coinInput.value));
@@ -13883,7 +13896,7 @@ Requirements:
             const sprCol = x.spreadPct == null ? '#667' : x.spreadPct > 0.4 ? '#f55' : x.spreadPct > 0.15 ? '#f5c518' : '#00e5a0';
             const posPct = Math.round(x.rangePos * 100);
             const posCol = x.rangePos < 0.25 ? '#4ade80' : '#7c8698';
-            return `<tr style="cursor:pointer;${x.tradeReady ? 'background:rgba(76,201,240,0.10);box-shadow:inset 3px 0 0 #4cc9f0;' : ''}" onclick="selectCoinForBuy('${x.coin}')" title="Выбрать ${x.coin} для покупки">
+            return `<tr style="cursor:pointer;${x.tradeReady ? 'background:rgba(76,201,240,0.10);box-shadow:inset 3px 0 0 #4cc9f0;' : ''}" onclick="selectCoinForTrade('${x.coin}')" title="Выбрать ${x.coin} для покупки, открыть Trade и график 15m">
               <td class="tg-coin" style="font-size:12px;">${x.coin}<br><span style="color:#555;font-size:10px;font-weight:400;">$${px(x.price)}</span></td>
               <td><div class="ss-score" title="${tip}">
                 <span class="ss-score-n" style="color:${col};">${x.score}${_scoreTrend(x.scoreDelta)}</span>
@@ -13941,13 +13954,13 @@ Requirements:
         }
         const price = value => value == null ? '—' : value < 0.001 ? value.toFixed(8) : value < 1 ? value.toFixed(5) : value < 100 ? value.toFixed(3) : value.toFixed(2);
         const volume = value => value >= 1e6 ? '$' + (value / 1e6).toFixed(1) + 'M' : '$' + Math.round((value || 0) / 1e3) + 'K';
-        body.innerHTML = `<div style="padding:6px 8px;margin-bottom:6px;border-radius:6px;font-size:10px;line-height:1.35;background:rgba(191,90,242,.07);border:1px solid rgba(191,90,242,.24);color:#d8b4fe;">Paper-лаборатория: условия и выходы пока не подтверждены историей. Нажатие на монету только подставляет её в поле покупки — ордер не создаётся. Telegram всегда помечает эти сигналы как «15–60 мин · Paper».</div>
+        body.innerHTML = `<div style="padding:6px 8px;margin-bottom:6px;border-radius:6px;font-size:10px;line-height:1.35;background:rgba(191,90,242,.07);border:1px solid rgba(191,90,242,.24);color:#d8b4fe;">Paper-лаборатория: условия и выходы пока не подтверждены историей. Нажатие на монету подставляет её в покупку, открывает Trade и график 15m — ордер не создаётся. Telegram всегда помечает эти сигналы как «15–60 мин · Paper».</div>
           <table class="tg-table" style="width:100%;"><thead><tr><th>COIN</th><th>SCORE</th><th>СЕТАП</th><th>RSI</th><th>ОТКАТ</th><th>VOL 24H</th></tr></thead><tbody>${rows.map(item => {
             const setup = item.pass ? 'PAPER' : item.tag === 'NEAR' ? 'БЛИЗКО' : 'ЖДАТЬ';
             const color = item.pass ? '#bf5af2' : item.tag === 'NEAR' ? '#f5c518' : '#7c8698';
             const details = (item.checks || []).map(check => `${check.ok ? '✓' : '✕'} ${check.k}: ${check.v}`).join('\n')
               .replace(/&/g, '&amp;').replace(/"/g, '&quot;');
-            return `<tr style="cursor:pointer;" onclick="selectCoinForBuy('${item.coin}')" title="Выбрать ${item.coin} для покупки&#10;${details}">
+            return `<tr style="cursor:pointer;" onclick="selectCoinForTrade('${item.coin}')" title="Выбрать ${item.coin} для покупки, открыть Trade и график 15m&#10;${details}">
               <td style="padding:6px 8px;"><span style="color:var(--blue);font-weight:700;">${item.coin}</span><br><span style="color:var(--t2);font-size:10px;">$${price(item.price)}</span></td>
               <td style="text-align:center;font-weight:800;color:${color};">${item.score}<span style="display:block;width:34px;height:3px;border-radius:2px;background:rgba(255,255,255,.08);margin:3px auto;"><i style="display:block;width:${Math.max(2, Math.min(100, item.score))}%;height:100%;border-radius:2px;background:${color};"></i></span></td>
               <td style="text-align:center;"><span style="font-size:8px;font-weight:800;color:${color};background:${color}22;padding:2px 4px;border-radius:4px;white-space:nowrap;">${setup}</span></td>
