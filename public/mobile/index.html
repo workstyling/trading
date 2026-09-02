@@ -4130,28 +4130,16 @@
         const limitEl = document.getElementById('mLimitFee');
         const marketEl = document.getElementById('mMarketFee');
         if (volEl) volEl.textContent = '$' + Math.round(vol).toLocaleString('en-US');
-        const tiers = [
-          { min: 250e6, label: 'VIP 8',   maker: 0,     taker: 0.02  },
-          { min: 100e6, label: 'VIP 7',   maker: 0,     taker: 0.025 },
-          { min: 50e6,  label: 'VIP 6',   maker: 0,     taker: 0.035 },
-          { min: 20e6,  label: 'VIP 5',   maker: 0.01,  taker: 0.05  },
-          { min: 10e6,  label: 'VIP 4',   maker: 0.025, taker: 0.065 },
-          { min: 5e6,   label: 'VIP 3',   maker: 0.04,  taker: 0.085 },
-          { min: 1e6,   label: 'VIP 2',   maker: 0.05,  taker: 0.10  },
-          { min: 500e3, label: 'VIP 1',   maker: 0.06,  taker: 0.125 },
-          { min: 250e3, label: 'Adv 3',   maker: 0.075, taker: 0.15  },
-          { min: 75e3,  label: 'Adv 2',   maker: 0.125, taker: 0.25  },
-          { min: 25e3,  label: 'Adv 1',   maker: 0.25,  taker: 0.50  },
-          { min: 10e3,  label: 'Intro 2', maker: 0.40,  taker: 0.80  },
-          { min: 0,     label: 'Intro 1', maker: 0.60,  taker: 1.20  },
-        ];
-        const tier = tiers.find(t => vol >= t.min) || tiers[tiers.length - 1];
-        if (tierEl) tierEl.textContent = tier.label;
-        if (limitEl) limitEl.textContent = tier.maker + '%';
-        if (marketEl) marketEl.textContent = tier.taker + '%';
-        if (tradingSettings.tradeFee !== tier.maker || tradingSettings.marketFee !== tier.taker) {
-          tradingSettings.tradeFee = tier.maker;
-          tradingSettings.marketFee = tier.taker;
+        const tierName = r.feeTier || '—';
+        const maker = Number(r.makerFeePct);
+        const taker = Number(r.takerFeePct);
+        if (tierEl) tierEl.textContent = tierName;
+        if (limitEl) limitEl.textContent = Number.isFinite(maker) ? maker.toFixed(3) + '%' : '—';
+        if (marketEl) marketEl.textContent = Number.isFinite(taker) ? taker.toFixed(3) + '%' : '—';
+        if (Number.isFinite(maker) && Number.isFinite(taker) &&
+            (tradingSettings.tradeFee !== maker || tradingSettings.marketFee !== taker)) {
+          tradingSettings.tradeFee = maker;
+          tradingSettings.marketFee = taker;
         }
       } catch(e) { console.error('vol30 mobile:', e); }
     }

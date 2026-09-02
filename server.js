@@ -3510,8 +3510,7 @@ app.post('/api/predictor/watchlist', (req, res) => {
   }
 });
 
-// API: 30-day trading volume — paginates the Coinbase fills endpoint until we hit
-// 30 days back, then sums quote-side USD value across all sides.
+// API: Coinbase's authoritative rolling 30-day volume and fee tier.
 let volume30dCache = { data: null, ts: 0 };
 const VOLUME_30D_TTL = 5 * 60 * 1000; // 5 minutes
 
@@ -3524,72 +3523,31 @@ app.get('/get-volume-30d', async (req, res) => {
     if (!forceFresh && volume30dCache.data && (now - volume30dCache.ts) < VOLUME_30D_TTL) {
       return res.json({ success: true, ...volume30dCache.data, cached: true });
     }
-    const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    let cursor = undefined;
-    let totalUsd = 0;
-    let totalFees = 0;
-    let buyUsd = 0, sellUsd = 0;
-    let buyCount = 0, sellCount = 0;
-    let pages = 0;
-    let oldestSeen = null;
 
-    // Обход исполнений постранично.
-    //
-    // Прежняя версия передавала start_sequence_timestamp вместе с курсором и
-    // недосчитывала: сверка с ордерами дала $140 999 против $131 118, причём
-    // весь недобор приходился на покупки. Плюс выход по «дошли до края
-    // окна» не срабатывал никогда — oldestSeen обновлялся ПОСЛЕ фильтра
-    // `continue`, поэтому никогда не оказывался старше границы.
-    //
-    // Теперь фильтр по времени только на нашей стороне, а обход идёт до тех
-    // пор, пока не встретится исполнение старше границы или не кончится
-    // курсор. Так постраничность не зависит от того, как биржа сочетает
-    // фильтр по времени с курсором.
-    let reachedEdge = false;
-    let seenFills = 0;
-    while (pages < 60) { // hard safety cap
-      const params = { limit: 250 };
-      if (cursor) params.cursor = cursor;
-      const result = await client.listFills(params);
-      const data = typeof result === 'string' ? JSON.parse(result) : result;
-      const fills = data.fills || [];
-      seenFills += fills.length;
-      for (const f of fills) {
-        const ts = new Date(f.trade_time);
-        // Границу отслеживаем по ВСЕМ исполнениям, включая старые: только так
-        // видно, что нужный отрезок пройден до конца.
-        if (!oldestSeen || ts < oldestSeen) oldestSeen = ts;
-        if (ts < cutoff) { reachedEdge = true; continue; }
-        const size = parseFloat(f.size || 0);
-        const price = parseFloat(f.price || 0);
-        const fee = parseFloat(f.commission || 0);
-        const usd = size * price;
-        totalUsd += usd;
-        totalFees += fee;
-        if (f.side === 'BUY') { buyUsd += usd; buyCount++; }
-        else if (f.side === 'SELL') { sellUsd += usd; sellCount++; }
-      }
-      pages++;
-      if (!data.cursor || fills.length === 0) break;
-      cursor = data.cursor;
-      if (reachedEdge) break;
+    // Coinbase owns the fee tier and its rolling 30-day definition.  Its
+    // transaction summary is therefore authoritative; rebuilding it from
+    // individual fills can double-count partial executions across pages.
+    const summaryRaw = await client.getTransactionSummary({});
+    const summary = typeof summaryRaw === 'string' ? JSON.parse(summaryRaw) : summaryRaw;
+    const totalUsd = Number(summary.total_volume);
+    const totalFees = Number(summary.total_fees);
+    const makerRate = Number(summary.fee_tier?.maker_fee_rate);
+    const takerRate = Number(summary.fee_tier?.taker_fee_rate);
+    if (!Number.isFinite(totalUsd) || totalUsd < 0 || !Number.isFinite(totalFees) || totalFees < 0) {
+      throw new Error('Coinbase transaction summary returned invalid volume data');
     }
-
     const out = {
       totalUsd: Math.round(totalUsd * 100) / 100,
       totalFees: Math.round(totalFees * 100) / 100,
-      buyUsd: Math.round(buyUsd * 100) / 100,
-      sellUsd: Math.round(sellUsd * 100) / 100,
-      buyCount, sellCount,
-      totalFills: buyCount + sellCount,
-      pages,
-      // Дошли ли до края окна: если нет, значит обход упёрся в потолок
-      // страниц и число занижено — это должно быть видно, а не угадываться.
-      complete: reachedEdge,
-      scannedFills: seenFills,
+      feeTier: String(summary.fee_tier?.pricing_tier || ''),
+      makerFeePct: Number.isFinite(makerRate) && makerRate >= 0 ? makerRate * 100 : null,
+      takerFeePct: Number.isFinite(takerRate) && takerRate >= 0 ? takerRate * 100 : null,
+      source: 'coinbase-transaction-summary',
+      complete: true,
     };
     volume30dCache = { data: out, ts: now };
-    res.json({ success: true, ...out });
+    return res.json({ success: true, ...out });
+
   } catch (e) {
     console.error('Error computing 30d volume:', e.message);
     if (volume30dCache.data) return res.json({ success: true, ...volume30dCache.data, stale: true });

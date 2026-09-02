@@ -6818,41 +6818,27 @@
         const data = await res.json();
         if (!data.success) return;
         valEl.textContent = '$' + Math.round(data.totalUsd).toLocaleString('en-US');
-        const tip = `Total fills (30d): ${data.totalFills}\nBuy: ${fmtVol(data.buyUsd)} (${data.buyCount}) · Sell: ${fmtVol(data.sellUsd)} (${data.sellCount})\nFees paid: ${fmtVol(data.totalFees)}`;
-        pillEl.title = tip;
+        pillEl.title = `Coinbase rolling 30-day volume\nTier: ${data.feeTier || '—'}\nMaker/Taker: ${Number.isFinite(Number(data.makerFeePct)) && Number.isFinite(Number(data.takerFeePct)) ? `${Number(data.makerFeePct).toFixed(3)}/${Number(data.takerFeePct).toFixed(3)}%` : '—'}\nFees paid: ${fmtVol(data.totalFees)}`;
         const tierEl = document.getElementById('vol30Tier');
         if (tierEl) {
-          const vol = data.totalUsd || 0;
-          const tiers = [
-            { min: 250e6, label: 'VIP 8', fee: '0.00/0.02%' },
-            { min: 100e6, label: 'VIP 7', fee: '0.00/0.025%' },
-            { min: 50e6,  label: 'VIP 6', fee: '0.00/0.035%' },
-            { min: 20e6,  label: 'VIP 5', fee: '0.01/0.05%' },
-            { min: 10e6,  label: 'VIP 4', fee: '0.025/0.065%' },
-            { min: 5e6,   label: 'VIP 3', fee: '0.04/0.085%' },
-            { min: 1e6,   label: 'VIP 2', fee: '0.05/0.10%' },
-            { min: 500e3, label: 'VIP 1', fee: '0.06/0.125%' },
-            { min: 250e3, label: 'Adv 3', fee: '0.075/0.15%' },
-            { min: 75e3,  label: 'Adv 2', fee: '0.125/0.25%' },
-            { min: 25e3,  label: 'Adv 1', fee: '0.25/0.50%' },
-            { min: 10e3,  label: 'Intro 2', fee: '0.40/0.80%' },
-            { min: 0,     label: 'Intro 1', fee: '0.60/1.20%' },
-          ];
-          const tier = tiers.find(t => vol >= t.min) || tiers[tiers.length - 1];
-          tierEl.textContent = tier.label;
-          tierEl.title = `M/T: ${tier.fee}`;
+          const tierName = data.feeTier || '—';
+          const maker = Number(data.makerFeePct);
+          const taker = Number(data.takerFeePct);
+          const feeText = Number.isFinite(maker) && Number.isFinite(taker)
+            ? `${maker.toFixed(3)}/${taker.toFixed(3)}%`
+            : '—';
+          tierEl.textContent = tierName;
+          tierEl.title = `M/T: ${feeText}`;
 
-          // Auto-update fees if they differ from current tier
-          const [makerStr, takerStr] = tier.fee.split('/');
-          const newMaker = parseFloat(makerStr);
-          const newTaker = parseFloat(takerStr);
-          if (tradingSettings.tradeFee !== newMaker || tradingSettings.marketFee !== newTaker) {
-            tradingSettings.tradeFee = newMaker;
-            tradingSettings.marketFee = newTaker;
+          // Fees come directly from Coinbase together with the rolling tier.
+          if (Number.isFinite(maker) && Number.isFinite(taker) &&
+              (tradingSettings.tradeFee !== maker || tradingSettings.marketFee !== taker)) {
+            tradingSettings.tradeFee = maker;
+            tradingSettings.marketFee = taker;
             const tradeFeeEl = document.getElementById('tradeFee');
             const marketFeeEl = document.getElementById('marketFee');
-            if (tradeFeeEl) tradeFeeEl.value = newMaker;
-            if (marketFeeEl) marketFeeEl.value = newTaker;
+            if (tradeFeeEl) tradeFeeEl.value = maker;
+            if (marketFeeEl) marketFeeEl.value = taker;
             paintFeeChip();
             saveSettingsToServer();
           }
