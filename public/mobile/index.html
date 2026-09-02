@@ -1517,16 +1517,22 @@
       </div>
     </div>
     <div id="ssBodyM" style="margin-bottom:16px;"><div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">Первый скан через минуту…</div></div>
-  </div>
 
-  <div style="margin:4px 0 16px;border-top:1px solid var(--b1);padding-top:12px;">
+    <div style="margin:4px 0 16px;border-top:1px solid var(--b1);padding-top:12px;">
     <div style="display:flex;align-items:center;gap:7px;margin-bottom:7px;">
       <span style="font-weight:700;color:#bf5af2;font-size:13px;">⚡ Быстрый скальп</span>
       <span style="font-size:10px;color:var(--t2);">Paper · 15–60 мин</span>
+      <span id="msFoundM" style="font-size:10px;color:#bf5af2;"></span>
       <span id="msAgoM" style="margin-left:auto;font-size:10px;color:var(--t2);">—</span>
     </div>
-    <div style="font-size:10px;color:#d8b4fe;background:rgba(191,90,242,.07);border:1px solid rgba(191,90,242,.24);border-radius:6px;padding:5px 7px;margin-bottom:7px;">Только исследование: без кнопок покупки, реальных ордеров и алертов.</div>
+    <div class="tl-bar" style="margin-bottom:7px;">
+      <button class="tl-btn" id="msWatchBtnM" onclick="toggleMicroScalpWatchM()" title="Одноразовый Telegram-алерт быстрого Paper-скальпа">⚡ Алерт</button>
+      <button class="tl-btn" id="msLoopBtnM" onclick="toggleMicroScalpLoopM()" title="Непрерывный поток быстрых Paper-сетапов">🔁 Поток</button>
+      <button class="tl-btn tl-refresh" id="msRefreshBtnM" onclick="refreshMicroScalpM()" title="Запустить новый быстрый скан">⟳ Скан</button>
+    </div>
+    <div style="font-size:10px;color:#d8b4fe;background:rgba(191,90,242,.07);border:1px solid rgba(191,90,242,.24);border-radius:6px;padding:5px 7px;margin-bottom:7px;">Paper-исследование: без кнопок покупки и реальных ордеров. Telegram помечает его «15–60 мин · Paper».</div>
     <div id="msBodyM" style="color:var(--t2);font-size:11px;text-align:center;padding:8px;">Первый быстрый скан после запуска…</div>
+    </div>
   </div>
 
   <!-- Profit Panel -->
@@ -4764,6 +4770,44 @@
       _paintScalpWatchBtnM();
       if (_tlScalpWatch) toast('Слежу за краткосроком: Telegram при первом входе (один раз)');
     }
+    let _microScalpWatchM = false, _microScalpLoopM = false;
+    function _paintMicroScalpWatchBtnM() {
+      const button = document.getElementById('msWatchBtnM');
+      if (!button) return;
+      button.textContent = _microScalpWatchM ? '⚡ Алерт вкл' : '⚡ Алерт';
+      button.classList.toggle('on-scalp', _microScalpWatchM);
+    }
+    function _paintMicroScalpLoopBtnM() {
+      const button = document.getElementById('msLoopBtnM');
+      if (!button) return;
+      button.textContent = _microScalpLoopM ? '🔁 Поток вкл' : '🔁 Поток';
+      button.classList.toggle('on-scalp', _microScalpLoopM);
+    }
+    async function toggleMicroScalpWatchM() {
+      const result = await api('/api/micro-scalp-watch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enable: !_microScalpWatchM }) });
+      if (!result || !result.success) { toast((result && result.error) || 'Ошибка', 'error'); return; }
+      _microScalpWatchM = !!result.armed;
+      _paintMicroScalpWatchBtnM();
+      if (_microScalpWatchM) toast('Быстрый Paper-скальп: Telegram «15–60 мин · Paper», без реального ордера');
+    }
+    async function toggleMicroScalpLoopM() {
+      const result = await api('/api/micro-scalp-watch-loop', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enable: !_microScalpLoopM }) });
+      if (!result || !result.success) { toast((result && result.error) || 'Ошибка', 'error'); return; }
+      _microScalpLoopM = !!result.loop;
+      _paintMicroScalpLoopBtnM();
+      toast(_microScalpLoopM ? 'Поток быстрых Paper-сетапов включён' : 'Поток быстрых Paper-сетапов выключен');
+    }
+    async function refreshMicroScalpM() {
+      const button = document.getElementById('msRefreshBtnM');
+      if (button) button.disabled = true;
+      try {
+        const result = await api('/api/micro-scalp-scan/refresh', { method: 'POST' });
+        if (!result || !result.success) { toast((result && result.error) || 'Скан пока недоступен', 'error'); return; }
+        loadMicroScalpM();
+        setTimeout(loadMicroScalpM, 2500);
+      } catch (error) { toast('Ошибка: ' + error.message, 'error'); }
+      finally { if (button) button.disabled = false; }
+    }
 
     // Старый рейтинг отскока скрыт из таблицы (сервер его по-прежнему считает).
     // true — вернуть колонку BUY.
@@ -5052,13 +5096,23 @@
       try {
         const j = await api('/api/micro-scalp-scan');
         if (!j || !j.success) return;
+        _microScalpWatchM = !!j.watch;
+        _microScalpLoopM = !!j.watchLoop;
+        _paintMicroScalpWatchBtnM();
+        _paintMicroScalpLoopBtnM();
         const ago = document.getElementById('msAgoM');
         if (ago) ago.textContent = j.agoSec == null ? '—' : j.agoSec < 60 ? `${j.agoSec}с` : `${Math.round(j.agoSec / 60)}м`;
+        const found = document.getElementById('msFoundM');
+        if (found) found.textContent = j.total ? `${j.total} пар · ${j.entries} setup` : '';
         const body = document.getElementById('msBodyM');
         if (!body) return;
         const rows = (j.results || []).slice(0, 7);
         if (!rows.length) {
           body.innerHTML = `<div style="padding:6px;">${j.scanning ? 'Сканирую…' : 'Свежих Paper-сетапов пока нет'}</div>`;
+          if (j.scanning && !window._msPollM) {
+            window._msPollM = true;
+            setTimeout(() => { window._msPollM = false; loadMicroScalpM(); }, 5000);
+          }
           return;
         }
         const price = value => value == null ? '—' : value < 0.001 ? value.toFixed(8) : value < 1 ? value.toFixed(5) : value < 100 ? value.toFixed(3) : value.toFixed(2);

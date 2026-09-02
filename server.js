@@ -4639,6 +4639,29 @@ function microScalpFingerprint() {
 }
 const RUNTIME_MICRO_SCALP_FINGERPRINT = microScalpFingerprint();
 const microScalpScan = { running: false, progress: 0, scanned: 0, total: 0, at: 0, results: [] };
+const MICRO_SCALP_WATCH_FILE = path.join(__dirname, 'micro-scalp-watch.json');
+const MICRO_SCALP_MAX_SCAN_AGE_MS = 3 * 60 * 1000;
+const MICRO_SCALP_REARM_DROP = 0.5;
+let microScalpWatchArmed = false;
+let microScalpLoopOn = false;
+let microScalpSent = {};
+try {
+  const savedWatch = JSON.parse(fs.readFileSync(MICRO_SCALP_WATCH_FILE, 'utf8'));
+  microScalpWatchArmed = !!savedWatch.armed;
+  microScalpLoopOn = !!savedWatch.loop;
+  microScalpSent = savedWatch.sent && typeof savedWatch.sent === 'object' ? savedWatch.sent : {};
+} catch { }
+function saveMicroScalpWatch() {
+  try {
+    fs.writeFileSync(MICRO_SCALP_WATCH_FILE, JSON.stringify({
+      armed: microScalpWatchArmed,
+      loop: microScalpLoopOn,
+      sent: microScalpSent,
+    }), 'utf8');
+  } catch (error) {
+    console.error('[micro-scalp-watch] state save failed:', error.message);
+  }
+}
 function currentMicroScalpExecution() {
   return { ...MICRO_EXECUTION, feePct: paperLimitFee() };
 }
@@ -4698,9 +4721,19 @@ app.get('/api/micro-scalp-scan', (req, res) => {
     agoSec: microScalpScan.at ? Math.round((Date.now() - microScalpScan.at) / 1000) : null,
     entries: microScalpScan.results.filter(result => result.pass).length,
     results: microScalpScan.results.slice(0, 15),
+    watch: microScalpWatchArmed,
+    watchLoop: microScalpLoopOn,
     paperOnly: true,
     execution: currentMicroScalpExecution(),
   });
+});
+app.post('/api/micro-scalp-scan/refresh', (req, res) => {
+  if (!cbVolumeCache.size) {
+    return res.status(503).json({ success: false, error: 'Market volume cache is not ready yet' });
+  }
+  const wasRunning = microScalpScan.running;
+  void runMicroScalpScan();
+  res.json({ success: true, scanning: !wasRunning });
 });
 app.get('/api/micro-scalp-lab', (req, res) => res.json(microScalpLab.payload()));
 
@@ -5951,7 +5984,71 @@ app.post('/api/scalp-watch-loop', (req, res) => {
   res.json({ success: true, loop: scalpLoopOn });
 });
 
+app.post('/api/micro-scalp-watch', (req, res) => {
+  const enable = !!(req.body || {}).enable;
+  if (enable && !tgConfigured()) {
+    return res.json({ success: false, error: 'Telegram не настроен: укажи Bot Token и Chat ID в настройках' });
+  }
+  microScalpWatchArmed = enable;
+  saveMicroScalpWatch();
+  res.json({ success: true, armed: microScalpWatchArmed, paperOnly: true });
+});
+
+app.post('/api/micro-scalp-watch-loop', (req, res) => {
+  const enable = !!(req.body || {}).enable;
+  if (enable && !tgConfigured()) {
+    return res.json({ success: false, error: 'Telegram не настроен: укажи Bot Token и Chat ID в настройках' });
+  }
+  microScalpLoopOn = enable;
+  // Новый сеанс не наследует уже отправленные сигналы из прошлого сеанса.
+  if (enable) microScalpSent = {};
+  saveMicroScalpWatch();
+  res.json({ success: true, loop: microScalpLoopOn, paperOnly: true });
+});
+
 const NL = String.fromCharCode(10);
+
+function microScalpAlertPool() {
+  const at = Number(microScalpScan.at);
+  const age = Date.now() - at;
+  if (!Number.isFinite(at) || !Number.isFinite(age) || age < 0 || age > MICRO_SCALP_MAX_SCAN_AGE_MS) return [];
+  const best = new Map();
+  for (const row of microScalpScan.results) {
+    if (!row || !row.pass || !row.coin) continue;
+    if (!best.has(row.coin) || best.get(row.coin).score < row.score) best.set(row.coin, row);
+  }
+  return [...best.values()].sort((left, right) => right.score - left.score || left.coin.localeCompare(right.coin));
+}
+
+function microScalpAlertText(candidate) {
+  const checks = Array.isArray(candidate.checks) ? candidate.checks : [];
+  return '⚡ <b>БЫСТРЫЙ СКАЛЬП · 15–60 МИН · PAPER</b> — <b>' + escTg(candidate.pair) + '</b>' + NL +
+    'Рейтинг <b>' + candidate.score + '/100</b> · все условия Paper-сетапа выполнены' + NL +
+    '━━━━━━━━━━━━━━━━━━' + NL +
+    checks.map(check => (check.ok ? '✅ ' : '❌ ') + escTg(check.k) + ': ' + escTg(check.v)).join(NL) + NL +
+    '💵 Цена: $' + fmtPxAe(candidate.price) +
+    (candidate.spreadPct != null ? ' · спред ' + candidate.spreadPct + '%' : '') +
+    (candidate.vol24 ? ' · объём $' + Math.round(candidate.vol24 / 1e3) + 'K' : '') + NL + NL +
+    '<i>Исследовательский Paper-сетап: цель +1%, стоп −1%, максимум 60 минут.' + NL +
+    'Реальный ордер не выставлен; это не команда на покупку.</i>';
+}
+
+function microScalpLoopText(list, total) {
+  const head = list.length === 1
+    ? '⚡ <b>БЫСТРЫЙ СКАЛЬП · 15–60 МИН · PAPER</b> — <b>' + escTg(list[0].pair) + '</b>'
+    : '⚡ <b>БЫСТРЫЙ СКАЛЬП · 15–60 МИН · PAPER: сетапов ' + list.length + '</b>';
+  const rows = list.map(candidate => {
+    const again = microScalpSent[candidate.coin] ? ' <i>(повторно после отката)</i>' : '';
+    return '<b>' + escTg(candidate.pair) + '</b> — <b>' + candidate.score + '/100</b>' + again + NL +
+      '   $' + fmtPxAe(candidate.price) +
+      (candidate.spreadPct != null ? ' · спред ' + candidate.spreadPct + '%' : '') +
+      (candidate.pullbackPct != null ? ' · откат ' + candidate.pullbackPct + '%' : '');
+  }).join(NL);
+  const more = total > list.length ? NL + '<i>…и ещё ' + (total - list.length) + '</i>' : '';
+  return head + NL + '━━━━━━━━━━━━━━━━━━' + NL + rows + more + NL + NL +
+    '<i>Paper-исследование: цель +1%, стоп −1%, максимум 60 минут.' + NL +
+    'Реальные ордера не выставляются; это не команда на покупку.</i>';
+}
 
 // Общий сбор кандидатов для обоих режимов алерта
 function scalpAlertPool() {
@@ -5993,8 +6090,8 @@ setInterval(async () => {
 
     const list = fresh.slice(0, 8);
     const head = list.length === 1
-      ? '\u26a1 <b>SCALP ВХОД</b> — <b>' + escTg(list[0].pair) + '</b>'
-      : '\u26a1 <b>SCALP: входов ' + list.length + '</b>';
+      ? '\u26a1 <b>СКАЛЬП · 2–6 ЧАСОВ · ВХОД</b> — <b>' + escTg(list[0].pair) + '</b>'
+      : '\u26a1 <b>СКАЛЬП · 2–6 ЧАСОВ: входов ' + list.length + '</b>';
     const body = list.map(c => {
       const again = scalpSent[c.coin] ? ' <i>(повторно, после падения)</i>' : '';
       return '<b>' + escTg(c.pair) + '</b> — <b>' + c.score + '/100</b>' + again + NL +
@@ -6027,7 +6124,7 @@ setInterval(async () => {
     // к .n роняло обработчик в catch, и алерт молча не уходил.
     const vld = scalpScan.validation || scalpValidationStatus();
     const sent = await sendTelegram(
-      `⚡ <b>SCALP ВХОД</b> — <b>${c.pair}</b>\n` +
+      `⚡ <b>СКАЛЬП · 2–6 ЧАСОВ · ВХОД</b> — <b>${escTg(c.pair)}</b>\n` +
       `Рейтинг <b>${c.score}/100</b> · гейт пройден · горизонт 2–6 часов\n` +
       `━━━━━━━━━━━━━━━━━━\n` +
       c.checks.map(x => `${x.ok ? '✅' : '❌'} ${escTg(x.k)}: ${escTg(x.v)}`).join('\n') + '\n' +
@@ -6048,6 +6145,66 @@ setInterval(async () => {
     saveScalpWatch();
     console.log(`[scalp-watch] сработал ${c.pair}, score=${c.score}, telegram=ok`);
   } catch (e) { console.error('[scalp-watch]', e.message); }
+}, 60_000);
+
+// Быстрый скальп — самостоятельная Paper-лаборатория. Он использует свой
+// журнал и свои настройки алертов, поэтому не влияет на 2–6-часовой гейт.
+setInterval(async () => {
+  if (!microScalpLoopOn) return;
+  try {
+    const now = Date.now();
+    let changed = false;
+    for (const row of microScalpScan.results) {
+      const seen = row && microScalpSent[row.coin];
+      if (seen && row.price > 0 && row.price <= seen.price * (1 - MICRO_SCALP_REARM_DROP / 100) && !seen.fell) {
+        seen.fell = true;
+        changed = true;
+      }
+    }
+    for (const coin of Object.keys(microScalpSent)) {
+      const sentAt = Number(microScalpSent[coin].at);
+      if (!Number.isFinite(sentAt) || now - sentAt > 24 * 3600 * 1000) {
+        delete microScalpSent[coin];
+        changed = true;
+      }
+    }
+    const fresh = microScalpAlertPool().filter(candidate => {
+      const seen = microScalpSent[candidate.coin];
+      return !seen || seen.fell;
+    });
+    if (!fresh.length) {
+      if (changed) saveMicroScalpWatch();
+      return;
+    }
+    const list = fresh.slice(0, 3);
+    const sent = await sendTelegram(microScalpLoopText(list, fresh.length), 'HTML');
+    if (!sent) {
+      console.error('[micro-scalp-loop] Telegram delivery failed; state not advanced');
+      if (changed) saveMicroScalpWatch();
+      return;
+    }
+    for (const candidate of list) microScalpSent[candidate.coin] = { price: candidate.price, at: now, fell: false };
+    saveMicroScalpWatch();
+    console.log('[micro-scalp-loop] sent ' + list.length + ': ' + list.map(candidate => candidate.coin).join(' '));
+  } catch (error) { console.error('[micro-scalp-loop]', error.message); }
+}, 60_000);
+
+setInterval(async () => {
+  if (!microScalpWatchArmed) return;
+  try {
+    const candidate = microScalpAlertPool()[0];
+    if (!candidate) return;
+    const sent = await sendTelegram(
+      microScalpAlertText(candidate) + NL + '(одноразовый Paper-алерт — выключен)', 'HTML'
+    );
+    if (!sent) {
+      console.error('[micro-scalp-watch] ' + candidate.pair + ': Telegram delivery failed; alert remains armed');
+      return;
+    }
+    microScalpWatchArmed = false;
+    saveMicroScalpWatch();
+    console.log('[micro-scalp-watch] sent ' + candidate.pair + ', paperOnly=true');
+  } catch (error) { console.error('[micro-scalp-watch]', error.message); }
 }, 60_000);
 
 // ── Ручное открытие paper-сделки из таблицы (ведётся тем же движком) ──

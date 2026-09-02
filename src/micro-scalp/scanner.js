@@ -3,7 +3,8 @@
  *
  * This deliberately lives outside src/scalp/: changing its experimental rules
  * must never reset the 2–6 hour structural-gate cohort. It is paper-only and
- * does not place orders or send alerts.
+ * never places orders; delivery of clearly-labelled Paper alerts lives in the
+ * server layer.
  */
 
 const { ema, rsiSeries } = require('../scalp');
