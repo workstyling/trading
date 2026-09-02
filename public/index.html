@@ -6362,8 +6362,9 @@
           <div id="labRuntimeNotice" style="margin-bottom:10px;"></div>
           <div id="labObservations" style="margin-bottom:12px;"></div>
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
-            <span style="font-size:12px;font-weight:600;color:var(--t0);">Готовое задание для Claude Code</span>
+            <span style="font-size:12px;font-weight:600;color:var(--t0);">Готовое общее задание для Claude Code</span>
             <button class="tg-refresh-btn" id="labCopyBtn" onclick="copyLabBrief()">📋 Скопировать</button>
+            <span style="font-size:10.5px;color:#667;">один клик: скальп 2–6 ч + быстрый Paper 15–60 мин</span>
             <span id="labGens" style="font-size:10.5px;color:#667;"></span>
           </div>
           <pre id="labBrief" style="white-space:pre-wrap;word-break:break-word;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.07);border-radius:8px;padding:12px 14px;font-size:11px;line-height:1.55;color:var(--t1);max-height:340px;overflow:auto;margin:0;font-family:'JetBrains Mono',monospace;">Загрузка…</pre>
@@ -15080,22 +15081,32 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
       });
     }
 
-    function copyLabBrief() {
+    async function copyLabBrief() {
       const btn = document.getElementById('labCopyBtn');
-      if (!_labBrief) { showCustomAlert('Задание ещё не загружено', true); return; }
-      _copyText(_labBrief).then(() => {
-        if (btn) { const t = btn.textContent; btn.textContent = '✓ Скопировано'; setTimeout(() => { btn.textContent = t; }, 1800); }
-      }).catch(() => {
+      const originalText = btn && btn.textContent;
+      try {
+        if (btn) { btn.disabled = true; btn.textContent = 'Обновляю…'; }
+        const response = await fetch('/api/lab/combined-brief');
+        const payload = await response.json();
+        if (!response.ok || !payload.success || !payload.brief) throw new Error(payload.error || 'Общий отчёт недоступен');
+        _labBrief = payload.brief;
+        const pre = document.getElementById('labBrief');
+        if (pre) pre.textContent = _labBrief;
+        await _copyText(_labBrief);
+        if (btn) { btn.textContent = '✓ Скопировано'; setTimeout(() => { btn.textContent = originalText; }, 1800); }
+      } catch (error) {
         // Последний резерв: выделяем текст, чтобы можно было нажать Ctrl+C
         const pre = document.getElementById('labBrief');
-        if (pre) {
+        if (_labBrief && pre) {
           const r = document.createRange();
           r.selectNodeContents(pre);
           const sel = window.getSelection();
           sel.removeAllRanges(); sel.addRange(r);
         }
-        showCustomAlert('Браузер не дал скопировать. Текст выделен — нажми Ctrl+C', true);
-      });
+        showCustomAlert(error.message || 'Общий отчёт не удалось скопировать', true);
+      } finally {
+        if (btn) { btn.disabled = false; if (btn.textContent === 'Обновляю…') btn.textContent = originalText; }
+      }
     }
 
     let _microLabPollTimer = null;

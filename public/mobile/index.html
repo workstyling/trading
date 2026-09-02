@@ -1566,6 +1566,7 @@
         <span id="mmlSummary" style="font-size:11px;color:var(--t1);"></span>
       </div>
       <div id="mmlBody" style="font-size:12px;color:var(--t2);">Loading...</div>
+      <button id="mCombinedLabCopyBtn" onclick="copyCombinedLabBriefM()" style="margin-top:10px;padding:6px 10px;border:1px solid rgba(191,90,242,.42);border-radius:6px;background:rgba(191,90,242,.09);color:#d8b4fe;font-size:11px;font-weight:600;">📋 Скопировать отчёт по 2 стратегиям</button>
     </div>
   </div>
 
@@ -1800,6 +1801,38 @@
           }
         }
       } catch { }
+    }
+    function _copyTextM(text) {
+      if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text);
+      return new Promise((resolve, reject) => {
+        const area = document.createElement('textarea');
+        area.value = text;
+        area.setAttribute('readonly', '');
+        area.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;';
+        document.body.appendChild(area);
+        area.select();
+        area.setSelectionRange(0, text.length);
+        let copied = false;
+        try { copied = document.execCommand('copy'); } catch { copied = false; }
+        document.body.removeChild(area);
+        copied ? resolve() : reject(new Error('Copy was blocked by the browser'));
+      });
+    }
+    async function copyCombinedLabBriefM() {
+      const button = document.getElementById('mCombinedLabCopyBtn');
+      const originalText = button && button.textContent;
+      try {
+        if (button) { button.disabled = true; button.textContent = 'Обновляю…'; }
+        const response = await fetch(BASE + '/api/lab/combined-brief');
+        const payload = await response.json();
+        if (!response.ok || !payload.success || !payload.brief) throw new Error(payload.error || 'Общий отчёт недоступен');
+        await _copyTextM(payload.brief);
+        if (button) { button.textContent = '✓ Скопировано'; setTimeout(() => { button.textContent = originalText; }, 1800); }
+      } catch (error) {
+        toast(error.message || 'Не удалось скопировать общий отчёт', 'error');
+      } finally {
+        if (button) { button.disabled = false; if (button.textContent === 'Обновляю…') button.textContent = originalText; }
+      }
     }
     async function mpTogglePaper() {
       try {
@@ -5116,10 +5149,11 @@
           return;
         }
         const price = value => value == null ? '—' : value < 0.001 ? value.toFixed(8) : value < 1 ? value.toFixed(5) : value < 100 ? value.toFixed(3) : value.toFixed(2);
-        body.innerHTML = `<table style="width:100%;border-collapse:collapse;"><thead><tr style="border-bottom:1px solid var(--b1);"><th style="text-align:left;color:var(--t2);font-size:9px;padding:4px 3px;">COIN</th><th style="color:var(--t2);font-size:9px;padding:4px 2px;">SCORE</th><th style="color:var(--t2);font-size:9px;padding:4px 2px;">СТАТУС</th><th style="color:var(--t2);font-size:9px;padding:4px 2px;">RSI</th><th style="color:var(--t2);font-size:9px;padding:4px 2px;">ОТКАТ</th></tr></thead><tbody>${rows.map(item => {
+        const volume = value => value == null ? '—' : value >= 1e6 ? '$' + (value / 1e6).toFixed(1) + 'M' : '$' + Math.round(value / 1e3) + 'K';
+        body.innerHTML = `<table style="width:100%;border-collapse:collapse;"><thead><tr style="border-bottom:1px solid var(--b1);"><th style="text-align:left;color:var(--t2);font-size:9px;padding:4px 3px;">COIN</th><th style="color:var(--t2);font-size:9px;padding:4px 2px;">SCORE</th><th style="color:var(--t2);font-size:9px;padding:4px 2px;">СТАТУС</th><th style="color:var(--t2);font-size:9px;padding:4px 2px;">RSI</th><th style="color:var(--t2);font-size:9px;padding:4px 2px;">ОТКАТ</th><th style="text-align:right;color:var(--t2);font-size:9px;padding:4px 3px;">VOL 24H</th></tr></thead><tbody>${rows.map(item => {
           const label = item.pass ? 'PAPER' : item.tag === 'NEAR' ? 'БЛИЗКО' : 'ЖДАТЬ';
           const color = item.pass ? '#bf5af2' : item.tag === 'NEAR' ? '#f5c518' : '#7c8698';
-          return `<tr style="border-bottom:1px solid rgba(255,255,255,.03);cursor:pointer;" onclick="selectCoin('${item.coin}')" title="Выбрать ${item.coin} для покупки"><td style="padding:6px 3px;"><span style="color:var(--blue);font-weight:700;font-size:11px;">${item.coin}</span><br><span style="font-size:9px;color:#555;">$${price(item.price)}</span></td><td style="text-align:center;color:${color};font-size:12px;font-weight:800;">${item.score}</td><td style="text-align:center;"><span style="font-size:7px;color:${color};font-weight:800;background:${color}22;padding:2px 3px;border-radius:3px;">${label}</span></td><td style="text-align:center;font-size:11px;color:var(--t1);">${item.rsi ?? '—'}</td><td style="text-align:center;font-size:10px;color:${item.pullbackPct != null && item.pullbackPct <= 1.5 ? 'var(--green)' : 'var(--t2)'};">${item.pullbackPct == null ? '—' : item.pullbackPct + '%'}</td></tr>`;
+          return `<tr style="border-bottom:1px solid rgba(255,255,255,.03);cursor:pointer;" onclick="selectCoin('${item.coin}')" title="Выбрать ${item.coin} для покупки"><td style="padding:6px 3px;"><span style="color:var(--blue);font-weight:700;font-size:11px;">${item.coin}</span><br><span style="font-size:9px;color:#555;">$${price(item.price)}</span></td><td style="text-align:center;color:${color};font-size:12px;font-weight:800;">${item.score}</td><td style="text-align:center;"><span style="font-size:7px;color:${color};font-weight:800;background:${color}22;padding:2px 3px;border-radius:3px;">${label}</span></td><td style="text-align:center;font-size:11px;color:var(--t1);">${item.rsi ?? '—'}</td><td style="text-align:center;font-size:10px;color:${item.pullbackPct != null && item.pullbackPct <= 1.5 ? 'var(--green)' : 'var(--t2)'};">${item.pullbackPct == null ? '—' : item.pullbackPct + '%'}</td><td style="text-align:right;padding:6px 3px;color:var(--t2);font-size:9px;white-space:nowrap;">${volume(item.vol24)}</td></tr>`;
         }).join('')}</tbody></table>`;
         if (j.scanning && !window._msPollM) {
           window._msPollM = true;

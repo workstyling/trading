@@ -5875,6 +5875,54 @@ function labApiPayload() {
 function sendSafeLabApi(req, res) {
   res.json(labApiPayload());
 }
+function microScalpBrief(payload) {
+  const execution = payload.execution || {};
+  const stats = payload.stats || {};
+  const checks = (microScalpScan.results[0] && microScalpScan.results[0].checks || [])
+    .map(check => check.k).filter(Boolean);
+  const formatPct = value => Number.isFinite(value) ? `${value >= 0 ? '+' : ''}${value}%` : 'n/a';
+  const recent = (payload.closed || []).slice(0, 30).map(trade => {
+    const context = trade.ctx || {};
+    const details = [
+      context.rsi != null ? `rsi=${context.rsi}` : null,
+      context.pullbackPct != null ? `pullback=${context.pullbackPct}%` : null,
+      context.volumeX != null ? `volume=${context.volumeX}x` : null,
+      context.spreadPct != null ? `spread=${context.spreadPct}%` : null,
+    ].filter(Boolean).join(', ');
+    return `- ${trade.pair || trade.coin}: ${trade.why || 'CLOSED'}, ${formatPct(trade.pnlPct)}, hold ${trade.holdMin ?? 'n/a'} min${details ? ` (${details})` : ''}`;
+  });
+  const open = (payload.open || []).map(trade =>
+    `- ${trade.pair || trade.coin}: OPEN, ${formatPct(trade.pnlPct)}, age ${Math.max(0, Math.round((Date.now() - trade.openedAt) / 60000))} min`
+  );
+  return [
+    '## B. FAST SCALP PAPER LAB (15–60 MINUTES)',
+    'This is a separate paper-only experiment. It never places real orders. Do not mix its evidence, thresholds, or conclusions with the 2–6 hour scalp gate.',
+    `Cohort fingerprint: ${payload.cohort && payload.cohort.fingerprint || 'unknown'}; state: ${payload.entryBlocked ? 'ENTRY BLOCKED' : 'collecting'}; running: ${payload.hoursRunning ?? 'n/a'}h.`,
+    `Execution: target +${execution.targetPct ?? 'n/a'}%, stop -${execution.slPct ?? 'n/a'}%, time limit ${execution.maxHoldMin ?? 'n/a'} min, limit fee ${execution.feePct ?? 'n/a'}%.`,
+    `Current cohort: ${payload.currentClosedCount || 0} closed, ${payload.currentOpenCount || 0} open, ${payload.bursts || 0} independent bursts.`,
+    `Statistics: wins ${stats.winRate == null ? 'n/a' : stats.winRate + '%'}; average ${formatPct(stats.avgPct)}; total $${stats.totalPnl == null ? 'n/a' : stats.totalPnl}; average hold ${stats.avgHoldMin == null ? 'n/a' : stats.avgHoldMin + ' min'}.`,
+    checks.length ? `All required current conditions: ${checks.join('; ')}.` : 'Current scan conditions are not available yet.',
+    open.length ? `Open positions:\n${open.join('\n')}` : 'Open positions: none.',
+    recent.length ? `Recent closed positions:\n${recent.join('\n')}` : 'Recent closed positions: none.',
+    'Do not change this experiment until it has enough independent, closed bursts to support a conclusion.',
+  ].join('\n');
+}
+function combinedScalpBrief() {
+  const structural = labApiPayload();
+  const fast = microScalpLab.payload();
+  return [
+    '# Task: review two independent paper scalp experiments',
+    'Keep the two sections completely separate. Do not transfer a threshold, score rule, or performance conclusion from one strategy to the other.',
+    '',
+    '## A. STRUCTURAL SCALP GATE (2–6 HOURS)',
+    structural.brief || 'Structural scalp journal is not available yet.',
+    '',
+    microScalpBrief(fast),
+  ].join('\n');
+}
+app.get('/api/lab/combined-brief', (req, res) => {
+  res.json({ success: true, brief: combinedScalpBrief() });
+});
 function updateSafeLabConfig(req, res) {
   const body = req.body || {};
   if (body.enabled !== undefined) {
