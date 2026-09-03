@@ -2737,7 +2737,7 @@
         const isFav = favoriteCoins.has(coin);
         html += `<div class="monitor-group" data-coin="${coin}">
           <div class="monitor-group-header">
-            <span class="monitor-coin" style="cursor:pointer" onclick="selectCoin('${coin}')">${pair}</span>
+            <span class="monitor-coin" style="cursor:pointer" onclick="selectCoinForTradeM('${coin}')" title="Выбрать ${coin} и открыть график 15m">${pair}</span>
             <span style="display:flex;align-items:center;gap:8px;">
               <button id="bewM_${coin}" onclick="toggleBeWatchM('${coin}','${pair}',${totalFilled},${totalUSD})" title="Telegram-алерт при выходе в безубыток (одноразовый)" style="padding:3px 8px;border:1px solid ${_beWatches[coin] ? 'var(--yellow)' : 'rgba(255,255,255,0.25)'};border-radius:5px;background:${_beWatches[coin] ? 'rgba(245,197,24,0.15)' : 'transparent'};color:${_beWatches[coin] ? 'var(--yellow)' : '#889'};font-size:11px;font-weight:600;">🔔${_beWatches[coin] ? ' ON' : ''}</button>
               <span data-fav-coin="${coin}" onclick="toggleFavoriteCoin('${coin}')" title="${isFav ? 'Remove from favorites' : 'Add to favorites'}" style="cursor:pointer;font-size:22px;opacity:${isFav ? '1' : '0.25'};padding:0 8px;line-height:1;color:${isFav ? '#f5c518' : 'inherit'};">★</span>
