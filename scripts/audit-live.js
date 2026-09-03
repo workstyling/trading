@@ -142,8 +142,14 @@ function ema(v, p) {
   if (paper && tg) {
     ok(paper.targetPct > 0 && paper.targetPct <= 20, 'цель в разумных пределах', paper.targetPct + '%');
     ok(paper.slPct >= 0 && paper.slPct <= 20, 'стоп в разумных пределах', paper.slPct + '%');
-    ok(tg.sellMarkup === 1.38, 'Sell Markup не тронут экспериментом', tg.sellMarkup + '%');
-    ok(paper.targetPct !== tg.sellMarkup, 'цель отвязана от Sell Markup');
+    // Раньше здесь стояло жёсткое 1.38 — оно ловило бы утечку цели
+    // эксперимента в боевую настройку, но заодно падало каждый раз, когда
+    // владелец МЕНЯЕТ разметку сам (например под новый тариф комиссий).
+    // Настоящий инвариант — не конкретное число, а то, что боевая цель живёт
+    // отдельно от paper-эксперимента и остаётся вменяемой.
+    ok(tg.sellMarkup > 0 && tg.sellMarkup <= 20, 'Sell Markup в разумных пределах', tg.sellMarkup + '%');
+    ok(paper.targetPct !== tg.sellMarkup, 'цель эксперимента не протекла в Sell Markup',
+      'paper ' + paper.targetPct + '% против ' + tg.sellMarkup + '%');
   }
 
   console.log('\n' + '='.repeat(60));
