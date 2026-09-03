@@ -11563,21 +11563,26 @@ Requirements:
         const orders = byCoin[pair];
         const coin = pair.split('-')[0];
 
-        // Get current prices (with cache fallback)
-        let bestBid = 0, bestAsk = 0, priceDecimals = 2;
+        // Берём СТАКАН, а не тикер. Заявка та же одна на пару, но по тикеру
+        // видна только вершина, и колонка MARKET считала весь объём по лучшему
+        // bid — будто стакан бездонный. На ENA это давало −$16.57 там, где
+        // правда −$18.57: расхождение с окном продажи, всегда в оптимистичную
+        // сторону, и тем больше, чем крупнее позиция.
+        let bestBid = 0, bestAsk = 0, priceDecimals = 2, bookBids = null;
         try {
-          const ticker = await fetch(`https://api.exchange.coinbase.com/products/${pair}/ticker`);
+          const ticker = await fetch(`https://api.exchange.coinbase.com/products/${pair}/book?level=2`);
           if (ticker.ok) {
             const t = await ticker.json();
-            bestBid = parseFloat(t.bid) || 0;
-            bestAsk = parseFloat(t.ask) || 0;
+            bestBid = parseFloat(t.bids?.[0]?.[0]) || 0;
+            bestAsk = parseFloat(t.asks?.[0]?.[0]) || 0;
+            bookBids = Array.isArray(t.bids) ? t.bids : null;
             // Cache the prices
             if (bestBid > 0 && bestAsk > 0) {
               lastPricesCache[pair] = { bestBid, bestAsk, totalAmount: 0 };
             }
             // Determine decimal places from ask price
             if (bestAsk > 0) {
-              const askStr = t.ask.toString();
+              const askStr = String(t.asks[0][0]);
               const decPart = askStr.split('.')[1];
               priceDecimals = decPart ? decPart.length : 2;
             }
@@ -11623,7 +11628,15 @@ Requirements:
         const marketPnLPct = totalUSD !== 0 ? (marketPnL / Math.abs(totalUSD) * 100) : 0;
 
         const initLimitPnL = totalFilled * bestAsk * (1 - getFeeMarket()) - totalUSD; // worst-case taker — как в диалоге продажи
-        const initMarketPnL = totalFilled * bestBid * (1 - getFeeMarket()) - totalUSD;
+        // MARKET считаем проходом по стакану — ровно так же, как окно продажи,
+        // иначе таблица и окно показывают разные числа для одного действия.
+        // Если стакана не хватило на весь объём, остаток оцениваем по самому
+        // глубокому уровню: занизить оценку безопаснее, чем завысить.
+        const mktWalk = (bookBids && totalFilled > 0) ? walkBook(bookBids, totalFilled) : null;
+        const marketGross = mktWalk
+          ? mktWalk.gross + (mktWalk.short && mktWalk.worst > 0 ? (totalFilled - mktWalk.filled) * mktWalk.worst : 0)
+          : totalFilled * bestBid;
+        const initMarketPnL = marketGross * (1 - getFeeMarket()) - totalUSD;
         const initMarketDiff = initMarketPnL - initLimitPnL;
 
         // Check if group has BUY and SELL orders with fills for profit calculation
