@@ -6196,6 +6196,22 @@
       <div class="main-right">
         <!-- Открытые paper-сделки — самое верхнее, за ними следят чаще всего -->
         <div id="tlPaperStrip" style="display:none;margin-bottom:14px;"></div>
+        <div id="microScalpPanel" style="margin-bottom:14px;">
+          <div class="tl-head">
+            <div class="tl-head-top">
+              <span class="tl-name" style="color:#bf5af2;">⚡ Быстрый скальп</span>
+              <span class="tl-sub">Paper · 15–60 мин · цель +1% · стоп −1%</span>
+              <span class="tl-status"><span id="msAgo">—</span></span>
+            </div>
+            <div class="tl-bar">
+              <button class="tl-btn" id="msWatchBtn" onclick="toggleMicroScalpWatch()" title="Одноразовый Telegram-алерт для быстрого Paper-скальпа: после первого сетапа выключится">⚡ Алерт</button>
+              <button class="tl-btn" id="msLoopBtn" onclick="toggleMicroScalpLoop()" title="Непрерывный Telegram-поток быстрых Paper-сетапов. Отдельно от скальпа 2–6 часов.">🔁 Поток</button>
+              <button class="tl-btn tl-refresh" id="msRefreshBtn" onclick="refreshMicroScalp()" title="Запустить новый скан быстрых Paper-сетапов">⟳ Скан</button>
+              <span id="msTelegramLabel" style="font-size:10px;color:#bf5af2;background:rgba(191,90,242,.10);border:1px solid rgba(191,90,242,.3);border-radius:6px;padding:4px 7px;">Telegram: «15–60 мин · Paper» · без ордеров</span>
+            </div>
+          </div>
+          <div id="msBody"><div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">Первый быстрый скан после запуска…</div></div>
+        </div>
         <div id="scalpScanPanel" style="margin-bottom:14px;">
           <div class="tl-head">
             <div class="tl-head-top">
@@ -6227,22 +6243,6 @@
             </div>
           </div>
           <div id="ssBody"><div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">Первый скан через минуту после старта…</div></div>
-        </div>
-        <div id="microScalpPanel" style="margin-bottom:14px;">
-          <div class="tl-head">
-            <div class="tl-head-top">
-              <span class="tl-name" style="color:#bf5af2;">⚡ Быстрый скальп</span>
-              <span class="tl-sub">Paper · 15–60 мин · цель +1% · стоп −1%</span>
-              <span class="tl-status"><span id="msAgo">—</span></span>
-            </div>
-            <div class="tl-bar">
-              <button class="tl-btn" id="msWatchBtn" onclick="toggleMicroScalpWatch()" title="Одноразовый Telegram-алерт для быстрого Paper-скальпа: после первого сетапа выключится">⚡ Алерт</button>
-              <button class="tl-btn" id="msLoopBtn" onclick="toggleMicroScalpLoop()" title="Непрерывный Telegram-поток быстрых Paper-сетапов. Отдельно от скальпа 2–6 часов.">🔁 Поток</button>
-              <button class="tl-btn tl-refresh" id="msRefreshBtn" onclick="refreshMicroScalp()" title="Запустить новый скан быстрых Paper-сетапов">⟳ Скан</button>
-              <span id="msTelegramLabel" style="font-size:10px;color:#bf5af2;background:rgba(191,90,242,.10);border:1px solid rgba(191,90,242,.3);border-radius:6px;padding:4px 7px;">Telegram: «15–60 мин · Paper» · без ордеров</span>
-            </div>
-          </div>
-          <div id="msBody"><div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">Первый быстрый скан после запуска…</div></div>
         </div>
         <div id="profitPanel">
           <div class="profit-header">
