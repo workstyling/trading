@@ -1816,9 +1816,10 @@
         const j = await r.json();
         if (j.success) {
           const stats = j.stats || {};
+          const review = j.review || {};
           const runtimeBlocked = !!j.entryBlocked || j.runtime?.matched === false;
           const summary = document.getElementById('mmlSummary');
-          if (summary) summary.textContent = runtimeBlocked ? 'restart required' : `${j.currentClosedCount || 0} закрыто · ${j.currentOpenCount || 0} открыто`;
+          if (summary) summary.textContent = runtimeBlocked ? 'restart required' : `${j.currentClosedCount || 0} закр. · ${j.currentOpenCount || 0} откр. · ${review.closedBursts ?? j.bursts ?? 0}/${review.minClosedBursts ?? 15} имп.`;
           const body = document.getElementById('mmlBody');
           if (body) {
             const rows = [...(j.open || []), ...(j.closed || []).slice(0, 5)];

@@ -4579,6 +4579,10 @@ const { createMicroLab } = require('./src/micro-scalp/lab');
 const MICRO_SCALP_FILE = path.join(__dirname, 'micro-scalp-lab.json');
 const MICRO_SCAN_INTERVAL_MS = 2 * 60 * 1000;
 const MICRO_TICK_INTERVAL_MS = 30 * 1000;
+// Это порог только для вывода и решения о пересмотре Paper-эксперимента.
+// Он не является условием входа и не меняет его отпечаток: текущая когорта
+// должна спокойно дожить до осмысленной независимой выборки.
+const MICRO_SCALP_MIN_CLOSED_BURSTS = 15;
 const MICRO_EXECUTION = Object.freeze({
   targetPct: 1.0,
   slPct: 1.0,
@@ -4693,7 +4697,19 @@ app.post('/api/micro-scalp-scan/refresh', (req, res) => {
   void runMicroScalpScan();
   res.json({ success: true, scanning: !wasRunning });
 });
-app.get('/api/micro-scalp-lab', (req, res) => res.json(microScalpLab.payload()));
+function microScalpReview(payload) {
+  const closedBursts = Math.max(0, Number(payload && payload.bursts) || 0);
+  return {
+    closedBursts,
+    minClosedBursts: MICRO_SCALP_MIN_CLOSED_BURSTS,
+    remainingBursts: Math.max(0, MICRO_SCALP_MIN_CLOSED_BURSTS - closedBursts),
+    ready: closedBursts >= MICRO_SCALP_MIN_CLOSED_BURSTS,
+  };
+}
+app.get('/api/micro-scalp-lab', (req, res) => {
+  const payload = microScalpLab.payload();
+  res.json({ ...payload, review: microScalpReview(payload) });
+});
 
 const lab = require('./src/scalp/lab');
 const LAB_FILE = path.join(__dirname, 'scalp-lab.json');
@@ -5836,6 +5852,7 @@ function sendSafeLabApi(req, res) {
 function microScalpBrief(payload) {
   const execution = payload.execution || {};
   const stats = payload.stats || {};
+  const review = microScalpReview(payload);
   const checks = (microScalpScan.results[0] && microScalpScan.results[0].checks || [])
     .map(check => check.k).filter(Boolean);
   const formatPct = value => Number.isFinite(value) ? `${value >= 0 ? '+' : ''}${value}%` : 'n/a';
@@ -5858,11 +5875,14 @@ function microScalpBrief(payload) {
     `Cohort fingerprint: ${payload.cohort && payload.cohort.fingerprint || 'unknown'}; state: ${payload.entryBlocked ? 'ENTRY BLOCKED' : 'collecting'}; running: ${payload.hoursRunning ?? 'n/a'}h.`,
     `Execution: target +${execution.targetPct ?? 'n/a'}%, stop -${execution.slPct ?? 'n/a'}%, time limit ${execution.maxHoldMin ?? 'n/a'} min, limit fee ${execution.feePct ?? 'n/a'}%.`,
     `Current cohort: ${payload.currentClosedCount || 0} closed, ${payload.currentOpenCount || 0} open, ${payload.bursts || 0} independent bursts.`,
+    `Decision sample: ${review.closedBursts}/${review.minClosedBursts} independent closed bursts${review.ready ? ' (threshold reached).' : `; ${review.remainingBursts} more required before changing the experiment.`}`,
     `Statistics: wins ${stats.winRate == null ? 'n/a' : stats.winRate + '%'}; average ${formatPct(stats.avgPct)}; total $${stats.totalPnl == null ? 'n/a' : stats.totalPnl}; average hold ${stats.avgHoldMin == null ? 'n/a' : stats.avgHoldMin + ' min'}.`,
     checks.length ? `All required current conditions: ${checks.join('; ')}.` : 'Current scan conditions are not available yet.',
     open.length ? `Open positions:\n${open.join('\n')}` : 'Open positions: none.',
     recent.length ? `Recent closed positions:\n${recent.join('\n')}` : 'Recent closed positions: none.',
-    'Do not change this experiment until it has enough independent, closed bursts to support a conclusion.',
+    review.ready
+      ? 'The minimum independent sample is complete. Review the full cohort before deciding whether to change this experiment.'
+      : 'Do not change this experiment until the stated number of independent, closed bursts is reached.',
   ].join('\n');
 }
 function combinedScalpBrief() {

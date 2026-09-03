@@ -15181,6 +15181,7 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
         if (!j.success) return;
         const execution = j.execution || {};
         const stats = j.stats || {};
+        const review = j.review || {};
         const runtimeBlocked = !!j.entryBlocked || j.runtime?.matched === false;
         const statEl = document.getElementById('microLabStats');
         if (statEl) {
@@ -15189,7 +15190,7 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
           statEl.innerHTML = `<div style="display:flex;gap:10px;flex-wrap:wrap;">
             ${_jStatCard('Статус', status, runtimeBlocked ? 'новые Paper-входы заблокированы' : `${j.hoursRunning || 0} ч в работе`)}
             ${_jStatCard('Открыто', j.currentOpenCount || 0, 'макс. 3 одновременных позиции')}
-            ${_jStatCard('Закрыто', j.currentClosedCount || 0, `${j.bursts || 0} независимых импульсов`)}
+            ${_jStatCard('Закрыто', j.currentClosedCount || 0, `${review.closedBursts ?? j.bursts ?? 0}/${review.minClosedBursts ?? 15} независимых закрытых импульсов`)}
             ${_jStatCard('Средний', stats.avgPct == null ? '—' : `${stats.avgPct >= 0 ? '+' : ''}${stats.avgPct}%`, stats.n ? `wins ${stats.winRate}% · ${stats.n} сделок` : 'данные ещё копятся')}
             ${_jStatCard('Правила', `+${execution.targetPct ?? '—'}% / −${execution.slPct ?? '—'}%`, `${execution.maxHoldMin ?? '—'} мин · комиссия учтена`)}
           </div>`;
