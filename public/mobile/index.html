@@ -2830,27 +2830,44 @@
     // если цена сползает, секунда ожидания дешевле спреда.
     // См. пояснение у renderTrend на десктопе: график рисует ПРИБЫЛЬ, а не
     // цену, потому что между ними стоят проход по стакану и комиссия.
-    function _sparkSvgM(vals, col, drawZero, refAt) {
-      const W = 300, H = 34, pad = 3;
+    // Заливка идёт МЕЖДУ линией и опорным уровнем, а не до низа рамки. Так
+    // площадь означает ровно то, что нужно: насколько ты в минусе или в
+    // плюсе. Раньше она упиралась в нижний край и при полностью убыточном
+    // окне превращалась в сплошной красный блок, не несущий сведений.
+    //
+    // Если опорный уровень вне окна (всё время под нулём), рисуем его у
+    // ближнего края с подписью: шкалу под него не растягиваем, иначе движение
+    // в доллар на позиции в две тысячи выродится в прямую линию.
+    function _sparkSvgM(vals, col, refVal) {
+      const W = 300, H = 38, pad = 3;
       const lo = Math.min(...vals), hi = Math.max(...vals);
       const span = (hi - lo) || Math.max(1e-9, Math.abs(hi) || 1);
       const xAt = i => pad + i * (W - pad * 2) / Math.max(1, vals.length - 1);
-      const yAt = v => pad + (hi - v) / span * (H - pad * 2);
-      const pts = vals.map((v, i) => xAt(i).toFixed(1) + ',' + yAt(v).toFixed(1)).join(' ');
-      const base = (H - pad).toFixed(1);
-      const area = xAt(0).toFixed(1) + ',' + base + ' ' + pts + ' ' + xAt(vals.length - 1).toFixed(1) + ',' + base;
-      let zero = '';
-      // У продажи опора — ноль (безубыток), у покупки — цена на открытии окна.
-      const refVal = Number.isFinite(refAt) ? refAt : (drawZero ? 0 : null);
-      if (refVal != null && refVal > lo && refVal < hi) {
-        const zy = yAt(refVal).toFixed(1);
-        zero = '<line x1="' + pad + '" y1="' + zy + '" x2="' + (W - pad) + '" y2="' + zy +
-          '" stroke="#8b93a7" stroke-width="1" stroke-dasharray="4 3" opacity="0.85"/>';
+      const yRaw = v => pad + (hi - v) / span * (H - pad * 2);
+      const clampY = y => Math.max(pad, Math.min(H - pad, y));
+      const pts = vals.map((v, i) => xAt(i).toFixed(1) + ',' + yRaw(v).toFixed(1)).join(' ');
+
+      let ref = '', area = '';
+      if (Number.isFinite(refVal)) {
+        const inside = refVal > lo && refVal < hi;
+        const ry = clampY(yRaw(refVal));
+        // Заливка от линии до опорного уровня
+        area = '<polygon points="' + xAt(0).toFixed(1) + ',' + ry.toFixed(1) + ' ' + pts + ' ' +
+          xAt(vals.length - 1).toFixed(1) + ',' + ry.toFixed(1) + '" fill="' + col + '" opacity="0.16"/>';
+        ref = '<line x1="' + pad + '" y1="' + ry.toFixed(1) + '" x2="' + (W - pad) + '" y2="' + ry.toFixed(1) +
+          '" stroke="#8b93a7" stroke-width="1" stroke-dasharray="4 3" opacity="' + (inside ? '0.9' : '0.55') + '"/>';
+        // Про уровень за пределами окна пишем в подписи под графиком, а не
+        // внутри него: SVG растягивается по ширине, и текст в нём поехал бы.
+      } else {
+        const base = (H - pad).toFixed(1);
+        area = '<polygon points="' + xAt(0).toFixed(1) + ',' + base + ' ' + pts + ' ' +
+          xAt(vals.length - 1).toFixed(1) + ',' + base + '" fill="' + col + '" opacity="0.13"/>';
       }
-      const ex = xAt(vals.length - 1).toFixed(1), ey = yAt(vals[vals.length - 1]);
+
+      const ex = xAt(vals.length - 1).toFixed(1), ey = yRaw(vals[vals.length - 1]);
       return '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" ' +
         'style="width:100%;height:' + H + 'px;display:block;margin-top:3px;">' +
-        '<polygon points="' + area + '" fill="' + col + '" opacity="0.13"/>' + zero +
+        area + ref +
         '<polyline points="' + pts + '" fill="none" stroke="' + col + '" stroke-width="1.6" ' +
         'stroke-linejoin="round" stroke-linecap="round"/>' +
         '<line x1="' + ex + '" y1="' + (ey - 4).toFixed(1) + '" x2="' + ex + '" y2="' + (ey + 4).toFixed(1) +
@@ -2887,6 +2904,25 @@
         : (v >= 0 ? '+' : '−') + '$' + Math.abs(v).toFixed(2);
       const pxf = v => v < 1 ? v.toFixed(6) : v.toFixed(4);
 
+      // Ровность движения. Шесть подряд шагов вниз и шесть разнонаправленных
+      // выглядят на графике похоже, но означают разное: в первом случае ждать
+      // скорее хуже, во втором это шум. Считаем по последним восьми шагам.
+      let steady = '';
+      if (vals.length >= 4) {
+        const steps = [];
+        for (let i = Math.max(1, vals.length - 8); i < vals.length; i++) steps.push(vals[i] - vals[i - 1]);
+        const dn = steps.filter(v => v < 0).length, upn = steps.filter(v => v > 0).length;
+        const dom = Math.max(dn, upn), total = steps.length;
+        if (total >= 3 && dom > 0) {
+          const dir = dn > upn ? 'вниз' : upn > dn ? 'вверх' : null;
+          if (dir) {
+            const even = dom / total >= 0.75;
+            steady = '<span style="color:#7c8698;"> · ' + (even ? 'ровно' : 'рвано') + ' ' +
+              dom + ' из ' + total + ' шагов ' + dir + '</span>';
+          }
+        }
+      }
+
       let extra = '';
       if (buying && hasProfit) {
         const best = Math.min(...vals), worst = Math.max(...vals);
@@ -2906,15 +2942,19 @@
           '</div>';
       }
 
+      // Если опорный уровень не попал в окно, линия жмётся к краю и без
+      // оговорки читалась бы как «мы почти на нуле».
+      const refVal = hasProfit ? (buying ? first : 0) : null;
+      const refOutside = refVal != null && !(refVal > Math.min(...vals) && refVal < Math.max(...vals));
       const caption = buying
         ? (hasProfit ? 'Средняя цена входа, пунктир — цена на открытии' : 'Цена')
         : (hasProfit ? 'Прибыль на руки, пунктир — безубыток' : 'Цена');
       return '<span style="color:' + col + ';font-weight:700;">' + arrow + ' ' + word + '</span> ' +
         '<span style="color:' + col + ';">' + fmt(dRecent) + '</span> ' +
-        '<span style="color:#7c8698;font-size:10px;">за 5с · ' + fmt(dAll) + ' за ' + secs + 'с</span>' +
-        _sparkSvgM(vals, up ? '#30d158' : down ? '#ff6b6b' : '#8b93a7', hasProfit,
-          buying && hasProfit ? first : null) +
-        '<div style="color:#7c8698;font-size:10px;margin-top:1px;">' + caption + '</div>' + extra;
+        '<span style="color:#7c8698;font-size:10px;">за 5с · ' + fmt(dAll) + ' за ' + secs + 'с' + steady + '</span>' +
+        _sparkSvgM(vals, up ? '#30d158' : down ? '#ff6b6b' : '#8b93a7',
+          refVal) +
+        '<div style="color:#7c8698;font-size:10px;margin-top:1px;">' + caption + (refOutside ? ' · уровень вне окна' : '') + '</div>' + extra;
     }
     const trendBox = (hist, mode) =>
       `<div style="margin-bottom:7px;padding:6px 8px;border-radius:6px;background:rgba(255,255,255,0.04);">` +
