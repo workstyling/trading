@@ -2874,10 +2874,10 @@
       const dAll = asPct ? (first > 0 ? (now / first - 1) * 100 : 0) : now - first;
       const eps = asPct ? 0.001 : 0.005;
       const up = dRecent > eps, down = dRecent < -eps;
-      // Зелёный всегда значит «в твою пользу»: покупателю выгодно падение.
-      const good = buying ? down : up;
-      const bad = buying ? up : down;
-      const col = good ? '#4ade80' : bad ? '#ff6b6b' : '#7c8698';
+      // Раскраска биржевая: вверх зелёный, вниз красный, одинаково в обоих
+      // диалогах. Что из этого тебе выгодно — говорят слова «дешевеет» и
+      // «дорожает», цвет за это не отвечает.
+      const col = up ? '#4ade80' : down ? '#ff6b6b' : '#7c8698';
       const arrow = up ? '\u25b2' : down ? '\u25bc' : '=';
       const word = buying
         ? (down ? 'дешевеет' : up ? 'дорожает' : 'стоит')
@@ -2892,7 +2892,7 @@
         const best = Math.min(...vals), worst = Math.max(...vals);
         const overBest = best > 0 ? (now / best - 1) * 100 : 0;
         extra = '<div style="color:#7c8698;font-size:10px;margin-top:2px;">' +
-          'Дешевле всего: <b style="color:#4ade80;">$' + pxf(best) + '</b>' +
+          'Дешевле всего: <b>$' + pxf(best) + '</b>' +
           ' · дороже: <b>$' + pxf(worst) + '</b>' +
           (overBest > 0.005 ? ' · на ' + overBest.toFixed(3) + '% выше минимума' : ' · на минимуме') +
           '</div>';
@@ -2912,7 +2912,7 @@
       return '<span style="color:' + col + ';font-weight:700;">' + arrow + ' ' + word + '</span> ' +
         '<span style="color:' + col + ';">' + fmt(dRecent) + '</span> ' +
         '<span style="color:#7c8698;font-size:10px;">за 5с · ' + fmt(dAll) + ' за ' + secs + 'с</span>' +
-        _sparkSvgM(vals, good ? '#30d158' : bad ? '#ff6b6b' : '#8b93a7', hasProfit,
+        _sparkSvgM(vals, up ? '#30d158' : down ? '#ff6b6b' : '#8b93a7', hasProfit,
           buying && hasProfit ? first : null) +
         '<div style="color:#7c8698;font-size:10px;margin-top:1px;">' + caption + '</div>' + extra;
     }
