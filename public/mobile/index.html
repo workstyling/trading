@@ -1546,7 +1546,6 @@
     <div style="display:flex;align-items:center;gap:7px;margin-bottom:7px;">
       <span style="font-weight:700;color:#bf5af2;font-size:13px;">⚡ Быстрый скальп</span>
       <span style="font-size:10px;color:var(--t2);">Paper · 15–60 мин</span>
-      <span id="msFoundM" style="font-size:10px;color:#bf5af2;"></span>
       <span id="msAgoM" style="margin-left:auto;font-size:10px;color:var(--t2);">—</span>
     </div>
     <div class="tl-bar" style="margin-bottom:7px;">
@@ -5328,8 +5327,6 @@
         _paintMicroScalpLoopBtnM();
         const ago = document.getElementById('msAgoM');
         if (ago) ago.textContent = j.agoSec == null ? '—' : j.agoSec < 60 ? `${j.agoSec}с` : `${Math.round(j.agoSec / 60)}м`;
-        const found = document.getElementById('msFoundM');
-        if (found) found.textContent = j.total ? `${j.total} пар · ${j.entries} setup` : '';
         const body = document.getElementById('msBodyM');
         if (!body) return;
         const rows = (j.results || []).slice(0, 7);
