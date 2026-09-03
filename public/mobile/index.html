@@ -2906,20 +2906,30 @@
 
       // Ровность движения. Шесть подряд шагов вниз и шесть разнонаправленных
       // выглядят на графике похоже, но означают разное: в первом случае ждать
-      // скорее хуже, во втором это шум. Считаем по последним восьми шагам.
+      // скорее хуже, во втором это шум.
+      //
+      // Считаем ТОЛЬКО те тики, где цена вообще сдвинулась. Раньше в знаменатель
+      // шли все восемь, и при шести неподвижных тиках выходило «рвано 2 из 8
+      // шагов вниз» — читалось так, будто шесть ушли вверх, хотя они просто
+      // стояли.
       let steady = '';
       if (vals.length >= 4) {
         const steps = [];
         for (let i = Math.max(1, vals.length - 8); i < vals.length; i++) steps.push(vals[i] - vals[i - 1]);
-        const dn = steps.filter(v => v < 0).length, upn = steps.filter(v => v > 0).length;
-        const dom = Math.max(dn, upn), total = steps.length;
-        if (total >= 3 && dom > 0) {
-          const dir = dn > upn ? 'вниз' : upn > dn ? 'вверх' : null;
-          if (dir) {
-            const even = dom / total >= 0.75;
-            steady = '<span style="color:#7c8698;"> · ' + (even ? 'ровно' : 'рвано') + ' ' +
-              dom + ' из ' + total + ' шагов ' + dir + '</span>';
-          }
+        const moved = steps.filter(v => v !== 0);
+        const dn = moved.filter(v => v < 0).length, upn = moved.length - dn;
+        const dom = Math.max(dn, upn);
+        const dir = dn > upn ? 'вниз' : upn > dn ? 'вверх' : null;
+        if (moved.length >= 2 && dir) {
+          const even = dom / moved.length >= 0.75;
+          const quiet = moved.length * 2 <= steps.length ? ', остальное без движения' : '';
+          steady = '<div style="color:#7c8698;font-size:10px;">' + (even ? 'ровно' : 'рвано') + ' ' +
+            dom + ' из ' + moved.length + ' движений ' + dir + quiet + '</div>';
+        } else if (moved.length >= 4 && dn === upn) {
+          // Поровну вверх и вниз — это тоже ответ: тренда нет, ждать нечего.
+          steady = '<div style="color:#7c8698;font-size:10px;">разнонаправленно, тренда нет</div>';
+        } else if (steps.length >= 3 && moved.length <= 1) {
+          steady = '<div style="color:#7c8698;font-size:10px;">почти стоит</div>';
         }
       }
 
@@ -2951,10 +2961,10 @@
         : (hasProfit ? 'Прибыль на руки, пунктир — безубыток' : 'Цена');
       return '<span style="color:' + col + ';font-weight:700;">' + arrow + ' ' + word + '</span> ' +
         '<span style="color:' + col + ';">' + fmt(dRecent) + '</span> ' +
-        '<span style="color:#7c8698;font-size:10px;">за 5с · ' + fmt(dAll) + ' за ' + secs + 'с' + steady + '</span>' +
+        '<span style="color:#7c8698;font-size:10px;">за 5с · ' + fmt(dAll) + ' за ' + secs + 'с</span>' +
         _sparkSvgM(vals, up ? '#30d158' : down ? '#ff6b6b' : '#8b93a7',
           refVal) +
-        '<div style="color:#7c8698;font-size:10px;margin-top:1px;">' + caption + (refOutside ? ' · уровень вне окна' : '') + '</div>' + extra;
+        steady + '<div style="color:#7c8698;font-size:10px;margin-top:1px;">' + caption + (refOutside ? ' · уровень вне окна' : '') + '</div>' + extra;
     }
     const trendBox = (hist, mode) =>
       `<div style="margin-bottom:7px;padding:6px 8px;border-radius:6px;background:rgba(255,255,255,0.04);">` +
