@@ -2462,16 +2462,18 @@
           const book = await cbGet(`https://api.exchange.coinbase.com/products/${pair}/book?level=2`, 900);
           const bestAsk = parseFloat(book.asks?.[0]?.[0]) || 0;
           const bestBid = parseFloat(book.bids?.[0]?.[0]) || 0;
-          if (bestAsk > 0) { hist.push({ t: Date.now(), p: bestAsk }); if (hist.length > 40) hist.shift(); }
           const w = walkAsksM(book.asks, usd);
           const avg = w.qty > 0 ? w.spent / w.qty : 0;
+          // Рисуем СРЕДНЮЮ цену исполнения: покупка съедает несколько уровней
+          // стакана, и платишь ты именно её, а не лучший ask.
+          if (bestAsk > 0) { hist.push({ t: Date.now(), p: bestAsk, v: avg > 0 ? avg : undefined }); if (hist.length > 40) hist.shift(); }
           const slip = bestAsk > 0 ? (avg / bestAsk - 1) * 100 : 0;
           const fee = usd * feePct / 100;
           // Полная переплата против лимитки: спред + проход по стакану +
           // разница комиссий. Спред сам по себе меньше и вводил бы в заблуждение.
           const vsLimit = bestBid > 0
             ? ((avg * (1 + feePct / 100)) / (bestBid * (1 + limitFeePct / 100)) - 1) * 100 : 0;
-          box.innerHTML = trendBox(hist) +
+          box.innerHTML = trendBox(hist, 'buy') +
             `Средняя: <b>$${fmt(avg)}</b>` + (slip > 0.005 ? ` (просk. ${slip.toFixed(3)}%)` : '') + `<br>` +
             `Уровней стакана: <b>${w.levels}</b><br>` +
             `Получишь: <b>${w.qty < 1 ? w.qty.toFixed(6) : w.qty.toFixed(3)} ${coin}</b><br>` +
@@ -2828,7 +2830,7 @@
     // если цена сползает, секунда ожидания дешевле спреда.
     // См. пояснение у renderTrend на десктопе: график рисует ПРИБЫЛЬ, а не
     // цену, потому что между ними стоят проход по стакану и комиссия.
-    function _sparkSvgM(vals, col, drawZero) {
+    function _sparkSvgM(vals, col, drawZero, refAt) {
       const W = 300, H = 34, pad = 3;
       const lo = Math.min(...vals), hi = Math.max(...vals);
       const span = (hi - lo) || Math.max(1e-9, Math.abs(hi) || 1);
@@ -2838,8 +2840,10 @@
       const base = (H - pad).toFixed(1);
       const area = xAt(0).toFixed(1) + ',' + base + ' ' + pts + ' ' + xAt(vals.length - 1).toFixed(1) + ',' + base;
       let zero = '';
-      if (drawZero && lo < 0 && hi > 0) {
-        const zy = yAt(0).toFixed(1);
+      // У продажи опора — ноль (безубыток), у покупки — цена на открытии окна.
+      const refVal = Number.isFinite(refAt) ? refAt : (drawZero ? 0 : null);
+      if (refVal != null && refVal > lo && refVal < hi) {
+        const zy = yAt(refVal).toFixed(1);
         zero = '<line x1="' + pad + '" y1="' + zy + '" x2="' + (W - pad) + '" y2="' + zy +
           '" stroke="#8b93a7" stroke-width="1" stroke-dasharray="4 3" opacity="0.85"/>';
       }
@@ -2853,27 +2857,46 @@
         '" stroke="' + col + '" stroke-width="2.4"/></svg>';
     }
 
-    function renderTrendM(hist) {
+    // mode: 'sell' — прибыль, вверх хорошо, пунктир на нуле.
+    //       'buy'  — средняя цена входа, ХОРОШО когда ПАДАЕТ, пунктир на цене
+    //                в момент открытия окна.
+    function renderTrendM(hist, mode) {
       if (!hist || hist.length < 2) return '<span style="color:#7c8698;">жду второй замер…</span>';
+      const buying = mode === 'buy';
       const hasProfit = hist.every(x => Number.isFinite(x.v));
       const vals = hist.map(x => hasProfit ? x.v : x.p);
       const now = vals[vals.length - 1], first = vals[0];
       const recent = vals[Math.max(0, vals.length - 6)];
       const secs = Math.round((hist[hist.length - 1].t - hist[0].t) / 1000);
 
-      const dRecent = hasProfit ? now - recent : (recent > 0 ? (now / recent - 1) * 100 : 0);
-      const dAll = hasProfit ? now - first : (first > 0 ? (now / first - 1) * 100 : 0);
-      const eps = hasProfit ? 0.005 : 0.001;
+      const asPct = buying || !hasProfit;
+      const dRecent = asPct ? (recent > 0 ? (now / recent - 1) * 100 : 0) : now - recent;
+      const dAll = asPct ? (first > 0 ? (now / first - 1) * 100 : 0) : now - first;
+      const eps = asPct ? 0.001 : 0.005;
       const up = dRecent > eps, down = dRecent < -eps;
-      const col = up ? '#4ade80' : down ? '#ff6b6b' : '#7c8698';
+      // Зелёный всегда значит «в твою пользу»: покупателю выгодно падение.
+      const good = buying ? down : up;
+      const bad = buying ? up : down;
+      const col = good ? '#4ade80' : bad ? '#ff6b6b' : '#7c8698';
       const arrow = up ? '\u25b2' : down ? '\u25bc' : '=';
-      const word = up ? 'растёт' : down ? 'падает' : 'стоит';
-      const fmt = v => hasProfit
-        ? (v >= 0 ? '+' : '−') + '$' + Math.abs(v).toFixed(2)
-        : (v >= 0 ? '+' : '') + v.toFixed(3) + '%';
+      const word = buying
+        ? (down ? 'дешевеет' : up ? 'дорожает' : 'стоит')
+        : (up ? 'растёт' : down ? 'падает' : 'стоит');
+      const fmt = v => asPct
+        ? (v >= 0 ? '+' : '') + v.toFixed(3) + '%'
+        : (v >= 0 ? '+' : '−') + '$' + Math.abs(v).toFixed(2);
+      const pxf = v => v < 1 ? v.toFixed(6) : v.toFixed(4);
 
       let extra = '';
-      if (hasProfit) {
+      if (buying && hasProfit) {
+        const best = Math.min(...vals), worst = Math.max(...vals);
+        const overBest = best > 0 ? (now / best - 1) * 100 : 0;
+        extra = '<div style="color:#7c8698;font-size:10px;margin-top:2px;">' +
+          'Дешевле всего: <b style="color:#4ade80;">$' + pxf(best) + '</b>' +
+          ' · дороже: <b>$' + pxf(worst) + '</b>' +
+          (overBest > 0.005 ? ' · на ' + overBest.toFixed(3) + '% выше минимума' : ' · на минимуме') +
+          '</div>';
+      } else if (hasProfit) {
         const peak = Math.max(...vals), trough = Math.min(...vals);
         const offPeak = peak - now;
         extra = '<div style="color:#7c8698;font-size:10px;margin-top:2px;">' +
@@ -2883,16 +2906,19 @@
           '</div>';
       }
 
+      const caption = buying
+        ? (hasProfit ? 'Средняя цена входа, пунктир — цена на открытии' : 'Цена')
+        : (hasProfit ? 'Прибыль на руки, пунктир — безубыток' : 'Цена');
       return '<span style="color:' + col + ';font-weight:700;">' + arrow + ' ' + word + '</span> ' +
         '<span style="color:' + col + ';">' + fmt(dRecent) + '</span> ' +
         '<span style="color:#7c8698;font-size:10px;">за 5с · ' + fmt(dAll) + ' за ' + secs + 'с</span>' +
-        _sparkSvgM(vals, up ? '#30d158' : down ? '#ff6b6b' : '#8b93a7', hasProfit) +
-        '<div style="color:#7c8698;font-size:10px;margin-top:1px;">' +
-        (hasProfit ? 'Прибыль на руки, пунктир — безубыток' : 'Цена') + '</div>' + extra;
+        _sparkSvgM(vals, good ? '#30d158' : bad ? '#ff6b6b' : '#8b93a7', hasProfit,
+          buying && hasProfit ? first : null) +
+        '<div style="color:#7c8698;font-size:10px;margin-top:1px;">' + caption + '</div>' + extra;
     }
-    const trendBox = (hist) =>
+    const trendBox = (hist, mode) =>
       `<div style="margin-bottom:7px;padding:6px 8px;border-radius:6px;background:rgba(255,255,255,0.04);">` +
-      `<span style="color:#7c8698;font-size:10.5px;">Рынок сейчас:</span><br>${renderTrendM(hist)}</div>`;
+      `<span style="color:#7c8698;font-size:10.5px;">Рынок сейчас:</span><br>${renderTrendM(hist, mode)}</div>`;
 
     // Покупка на фиксированную сумму тратит деньги ВВЕРХ по стакану
     function walkAsksM(asks, usd) {
