@@ -2826,27 +2826,69 @@
     // опрашивает стакан раз в секунду, поэтому цены складываются в короткую
     // историю. Перед рыночным ордером направление важнее любой другой цифры:
     // если цена сползает, секунда ожидания дешевле спреда.
+    // См. пояснение у renderTrend на десктопе: график рисует ПРИБЫЛЬ, а не
+    // цену, потому что между ними стоят проход по стакану и комиссия.
+    function _sparkSvgM(vals, col, drawZero) {
+      const W = 300, H = 34, pad = 3;
+      const lo = Math.min(...vals), hi = Math.max(...vals);
+      const span = (hi - lo) || Math.max(1e-9, Math.abs(hi) || 1);
+      const xAt = i => pad + i * (W - pad * 2) / Math.max(1, vals.length - 1);
+      const yAt = v => pad + (hi - v) / span * (H - pad * 2);
+      const pts = vals.map((v, i) => xAt(i).toFixed(1) + ',' + yAt(v).toFixed(1)).join(' ');
+      const base = (H - pad).toFixed(1);
+      const area = xAt(0).toFixed(1) + ',' + base + ' ' + pts + ' ' + xAt(vals.length - 1).toFixed(1) + ',' + base;
+      let zero = '';
+      if (drawZero && lo < 0 && hi > 0) {
+        const zy = yAt(0).toFixed(1);
+        zero = '<line x1="' + pad + '" y1="' + zy + '" x2="' + (W - pad) + '" y2="' + zy +
+          '" stroke="#8b93a7" stroke-width="1" stroke-dasharray="4 3" opacity="0.85"/>';
+      }
+      const ex = xAt(vals.length - 1).toFixed(1), ey = yAt(vals[vals.length - 1]);
+      return '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" ' +
+        'style="width:100%;height:' + H + 'px;display:block;margin-top:3px;">' +
+        '<polygon points="' + area + '" fill="' + col + '" opacity="0.13"/>' + zero +
+        '<polyline points="' + pts + '" fill="none" stroke="' + col + '" stroke-width="1.6" ' +
+        'stroke-linejoin="round" stroke-linecap="round"/>' +
+        '<line x1="' + ex + '" y1="' + (ey - 4).toFixed(1) + '" x2="' + ex + '" y2="' + (ey + 4).toFixed(1) +
+        '" stroke="' + col + '" stroke-width="2.4"/></svg>';
+    }
+
     function renderTrendM(hist) {
       if (!hist || hist.length < 2) return '<span style="color:#7c8698;">жду второй замер…</span>';
-      const now = hist[hist.length - 1].p, first = hist[0].p;
-      const recent = hist[Math.max(0, hist.length - 6)].p;
-      const dRecent = recent > 0 ? (now / recent - 1) * 100 : 0;
-      const dAll = first > 0 ? (now / first - 1) * 100 : 0;
+      const hasProfit = hist.every(x => Number.isFinite(x.v));
+      const vals = hist.map(x => hasProfit ? x.v : x.p);
+      const now = vals[vals.length - 1], first = vals[0];
+      const recent = vals[Math.max(0, vals.length - 6)];
       const secs = Math.round((hist[hist.length - 1].t - hist[0].t) / 1000);
-      const up = dRecent > 0.001, down = dRecent < -0.001;
+
+      const dRecent = hasProfit ? now - recent : (recent > 0 ? (now / recent - 1) * 100 : 0);
+      const dAll = hasProfit ? now - first : (first > 0 ? (now / first - 1) * 100 : 0);
+      const eps = hasProfit ? 0.005 : 0.001;
+      const up = dRecent > eps, down = dRecent < -eps;
       const col = up ? '#4ade80' : down ? '#ff6b6b' : '#7c8698';
       const arrow = up ? '\u25b2' : down ? '\u25bc' : '=';
       const word = up ? 'растёт' : down ? 'падает' : 'стоит';
-      const blocks = '\u2581\u2582\u2583\u2584\u2585\u2586\u2587\u2588';
-      const ps = hist.map(x => x.p);
-      const lo = Math.min(...ps), hi = Math.max(...ps);
-      const spark = hi > lo
-        ? ps.slice(-20).map(v => blocks[Math.min(7, Math.floor((v - lo) / (hi - lo) * 7.999))]).join('')
-        : blocks[3].repeat(Math.min(20, ps.length));
-      return `<span style="color:${col};font-weight:700;">${arrow} ${word}</span> ` +
-        `<span style="color:${col};">${dRecent >= 0 ? '+' : ''}${dRecent.toFixed(3)}%</span> ` +
-        `<span style="color:#7c8698;font-size:10.5px;">за 5с · ${dAll >= 0 ? '+' : ''}${dAll.toFixed(3)}% за ${secs}с</span><br>` +
-        `<span style="color:${col};font-family:monospace;letter-spacing:-1px;font-size:12px;">${spark}</span>`;
+      const fmt = v => hasProfit
+        ? (v >= 0 ? '+' : '−') + '$' + Math.abs(v).toFixed(2)
+        : (v >= 0 ? '+' : '') + v.toFixed(3) + '%';
+
+      let extra = '';
+      if (hasProfit) {
+        const peak = Math.max(...vals), trough = Math.min(...vals);
+        const offPeak = peak - now;
+        extra = '<div style="color:#7c8698;font-size:10px;margin-top:2px;">' +
+          'Пик: <b style="color:' + (peak >= 0 ? '#4ade80' : '#ff6b6b') + ';">' + fmt(peak) + '</b>' +
+          ' · дно: <b style="color:' + (trough >= 0 ? '#4ade80' : '#ff6b6b') + ';">' + fmt(trough) + '</b>' +
+          (offPeak > 0.005 ? ' · на $' + offPeak.toFixed(2) + ' ниже пика' : ' · на пике') +
+          '</div>';
+      }
+
+      return '<span style="color:' + col + ';font-weight:700;">' + arrow + ' ' + word + '</span> ' +
+        '<span style="color:' + col + ';">' + fmt(dRecent) + '</span> ' +
+        '<span style="color:#7c8698;font-size:10px;">за 5с · ' + fmt(dAll) + ' за ' + secs + 'с</span>' +
+        _sparkSvgM(vals, up ? '#30d158' : down ? '#ff6b6b' : '#8b93a7', hasProfit) +
+        '<div style="color:#7c8698;font-size:10px;margin-top:1px;">' +
+        (hasProfit ? 'Прибыль на руки, пунктир — безубыток' : 'Цена') + '</div>' + extra;
     }
     const trendBox = (hist) =>
       `<div style="margin-bottom:7px;padding:6px 8px;border-radius:6px;background:rgba(255,255,255,0.04);">` +
@@ -2908,7 +2950,6 @@
         try {
           const book = await cbGet(`https://api.exchange.coinbase.com/products/${pair}/book?level=2`, 900);
           const bidTop = parseFloat(book.bids?.[0]?.[0]) || 0;
-          if (bidTop > 0) { hist.push({ t: Date.now(), p: bidTop }); if (hist.length > 40) hist.shift(); }
           const w = walkBookM(book.bids, qty);
           const fee = w.gross * feePct / 100;
           const net = w.gross - fee;
@@ -2917,6 +2958,9 @@
           const slip = best > 0 ? (1 - avg / best) * 100 : 0;
           const profit = cost > 0 ? net - cost : null;
           const pct = cost > 0 ? profit / cost * 100 : null;
+          // Прибыль известна только после прохода по стакану, поэтому пишем
+          // историю здесь: график рисует именно её.
+          if (bidTop > 0) { hist.push({ t: Date.now(), p: bidTop, v: Number.isFinite(profit) ? profit : undefined }); if (hist.length > 40) hist.shift(); }
           const col = profit == null ? '#cfd6e4' : profit >= 0 ? '#4ade80' : '#ff6b6b';
           box.innerHTML = trendBox(hist) + `Средняя: <b>$${fmt(avg)}</b>` + (slip > 0.005 ? ` (просk. ${slip.toFixed(3)}%)` : '') + `<br>` +
             `Уровней стакана: <b>${w.levels}</b><br>` +
