@@ -7226,6 +7226,19 @@
     // mode: 'sell' — рисуем прибыль, вверх это хорошо, пунктир на нуле.
     //       'buy'  — рисуем среднюю цену исполнения, ХОРОШО когда ПАДАЕТ
     //                (дешевле вход), пунктир на цене в момент открытия окна.
+    // Готовность ко входу. Это НЕ вероятность прибыли: у лаборатории пока ноль
+    // закрытых сделок, связь «балл → исход» не измерена. Число отвечает на
+    // другой вопрос — кто первым станет входом, если условия продолжат
+    // сходиться. Цвет — от того, сколько условий осталось.
+    function _readyCell(item, small) {
+      const r = item && item.readiness;
+      if (!r || !Number.isFinite(r.pct)) return '<span style="color:#556;">—</span>';
+      const col = r.missing === 0 ? '#bf5af2' : r.missing === 1 ? '#4ade80' : r.missing === 2 ? '#f5c518' : '#7c8698';
+      const note = r.missing === 0 ? 'все условия' : 'нет ' + r.missing;
+      return '<span style="color:' + col + ';font-weight:700;font-size:' + (small ? '11px' : '12px') + ';">' +
+        r.pct + '%</span><br><span style="color:#667;font-size:' + (small ? '8px' : '9px') + ';">' + note + '</span>';
+    }
+
     function renderTrend(hist, mode) {
       if (!hist || hist.length < 2) {
         return '<span style="color:var(--t2);">жду второй замер…</span>';
@@ -14126,7 +14139,7 @@ Requirements:
         const price = value => value == null ? '—' : value < 0.001 ? value.toFixed(8) : value < 1 ? value.toFixed(5) : value < 100 ? value.toFixed(3) : value.toFixed(2);
         const volume = value => value >= 1e6 ? '$' + (value / 1e6).toFixed(1) + 'M' : '$' + Math.round((value || 0) / 1e3) + 'K';
         body.innerHTML = `<div style="padding:6px 8px;margin-bottom:6px;border-radius:6px;font-size:10px;line-height:1.35;background:rgba(191,90,242,.07);border:1px solid rgba(191,90,242,.24);color:#d8b4fe;">Paper-лаборатория: условия и выходы пока не подтверждены историей. Нажатие на монету подставляет её в покупку, открывает Trade и график 15m — ордер не создаётся. Telegram всегда помечает эти сигналы как «15–60 мин · Paper».</div>
-          <table class="tg-table" style="width:100%;"><thead><tr><th>COIN</th><th>SCORE</th><th>СЕТАП</th><th>RSI</th><th>ОТКАТ</th><th>VOL 24H</th></tr></thead><tbody>${rows.map(item => {
+          <table class="tg-table" style="width:100%;"><thead><tr><th>COIN</th><th>SCORE</th><th title="Насколько близко до входа: сколько условий выполнено и насколько далеко ближайшее невыполненное от своего порога. Это не вероятность прибыли — её пока не на чем считать.">ГОТОВ</th><th>СЕТАП</th><th>RSI</th><th>ОТКАТ</th><th>VOL 24H</th></tr></thead><tbody>${rows.map(item => {
             const setup = item.pass ? 'PAPER' : item.tag === 'NEAR' ? 'БЛИЗКО' : 'ЖДАТЬ';
             const color = item.pass ? '#bf5af2' : item.tag === 'NEAR' ? '#f5c518' : '#7c8698';
             const details = (item.checks || []).map(check => `${check.ok ? '✓' : '✕'} ${check.k}: ${check.v}`).join('\n')
@@ -14134,6 +14147,7 @@ Requirements:
             return `<tr style="cursor:pointer;" onclick="selectCoinForTrade('${item.coin}')" title="Выбрать ${item.coin} для покупки, открыть Trade и график 15m&#10;${details}">
               <td style="padding:6px 8px;"><span style="color:var(--blue);font-weight:700;">${item.coin}</span><br><span style="color:var(--t2);font-size:10px;">$${price(item.price)}</span></td>
               <td style="text-align:center;font-weight:800;color:${color};">${item.score}<span style="display:block;width:34px;height:3px;border-radius:2px;background:rgba(255,255,255,.08);margin:3px auto;"><i style="display:block;width:${Math.max(2, Math.min(100, item.score))}%;height:100%;border-radius:2px;background:${color};"></i></span></td>
+              <td style="text-align:center;line-height:1.2;">${_readyCell(item, false)}</td>
               <td style="text-align:center;"><span style="font-size:8px;font-weight:800;color:${color};background:${color}22;padding:2px 4px;border-radius:4px;white-space:nowrap;">${setup}</span></td>
               <td style="text-align:center;color:var(--t1);">${item.rsi ?? '—'}</td>
               <td style="text-align:center;color:${item.pullbackPct != null && item.pullbackPct <= 1.5 ? 'var(--green)' : 'var(--t2)'};">${item.pullbackPct == null ? '—' : item.pullbackPct + '%'}</td>

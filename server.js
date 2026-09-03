@@ -4637,6 +4637,51 @@ const microScalpLab = createMicroLab({
   maxEntrySpreadPct: microScalpScanner.MAX_SPREAD_PCT,
   log: message => console.log('[micro-lab] ' + message),
 });
+// Насколько монета близка ко входу. Это НЕ вероятность прибыли: связи между
+// баллом и исходом никто не измерял, у лаборатории пока ноль закрытых сделок.
+// Здесь только «сколько условий выполнено и насколько далеко ближайшее
+// невыполненное от своего порога» — величина, считаемая из живых чисел.
+//
+// Живёт в server.js намеренно: отпечаток когорты хэширует src/micro-scalp/*,
+// и правка там обнулила бы выборку, которую мы как раз копим.
+function microScalpReadiness(row) {
+  const checks = Array.isArray(row && row.checks) ? row.checks : [];
+  if (!checks.length) return null;
+  // Долю добираем только там, где у условия есть измеримый порог. У двоичных
+  // (тренд EMA, режим BTC, неизмеренный спред) частичного зачёта нет: они либо
+  // выполнены, либо нет.
+  const share = (name) => {
+    const clamp = v => Number.isFinite(v) ? Math.max(0, Math.min(0.95, v)) : 0;
+    if (name.startsWith('Liquidity')) return clamp((Number(row.vol24) || 0) / 2e6);
+    if (name.startsWith('Current 5m volume')) return clamp((Number(row.volumeX) || 0) / 0.8);
+    if (name.startsWith('Pullback')) {
+      const p = Number(row.pullbackPct);
+      if (!Number.isFinite(p)) return 0;
+      if (p < 0.10) return clamp(p / 0.10);
+      if (p > 1.50) return clamp(1.50 / p);
+      return 0;
+    }
+    if (name.startsWith('Spread')) {
+      const s = Number(row.spreadPct);
+      // Спред не измерен — это не «почти проходит», это неизвестность.
+      return Number.isFinite(s) && s > 0 ? clamp(0.20 / s) : 0;
+    }
+    return 0;
+  };
+  let credit = 0;
+  const missing = [];
+  for (const c of checks) {
+    if (c.ok) { credit += 1; continue; }
+    missing.push(c.k);
+    credit += share(String(c.k || ''));
+  }
+  return {
+    pct: Math.round(credit / checks.length * 100),
+    missing: missing.length,
+    nearest: missing.length ? missing[0] : null,
+  };
+}
+
 async function runMicroScalpScan() {
   if (microScalpScan.running || !cbVolumeCache.size) return;
   microScalpScan.running = true;
@@ -4650,6 +4695,7 @@ async function runMicroScalpScan() {
         microScalpScan.progress = total ? Math.round(done / total * 100) : 0;
       },
     });
+    for (const row of out.results) row.readiness = microScalpReadiness(row);
     microScalpScan.results = out.results;
     microScalpScan.total = out.total;
     microScalpScan.at = out.at;
