@@ -7283,9 +7283,18 @@
         r.pct + '%</span><br><span style="color:#667;font-size:' + (small ? '8px' : '9px') + ';">' + note + '</span>';
     }
 
+    // Строка постоянной высоты. Окно диалога прыгало: подписи под графиком то
+    // появлялись, то исчезали («почти стоит», «уровень вне окна», «Сейчас на
+    // пике»), а длинные переносились на вторую строку. Теперь каждая занимает
+    // ровно одну строку всегда, даже пустая.
+    function _fixedRow(text) {
+      return '<div style="color:var(--t2);font-size:11px;height:16px;line-height:16px;' +
+        'overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">' + (text || '&nbsp;') + '</div>';
+    }
+
     function renderTrend(hist, mode) {
       if (!hist || hist.length < 2) {
-        return '<span style="color:var(--t2);">жду второй замер…</span>';
+        return '<div style="min-height:124px;color:var(--t2);">жду второй замер…</div>';
       }
       const buying = mode === 'buy';
       // Величину рисуем, только если она посчитана у КАЖДОЙ точки: иначе
@@ -7334,13 +7343,13 @@
         if (moved.length >= 2 && dir) {
           const even = dom / moved.length >= 0.75;
           const quiet = moved.length * 2 <= steps.length ? ', остальное без движения' : '';
-          steady = '<div style="color:var(--t2);font-size:11px;">' + (even ? 'ровно' : 'рвано') + ' ' +
-            dom + ' из ' + moved.length + ' движений ' + dir + quiet + '</div>';
+          steady = (even ? 'ровно' : 'рвано') + ' ' +
+            dom + ' из ' + moved.length + ' движений ' + dir + quiet;
         } else if (moved.length >= 4 && dn === upn) {
           // Поровну вверх и вниз — это тоже ответ: тренда нет, ждать нечего.
-          steady = '<div style="color:var(--t2);font-size:11px;">разнонаправленно, тренда нет</div>';
+          steady = 'разнонаправленно, тренда нет';
         } else if (steps.length >= 3 && moved.length <= 1) {
-          steady = '<div style="color:var(--t2);font-size:11px;">почти стоит</div>';
+          steady = 'почти стоит';
         }
       }
 
@@ -7352,14 +7361,14 @@
         const where = overBest <= 0.005 ? 'на минимуме окна'
           : 'на ' + overBest.toFixed(3) + '% выше минимума';
         extra = _rangeBar(best, worst, now, 'дешевле', 'дороже', v => '$' + fmtPrice(v)) +
-          '<div style="color:var(--t2);font-size:10.5px;margin-top:2px;">Сейчас ' + where + '</div>';
+          _fixedRow('Сейчас ' + where);
       } else if (hasProfit) {
         const peak = Math.max(...vals), trough = Math.min(...vals);
         const offPeak = peak - now;
         const where = offPeak <= 0.005 ? 'на пике окна'
           : 'на $' + offPeak.toFixed(2) + ' ниже пика';
         extra = _rangeBar(trough, peak, now, 'хуже', 'лучше', v => (v >= 0 ? '+' : '\u2212') + '$' + Math.abs(v).toFixed(2)) +
-          '<div style="color:var(--t2);font-size:10.5px;margin-top:2px;">Сейчас ' + where + '</div>';
+          _fixedRow('Сейчас ' + where);
       }
 
       // Если опорный уровень не попал в окно, линия жмётся к краю и без
@@ -7369,12 +7378,17 @@
       const caption = buying
         ? (hasProfit ? 'Средняя цена входа, пунктир — цена на открытии окна' : 'Цена')
         : (hasProfit ? 'Прибыль на руки, пунктир — безубыток' : 'Цена');
-      return '<span style="color:' + col + ';font-weight:700;">' + arrow + ' ' + word + '</span> ' +
+      // Высота блока зафиксирована: иначе диалог дёргался на каждом тике,
+      // когда очередная подпись появлялась или исчезала.
+      return '<div style="min-height:124px;">' +
+        '<div style="height:16px;line-height:16px;overflow:hidden;white-space:nowrap;">' +
+        '<span style="color:' + col + ';font-weight:700;">' + arrow + ' ' + word + '</span> ' +
         '<span style="color:' + col + ';">' + fmt(dRecent) + '</span> ' +
-        '<span style="color:var(--t2);font-size:11px;">за 5с · ' + fmt(dAll) + ' за ' + secs + 'с</span>' +
-        _sparkSvg(vals, up ? '#30d158' : down ? '#ff6b6b' : '#8b93a7',
-          refVal) +
-        steady + '<div style="color:var(--t2);font-size:10.5px;margin-top:1px;">' + caption + (refOutside ? ' · уровень вне окна' : '') + '</div>' + extra;
+        '<span style="color:var(--t2);font-size:11px;">за 5с · ' + fmt(dAll) + ' за ' + secs + 'с</span></div>' +
+        _sparkSvg(vals, up ? '#30d158' : down ? '#ff6b6b' : '#8b93a7', refVal) +
+        _fixedRow(steady) +
+        _fixedRow(caption + (refOutside ? ' · уровень вне окна' : '')) +
+        extra + '</div>';
     }
 
     function walkAsks(asks, usd) {
