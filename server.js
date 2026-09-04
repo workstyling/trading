@@ -6343,7 +6343,14 @@ function runClaude(prompt, { timeoutMs = CLAUDE_TIMEOUT_MS, args = [] } = {}) {
     const finish = (r) => { if (!done) { done = true; resolve(r); } };
     const timer = setTimeout(() => {
       try { child.kill('SIGKILL'); } catch { }
-      finish({ ok: false, error: `claude не ответил за ${Math.round(timeoutMs / 1000)}с` });
+      // Хвост вывода кладём в ошибку: без него «не ответил» скрывает причину,
+      // а чаще всего это ожидание входа — CLI спрашивает авторизацию и ждёт.
+      const tail = (err || out).trim().slice(-300);
+      finish({
+        ok: false,
+        error: `claude не ответил за ${Math.round(timeoutMs / 1000)}с` + (tail ? ': ' + tail : ''),
+        timedOut: true, tail,
+      });
     }, timeoutMs);
     child.stdout.on('data', d => { out += d; });
     child.stderr.on('data', d => { err += d; });
@@ -6373,7 +6380,20 @@ async function claudeStatus(force) {
 }
 
 app.get('/api/claude-status', async (req, res) => {
-  res.json({ success: true, ...(await claudeStatus(req.query.fresh === '1')) });
+  const base = await claudeStatus(req.query.fresh === '1');
+  // deep=1 — настоящий крошечный запрос. `--version` отвечает и без входа,
+  // поэтому по нему нельзя отличить «установлен» от «авторизован».
+  if (req.query.deep === '1' && base.ready) {
+    const probe = await runClaude('Reply with exactly: OK',
+      { args: ['-p', '--output-format', 'json', '--model', 'sonnet'], timeoutMs: 45_000 });
+    if (!probe.ok) {
+      return res.json({ success: true, ...base, ready: false, state: 'unauthorized', error: probe.error });
+    }
+    let text = '';
+    try { text = String(JSON.parse(probe.stdout).result || '').trim(); } catch { text = String(probe.stdout || '').slice(0, 120); }
+    return res.json({ success: true, ...base, state: 'authorized', probe: text });
+  }
+  res.json({ success: true, ...base });
 });
 
 // Совет по открытой позиции. Числа берём готовыми из окна: пересчитывать их
@@ -6387,7 +6407,13 @@ app.post('/api/advise-sell', async (req, res) => {
   if (cached && Date.now() - cached.at < CLAUDE_CACHE_MS) {
     return res.json({ success: true, ...cached.data, cached: true });
   }
-  if (claudeInFlight > 0) return res.json({ success: false, error: 'уже думает над другой монетой' });
+  // Раньше здесь был мгновенный отказ, и открытое второе окно получало
+  // «уже думает над другой монетой» вместо ответа. Ждём освобождения —
+  // вызов идёт секунды, а не минуты.
+  for (let waited = 0; claudeInFlight > 0 && waited < 20_000; waited += 400) {
+    await new Promise(r => setTimeout(r, 400));
+  }
+  if (claudeInFlight > 0) return res.json({ success: false, error: 'советник занят, попробуй ещё раз' });
 
   const num = (v, d = 2) => Number.isFinite(Number(v)) ? Number(Number(v).toFixed(d)) : null;
   const gate = (scalpScan.results || []).find(r => r.coin === coin);
