@@ -7461,16 +7461,16 @@
           box.innerHTML =
             `<div style="margin-bottom:8px;padding:6px 8px;border-radius:6px;background:rgba(255,255,255,0.04);">` +
             `<span style="color:var(--t2);font-size:11px;">Рынок сейчас:</span><br>${renderTrend(hist, 'buy')}</div>` +
-            `Средняя цена исполнения: <b>$${fmtPrice(avg)}</b>` +
-            (slip > 0.005 ? ` <span style="color:var(--yellow);">(проскальзывание ${slip.toFixed(3)}%)</span>` : '') + `<br>` +
+            `Средняя цена исполнения: <b>$${fmtPrice(avg)}</b><br>` +
+            '<div style="height:17px;line-height:17px;overflow:hidden;white-space:nowrap;">' + (slip > 0.005 ? '<span style="color:var(--yellow);">проскальзывание ' + slip.toFixed(3) + '%</span>' : '<span style="color:var(--t2);font-size:11px;">проскальзывания нет</span>') + '</div>' +
             `Пройдёт уровней стакана: <b>${w.levels}</b><br>` +
             `Получишь: <b>${w.qty < 1 ? w.qty.toFixed(6) : w.qty.toFixed(3)} ${coin}</b><br>` +
             `Комиссия ${feePct}%: <b>−$${fee.toFixed(2)}</b><br>` +
             `<span style="color:var(--yellow);">Дороже лимитки по bid на <b>${vsLimitPct.toFixed(2)}%</b> ≈ <b>$${(quoteSize * vsLimitPct / 100).toFixed(2)}</b></span>` +
             `<br><span style="color:var(--t2);font-size:11px;">Здесь всё вместе: спред, проход по стакану и разница комиссий ${feePct}% против ${limitFeePct}%.</span>` +
-            (w.short ? `<br><span style="color:var(--red,#ff6b6b);">Стакана не хватает на всю сумму: оценка по $${w.spent.toFixed(2)}.</span>` : '');
+            '<br>' + '<div style="height:17px;line-height:17px;overflow:hidden;white-space:nowrap;color:#ff6b6b;">' + (w.short ? 'Стакана не хватает на всю сумму: оценка по $' + w.spent.toFixed(2) : '&nbsp;') + '</div>';
         } catch {
-          box.innerHTML = '<span style="color:var(--yellow);">Стакан недоступен, цифры не обновляются.</span>';
+          box.innerHTML = '<div style="min-height:250px;color:var(--yellow);">Стакан недоступен, цифры не обновляются.</div>';
         }
       }
       await tick();
@@ -9067,8 +9067,8 @@
           box.innerHTML =
             `<div style="margin-bottom:8px;padding:6px 8px;border-radius:6px;background:rgba(255,255,255,0.04);">` +
             `<span style="color:var(--t2);font-size:11px;">Рынок сейчас:</span><br>${renderTrend(hist)}</div>` +
-            `Средняя цена исполнения: <b>$${fmtPrice(avgFill)}</b>` +
-            (slip > 0.005 ? ` <span style="color:var(--yellow);">(проскальзывание ${slip.toFixed(3)}%)</span>` : '') + `<br>` +
+            `Средняя цена исполнения: <b>$${fmtPrice(avgFill)}</b><br>` +
+            '<div style="height:17px;line-height:17px;overflow:hidden;white-space:nowrap;">' + (slip > 0.005 ? '<span style="color:var(--yellow);">проскальзывание ' + slip.toFixed(3) + '%</span>' : '<span style="color:var(--t2);font-size:11px;">проскальзывания нет</span>') + '</div>' +
             `Пройдёт уровней стакана: <b>${w.levels}</b><br>` +
             `Выручка: <b>$${w.gross.toFixed(2)}</b><br>` +
             `Комиссия ${feePct}%: <b>−$${fee.toFixed(2)}</b><br>` +
@@ -9078,9 +9078,9 @@
                 `<span style="color:${col};font-weight:700;font-size:15px;">` +
                 `${profit >= 0 ? '+' : ''}$${profit.toFixed(2)} (${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%)</span>`
               : `<span style="color:var(--t2);">Стоимость покупки неизвестна — прибыль не посчитать.</span>`) +
-            (w.short ? `<br><span style="color:var(--red,#ff6b6b);">Стакана не хватает на весь объём: оценка по ${fmtSize(w.filled)} шт.</span>` : '');
+            '<br>' + '<div style="height:17px;line-height:17px;overflow:hidden;white-space:nowrap;color:#ff6b6b;">' + (w.short ? 'Стакана не хватает на весь объём: оценка по ' + fmtSize(w.filled) + ' шт.' : '&nbsp;') + '</div>';
         } catch (e) {
-          box.innerHTML = '<span style="color:var(--yellow);">Стакан недоступен, цифры не обновляются.</span>';
+          box.innerHTML = '<div style="min-height:250px;color:var(--yellow);">Стакан недоступен, цифры не обновляются.</div>';
         }
       }
       await tick();

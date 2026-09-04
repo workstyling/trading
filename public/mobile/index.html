@@ -2474,14 +2474,14 @@
           const vsLimit = bestBid > 0
             ? ((avg * (1 + feePct / 100)) / (bestBid * (1 + limitFeePct / 100)) - 1) * 100 : 0;
           box.innerHTML = trendBox(hist, 'buy') +
-            `Средняя: <b>$${fmt(avg)}</b>` + (slip > 0.005 ? ` (просk. ${slip.toFixed(3)}%)` : '') + `<br>` +
+            `Средняя: <b>$${fmt(avg)}</b><br>` + '<div style="height:16px;line-height:16px;overflow:hidden;white-space:nowrap;">' + (slip > 0.005 ? '<span style="color:var(--yellow);">проск. ' + slip.toFixed(3) + '%</span>' : '<span style="color:#7c8698;font-size:10px;">проскальзывания нет</span>') + '</div>' +
             `Уровней стакана: <b>${w.levels}</b><br>` +
             `Получишь: <b>${w.qty < 1 ? w.qty.toFixed(6) : w.qty.toFixed(3)} ${coin}</b><br>` +
             `Комиссия ${feePct}%: <b>−$${fee.toFixed(2)}</b><br>` +
             `<span style="color:#f5c518;">Дороже лимитки на <b>${vsLimit.toFixed(2)}%</b> ≈ <b>$${(usd * vsLimit / 100).toFixed(2)}</b></span>` +
-            (w.short ? `<br><span style="color:#ff6b6b;">Стакана не хватает на всю сумму</span>` : '');
+            '<br>' + '<div style="height:16px;line-height:16px;overflow:hidden;white-space:nowrap;color:#ff6b6b;">' + (w.short ? 'Стакана не хватает на всю сумму' + '' : '&nbsp;') + '</div>';
         } catch {
-          box.innerHTML = '<span style="color:#f5c518;">Стакан недоступен</span>';
+          box.innerHTML = '<div style="min-height:230px;color:#f5c518;">Стакан недоступен</div>';
         }
       }
       await tick();
@@ -3094,15 +3094,15 @@
           // историю здесь: график рисует именно её.
           if (bidTop > 0) { hist.push({ t: Date.now(), p: bidTop, v: Number.isFinite(profit) ? profit : undefined }); if (hist.length > 40) hist.shift(); }
           const col = profit == null ? '#cfd6e4' : profit >= 0 ? '#4ade80' : '#ff6b6b';
-          box.innerHTML = trendBox(hist) + `Средняя: <b>$${fmt(avg)}</b>` + (slip > 0.005 ? ` (просk. ${slip.toFixed(3)}%)` : '') + `<br>` +
+          box.innerHTML = trendBox(hist) + `Средняя: <b>$${fmt(avg)}</b><br>` + '<div style="height:16px;line-height:16px;overflow:hidden;white-space:nowrap;">' + (slip > 0.005 ? '<span style="color:var(--yellow);">проск. ' + slip.toFixed(3) + '%</span>' : '<span style="color:#7c8698;font-size:10px;">проскальзывания нет</span>') + '</div>' +
             `Уровней стакана: <b>${w.levels}</b><br>` +
             `Выручка: <b>$${w.gross.toFixed(2)}</b> − комиссия <b>$${fee.toFixed(2)}</b><br>` +
             `На руки: <b>$${net.toFixed(2)}</b>` +
             (cost > 0 ? `<br>Потрачено: <b>$${cost.toFixed(2)}</b><br>
               <span style="color:${col};font-weight:700;font-size:15px;">${profit >= 0 ? '+' : ''}$${profit.toFixed(2)} (${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%)</span>` : '') +
-            (w.short ? `<br><span style="color:#ff6b6b;">Стакана не хватает на весь объём</span>` : '');
+            '<br>' + '<div style="height:16px;line-height:16px;overflow:hidden;white-space:nowrap;color:#ff6b6b;">' + (w.short ? 'Стакана не хватает на весь объём' + '' : '&nbsp;') + '</div>';
         } catch {
-          box.innerHTML = '<span style="color:#f5c518;">Стакан недоступен</span>';
+          box.innerHTML = '<div style="min-height:230px;color:#f5c518;">Стакан недоступен</div>';
         }
       }
       await tick();
