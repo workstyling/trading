@@ -6848,6 +6848,31 @@
       setTimeout(tick, TRADE_POLL_AT[0]);
     }
 
+    // Подсветка изменившегося значения. Объём за 30 дней обновляется сам —
+    // раз в пять минут и сразу после каждой сделки, — но молча: цифра
+    // менялась, а заметить это, не следя за ней, было нельзя.
+    //
+    // Первую отрисовку не подсвечиваем: там меняется плейсхолдер на число,
+    // а это не событие. Повторный вызов сбрасывает прошлый таймер, иначе
+    // две смены подряд погасили бы подсветку раньше срока.
+    function _flashValue(el, text) {
+      if (!el) return;
+      const prev = el.textContent;
+      if (prev === text) return;
+      el.textContent = text;
+      if (!prev || prev === '—' || prev === '\u2014') return;
+      if (el._flashTimer) clearTimeout(el._flashTimer);
+      el.style.transition = 'none';
+      el.style.color = '#4ade80';
+      el.style.textShadow = '0 0 9px rgba(74,222,128,0.6)';
+      el._flashTimer = setTimeout(() => {
+        el.style.transition = 'color .55s ease, text-shadow .55s ease';
+        el.style.color = '';
+        el.style.textShadow = '';
+        el._flashTimer = null;
+      }, 1000);
+    }
+
     async function loadVolume30d(fresh) {
       const valEl = document.getElementById('vol30Val');
       const pillEl = document.getElementById('vol30Pill');
@@ -6856,7 +6881,7 @@
         const res = await fetch('/get-volume-30d' + (fresh ? '?fresh=1' : ''));
         const data = await res.json();
         if (!data.success) return;
-        valEl.textContent = '$' + Math.round(data.totalUsd).toLocaleString('en-US');
+        _flashValue(valEl, '$' + Math.round(data.totalUsd).toLocaleString('en-US'));
         pillEl.title = `Coinbase rolling 30-day volume\nTier: ${data.feeTier || '—'}\nMaker/Taker: ${Number.isFinite(Number(data.makerFeePct)) && Number.isFinite(Number(data.takerFeePct)) ? `${Number(data.makerFeePct).toFixed(3)}/${Number(data.takerFeePct).toFixed(3)}%` : '—'}\nFees paid: ${fmtVol(data.totalFees)}`;
         const tierEl = document.getElementById('vol30Tier');
         if (tierEl) {
@@ -6866,7 +6891,7 @@
           const feeText = Number.isFinite(maker) && Number.isFinite(taker)
             ? `${maker.toFixed(3)}/${taker.toFixed(3)}%`
             : '—';
-          tierEl.textContent = tierName;
+          _flashValue(tierEl, tierName);
           tierEl.title = `M/T: ${feeText}`;
 
           // Fees come directly from Coinbase together with the rolling tier.

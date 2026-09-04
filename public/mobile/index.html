@@ -4486,6 +4486,31 @@
       setTimeout(tick, TRADE_POLL_AT_M[0]);
     }
 
+    // Подсветка изменившегося значения. Объём за 30 дней обновляется сам —
+    // раз в пять минут и сразу после каждой сделки, — но молча: цифра
+    // менялась, а заметить это, не следя за ней, было нельзя.
+    //
+    // Первую отрисовку не подсвечиваем: там меняется плейсхолдер на число,
+    // а это не событие. Повторный вызов сбрасывает прошлый таймер, иначе
+    // две смены подряд погасили бы подсветку раньше срока.
+    function _flashValueM(el, text) {
+      if (!el) return;
+      const prev = el.textContent;
+      if (prev === text) return;
+      el.textContent = text;
+      if (!prev || prev === '—' || prev === '\u2014') return;
+      if (el._flashTimer) clearTimeout(el._flashTimer);
+      el.style.transition = 'none';
+      el.style.color = '#4ade80';
+      el.style.textShadow = '0 0 9px rgba(74,222,128,0.6)';
+      el._flashTimer = setTimeout(() => {
+        el.style.transition = 'color .55s ease, text-shadow .55s ease';
+        el.style.color = '';
+        el.style.textShadow = '';
+        el._flashTimer = null;
+      }, 1000);
+    }
+
     async function loadVol30dMobile(fresh) {
       try {
         const r = await api('/get-volume-30d' + (fresh ? '?fresh=1' : ''));
@@ -4495,11 +4520,11 @@
         const tierEl = document.getElementById('mVol30Tier');
         const limitEl = document.getElementById('mLimitFee');
         const marketEl = document.getElementById('mMarketFee');
-        if (volEl) volEl.textContent = '$' + Math.round(vol).toLocaleString('en-US');
+        _flashValueM(volEl, '$' + Math.round(vol).toLocaleString('en-US'));
         const tierName = r.feeTier || '—';
         const maker = Number(r.makerFeePct);
         const taker = Number(r.takerFeePct);
-        if (tierEl) tierEl.textContent = tierName;
+        _flashValueM(tierEl, tierName);
         if (limitEl) limitEl.textContent = Number.isFinite(maker) ? maker.toFixed(3) + '%' : '—';
         if (marketEl) marketEl.textContent = Number.isFinite(taker) ? taker.toFixed(3) + '%' : '—';
         if (Number.isFinite(maker) && Number.isFinite(taker) &&
