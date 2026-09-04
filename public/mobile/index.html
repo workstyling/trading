@@ -2964,10 +2964,34 @@
         }
         const v = (j.verdict || '').toUpperCase();
         const col = v.includes('ПРОДАВАТЬ') ? '#ff6b6b' : v.includes('ЖДАТЬ') ? '#4ade80' : '#8b93a7';
-        const body = String(j.advice || '').replace(/</g, '&lt;')
-          .replace(/^ВЕРДИКТ:\s*(.+)$/m, '<b style="color:' + col + ';">ВЕРДИКТ: $1</b>')
-          .replace(/\n/g, '<br>');
-        el.innerHTML = body +
+        // Строку направления вынимаем из текста и рисуем отдельной полосой:
+        // вердикт отвечает «действовать ли», направление — «куда, по его
+        // мнению, пойдёт». Это разные вещи и уживаются друг с другом.
+        const raw = String(j.advice || '').replace(/</g, '&lt;')
+          .split(/\n/).filter(l => !/^НАПРАВЛЕНИЕ:/.test(l.trim())).join('<br>');
+        const body = raw.replace(/^ВЕРДИКТ:\s*(.+?)(<br>|$)/m,
+          '<b style="color:' + col + ';">ВЕРДИКТ: $1</b>$2');
+        let dirBand = '';
+        if (j.direction) {
+          const dc = j.direction === 'up' ? '#4ade80' : j.direction === 'down' ? '#ff6b6b' : '#8b93a7';
+          const arrow = j.direction === 'up' ? '▲' : j.direction === 'down' ? '▼' : '→';
+          const word = j.direction === 'up' ? 'ВВЕРХ' : j.direction === 'down' ? 'ВНИЗ' : 'В СТОРОНУ';
+          // Уверенность решает, насколько ярко: низкая не должна выглядеть
+          // так же убедительно, как высокая.
+          const strong = j.confidence === 'высокая';
+          const mid = j.confidence === 'средняя';
+          const why = String(j.directionText || '').replace(/</g, '&lt;')
+            .replace(/^.*?уверенность\s*[·-]?\s*/i, '').trim();
+          dirBand = '<div style="margin-top:6px;padding:5px 8px;border-radius:5px;' +
+            'background:' + dc + (strong ? '26' : mid ? '18' : '10') + ';' +
+            'border:1px solid ' + dc + (strong ? '99' : mid ? '66' : '3a') + ';">' +
+            '<b style="color:' + dc + ';font-size:' + (strong ? '13px' : '12px') + ';">' +
+            arrow + ' ' + word + '</b>' +
+            '<span style="color:#8b93a7;font-size:10.5px;"> · уверенность ' + (j.confidence || 'низкая') + '</span>' +
+            (why ? '<div style="color:#98a0b3;font-size:10.5px;margin-top:2px;">' + why + '</div>' : '') +
+            '</div>';
+        }
+        el.innerHTML = body + dirBand +
           '<div style="color:#667;font-size:10px;margin-top:4px;">' +
           'Это мнение по снимку секунд, а не измеренное преимущество. Решение твоё.</div>';
       } catch (e) {

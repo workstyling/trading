@@ -6539,11 +6539,19 @@ app.post('/api/advise-sell', async (req, res) => {
       'ВЕРДИКТ: <ЖДАТЬ|ПОКУПАТЬ|НЕТ ОСНОВАНИЙ>',
       'ПОЧЕМУ: <one sentence, max 25 words, citing a number from the facts>',
       'РИСК: <one sentence, max 20 words, what would make this wrong>',
+      'НАПРАВЛЕНИЕ: <ВВЕРХ|ВНИЗ|В СТОРОНУ> · <низкая|средняя|высокая> уверенность · <one short clause, max 12 words>',
       '',
       'Rules:',
       '- These facts are a snapshot of seconds. They carry no predictive power on their own.',
       '- If the numbers do not support either action, answer НЕТ ОСНОВАНИЙ. That is a valid, expected answer.',
       '- Never invent a probability, a win rate, or a price target. Cite only what is given.',
+      '- НАПРАВЛЕНИЕ is your own lean and is REQUIRED even when the verdict is НЕТ ОСНОВАНИЙ.',
+      '  Base it on THIS COIN lastMinute movement first. marketRegime (BTC) may only raise or',
+      '  lower your confidence -- it must never flip or flatten the direction the coin itself shows.',
+      '  If lastMinute has any non-zero move, В СТОРОНУ is the wrong answer: follow that move.',
+      '  Use В СТОРОНУ only when the coin itself did not move at all in the window.',
+      '  State confidence honestly: on a snapshot of seconds it is almost always низкая.',
+      '  A lean with низкая confidence is what is being asked for; refusing to lean is not.',
       '- Both gates are UNVALIDATED experiments. A passing gate is not evidence the trade works;',
       '  an unmet condition is a concrete reason the setup this system looks for is absent.',
       '- overpayPct against a limit order is a certain cost, unlike any expected gain. Weigh it as such.',
@@ -6554,11 +6562,19 @@ app.post('/api/advise-sell', async (req, res) => {
       'ВЕРДИКТ: <ЖДАТЬ|ПРОДАВАТЬ|НЕТ ОСНОВАНИЙ>',
       'ПОЧЕМУ: <one sentence, max 25 words, citing a number from the facts>',
       'РИСК: <one sentence, max 20 words, what would make this wrong>',
+      'НАПРАВЛЕНИЕ: <ВВЕРХ|ВНИЗ|В СТОРОНУ> · <низкая|средняя|высокая> уверенность · <one short clause, max 12 words>',
       '',
       'Rules:',
       '- These facts are a snapshot of seconds. They carry no predictive power on their own.',
       '- If the numbers do not support either action, answer НЕТ ОСНОВАНИЙ. That is a valid, expected answer.',
       '- Never invent a probability, a win rate, or a price target. Cite only what is given.',
+      '- НАПРАВЛЕНИЕ is your own lean and is REQUIRED even when the verdict is НЕТ ОСНОВАНИЙ.',
+      '  Base it on THIS COIN lastMinute movement first. marketRegime (BTC) may only raise or',
+      '  lower your confidence -- it must never flip or flatten the direction the coin itself shows.',
+      '  If lastMinute has any non-zero move, В СТОРОНУ is the wrong answer: follow that move.',
+      '  Use В СТОРОНУ only when the coin itself did not move at all in the window.',
+      '  State confidence honestly: on a snapshot of seconds it is almost always низкая.',
+      '  A lean with низкая confidence is what is being asked for; refusing to lean is not.',
       '- The structural gate is about ENTRIES over 2-6 hours; it says nothing about exiting an existing position.',
     ])
     .concat(['', 'Facts:', JSON.stringify(facts, null, 1)])
@@ -6575,7 +6591,23 @@ app.post('/api/advise-sell', async (req, res) => {
     } catch { text = String(r.stdout || '').trim().slice(0, 800); }
     if (!text) return res.json({ success: false, error: 'пустой ответ' });
     const verdict = (text.match(/ВЕРДИКТ:\s*([^\n]+)/) || [])[1] || null;
-    const data = { advice: text.slice(0, 800), verdict: verdict ? verdict.trim() : null, at: Date.now() };
+    // Направление вынимаем отдельно: интерфейс красит его само, а вердикт и
+    // направление могут расходиться — «нет оснований действовать» вполне
+    // уживается с «склоняюсь, что пойдёт вниз».
+    const dirLine = (text.match(/НАПРАВЛЕНИЕ:\s*([^\n]+)/) || [])[1] || null;
+    const dir = dirLine
+      ? (/ВВЕРХ/i.test(dirLine) ? 'up' : /ВНИЗ/i.test(dirLine) ? 'down' : 'flat')
+      : null;
+    const conf = dirLine
+      ? (/высок/i.test(dirLine) ? 'высокая' : /средн/i.test(dirLine) ? 'средняя' : 'низкая')
+      : null;
+    const data = {
+      advice: text.slice(0, 800),
+      verdict: verdict ? verdict.trim() : null,
+      direction: dir, confidence: conf,
+      directionText: dirLine ? dirLine.trim() : null,
+      at: Date.now(),
+    };
     claudeAdviceCache.set(cacheKey, { at: Date.now(), data });
     res.json({ success: true, ...data });
   } catch (e) {
