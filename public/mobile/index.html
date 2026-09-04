@@ -2949,30 +2949,96 @@
     // Совет Claude по открытой позиции. Зовём ОДИН раз при открытии окна:
     // ответ идёт пару секунд, а числа в окне живут своей жизнью каждую
     // секунду — поэтому блок совета отдельный, тик его не перерисовывает.
-    // Совет Claude по позиции. Обновляется, пока окно открыто: за минуту
-    // картина меняется, и вердикт, снятый на первой секунде, к моменту нажатия
-    // может описывать другой рынок.
+    // Совет Claude по позиции. Обновляется, пока окно открыто, и КОПИТ историю:
+    // один вердикт — это снимок, а несколько подряд показывают, куда мнение
+    // дрейфует. Плюс обратный отсчёт, чтобы было видно, когда ждать следующий.
     //
     // Первый запрос НЕ на первом тике: там история пуста, и советник видел
-    // «движения нет» даже когда график уже шёл вверх. Ждём, пока наберётся
-    // окно, и только потом спрашиваем.
-    const CLAUDE_FIRST_MSM = 7000;    // накопить окно
-    const CLAUDE_EVERY_MSM = 20000;   // обновлять
-    const CLAUDE_MAX_ASKSM = 15;      // потолок: пять минут, дальше не тратим квоту
+    // «движения нет» даже когда график уже шёл вверх.
+    const CLAUDE_FIRST_MSM = 7000;
+    const CLAUDE_EVERY_MSM = 20000;
+    const CLAUDE_MAX_ASKSM = 15;      // потолок ~5 минут, дальше квоту не тратим
+    const CLAUDE_LOG_KEEPM = 8;
 
     function startClaudeAdviceM(elId, getPayload) {
       const el = document.getElementById(elId);
       if (!el) return () => { };
-      let asks = 0, stopped = false, timer = null, lastAt = 0;
-      const stamp = () => lastAt
-        ? '<span style="color:#667;font-size:9.5px;"> · обновлено ' +
-          Math.max(0, Math.round((Date.now() - lastAt) / 1000)) + 'с назад</span>'
-        : '';
-      el.innerHTML = '<span style="color:#8b93a7;">Claude смотрит на позицию…</span>';
+      let asks = 0, stopped = false, timer = null, tick1s = null;
+      let cur = null, curAt = 0, nextAt = 0, err = null;
+      const log = [];   // {at, verdict, direction, confidence}
+
+      const two = n => String(n).padStart(2, '0');
+      const hhmm = t => { const d = new Date(t); return two(d.getHours()) + ':' + two(d.getMinutes()) + ':' + two(d.getSeconds()); };
+      const dirMeta = d => d === 'up' ? ['#4ade80', '▲', 'ВВЕРХ']
+        : d === 'down' ? ['#ff6b6b', '▼', 'ВНИЗ'] : ['#8b93a7', '→', 'В СТОРОНУ'];
+
+      function render() {
+        if (stopped || !el) return;
+        if (!cur && !err) {
+          el.innerHTML = '<span style="color:#8b93a7;">Claude смотрит на позицию… ' +
+            (nextAt ? 'первый разбор через ' + Math.max(0, Math.ceil((nextAt - Date.now()) / 1000)) + 'с' : '') + '</span>';
+          return;
+        }
+        let head = '';
+        if (err) {
+          head = '<span style="color:#8b93a7;">Совет недоступен: ' + String(err).replace(/</g, '&lt;') + '</span>';
+        } else {
+          const v = (cur.verdict || '').toUpperCase();
+          const col = v.includes('ПРОДАВАТЬ') ? '#ff6b6b' : v.includes('ЖДАТЬ') ? '#4ade80' : '#8b93a7';
+          const raw = String(cur.advice || '').replace(/</g, '&lt;')
+            .split(/\n/).filter(l => !/^НАПРАВЛЕНИЕ:/.test(l.trim())).join('<br>');
+          head = raw.replace(/^ВЕРДИКТ:\s*(.+?)(<br>|$)/m, '<b style="color:' + col + ';">ВЕРДИКТ: $1</b>$2');
+          if (cur.direction) {
+            const [dc, arrow, word] = dirMeta(cur.direction);
+            const strong = cur.confidence === 'высокая', mid = cur.confidence === 'средняя';
+            const why = String(cur.directionText || '').replace(/</g, '&lt;')
+              .replace(/^.*?уверенность\s*[·-]?\s*/i, '').trim();
+            head += '<div style="margin-top:6px;padding:5px 8px;border-radius:5px;background:' + dc +
+              (strong ? '26' : mid ? '18' : '10') + ';border:1px solid ' + dc + (strong ? '99' : mid ? '66' : '3a') + ';">' +
+              '<b style="color:' + dc + ';font-size:' + (strong ? '13px' : '12px') + ';">' + arrow + ' ' + word + '</b>' +
+              '<span style="color:#8b93a7;font-size:10.5px;"> · уверенность ' + (cur.confidence || 'низкая') + '</span>' +
+              (why ? '<div style="color:#98a0b3;font-size:10.5px;margin-top:2px;">' + why + '</div>' : '') + '</div>';
+          }
+        }
+
+        // Свод: куда клонило за всё время окна. Одна строка вместо перечитывания
+        // всех вердиктов подряд.
+        let sum = '';
+        if (log.length) {
+          const up = log.filter(x => x.direction === 'up').length;
+          const dn = log.filter(x => x.direction === 'down').length;
+          const fl = log.length - up - dn;
+          sum = '<div style="margin-top:6px;color:#8b93a7;font-size:10.5px;">Разборов: <b>' + log.length + '</b>' +
+            ' · <span style="color:#4ade80;">▲' + up + '</span>' +
+            ' <span style="color:#ff6b6b;">▼' + dn + '</span>' +
+            ' <span style="color:#8b93a7;">→' + fl + '</span></div>';
+        }
+
+        // История: высота зафиксирована, чтобы окно не росло с каждым разбором.
+        const rows = log.slice(-CLAUDE_LOG_KEEPM).reverse().map((x, i) => {
+          const [dc, arrow] = dirMeta(x.direction);
+          return '<div style="color:' + (i === 0 ? '#c8cfdd' : '#7c8698') + ';font-size:10px;line-height:14px;white-space:nowrap;overflow:hidden;">' +
+            hhmm(x.at) + ' <span style="color:' + dc + ';">' + arrow + '</span> ' +
+            (x.verdict || '—') + '</div>';
+        }).join('');
+        const hist = '<div style="margin-top:4px;height:58px;overflow-y:auto;border-top:1px solid rgba(255,255,255,0.07);padding-top:3px;">' +
+          (rows || '<div style="color:#667;font-size:10px;line-height:14px;">история появится после первого разбора</div>') + '</div>';
+
+        const secsAgo = curAt ? Math.max(0, Math.round((Date.now() - curAt) / 1000)) : null;
+        const left = nextAt ? Math.max(0, Math.ceil((nextAt - Date.now()) / 1000)) : null;
+        const done = asks >= CLAUDE_MAX_ASKSM;
+        const foot = '<div style="color:#667;font-size:10px;margin-top:3px;">' +
+          'Мнение по снимку секунд, а не измеренное преимущество. Решение твоё.' +
+          (secsAgo != null ? ' · снят ' + secsAgo + 'с назад' : '') +
+          (done ? ' · разборы остановлены' : left != null ? ' · следующий через ' + left + 'с' : '') +
+          '</div>';
+        el.innerHTML = head + sum + hist + foot;
+      }
 
       const ask = async () => {
-        if (stopped || asks >= CLAUDE_MAX_ASKSM) return;
+        if (stopped || asks >= CLAUDE_MAX_ASKSM) { nextAt = 0; render(); return; }
         asks++;
+        nextAt = Date.now() + CLAUDE_EVERY_MSM;
         try {
           const r = await fetch('/api/advise-sell', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -2981,44 +3047,19 @@
           if (stopped) return;
           const j = await r.json();
           if (stopped) return;
-          if (!j.success) {
-            el.innerHTML = '<span style="color:#8b93a7;">Совет недоступен: ' +
-              String(j.error || 'ошибка').replace(/</g, '&lt;') + '</span>';
-            return;
-          }
-          lastAt = Date.now();
-          const v = (j.verdict || '').toUpperCase();
-          const col = v.includes('ПРОДАВАТЬ') ? '#ff6b6b' : v.includes('ЖДАТЬ') ? '#4ade80' : '#8b93a7';
-          const raw = String(j.advice || '').replace(/</g, '&lt;')
-            .split(/\n/).filter(l => !/^НАПРАВЛЕНИЕ:/.test(l.trim())).join('<br>');
-          const body = raw.replace(/^ВЕРДИКТ:\s*(.+?)(<br>|$)/m,
-            '<b style="color:' + col + ';">ВЕРДИКТ: $1</b>$2');
-          let dirBand = '';
-          if (j.direction) {
-            const dc = j.direction === 'up' ? '#4ade80' : j.direction === 'down' ? '#ff6b6b' : '#8b93a7';
-            const arrow = j.direction === 'up' ? '▲' : j.direction === 'down' ? '▼' : '→';
-            const word = j.direction === 'up' ? 'ВВЕРХ' : j.direction === 'down' ? 'ВНИЗ' : 'В СТОРОНУ';
-            const strong = j.confidence === 'высокая';
-            const mid = j.confidence === 'средняя';
-            const why = String(j.directionText || '').replace(/</g, '&lt;')
-              .replace(/^.*?уверенность\s*[·-]?\s*/i, '').trim();
-            dirBand = '<div style="margin-top:6px;padding:5px 8px;border-radius:5px;' +
-              'background:' + dc + (strong ? '26' : mid ? '18' : '10') + ';' +
-              'border:1px solid ' + dc + (strong ? '99' : mid ? '66' : '3a') + ';">' +
-              '<b style="color:' + dc + ';font-size:' + (strong ? '13px' : '12px') + ';">' +
-              arrow + ' ' + word + '</b>' +
-              '<span style="color:#8b93a7;font-size:10.5px;"> · уверенность ' + (j.confidence || 'низкая') + '</span>' +
-              (why ? '<div style="color:#98a0b3;font-size:10.5px;margin-top:2px;">' + why + '</div>' : '') +
-              '</div>';
-          }
-          el.innerHTML = body + dirBand +
-            '<div style="color:#667;font-size:10px;margin-top:4px;">' +
-            'Мнение по снимку секунд, а не измеренное преимущество. Решение твоё.' + stamp() + '</div>';
+          if (!j.success) { err = j.error || 'ошибка'; render(); return; }
+          err = null; cur = j; curAt = Date.now();
+          log.push({ at: curAt, verdict: j.verdict, direction: j.direction, confidence: j.confidence });
+          if (log.length > 40) log.shift();
+          render();
         } catch (e) {
-          if (!stopped) el.innerHTML = '<span style="color:#8b93a7;">Совет недоступен: ' + e.message + '</span>';
+          if (!stopped) { err = e.message; render(); }
         }
       };
 
+      nextAt = Date.now() + CLAUDE_FIRST_MSM;
+      render();
+      tick1s = setInterval(render, 1000);
       const first = setTimeout(() => {
         ask();
         timer = setInterval(ask, CLAUDE_EVERY_MSM);
@@ -3028,6 +3069,7 @@
         stopped = true;
         clearTimeout(first);
         if (timer) clearInterval(timer);
+        if (tick1s) clearInterval(tick1s);
       };
     }
 
