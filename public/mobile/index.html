@@ -1394,44 +1394,65 @@
     .mon-sell-btn.ask { background: rgba(244,211,94,0.06) !important; }
     .mon-sell-btn.all { background: rgba(238,82,83,0.08) !important; border-color: rgba(238,82,83,0.4) !important; }
 
-    /* Одна торговая лента: на телефоне не переносим BUY, цену и глубину
-       стакана в разные строки — вся последовательность прокручивается
-       горизонтально, сохраняя размер кнопок для касания. */
+    /* Телефон: торговая панель читается сверху вниз, без боковой прокрутки.
+       Сначала пара и цены, затем размер, уровень стакана, кнопки и Chart.
+       Так все действия остаются доступны даже на самом узком экране. */
     .trade-one-line-scroll {
-      overflow-x: auto;
-      -webkit-overflow-scrolling: touch;
-      margin-bottom: 12px;
-      scrollbar-width: thin;
+      overflow: visible;
+      margin-bottom: 0;
     }
     .trade-one-line {
       display: flex;
-      align-items: center;
-      gap: 8px;
-      min-width: max-content;
-      padding-bottom: 2px;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 10px;
+      min-width: 0;
+      padding-bottom: 0;
     }
     .trade-one-line .trade-coin,
     .trade-one-line .trade-amount,
     .trade-one-line .trade-actions {
+      width: 100%;
       flex: 0 0 auto;
       margin: 0 !important;
     }
-    .trade-one-line .coin-prices { flex: 0 0 auto; }
+    .trade-one-line .trade-coin {
+      flex-wrap: wrap;
+      gap: 8px 10px;
+    }
+    .trade-one-line .coin-prices {
+      flex: 1 1 150px;
+      min-width: 0;
+      gap: 10px;
+    }
+    .trade-one-line .coin-price-box { min-width: 0; }
+    .trade-one-line .coin-price-val {
+      font-size: clamp(11px, 3.6vw, 14px);
+      white-space: nowrap;
+    }
+    .trade-one-line .trade-amount {
+      justify-content: flex-start;
+      gap: 8px;
+    }
+    .trade-one-line .trade-amount > span:last-child {
+      margin-left: auto;
+      white-space: nowrap;
+    }
     .trade-one-line .amt-input {
       flex: 0 0 58px;
       width: 58px;
       min-width: 58px;
       padding: 8px;
     }
-    .trade-one-line .trade-actions { gap: 6px; }
+    .trade-one-line .trade-actions { gap: 8px; }
     .trade-one-line .trade-btn {
-      flex: 0 0 auto;
-      min-width: 76px;
-      padding: 10px 14px;
+      flex: 1 1 0;
+      min-width: 0;
+      padding: 12px 10px;
     }
     .trade-chart-btn {
+      width: 100%;
       flex: 0 0 auto;
-      width: auto;
       padding: 10px 12px;
       border: 1px solid rgba(76,201,240,0.35);
       border-radius: var(--r1);
@@ -1455,6 +1476,7 @@
         </svg>
         CSL
       </h1>
+      <span id="claudeDotM" title="Статус Claude Code на сервере" style="font-size:9px;font-weight:600;color:#667;cursor:help;white-space:nowrap;">○ Claude</span>
     </div>
     <a href="/" style="padding:3px 8px;border:1px solid var(--blue);border-radius:5px;color:var(--blue);font-size:10px;font-weight:600;text-decoration:none;">Desktop</a>
     <span class="header-balance" id="headerBalance">$0.00</span>
@@ -1469,7 +1491,6 @@
 
   <!-- Tabs -->
   <div class="tabs">
-    <span id="claudeDotM" title="Статус Claude Code на сервере" style="font-size:9px;font-weight:600;color:#667;align-self:center;padding:0 6px;white-space:nowrap;">○</span>
     <button class="tab active" data-tab="trade">Trade</button>
     <button class="tab" data-tab="orders">Orders</button>
     <button class="tab" data-tab="volume">📊 Volume</button>
@@ -1529,7 +1550,7 @@
         <button onclick="toggleTVChartMobile()" id="tvChartToggleBtnM" class="trade-chart-btn">📈 Chart (15m)</button>
       </div>
     </div>
-    <div id="buyDepthInfoM" style="font-size:10px;color:var(--t2);margin:8px 0 12px;display:flex;gap:10px;align-items:center;flex-wrap:nowrap;height:15px;overflow:hidden;white-space:nowrap;"></div>
+    <div id="buyDepthInfoM" style="font-size:10px;color:var(--t2);margin:8px 0 12px;display:flex;gap:4px 10px;align-items:center;flex-wrap:wrap;min-height:15px;white-space:normal;overflow-wrap:anywhere;"></div>
     <div class="trade-actions" style="margin-top: 10px; display: none !important; gap: 8px;">
       <input type="text" class="limit-input" id="limitPrice" placeholder="Limit price..." autocomplete="off" style="flex: 1;">
       <button class="btn-limit" onclick="executeBuyLimit()" style="flex: 1;">Buy Limit</button>
