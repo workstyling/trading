@@ -9105,6 +9105,14 @@
           if (timer) { clearInterval(timer); timer = null; }
           overlay.remove();
           showCustomAlert(`${coin}: продано по рынку`);
+          // Ордер продажи тоже кладём в таблицу. Покупка это делала, продажа
+          // нет — и группа монеты оставалась без своей продажи: круг сделки не
+          // замыкался, прибыль по нему не считалась, Save Profit не включался.
+          if (j.orderId && !selectedOrders.includes(j.orderId)) {
+            selectedOrders.push(j.orderId);
+            safeStorage.setItem(SELECTED_ORDERS_KEY, JSON.stringify(selectedOrders));
+            saveSelectedToServer();
+          }
           refreshAfterTrade(j.orderId);
         } catch (e) {
           showCustomAlert('Ошибка: ' + e.message, true);
@@ -9200,6 +9208,13 @@
             const data = await res.json();
             if (data.success) {
               showCustomAlert('Limit sell order created!');
+              // Та же причина: без ордера продажи в группе круг не замыкается.
+              const limitSellId = data.order_id || (data.order && data.order.order_id);
+              if (limitSellId && !selectedOrders.includes(limitSellId)) {
+                selectedOrders.push(limitSellId);
+                safeStorage.setItem(SELECTED_ORDERS_KEY, JSON.stringify(selectedOrders));
+                saveSelectedToServer();
+              }
               await loadLatestOrders();
               loadUsdBalance();
               loadVolume30d(true);

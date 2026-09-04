@@ -3118,6 +3118,11 @@
           if (timer) { clearInterval(timer); timer = null; }
           ov.remove();
           toast('Продано по рынку');
+          // Как на десктопе: без ордера продажи круг сделки не замыкается.
+          if (r.orderId && !selectedOrders.includes(r.orderId)) {
+            selectedOrders.push(r.orderId);
+            saveSelectedToServer();
+          }
           refreshAfterTradeM(r.orderId);
         } else {
           toast((r && r.error) || 'Не удалось', 'error');
