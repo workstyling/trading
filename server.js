@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const crypto = require('crypto');
 const { RESTClient } = require('./cb/dist/rest/index.js');
 const predictor = require('./src/predictor');
@@ -6301,6 +6302,145 @@ setInterval(async () => {
     console.log('[micro-scalp-watch] sent ' + candidate.pair + ', paperOnly=true');
   } catch (error) { console.error('[micro-scalp-watch]', error.message); }
 }, 60_000);
+
+// ══════════════════════════════════════════════════════════════════
+// ═══ СОВЕТНИК: Claude Code CLI по подписке ═══
+// ══════════════════════════════════════════════════════════════════
+//
+// Зовём установленный на сервере `claude -p`. Ключей нигде не храним:
+// авторизация — это сессия подписки, созданная один раз через `claude login`.
+//
+// ANTHROPIC_API_KEY из окружения дочернего процесса ВЫРЕЗАЕМ намеренно: если
+// переменная где-то появится, CLI молча переключится на потокенную оплату, и
+// узнали бы мы об этом по счёту, а не по поведению.
+const { spawn } = require('child_process');
+const CLAUDE_BIN = process.env.CLAUDE_BIN || 'claude';
+const CLAUDE_TIMEOUT_MS = 60_000;
+const CLAUDE_CACHE_MS = 60_000;      // повторное открытие окна по той же монете
+let claudeInFlight = 0;              // одновременно пускаем только один вызов
+const claudeAdviceCache = new Map(); // coin -> { at, data }
+let claudeStatusCache = { at: 0, data: null };
+
+function runClaude(prompt, { timeoutMs = CLAUDE_TIMEOUT_MS, args = [] } = {}) {
+  return new Promise((resolve) => {
+    const env = { ...process.env };
+    delete env.ANTHROPIC_API_KEY;      // только подписка, см. выше
+    delete env.ANTHROPIC_AUTH_TOKEN;
+    let child;
+    try {
+      child = spawn(CLAUDE_BIN, args, {
+        // Пустой каталог: CLI не должен видеть ни репозиторий, ни CLAUDE.md —
+        // и контекст меньше, и читать ему тут нечего.
+        cwd: os.tmpdir(),
+        env,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        shell: false,                  // аргументы массивом: подстановки нет
+      });
+    } catch (e) {
+      return resolve({ ok: false, error: 'не удалось запустить claude: ' + e.message });
+    }
+    let out = '', err = '', done = false;
+    const finish = (r) => { if (!done) { done = true; resolve(r); } };
+    const timer = setTimeout(() => {
+      try { child.kill('SIGKILL'); } catch { }
+      finish({ ok: false, error: `claude не ответил за ${Math.round(timeoutMs / 1000)}с` });
+    }, timeoutMs);
+    child.stdout.on('data', d => { out += d; });
+    child.stderr.on('data', d => { err += d; });
+    child.on('error', (e) => {
+      clearTimeout(timer);
+      finish({ ok: false, error: e.code === 'ENOENT' ? 'claude не установлен на сервере' : e.message });
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      if (code !== 0) return finish({ ok: false, error: (err.trim() || `claude вышел с кодом ${code}`).slice(0, 300) });
+      finish({ ok: true, stdout: out });
+    });
+    if (prompt != null) { try { child.stdin.write(prompt); } catch { } }
+    try { child.stdin.end(); } catch { }
+  });
+}
+
+async function claudeStatus(force) {
+  const now = Date.now();
+  if (!force && claudeStatusCache.data && now - claudeStatusCache.at < 30_000) return claudeStatusCache.data;
+  const r = await runClaude(null, { args: ['--version'], timeoutMs: 15_000 });
+  const data = r.ok
+    ? { ready: true, state: 'ready', version: String(r.stdout || '').trim().slice(0, 60) }
+    : { ready: false, state: /не установлен/.test(r.error) ? 'absent' : 'error', error: r.error };
+  claudeStatusCache = { at: now, data };
+  return data;
+}
+
+app.get('/api/claude-status', async (req, res) => {
+  res.json({ success: true, ...(await claudeStatus(req.query.fresh === '1')) });
+});
+
+// Совет по открытой позиции. Числа берём готовыми из окна: пересчитывать их
+// здесь заново значило бы завести второй источник правды.
+app.post('/api/advise-sell', async (req, res) => {
+  const b = req.body || {};
+  const coin = String(b.coin || '').toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 15);
+  if (!coin) return res.status(400).json({ success: false, error: 'нет монеты' });
+
+  const cached = claudeAdviceCache.get(coin);
+  if (cached && Date.now() - cached.at < CLAUDE_CACHE_MS) {
+    return res.json({ success: true, ...cached.data, cached: true });
+  }
+  if (claudeInFlight > 0) return res.json({ success: false, error: 'уже думает над другой монетой' });
+
+  const num = (v, d = 2) => Number.isFinite(Number(v)) ? Number(Number(v).toFixed(d)) : null;
+  const gate = (scalpScan.results || []).find(r => r.coin === coin);
+  const facts = {
+    coin,
+    position: { qty: num(b.qty, 6), costUsd: num(b.cost), proceedsUsd: num(b.net), profitUsd: num(b.profit), profitPct: num(b.pct) },
+    execution: { bookLevels: num(b.levels, 0), slippagePct: num(b.slip, 3), spreadPct: num(b.spreadPct, 3) },
+    lastMinute: { direction: b.trend || null, changeUsd: num(b.trendUsd), peakUsd: num(b.peakUsd), troughUsd: num(b.troughUsd) },
+    structuralGate: gate
+      ? { score: gate.score, conditionsMet: gate.passed + '/' + (gate.checks || []).length, verdict: gate.tagOwn || gate.tag, entryAllowed: !!gate.tradeReady }
+      : 'coin is not in the current scan',
+    marketRegime: scalpScan.regime
+      ? { btcVsEma20Pct: scalpScan.regime.distPct, btc7dReturnPct: scalpScan.regime.ret7 }
+      : 'not computed yet',
+  };
+
+  const prompt = [
+    'You advise on ONE open crypto position that the owner is about to sell at market.',
+    'Answer in Russian. Reply with EXACTLY this shape and nothing else:',
+    'ВЕРДИКТ: <ЖДАТЬ|ПРОДАВАТЬ|НЕТ ОСНОВАНИЙ>',
+    'ПОЧЕМУ: <one sentence, max 25 words, citing a number from the facts>',
+    'РИСК: <one sentence, max 20 words, what would make this wrong>',
+    '',
+    'Rules:',
+    '- These facts are a snapshot of seconds. They carry no predictive power on their own.',
+    '- If the numbers do not support either action, answer НЕТ ОСНОВАНИЙ. That is a valid, expected answer.',
+    '- Never invent a probability, a win rate, or a price target. Cite only what is given.',
+    '- The structural gate is about ENTRIES over 2-6 hours; it says nothing about exiting an existing position.',
+    '',
+    'Facts:',
+    JSON.stringify(facts, null, 1),
+  ].join('\n');
+
+  claudeInFlight++;
+  try {
+    const r = await runClaude(prompt, { args: ['-p', '--output-format', 'json', '--model', 'sonnet'] });
+    if (!r.ok) return res.json({ success: false, error: r.error });
+    let text = '';
+    try {
+      const parsed = JSON.parse(r.stdout);
+      text = String(parsed.result || '').trim();
+    } catch { text = String(r.stdout || '').trim().slice(0, 800); }
+    if (!text) return res.json({ success: false, error: 'пустой ответ' });
+    const verdict = (text.match(/ВЕРДИКТ:\s*([^\n]+)/) || [])[1] || null;
+    const data = { advice: text.slice(0, 800), verdict: verdict ? verdict.trim() : null, at: Date.now() };
+    claudeAdviceCache.set(coin, { at: Date.now(), data });
+    res.json({ success: true, ...data });
+  } catch (e) {
+    res.json({ success: false, error: e.message });
+  } finally {
+    claudeInFlight--;
+  }
+});
 
 // ── Ручное открытие paper-сделки из таблицы (ведётся тем же движком) ──
 app.post('/api/paper/open', async (req, res) => {

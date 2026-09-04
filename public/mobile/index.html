@@ -1421,6 +1421,7 @@
 
   <!-- Tabs -->
   <div class="tabs">
+    <span id="claudeDotM" title="Статус Claude Code на сервере" style="font-size:9px;font-weight:600;color:#667;align-self:center;padding:0 6px;white-space:nowrap;">○</span>
     <button class="tab active" data-tab="trade">Trade</button>
     <button class="tab" data-tab="orders">Orders</button>
     <button class="tab" data-tab="volume">📊 Volume</button>
@@ -2927,6 +2928,62 @@
         'overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">' + (text || '&nbsp;') + '</div>';
     }
 
+    // Совет Claude по открытой позиции. Зовём ОДИН раз при открытии окна:
+    // ответ идёт пару секунд, а числа в окне живут своей жизнью каждую
+    // секунду — поэтому блок совета отдельный, тик его не перерисовывает.
+    async function askClaudeAdviceM(elId, payload) {
+      const el = document.getElementById(elId);
+      if (!el) return;
+      el.innerHTML = '<span style="color:#8b93a7;">Claude смотрит на позицию…</span>';
+      try {
+        const r = await fetch('/api/advise-sell', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const j = await r.json();
+        if (!j.success) {
+          el.innerHTML = '<span style="color:#8b93a7;">Совет недоступен: ' +
+            String(j.error || 'ошибка').replace(/</g, '&lt;') + '</span>';
+          return;
+        }
+        const v = (j.verdict || '').toUpperCase();
+        const col = v.includes('ПРОДАВАТЬ') ? '#ff6b6b' : v.includes('ЖДАТЬ') ? '#4ade80' : '#8b93a7';
+        const body = String(j.advice || '').replace(/</g, '&lt;')
+          .replace(/^ВЕРДИКТ:\s*(.+)$/m, '<b style="color:' + col + ';">ВЕРДИКТ: $1</b>')
+          .replace(/\n/g, '<br>');
+        el.innerHTML = body +
+          '<div style="color:#667;font-size:10px;margin-top:4px;">' +
+          'Это мнение по снимку секунд, а не измеренное преимущество. Решение твоё.</div>';
+      } catch (e) {
+        el.innerHTML = '<span style="color:#8b93a7;">Совет недоступен: ' + e.message + '</span>';
+      }
+    }
+
+    // Индикатор связи с Claude Code на сервере. Показывает фактическое
+    // состояние, а не «настроено/не настроено»: нет CLI, есть но не отвечает,
+    // готов. Опрашиваем редко — состояние меняется от установки, не от рынка.
+    async function refreshClaudeStatusM() {
+      const el = document.getElementById('claudeDotM');
+      if (!el) return;
+      try {
+        const j = await (await fetch('/api/claude-status')).json();
+        const ready = !!j.ready;
+        const col = ready ? '#4ade80' : j.state === 'absent' ? '#667' : '#f5c518';
+        const tip = ready ? ('Claude Code на сервере готов · ' + (j.version || ''))
+          : j.state === 'absent' ? 'Claude Code не установлен на сервере'
+          : ('Claude Code отвечает с ошибкой: ' + (j.error || ''));
+        el.style.color = col;
+        el.textContent = ready ? '● Claude' : '○ Claude';
+        el.title = tip;
+      } catch {
+        el.style.color = '#667';
+        el.textContent = '○ Claude';
+        el.title = 'Статус Claude недоступен';
+      }
+    }
+    setTimeout(refreshClaudeStatusM, 2500);
+    setInterval(refreshClaudeStatusM, 120000);
+
     function renderTrendM(hist, mode) {
       if (!hist || hist.length < 2) return '<div style="min-height:118px;color:#7c8698;">жду второй замер…</div>';
       const buying = mode === 'buy';
@@ -3065,6 +3122,7 @@
         <div style="font-size:13px;color:#cfd6e4;"><b>${coin}</b> — ${qty} шт., РЕАЛЬНАЯ продажа.</div>
         <div id="msWarnM"></div>
         <div id="msLiveM" style="font-size:12.5px;color:#cfd6e4;margin-top:10px;font-variant-numeric:tabular-nums;">Считаю по стакану…</div>
+        <div id="msAdviceM" style="margin-top:8px;padding:6px 8px;border-radius:6px;background:rgba(191,90,242,0.07);border:1px solid rgba(191,90,242,0.22);font-size:11px;line-height:1.4;min-height:54px;"></div>
         <div style="font-size:10.5px;color:#7c8698;margin-top:8px;">Обновляется каждую секунду. Отменить нельзя.</div>
         <div style="display:flex;gap:8px;margin-top:14px;">
           <button id="msCancelM" style="flex:1;padding:10px;border-radius:8px;border:1px solid #333;background:transparent;color:#aab;">Отмена</button>
@@ -3073,7 +3131,10 @@
       document.body.appendChild(ov);
 
       let timer = null;
-      const hist = [];   // {t, p} — история лучшего bid по тикам диалога
+      const hist = [];       // {t, p, v} — лучший bid и прибыль по тикам диалога
+      // Последний посчитанный срез: его отдаём советнику, чтобы он не считал
+      // те же числа заново и не разошёлся с тем, что видно в окне.
+      let _lastSellM = {};
       const stop = () => { if (timer) clearInterval(timer); timer = null; ov.remove(); };
 
       async function tick() {
@@ -3090,6 +3151,16 @@
           const slip = best > 0 ? (1 - avg / best) * 100 : 0;
           const profit = cost > 0 ? net - cost : null;
           const pct = cost > 0 ? profit / cost * 100 : null;
+          {
+            const vs = hist.map(x => x.v).filter(Number.isFinite);
+            _lastSellM = {
+              net, profit, pct, levels: w.levels, slip,
+              trend: vs.length > 1 ? (vs[vs.length - 1] > vs[0] ? 'растёт' : vs[vs.length - 1] < vs[0] ? 'падает' : 'стоит') : null,
+              trendUsd: vs.length > 1 ? vs[vs.length - 1] - vs[0] : null,
+              peak: vs.length ? Math.max(...vs) : null,
+              trough: vs.length ? Math.min(...vs) : null,
+            };
+          }
           // Прибыль известна только после прохода по стакану, поэтому пишем
           // историю здесь: график рисует именно её.
           if (bidTop > 0) { hist.push({ t: Date.now(), p: bidTop, v: Number.isFinite(profit) ? profit : undefined }); if (hist.length > 40) hist.shift(); }
@@ -3106,6 +3177,13 @@
         }
       }
       await tick();
+      askClaudeAdviceM('msAdviceM', {
+        coin, qty, cost,
+        net: _lastSellM.net, profit: _lastSellM.profit, pct: _lastSellM.pct,
+        levels: _lastSellM.levels, slip: _lastSellM.slip,
+        trend: _lastSellM.trend, trendUsd: _lastSellM.trendUsd,
+        peakUsd: _lastSellM.peak, troughUsd: _lastSellM.trough,
+      });
       timer = setInterval(tick, 1000);
 
       document.getElementById('msCancelM').onclick = stop;

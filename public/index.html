@@ -5977,6 +5977,7 @@
     <div class="tab-nav">
       <button class="tab-btn active" data-tab="trading" onclick="switchTab('trading')">Trading</button>
       <button class="tab-btn" data-tab="journal" onclick="switchTab('journal')">Journal 📒</button>
+      <span id="claudeDot" title="Статус Claude Code на сервере" style="margin-left:auto;align-self:center;font-size:11px;font-weight:600;color:#667;cursor:help;padding:0 10px;white-space:nowrap;">○ Claude</span>
     </div>
 
     <div id="tab-trading" class="tab-pane active">
@@ -7293,6 +7294,62 @@
       return '<div style="color:var(--t2);font-size:11px;height:16px;line-height:16px;' +
         'overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">' + (text || '&nbsp;') + '</div>';
     }
+
+    // Совет Claude по открытой позиции. Зовём ОДИН раз при открытии окна:
+    // ответ идёт пару секунд, а числа в окне живут своей жизнью каждую
+    // секунду — поэтому блок совета отдельный, тик его не перерисовывает.
+    async function askClaudeAdvice(elId, payload) {
+      const el = document.getElementById(elId);
+      if (!el) return;
+      el.innerHTML = '<span style="color:#8b93a7;">Claude смотрит на позицию…</span>';
+      try {
+        const r = await fetch('/api/advise-sell', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const j = await r.json();
+        if (!j.success) {
+          el.innerHTML = '<span style="color:#8b93a7;">Совет недоступен: ' +
+            String(j.error || 'ошибка').replace(/</g, '&lt;') + '</span>';
+          return;
+        }
+        const v = (j.verdict || '').toUpperCase();
+        const col = v.includes('ПРОДАВАТЬ') ? '#ff6b6b' : v.includes('ЖДАТЬ') ? '#4ade80' : '#8b93a7';
+        const body = String(j.advice || '').replace(/</g, '&lt;')
+          .replace(/^ВЕРДИКТ:\s*(.+)$/m, '<b style="color:' + col + ';">ВЕРДИКТ: $1</b>')
+          .replace(/\n/g, '<br>');
+        el.innerHTML = body +
+          '<div style="color:#667;font-size:10px;margin-top:4px;">' +
+          'Это мнение по снимку секунд, а не измеренное преимущество. Решение твоё.</div>';
+      } catch (e) {
+        el.innerHTML = '<span style="color:#8b93a7;">Совет недоступен: ' + e.message + '</span>';
+      }
+    }
+
+    // Индикатор связи с Claude Code на сервере. Показывает фактическое
+    // состояние, а не «настроено/не настроено»: нет CLI, есть но не отвечает,
+    // готов. Опрашиваем редко — состояние меняется от установки, не от рынка.
+    async function refreshClaudeStatus() {
+      const el = document.getElementById('claudeDot');
+      if (!el) return;
+      try {
+        const j = await (await fetch('/api/claude-status')).json();
+        const ready = !!j.ready;
+        const col = ready ? '#4ade80' : j.state === 'absent' ? '#667' : '#f5c518';
+        const tip = ready ? ('Claude Code на сервере готов · ' + (j.version || ''))
+          : j.state === 'absent' ? 'Claude Code не установлен на сервере'
+          : ('Claude Code отвечает с ошибкой: ' + (j.error || ''));
+        el.style.color = col;
+        el.textContent = ready ? '● Claude' : '○ Claude';
+        el.title = tip;
+      } catch {
+        el.style.color = '#667';
+        el.textContent = '○ Claude';
+        el.title = 'Статус Claude недоступен';
+      }
+    }
+    setTimeout(refreshClaudeStatus, 2500);
+    setInterval(refreshClaudeStatus, 120000);
 
     function renderTrend(hist, mode) {
       if (!hist || hist.length < 2) {
@@ -9029,6 +9086,7 @@
             <b>${coin}</b> — <b>${fmtSize(qty)}</b> шт., это <b>РЕАЛЬНАЯ</b> продажа.<br><br>
             <div id="msWarn"></div>
             <div id="msLive" style="font-variant-numeric:tabular-nums;">Считаю по стакану…</div>
+            <div id="msAdvice" style="margin-top:9px;padding:7px 9px;border-radius:6px;background:rgba(191,90,242,0.07);border:1px solid rgba(191,90,242,0.22);font-size:12px;line-height:1.45;min-height:58px;"></div>
             <div style="color:var(--t2);font-size:11px;margin-top:8px;">
               Цифры обновляются каждую секунду. Исполнится мгновенно, отменить нельзя.
             </div>
@@ -9042,7 +9100,10 @@
 
       const feePct = parseFloat(tradingSettings.marketFee) || 0.25;
       let timer = null;
-      const hist = [];   // {t, p} — история лучшего bid по тикам диалога
+      const hist = [];   // {t, p, v} — история лучшего bid и прибыли по тикам
+      // Последний посчитанный срез: его отдаём советнику, чтобы он не считал
+      // те же числа второй раз и не разошёлся с тем, что видно в окне.
+      let _lastSell = {};
       const stop = () => { if (timer) clearInterval(timer); timer = null; overlay.remove(); };
 
       async function tick() {
@@ -9066,6 +9127,18 @@
           const bestBid = parseFloat(book.bids?.[0]?.[0]) || 0;
           const slip = bestBid > 0 ? (1 - avgFill / bestBid) * 100 : 0;
           const col = profit == null ? 'var(--t0)' : profit >= 0 ? 'var(--green)' : 'var(--red,#ff6b6b)';
+          {
+            const vs = hist.map(x => x.v).filter(Number.isFinite);
+            _lastSell = {
+              net, profit, pct, levels: w.levels, slip,
+              spreadPct: bidTop > 0 && book.asks?.[0]?.[0]
+                ? (parseFloat(book.asks[0][0]) / bidTop - 1) * 100 : null,
+              trend: vs.length > 1 ? (vs[vs.length - 1] > vs[0] ? 'растёт' : vs[vs.length - 1] < vs[0] ? 'падает' : 'стоит') : null,
+              trendUsd: vs.length > 1 ? vs[vs.length - 1] - vs[0] : null,
+              peak: vs.length ? Math.max(...vs) : null,
+              trough: vs.length ? Math.min(...vs) : null,
+            };
+          }
           box.innerHTML =
             `<div style="margin-bottom:8px;padding:6px 8px;border-radius:6px;background:rgba(255,255,255,0.04);">` +
             `<span style="color:var(--t2);font-size:11px;">Рынок сейчас:</span><br>${renderTrend(hist)}</div>` +
@@ -9086,6 +9159,16 @@
         }
       }
       await tick();
+      // Совет спрашиваем один раз, после первого расчёта: к этому моменту
+      // уже известны и проход по стакану, и прибыль.
+      askClaudeAdvice('msAdvice', {
+        coin, qty, cost,
+        net: _lastSell.net, profit: _lastSell.profit, pct: _lastSell.pct,
+        levels: _lastSell.levels, slip: _lastSell.slip,
+        spreadPct: _lastSell.spreadPct,
+        trend: _lastSell.trend, trendUsd: _lastSell.trendUsd,
+        peakUsd: _lastSell.peak, troughUsd: _lastSell.trough,
+      });
       timer = setInterval(tick, 1000);
 
       overlay.querySelector('#msCancel').onclick = stop;
