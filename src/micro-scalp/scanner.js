@@ -158,14 +158,23 @@ async function scanMarket(volumeCache, regime, options = {}) {
     await Promise.all(batch.map(async ({ coin, volume }) => {
       const signal = await fetchMicroSignals(coin);
       if (!signal) return;
-      const quoteCandidate = signal.aboveEma9 && signal.emaStack && signal.rsiRecovery && signal.pullbackOk;
-      const spread = quoteCandidate ? await fetchSpread(`${coin}-USD`) : null;
+      // Спред меряем у ВСЕХ просканированных пар, а не только у кандидатов.
+      // Экономия одного запроса стоила правды в таблице: спред оставался
+      // неизмеренным у 14 строк из 15, и колонка готовности занижала их все,
+      // показывая «условие не выполнено» там, где оно просто не проверялось.
+      // На отбор это не влияет — пара, не прошедшая тренд, RSI или откат, всё
+      // равно не станет входом, — но теперь видно её настоящее расстояние.
+      const spread = await fetchSpread(`${coin}-USD`);
       const score = calcMicroScore(signal, volume, spread, regime);
       if (score) results.push({ coin, pair: `${coin}-USD`, price: signal.price, vol24: volume, ...score });
     }));
     scanned += batch.length;
     onProgress(scanned, universe.length);
-    await sleep(150);
+    // Запросов на пару стало два вместо одного, поэтому пауза между пачками ощутимо
+    // длиннее: у Coinbase 10 запросов в секунду на адрес, и рядом работает
+    // сканер структурного гейта. Проход тридцати пар всё равно укладывается
+    // в несколько секунд при цикле в две минуты.
+    await sleep(500);
   }
   results.sort((left, right) => right.score - left.score || left.coin.localeCompare(right.coin));
   return { results, total: universe.length, at: Date.now() };
