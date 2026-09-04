@@ -6315,7 +6315,9 @@ setInterval(async () => {
 // узнали бы мы об этом по счёту, а не по поведению.
 const { spawn } = require('child_process');
 const CLAUDE_BIN = process.env.CLAUDE_BIN || 'claude';
-const CLAUDE_TIMEOUT_MS = 60_000;
+// Авторизованный CLI отвечает за 2-4 секунды. Долгое ожидание значит не
+// «думает», а «висит», и держать окно минуту незачем.
+const CLAUDE_TIMEOUT_MS = 25_000;
 const CLAUDE_CACHE_MS = 60_000;      // повторное открытие окна по той же монете
 let claudeInFlight = 0;              // одновременно пускаем только один вызов
 const claudeAdviceCache = new Map(); // coin -> { at, data }
@@ -6346,10 +6348,15 @@ function runClaude(prompt, { timeoutMs = CLAUDE_TIMEOUT_MS, args = [] } = {}) {
       // Хвост вывода кладём в ошибку: без него «не ответил» скрывает причину,
       // а чаще всего это ожидание входа — CLI спрашивает авторизацию и ждёт.
       const tail = (err || out).trim().slice(-300);
+      // Пустой вывод при таймауте — это не «долго считает». Работающий CLI
+      // хоть что-то пишет; молчание означает, что он ждёт авторизации,
+      // которой в фоновом процессе никто не даст.
       finish({
         ok: false,
-        error: `claude не ответил за ${Math.round(timeoutMs / 1000)}с` + (tail ? ': ' + tail : ''),
-        timedOut: true, tail,
+        error: tail
+          ? `claude не ответил за ${Math.round(timeoutMs / 1000)}с: ${tail}`
+          : 'Claude Code на сервере не авторизован: зайди по SSH и выполни `claude login`',
+        timedOut: true, tail, likelyUnauthorized: !tail,
       });
     }, timeoutMs);
     child.stdout.on('data', d => { out += d; });
