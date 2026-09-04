@@ -7298,56 +7298,86 @@
     // Совет Claude по открытой позиции. Зовём ОДИН раз при открытии окна:
     // ответ идёт пару секунд, а числа в окне живут своей жизнью каждую
     // секунду — поэтому блок совета отдельный, тик его не перерисовывает.
-    async function askClaudeAdvice(elId, payload) {
+    // Совет Claude по позиции. Обновляется, пока окно открыто: за минуту
+    // картина меняется, и вердикт, снятый на первой секунде, к моменту нажатия
+    // может описывать другой рынок.
+    //
+    // Первый запрос НЕ на первом тике: там история пуста, и советник видел
+    // «движения нет» даже когда график уже шёл вверх. Ждём, пока наберётся
+    // окно, и только потом спрашиваем.
+    const CLAUDE_FIRST_MS = 7000;    // накопить окно
+    const CLAUDE_EVERY_MS = 20000;   // обновлять
+    const CLAUDE_MAX_ASKS = 15;      // потолок: пять минут, дальше не тратим квоту
+
+    function startClaudeAdvice(elId, getPayload) {
       const el = document.getElementById(elId);
-      if (!el) return;
+      if (!el) return () => { };
+      let asks = 0, stopped = false, timer = null, lastAt = 0;
+      const stamp = () => lastAt
+        ? '<span style="color:#667;font-size:9.5px;"> · обновлено ' +
+          Math.max(0, Math.round((Date.now() - lastAt) / 1000)) + 'с назад</span>'
+        : '';
       el.innerHTML = '<span style="color:#8b93a7;">Claude смотрит на позицию…</span>';
-      try {
-        const r = await fetch('/api/advise-sell', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-        const j = await r.json();
-        if (!j.success) {
-          el.innerHTML = '<span style="color:#8b93a7;">Совет недоступен: ' +
-            String(j.error || 'ошибка').replace(/</g, '&lt;') + '</span>';
-          return;
+
+      const ask = async () => {
+        if (stopped || asks >= CLAUDE_MAX_ASKS) return;
+        asks++;
+        try {
+          const r = await fetch('/api/advise-sell', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(getPayload()),
+          });
+          if (stopped) return;
+          const j = await r.json();
+          if (stopped) return;
+          if (!j.success) {
+            el.innerHTML = '<span style="color:#8b93a7;">Совет недоступен: ' +
+              String(j.error || 'ошибка').replace(/</g, '&lt;') + '</span>';
+            return;
+          }
+          lastAt = Date.now();
+          const v = (j.verdict || '').toUpperCase();
+          const col = v.includes('ПРОДАВАТЬ') ? '#ff6b6b' : v.includes('ЖДАТЬ') ? '#4ade80' : '#8b93a7';
+          const raw = String(j.advice || '').replace(/</g, '&lt;')
+            .split(/\n/).filter(l => !/^НАПРАВЛЕНИЕ:/.test(l.trim())).join('<br>');
+          const body = raw.replace(/^ВЕРДИКТ:\s*(.+?)(<br>|$)/m,
+            '<b style="color:' + col + ';">ВЕРДИКТ: $1</b>$2');
+          let dirBand = '';
+          if (j.direction) {
+            const dc = j.direction === 'up' ? '#4ade80' : j.direction === 'down' ? '#ff6b6b' : '#8b93a7';
+            const arrow = j.direction === 'up' ? '▲' : j.direction === 'down' ? '▼' : '→';
+            const word = j.direction === 'up' ? 'ВВЕРХ' : j.direction === 'down' ? 'ВНИЗ' : 'В СТОРОНУ';
+            const strong = j.confidence === 'высокая';
+            const mid = j.confidence === 'средняя';
+            const why = String(j.directionText || '').replace(/</g, '&lt;')
+              .replace(/^.*?уверенность\s*[·-]?\s*/i, '').trim();
+            dirBand = '<div style="margin-top:6px;padding:5px 8px;border-radius:5px;' +
+              'background:' + dc + (strong ? '26' : mid ? '18' : '10') + ';' +
+              'border:1px solid ' + dc + (strong ? '99' : mid ? '66' : '3a') + ';">' +
+              '<b style="color:' + dc + ';font-size:' + (strong ? '13px' : '12px') + ';">' +
+              arrow + ' ' + word + '</b>' +
+              '<span style="color:#8b93a7;font-size:10.5px;"> · уверенность ' + (j.confidence || 'низкая') + '</span>' +
+              (why ? '<div style="color:#98a0b3;font-size:10.5px;margin-top:2px;">' + why + '</div>' : '') +
+              '</div>';
+          }
+          el.innerHTML = body + dirBand +
+            '<div style="color:#667;font-size:10px;margin-top:4px;">' +
+            'Мнение по снимку секунд, а не измеренное преимущество. Решение твоё.' + stamp() + '</div>';
+        } catch (e) {
+          if (!stopped) el.innerHTML = '<span style="color:#8b93a7;">Совет недоступен: ' + e.message + '</span>';
         }
-        const v = (j.verdict || '').toUpperCase();
-        const col = v.includes('ПРОДАВАТЬ') ? '#ff6b6b' : v.includes('ЖДАТЬ') ? '#4ade80' : '#8b93a7';
-        // Строку направления вынимаем из текста и рисуем отдельной полосой:
-        // вердикт отвечает «действовать ли», направление — «куда, по его
-        // мнению, пойдёт». Это разные вещи и уживаются друг с другом.
-        const raw = String(j.advice || '').replace(/</g, '&lt;')
-          .split(/\n/).filter(l => !/^НАПРАВЛЕНИЕ:/.test(l.trim())).join('<br>');
-        const body = raw.replace(/^ВЕРДИКТ:\s*(.+?)(<br>|$)/m,
-          '<b style="color:' + col + ';">ВЕРДИКТ: $1</b>$2');
-        let dirBand = '';
-        if (j.direction) {
-          const dc = j.direction === 'up' ? '#4ade80' : j.direction === 'down' ? '#ff6b6b' : '#8b93a7';
-          const arrow = j.direction === 'up' ? '▲' : j.direction === 'down' ? '▼' : '→';
-          const word = j.direction === 'up' ? 'ВВЕРХ' : j.direction === 'down' ? 'ВНИЗ' : 'В СТОРОНУ';
-          // Уверенность решает, насколько ярко: низкая не должна выглядеть
-          // так же убедительно, как высокая.
-          const strong = j.confidence === 'высокая';
-          const mid = j.confidence === 'средняя';
-          const why = String(j.directionText || '').replace(/</g, '&lt;')
-            .replace(/^.*?уверенность\s*[·-]?\s*/i, '').trim();
-          dirBand = '<div style="margin-top:6px;padding:5px 8px;border-radius:5px;' +
-            'background:' + dc + (strong ? '26' : mid ? '18' : '10') + ';' +
-            'border:1px solid ' + dc + (strong ? '99' : mid ? '66' : '3a') + ';">' +
-            '<b style="color:' + dc + ';font-size:' + (strong ? '13px' : '12px') + ';">' +
-            arrow + ' ' + word + '</b>' +
-            '<span style="color:#8b93a7;font-size:10.5px;"> · уверенность ' + (j.confidence || 'низкая') + '</span>' +
-            (why ? '<div style="color:#98a0b3;font-size:10.5px;margin-top:2px;">' + why + '</div>' : '') +
-            '</div>';
-        }
-        el.innerHTML = body + dirBand +
-          '<div style="color:#667;font-size:10px;margin-top:4px;">' +
-          'Это мнение по снимку секунд, а не измеренное преимущество. Решение твоё.</div>';
-      } catch (e) {
-        el.innerHTML = '<span style="color:#8b93a7;">Совет недоступен: ' + e.message + '</span>';
-      }
+      };
+
+      const first = setTimeout(() => {
+        ask();
+        timer = setInterval(ask, CLAUDE_EVERY_MS);
+      }, CLAUDE_FIRST_MS);
+
+      return () => {
+        stopped = true;
+        clearTimeout(first);
+        if (timer) clearInterval(timer);
+      };
     }
 
     // Индикатор связи с Claude Code на сервере. Показывает фактическое
@@ -7534,7 +7564,10 @@
       // Последний посчитанный срез: его отдаём советнику, чтобы он видел ровно
       // те же числа, что и ты в окне.
       let _lastBuy = {};
-      const stop = () => { if (timer) clearInterval(timer); timer = null; overlay.remove(); };
+      // Обновление совета тоже надо гасить: без этого запросы к Claude
+      // продолжались бы после закрытия окна и жгли квоту впустую.
+      let stopAdvice = null;
+      const stop = () => { if (timer) clearInterval(timer); timer = null; if (stopAdvice) stopAdvice(); overlay.remove(); };
 
       async function tick() {
         const box = document.getElementById('mbLive');
@@ -7585,7 +7618,7 @@
         }
       }
       await tick();
-      askClaudeAdvice('mbAdvice', { side: 'buy', coin, ..._lastBuy });
+      stopAdvice = startClaudeAdvice('mbAdvice', () => ({ side: 'buy', coin, ..._lastBuy }));
       timer = setInterval(tick, 1000);
 
       overlay.querySelector('#mbCancel').onclick = stop;
@@ -9157,7 +9190,10 @@
       // Последний посчитанный срез: его отдаём советнику, чтобы он не считал
       // те же числа второй раз и не разошёлся с тем, что видно в окне.
       let _lastSell = {};
-      const stop = () => { if (timer) clearInterval(timer); timer = null; overlay.remove(); };
+      // Обновление совета тоже надо гасить: без этого запросы к Claude
+      // продолжались бы после закрытия окна и жгли квоту впустую.
+      let stopAdvice = null;
+      const stop = () => { if (timer) clearInterval(timer); timer = null; if (stopAdvice) stopAdvice(); overlay.remove(); };
 
       async function tick() {
         const box = document.getElementById('msLive');
@@ -9214,14 +9250,14 @@
       await tick();
       // Совет спрашиваем один раз, после первого расчёта: к этому моменту
       // уже известны и проход по стакану, и прибыль.
-      askClaudeAdvice('msAdvice', {
+      stopAdvice = startClaudeAdvice('msAdvice', () => ({
         coin, qty, cost,
         net: _lastSell.net, profit: _lastSell.profit, pct: _lastSell.pct,
         levels: _lastSell.levels, slip: _lastSell.slip,
         spreadPct: _lastSell.spreadPct,
         trend: _lastSell.trend, trendUsd: _lastSell.trendUsd,
         peakUsd: _lastSell.peak, troughUsd: _lastSell.trough,
-      });
+      }));
       timer = setInterval(tick, 1000);
 
       overlay.querySelector('#msCancel').onclick = stop;
