@@ -119,7 +119,7 @@ function ema(v, p) {
     // Формулировка менялась дважды; проверяем суть, а не точную фразу:
     // задание обязано привязать прогон к отпечатку либо честно сказать, что
     // подходящего прогона нет.
-    ok(/validation for this fingerprint|No sufficient historical validation/i.test(b),
+    ok(/validation[^.]*for this fingerprint|No historical validation for this gate code/i.test(b),
       'задание называет историческую проверку своего отпечатка');
     ok(!/Backtest over \d+ days/.test(b), 'статического эталона в задании нет');
     ok((b.match(/�/g) || []).length === 0, 'нет битых символов');

@@ -4469,7 +4469,8 @@ function scalpValidationStatus() {
   const result = found.result;
   const overall = result && result.overall;
   if (!overall) {
-    return { ready: false, state: 'missing', why: found.why, detail: found.detail || null };
+    return { ready: false, state: 'missing', why: found.why, detail: found.detail || null,
+      detailEn: found.detailEn || null };
   }
   const structuralReady = overall.avgPct > 0 && overall.profitFactor > 1 &&
     overall.positiveSegments === 3;
