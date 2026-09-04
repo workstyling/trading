@@ -4684,6 +4684,72 @@ function microScalpReadiness(row) {
   };
 }
 
+// Сила сетапа: та же картина, но взвешенная по важности, а не по числу
+// условий. Готовность отвечает «сколько осталось до входа», и там все семь
+// условий равны. Здесь другой вопрос — «насколько то, что сейчас на экране,
+// похоже на сетап, который эта стратегия ищет».
+//
+// Ядро сетапа — падение, после которого начался разворот внутри растущего
+// тренда. Оно весит 70 из 100: RSI вышел из получасового отката (30), сам
+// откат в рабочем диапазоне (20), тренд по EMA выстроен (20). Остальные
+// тридцать — издержки и фон: спред (12), ликвидность (8), объём (6), режим
+// BTC (4). Они решают, во что обойдётся вход, но сетапом не являются.
+//
+// Это НЕ вероятность прибыли: связь между силой и исходом не измерена ни разу.
+// Число говорит только одно — из того, что сейчас на рынке, вот эта монета
+// ближе других к той картине, ради которой стратегия писалась.
+//
+// Живёт в server.js, а не в src/micro-scalp/*: правка там сменила бы отпечаток
+// и обнулила набранную когорту.
+const MICRO_SETUP_WEIGHTS = {
+  'RSI 5m recovering from a 30m pullback': 30,
+  'Pullback from 30m high is 0.10%–1.50%': 20,
+  'Price above EMA9 and EMA9 above EMA21 (5m)': 20,
+  'Spread verified and <=0.20%': 12,
+  'Liquidity >= $2M': 8,
+  'Current 5m volume >= 0.8x recent average': 6,
+  'BTC above EMA20 (1h), fresh reading': 4,
+};
+
+function microScalpSetupStrength(row) {
+  const checks = Array.isArray(row && row.checks) ? row.checks : [];
+  if (!checks.length) return null;
+  // Частичный зачёт там же, где он есть у готовности: у условия должен быть
+  // измеримый порог. Двоичные либо выполнены, либо нет.
+  const partial = (name) => {
+    const clamp = v => Number.isFinite(v) ? Math.max(0, Math.min(0.9, v)) : 0;
+    if (name.startsWith('Liquidity')) return clamp((Number(row.vol24) || 0) / 2e6);
+    if (name.startsWith('Current 5m volume')) return clamp((Number(row.volumeX) || 0) / 0.8);
+    if (name.startsWith('Pullback')) {
+      const p = Number(row.pullbackPct);
+      if (!Number.isFinite(p)) return 0;
+      if (p < 0.10) return clamp(p / 0.10);
+      if (p > 1.50) return clamp(1.50 / p);
+      return 0;
+    }
+    if (name.startsWith('Spread')) {
+      const s = Number(row.spreadPct);
+      return Number.isFinite(s) && s > 0 ? clamp(0.20 / s) : 0;
+    }
+    return 0;
+  };
+  let got = 0, total = 0, core = 0, coreTotal = 0;
+  for (const c of checks) {
+    const name = String(c.k || '');
+    const w = MICRO_SETUP_WEIGHTS[name];
+    if (!w) continue;
+    const share = c.ok ? 1 : partial(name);
+    total += w;
+    got += w * share;
+    if (w >= 20) { coreTotal += w; core += w * share; }
+  }
+  if (!total) return null;
+  return {
+    pct: Math.round(got / total * 100),
+    corePct: coreTotal ? Math.round(core / coreTotal * 100) : null,
+  };
+}
+
 async function runMicroScalpScan() {
   if (microScalpScan.running || !cbVolumeCache.size) return;
   microScalpScan.running = true;
@@ -4697,7 +4763,10 @@ async function runMicroScalpScan() {
         microScalpScan.progress = total ? Math.round(done / total * 100) : 0;
       },
     });
-    for (const row of out.results) row.readiness = microScalpReadiness(row);
+    for (const row of out.results) {
+      row.readiness = microScalpReadiness(row);
+      row.setupStrength = microScalpSetupStrength(row);
+    }
     microScalpScan.results = out.results;
     microScalpScan.total = out.total;
     microScalpScan.at = out.at;
