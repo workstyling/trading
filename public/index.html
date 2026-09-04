@@ -7323,13 +7323,13 @@
 
       function render() {
         if (stopped || !el) return;
-        if (!cur && !err) {
-          el.innerHTML = '<span style="color:#8b93a7;">Claude смотрит на позицию… ' +
-            (nextAt ? 'первый разбор через ' + Math.max(0, Math.ceil((nextAt - Date.now()) / 1000)) + 'с' : '') + '</span>';
-          return;
-        }
+        // Раньше здесь был ранний возврат, и до первого разбора не было видно
+        // ни полосы, ни отсчёта — то есть ровно в момент ожидания окно молчало
+        // о том, сколько ждать. Рисуем всё целиком с самого начала.
         let head = '';
-        if (err) {
+        if (!cur && !err) {
+          head = '<span style="color:#8b93a7;">Claude смотрит на позицию…</span>';
+        } else if (err) {
           head = '<span style="color:#8b93a7;">Совет недоступен: ' + String(err).replace(/</g, '&lt;') + '</span>';
         } else {
           const v = (cur.verdict || '').toUpperCase();
@@ -7350,18 +7350,39 @@
           }
         }
 
-        // Свод: куда клонило за всё время окна. Одна строка вместо перечитывания
-        // всех вердиктов подряд.
-        let sum = '';
-        if (log.length) {
-          const up = log.filter(x => x.direction === 'up').length;
-          const dn = log.filter(x => x.direction === 'down').length;
-          const fl = log.length - up - dn;
-          sum = '<div style="margin-top:6px;color:#8b93a7;font-size:10.5px;">Разборов: <b>' + log.length + '</b>' +
-            ' · <span style="color:#4ade80;">▲' + up + '</span>' +
-            ' <span style="color:#ff6b6b;">▼' + dn + '</span>' +
-            ' <span style="color:#8b93a7;">→' + fl + '</span></div>';
-        }
+        // Свод и обратный отсчёт — не подвальным мелким шрифтом, а видимой
+        // строкой: именно их спрашивают глазами, пока окно открыто.
+        const up = log.filter(x => x.direction === 'up').length;
+        const dn = log.filter(x => x.direction === 'down').length;
+        const fl = log.length - up - dn;
+        const lead = up > dn ? '#4ade80' : dn > up ? '#ff6b6b' : '#8b93a7';
+        const pill = (c, txt) => '<span style="background:' + c + '22;color:' + c +
+          ';border:1px solid ' + c + '55;border-radius:4px;padding:1px 5px;font-weight:700;font-size:11px;">' + txt + '</span>';
+        const doneAll = asks >= CLAUDE_MAX_ASKS;
+        const leftMs = nextAt ? Math.max(0, nextAt - Date.now()) : 0;
+        const leftS = Math.ceil(leftMs / 1000);
+        // Полоса убывает к следующему запросу: число рядом отвечает «сколько»,
+        // полоса — «скоро или нет», и это читается не глядя.
+        const spanMs = log.length ? CLAUDE_EVERY_MS : CLAUDE_FIRST_MS;
+        const fillPct = doneAll ? 0 : Math.max(0, Math.min(100, leftMs / spanMs * 100));
+        const sum =
+          '<div style="margin-top:7px;display:flex;align-items:center;gap:8px;flex-wrap:nowrap;">' +
+            '<span style="color:#c8cfdd;font-size:11px;font-weight:700;white-space:nowrap;">Разборов ' + log.length + '</span>' +
+            pill('#4ade80', '▲' + up) + pill('#ff6b6b', '▼' + dn) + pill('#8b93a7', '→' + fl) +
+            (log.length ? '<span style="color:' + lead + ';font-size:10.5px;white-space:nowrap;">' +
+              (up > dn ? 'клонит вверх' : dn > up ? 'клонит вниз' : 'без перевеса') + '</span>' : '') +
+          '</div>' +
+          '<div style="margin-top:5px;display:flex;align-items:center;gap:7px;">' +
+            '<span style="flex:1;height:6px;border-radius:3px;background:rgba(255,255,255,0.10);overflow:hidden;">' +
+              '<i style="display:block;height:100%;width:' + fillPct.toFixed(1) + '%;border-radius:3px;' +
+              'background:' + (doneAll ? '#667' : '#bf5af2') + ';transition:width .9s linear;"></i>' +
+            '</span>' +
+            '<span style="color:' + (doneAll ? '#667' : '#d8b4fe') + ';font-size:11px;font-weight:700;white-space:nowrap;min-width:104px;text-align:right;">' +
+              (doneAll ? 'разборы окончены'
+                : log.length ? 'следующий через ' + leftS + 'с'
+                : 'первый через ' + leftS + 'с') +
+            '</span>' +
+          '</div>';
 
         // История: высота зафиксирована, чтобы окно не росло с каждым разбором.
         const rows = log.slice(-CLAUDE_LOG_KEEP).reverse().map((x, i) => {
@@ -7374,12 +7395,11 @@
           (rows || '<div style="color:#667;font-size:10px;line-height:14px;">история появится после первого разбора</div>') + '</div>';
 
         const secsAgo = curAt ? Math.max(0, Math.round((Date.now() - curAt) / 1000)) : null;
-        const left = nextAt ? Math.max(0, Math.ceil((nextAt - Date.now()) / 1000)) : null;
-        const done = asks >= CLAUDE_MAX_ASKS;
+        // Отсчёт переехал в видимую строку выше, здесь остаётся только
+        // оговорка и возраст текущего вердикта.
         const foot = '<div style="color:#667;font-size:10px;margin-top:3px;">' +
           'Мнение по снимку секунд, а не измеренное преимущество. Решение твоё.' +
           (secsAgo != null ? ' · снят ' + secsAgo + 'с назад' : '') +
-          (done ? ' · разборы остановлены' : left != null ? ' · следующий через ' + left + 'с' : '') +
           '</div>';
         el.innerHTML = head + sum + hist + foot;
       }
