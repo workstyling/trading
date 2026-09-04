@@ -1441,11 +1441,6 @@
       font-weight: 600;
       white-space: nowrap;
     }
-    .trade-one-line #buyDepthInfoM {
-      flex: 0 0 auto;
-      width: max-content;
-      margin: 0 !important;
-    }
   </style>
 </head>
 <body>
@@ -1532,9 +1527,9 @@
           <button class="trade-btn btn-mkt" id="btnBuyMkt" onclick="executeMarketBuy()">BUY MKT</button>
         </div>
         <button onclick="toggleTVChartMobile()" id="tvChartToggleBtnM" class="trade-chart-btn">📈 Chart (15m)</button>
-        <div id="buyDepthInfoM" style="font-size:10px;color:var(--t2);display:flex;gap:10px;align-items:center;flex-wrap:nowrap;height:15px;overflow:hidden;white-space:nowrap;"></div>
       </div>
     </div>
+    <div id="buyDepthInfoM" style="font-size:10px;color:var(--t2);margin:8px 0 12px;display:flex;gap:10px;align-items:center;flex-wrap:nowrap;height:15px;overflow:hidden;white-space:nowrap;"></div>
     <div class="trade-actions" style="margin-top: 10px; display: none !important; gap: 8px;">
       <input type="text" class="limit-input" id="limitPrice" placeholder="Limit price..." autocomplete="off" style="flex: 1;">
       <button class="btn-limit" onclick="executeBuyLimit()" style="flex: 1;">Buy Limit</button>
