@@ -4533,7 +4533,10 @@ async function runScalpScan() {
   } catch (e) { console.error('[scalp-scan]', e.message); }
   finally { scalpScan.running = false; scalpScan.progress = 100; }
 }
-setInterval(runScalpScan, 4 * 60 * 1000);
+// Период вынесен в константу: интерфейс показывает обратный отсчёт до
+// следующего скана, и хардкодить его во втором месте значит рассинхрон.
+const SCALP_SCAN_INTERVAL_MS = 4 * 60 * 1000;
+setInterval(runScalpScan, SCALP_SCAN_INTERVAL_MS);
 setTimeout(runScalpScan, 75_000);
 
 app.use('/api/scalp-scan', (req, res, next) => {
@@ -4560,6 +4563,8 @@ app.get('/api/scalp-scan', (req, res) => {
     scanning: scalpScan.running, progress: scalpScan.progress,
     scanned: scalpScan.scanned, total: scalpScan.total,
     at: scalpScan.at, agoSec: scalpScan.at ? Math.round((Date.now() - scalpScan.at) / 1000) : null,
+    intervalMs: SCALP_SCAN_INTERVAL_MS,
+    serverNow: Date.now(),
     regime: scalpScan.regime,
     validation,
     entries: scalpScan.results.filter(r => r.tradeReady).length,
@@ -4798,6 +4803,8 @@ app.get('/api/micro-scalp-scan', (req, res) => {
     total: microScalpScan.total,
     at: microScalpScan.at,
     agoSec: microScalpScan.at ? Math.round((Date.now() - microScalpScan.at) / 1000) : null,
+    intervalMs: MICRO_SCAN_INTERVAL_MS,
+    serverNow: Date.now(),
     entries: microScalpScan.results.filter(result => result.pass).length,
     results: microScalpScan.results.slice(0, 15),
     watch: microScalpWatchArmed,

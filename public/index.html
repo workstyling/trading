@@ -7479,6 +7479,42 @@
         r.pct + '%</span>' + (core ? '<br><span style="color:#667;font-size:' + (small ? '8px' : '9px') + ';">' + core + '</span>' : '');
     }
 
+    // Живая свежесть скана. Раньше «5с назад» замирало до следующего опроса
+    // страницы и врало тем сильнее, чем дольше ты смотрел. Теперь счётчик
+    // идёт каждую секунду и рядом показывает, сколько до нового скана.
+    //
+    // Часы сервера и браузера расходятся, поэтому считаем от serverNow, а не
+    // от локального времени: иначе «назад» могло уйти в минус.
+    const _freshState = {};   // elId -> { at, intervalMs, skew }
+
+    function trackFreshness(elId, scan) {
+      if (!scan || !scan.at) return;
+      const skew = Number.isFinite(scan.serverNow) ? Date.now() - scan.serverNow : 0;
+      _freshState[elId] = { at: scan.at + skew, intervalMs: Number(scan.intervalMs) || 0 };
+      paintFreshness();
+    }
+
+    function paintFreshness() {
+      for (const id of Object.keys(_freshState)) {
+        const el = document.getElementById(id);
+        if (!el) continue;
+        const st = _freshState[id];
+        const ago = Math.max(0, Math.round((Date.now() - st.at) / 1000));
+        const agoTxt = ago < 60 ? ago + 'с назад' : Math.floor(ago / 60) + 'м ' + (ago % 60) + 'с назад';
+        let nextTxt = '';
+        if (st.intervalMs > 0) {
+          const left = Math.round((st.at + st.intervalMs - Date.now()) / 1000);
+          // Скан может задержаться: тогда честнее сказать «идёт», чем считать
+          // отрицательные секунды.
+          nextTxt = left > 0
+            ? ' · через ' + (left < 60 ? left + 'с' : Math.floor(left / 60) + 'м ' + (left % 60) + 'с')
+            : ' · обновляется…';
+        }
+        el.innerHTML = agoTxt + '<span style="color:#667;">' + nextTxt + '</span>';
+      }
+    }
+    setInterval(paintFreshness, 1000);
+
     function renderTrend(hist, mode) {
       if (!hist || hist.length < 2) {
         return '<div style="min-height:124px;color:var(--t2);">жду второй замер…</div>';
@@ -14292,8 +14328,7 @@ Requirements:
         }
         if (typeof j.watchLoop === 'boolean' && j.watchLoop !== _tlScalpLoop) { _tlScalpLoop = j.watchLoop; _paintScalpLoopBtn(); }
         if (typeof j.watch === 'boolean' && j.watch !== _tlScalpWatch) { _tlScalpWatch = j.watch; _paintScalpWatchBtn(); }
-        const ago = document.getElementById('ssAgo');
-        if (ago) ago.textContent = j.agoSec == null ? '—' : j.agoSec < 60 ? `${j.agoSec}с назад` : `${Math.round(j.agoSec / 60)}м назад`;
+        trackFreshness('ssAgo', j);
         const found = document.getElementById('ssFound');
         if (found) {
           found.textContent = j.total ? `${j.total} пар · ${j.entries} вх.` : '';
@@ -14430,8 +14465,7 @@ Requirements:
         _microScalpLoop = !!j.watchLoop;
         _paintMicroScalpWatchBtn();
         _paintMicroScalpLoopBtn();
-        const ago = document.getElementById('msAgo');
-        if (ago) ago.textContent = j.agoSec == null ? '—' : j.agoSec < 60 ? `${j.agoSec}с назад` : `${Math.round(j.agoSec / 60)}м назад`;
+        trackFreshness('msAgo', j);
         const body = document.getElementById('msBody');
         if (!body) return;
         const rows = (j.results || []).slice(0, 10);
