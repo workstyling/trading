@@ -1393,6 +1393,59 @@
     /* Monitor sell buttons */
     .mon-sell-btn.ask { background: rgba(244,211,94,0.06) !important; }
     .mon-sell-btn.all { background: rgba(238,82,83,0.08) !important; border-color: rgba(238,82,83,0.4) !important; }
+
+    /* Одна торговая лента: на телефоне не переносим BUY, цену и глубину
+       стакана в разные строки — вся последовательность прокручивается
+       горизонтально, сохраняя размер кнопок для касания. */
+    .trade-one-line-scroll {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      margin-bottom: 12px;
+      scrollbar-width: thin;
+    }
+    .trade-one-line {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: max-content;
+      padding-bottom: 2px;
+    }
+    .trade-one-line .trade-coin,
+    .trade-one-line .trade-amount,
+    .trade-one-line .trade-actions {
+      flex: 0 0 auto;
+      margin: 0 !important;
+    }
+    .trade-one-line .coin-prices { flex: 0 0 auto; }
+    .trade-one-line .amt-input {
+      flex: 0 0 58px;
+      width: 58px;
+      min-width: 58px;
+      padding: 8px;
+    }
+    .trade-one-line .trade-actions { gap: 6px; }
+    .trade-one-line .trade-btn {
+      flex: 0 0 auto;
+      min-width: 76px;
+      padding: 10px 14px;
+    }
+    .trade-chart-btn {
+      flex: 0 0 auto;
+      width: auto;
+      padding: 10px 12px;
+      border: 1px solid rgba(76,201,240,0.35);
+      border-radius: var(--r1);
+      background: rgba(76,201,240,0.07);
+      color: var(--blue);
+      font-size: 13px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .trade-one-line #buyDepthInfoM {
+      flex: 0 0 auto;
+      width: max-content;
+      margin: 0 !important;
+    }
   </style>
 </head>
 <body>
@@ -1446,44 +1499,45 @@
     <div style="margin-bottom:14px;" id="monitorSection">
       <div id="monitorList"><div class="loading"><div class="spinner"></div>Loading orders...</div></div>
     </div>
-    <div class="trade-coin">
-      <input type="text" class="coin-input" id="coinInput" value="BTC" maxlength="10" spellcheck="false" autocomplete="off">
-      <button class="save-coin-btn" onclick="saveCoin()">Save</button>
-      <div class="coin-prices">
-        <div class="coin-price-box">
-          <span class="coin-price-label">Bid</span>
-          <span class="coin-price-val price-bid" id="priceBid">...</span>
+    <div class="trade-one-line-scroll" aria-label="Торговая панель">
+      <div class="trade-one-line">
+        <div class="trade-coin">
+          <input type="text" class="coin-input" id="coinInput" value="BTC" maxlength="10" spellcheck="false" autocomplete="off">
+          <button class="save-coin-btn" onclick="saveCoin()">Save</button>
+          <div class="coin-prices">
+            <div class="coin-price-box">
+              <span class="coin-price-label">Bid</span>
+              <span class="coin-price-val price-bid" id="priceBid">...</span>
+            </div>
+            <div class="coin-price-box">
+              <span class="coin-price-label">Ask</span>
+              <span class="coin-price-val price-ask" id="priceAsk">...</span>
+            </div>
+          </div>
         </div>
-        <div class="coin-price-box">
-          <span class="coin-price-label">Ask</span>
-          <span class="coin-price-val price-ask" id="priceAsk">...</span>
+        <div class="trade-amount">
+          <button class="amt-btn" onclick="adjustAmt(-1)">−</button>
+          <input type="number" class="amt-input" id="amtInput" value="99" step="1" min="1" max="100">
+          <button class="amt-btn" onclick="adjustAmt(1)">+</button>
+          <span style="font-size:11px;color:var(--t2);">% &nbsp;<span id="amtUsd" style="color:#4ade80;">$0.00</span></span>
         </div>
+        <div class="trade-amount" title="Уровень стакана для лимитки: 0 = лучший bid, −1 = второй уровень">
+          <button class="amt-btn" onclick="adjustBidLevelM(-1)">−</button>
+          <input type="number" class="amt-input" id="bidLevelInputM" value="0" step="1" max="0" onchange="onBidLevelChangeM()">
+          <button class="amt-btn" onclick="adjustBidLevelM(1)">+</button>
+          <span style="font-size:11px;color:var(--t2);">bid lvl <span style="color:#555;">(0 = лучший)</span></span>
+        </div>
+        <div class="trade-actions">
+          <button class="trade-btn btn-buy" id="btnBuy" onclick="executeBuy()">BUY</button>
+          <button class="trade-btn btn-mkt" id="btnBuyMkt" onclick="executeMarketBuy()">BUY MKT</button>
+        </div>
+        <button onclick="toggleTVChartMobile()" id="tvChartToggleBtnM" class="trade-chart-btn">📈 Chart (15m)</button>
+        <div id="buyDepthInfoM" style="font-size:10px;color:var(--t2);display:flex;gap:10px;align-items:center;flex-wrap:nowrap;height:15px;overflow:hidden;white-space:nowrap;"></div>
       </div>
-    </div>
-    <div class="trade-amount">
-      <button class="amt-btn" onclick="adjustAmt(-1)">−</button>
-      <input type="number" class="amt-input" id="amtInput" value="99" step="1" min="1" max="100">
-      <button class="amt-btn" onclick="adjustAmt(1)">+</button>
-      <span style="font-size:11px;color:var(--t2);">% &nbsp;<span id="amtUsd" style="color:#4ade80;">$0.00</span></span>
-    </div>
-    <div class="trade-amount" style="margin-top:6px;" title="Уровень стакана для лимитки: 0 = лучший bid, −1 = второй уровень">
-      <button class="amt-btn" onclick="adjustBidLevelM(-1)">−</button>
-      <input type="number" class="amt-input" id="bidLevelInputM" value="0" step="1" max="0" onchange="onBidLevelChangeM()">
-      <button class="amt-btn" onclick="adjustBidLevelM(1)">+</button>
-      <span style="font-size:11px;color:var(--t2);">bid lvl <span style="color:#555;">(0 = лучший)</span></span>
-    </div>
-    <div id="buyDepthInfoM" style="font-size:10px;color:var(--t2);margin:8px 0 12px;display:flex;gap:10px;align-items:center;flex-wrap:nowrap;height:15px;overflow:hidden;white-space:nowrap;"></div>
-    <div class="trade-actions">
-      <button class="trade-btn btn-buy" id="btnBuy" onclick="executeBuy()">BUY</button>
-      <button class="trade-btn btn-mkt" id="btnBuyMkt" onclick="executeMarketBuy()">BUY MKT</button>
     </div>
     <div class="trade-actions" style="margin-top: 10px; display: none !important; gap: 8px;">
       <input type="text" class="limit-input" id="limitPrice" placeholder="Limit price..." autocomplete="off" style="flex: 1;">
       <button class="btn-limit" onclick="executeBuyLimit()" style="flex: 1;">Buy Limit</button>
-    </div>
-
-    <div style="margin-top:10px;">
-      <button onclick="toggleTVChartMobile()" id="tvChartToggleBtnM" style="width:100%;padding:10px;border:1px solid rgba(76,201,240,0.35);border-radius:var(--r1);background:rgba(76,201,240,0.07);color:var(--blue);font-size:13px;font-weight:600;cursor:pointer;transition:all 0.2s;">📈 Chart (15m)</button>
     </div>
 
     <div class="settings-row" style="display:none;">

@@ -6067,12 +6067,12 @@
                 <button class="buy-input-btn plus" onclick="adjustBidLevel(1)">+</button>
               </div>
               <button onclick="toggleTVChart()" id="tvChartToggleBtn" title="TradingView 15m chart" style="padding:6px 10px;border:1px solid rgba(76,201,240,0.35);border-radius:8px;background:rgba(76,201,240,0.08);color:var(--blue);font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all 0.2s;flex-shrink:0;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align:middle;margin-right:3px;"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>Chart</button>
+              <div id="buyDepthInfo" style="font-size:10px;color:var(--t2);display:flex;gap:12px;align-items:center;flex-wrap:nowrap;height:15px;overflow:hidden;white-space:nowrap;"></div>
               <span class="limit-separator" style="display: none !important;">|</span>
               <input type="text" class="limit-price-input" id="limitPriceInput" placeholder="Price" autocomplete="off" style="display: none !important;">
               <button class="buy-limit-btn" id="buyLimitBtn" onclick="executeBuyLimitOrder()" style="display: none !important;">Buy Limit</button>
               <button class="tracker-toggle-btn" id="trackerToggleBtn" onclick="togglePriceTracker()" title="Auto Price Tracker based on trend" style="display: none !important;">⚡ Track</button>
             </div>
-            <div id="buyDepthInfo" style="font-size:10px;color:var(--t2);margin-top:7px;display:flex;gap:12px;align-items:center;flex-wrap:nowrap;height:15px;overflow:hidden;white-space:nowrap;"></div>
             
             <div id="trackerPanel" class="tracker-panel" style="display: none; max-height: 0px; opacity: 0;">
               <div class="tracker-divider"></div>
@@ -17379,6 +17379,41 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
       font-family: inherit;
       font-size: 11px;
       color: #aeaeb2;
+    }
+
+    /* Торговая лента: цена, размер, кнопки, график и глубина стакана всегда
+       идут в одном порядке. На узком экране скроллится вся лента, а не
+       переносятся критичные элементы на вторую строку. */
+    #buyPanel {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: thin;
+    }
+    #buyPanel .buy-row {
+      flex-wrap: nowrap !important;
+      justify-content: flex-start !important;
+      min-width: max-content;
+    }
+    #buyPanel .buy-coin-input {
+      width: 85px !important;
+      flex: 0 0 85px;
+    }
+    #buyPanel .buy-prices,
+    #buyPanel .buy-input-group,
+    #buyPanel .buy-btn {
+      flex: 0 0 auto;
+    }
+    #buyPanel .buy-prices { width: auto !important; }
+    #buyPanel .buy-input-group { order: initial !important; }
+    #buyPanel .buy-usd-field {
+      flex: 0 0 120px !important;
+      min-width: 120px !important;
+      max-width: 120px !important;
+    }
+    #buyPanel #buyDepthInfo {
+      flex: 0 0 auto;
+      min-width: 460px;
+      margin: 0 !important;
     }
   </style>
 
