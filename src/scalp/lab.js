@@ -426,7 +426,21 @@ function buildBrief(trades, meta) {
         lines.push('It does not validate live entries. The paper journal remains on only to collect a fresh independent cohort.');
       }
     } else {
-      lines.push('No sufficient historical validation matches this fingerprint yet. Run `npm run validate:scalp -- 7 500000`.');
+      // Причина важнее совета: «параметры разошлись» и «прогона нет» лечатся
+      // по-разному, а раньше оба предлагали перезапустить валидатор — что при
+      // расхождении параметров записывает ровно тот же несовпадающий файл.
+      const why = meta && meta.validationWhy;
+      const detail = meta && meta.validationDetail;
+      if (why === 'params') {
+        lines.push(`A validation exists for this fingerprint but describes another experiment: ${detail}.`);
+        lines.push('Re-run it with the parameters this journal actually trades, or the same file comes back.');
+      } else if (why === 'too_small') {
+        lines.push(`The saved validation is too small to decide anything: ${detail}.`);
+      } else if (why === 'fingerprint') {
+        lines.push(`The saved validation is for other gate code (${detail}). Run \`npm run validate:scalp -- 7 500000\`.`);
+      } else {
+        lines.push('No historical validation for this gate code. Run `npm run validate:scalp -- 7 500000`.');
+      }
     }
     return lines.join('\n');
   }

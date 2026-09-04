@@ -5858,6 +5858,10 @@ function labApiPayload() {
       fingerprint: runtime.runtimeFingerprint || null,
       staleCount: staleClosed.length,
       historical,
+      // Причину несовпадения задание печатает словами: «прогона нет» и
+      // «прогон про другой эксперимент» лечатся по-разному.
+      validationWhy: (scalpScan.validation || scalpValidationStatus()).why || null,
+      validationDetail: (scalpScan.validation || scalpValidationStatus()).detail || null,
       archivedStats: lab.agg(staleClosed),
       runtime,
       cohortId: labState.cohortId || null,
@@ -5919,7 +5923,7 @@ function microScalpBrief(payload) {
     '## B. FAST SCALP PAPER LAB (15–60 MINUTES)',
     'This is a separate paper-only experiment. It never places real orders. Do not mix its evidence, thresholds, or conclusions with the 2–6 hour scalp gate.',
     `Cohort fingerprint: ${payload.cohort && payload.cohort.fingerprint || 'unknown'}; state: ${payload.entryBlocked ? 'ENTRY BLOCKED' : 'collecting'}; running: ${payload.hoursRunning ?? 'n/a'}h.`,
-    `Execution: target +${execution.targetPct ?? 'n/a'}%, stop -${execution.slPct ?? 'n/a'}%, time limit ${execution.maxHoldMin ?? 'n/a'} min, limit fee ${execution.feePct ?? 'n/a'}%.`,
+    `Execution: target +${execution.targetPct ?? 'n/a'}%, stop -${execution.slPct ?? 'n/a'}%, time limit ${execution.maxHoldMin ?? 'n/a'} min, limit fee ${Number.isFinite(execution.feePct) ? Math.round(execution.feePct * 1e5) / 1e3 : 'n/a'}%.`,
     `Current cohort: ${payload.currentClosedCount || 0} closed, ${payload.currentOpenCount || 0} open, ${payload.bursts || 0} independent bursts.`,
     `Decision sample: ${review.closedBursts}/${review.minClosedBursts} independent closed bursts${review.ready ? ' (threshold reached).' : `; ${review.remainingBursts} more required before changing the experiment.`}`,
     `Statistics: wins ${stats.winRate == null ? 'n/a' : stats.winRate + '%'}; average ${formatPct(stats.avgPct)}; total $${stats.totalPnl == null ? 'n/a' : stats.totalPnl}; average hold ${stats.avgHoldMin == null ? 'n/a' : stats.avgHoldMin + ' min'}.`,
