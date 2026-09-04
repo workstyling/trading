@@ -17381,18 +17381,21 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
       color: #aeaeb2;
     }
 
-    /* Торговая лента: цена, размер, кнопки и график не меняют порядок.
-       Глубина и сравнение исполнения находятся следующей строкой, чтобы
-       не сжимать критичные элементы управления. */
+    /* Торговая лента. Раньше строка держалась в одну ценой горизонтальной
+       прокрутки: `nowrap` плюс `min-width: max-content` заставляли панель
+       уезжать вправо, и «lvl» с кнопкой графика оказывались за краем. Скролл
+       вбок в панели, где нажимают BUY, — плохой размен: элемент, которого не
+       видно, не нажмут.
+
+       Теперь строка переносится. Порядок сохранён, ничего не сжимается —
+       просто то, что не поместилось, уходит вниз. */
     #buyPanel {
-      overflow-x: auto;
-      -webkit-overflow-scrolling: touch;
-      scrollbar-width: thin;
+      overflow-x: visible;
     }
     #buyPanel .buy-row {
-      flex-wrap: nowrap !important;
+      flex-wrap: wrap !important;
       justify-content: flex-start !important;
-      min-width: max-content;
+      row-gap: 8px;
     }
     #buyPanel .buy-coin-input {
       width: 85px !important;
@@ -17410,6 +17413,10 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
       min-width: 120px !important;
       max-width: 120px !important;
     }
+    /* Кнопки покупки держим вместе: если перенос разорвёт их, BUY и BUY MKT
+       окажутся на разных строках, а это две очень разные операции. */
+    #buyPanel .buy-btn { margin-right: 0; }
+    #buyPanel .buy-btn#buyBtn { margin-left: auto; }
   </style>
 
 
