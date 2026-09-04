@@ -4440,7 +4440,7 @@ function scalpValidationStatusLegacy() {
   // Причину несовпадения отдаём наружу: интерфейс иначе советует перезапустить
   // валидатор там, где это не поможет — например когда прогон сделан с другой
   // комиссией, чем та, которой лаборатория считает сделки.
-  if (!overall) return { ready: false, state: 'missing', why: found.why, detail: found.detail || null };
+  if (!overall) return { ready: false, state: 'missing', why: found.why, detail: found.detail || null, detailEn: found.detailEn || null };
   const ready = overall.avgPct > 0 && overall.profitFactor > 1 && overall.positiveSegments === 3;
   return {
     ready,
@@ -4778,20 +4778,38 @@ function inspectGateValidation(fingerprint) {
     return { why: 'missing' };
   }
   if (!fingerprint || result.fingerprint !== fingerprint) {
-    return { why: 'fingerprint', detail: `прогон для ${result.fingerprint || 'неизвестного кода'}, сейчас ${fingerprint || '?'}` };
+    return { why: 'fingerprint', detail: `прогон для ${result.fingerprint || 'неизвестного кода'}, сейчас ${fingerprint || '?'}`,
+      detailEn: `saved for ${result.fingerprint || 'unknown code'}, running ${fingerprint || '?'}` };
   }
   if (!result.config || result.config.days < 7 || !result.overall || result.overall.n < 30) {
-    return { why: 'too_small', detail: `${(result.overall && result.overall.n) || 0} сделок за ${(result.config && result.config.days) || 0} дней` };
+    return { why: 'too_small', detail: `${(result.overall && result.overall.n) || 0} сделок за ${(result.config && result.config.days) || 0} дней`,
+      detailEn: `${(result.overall && result.overall.n) || 0} trades over ${(result.config && result.config.days) || 0} days` };
   }
   const execution = currentLabExecution();
   // Одних правил входа мало: прогон с другой целью, стопом, комиссией или
   // окном удержания описывает другой эксперимент.
-  const diffs = [];
-  if (!sameNumber(result.config.targetPct, execution.targetPct)) diffs.push(`цель ${result.config.targetPct}% против ${execution.targetPct}%`);
-  if (!sameNumber(result.config.slPct, execution.slPct)) diffs.push(`стоп ${result.config.slPct}% против ${execution.slPct}%`);
-  if (!sameNumber(result.config.feeSidePct, execution.feePct * 100)) diffs.push(`комиссия ${result.config.feeSidePct}% против ${Math.round(execution.feePct * 1e5) / 1e3}%`);
-  if (!sameNumber(result.config.maxHoldHours, execution.maxHoldH)) diffs.push(`удержание ${result.config.maxHoldHours}ч против ${execution.maxHoldH}ч`);
-  if (diffs.length) return { why: 'params', detail: diffs.join(', ') };
+  // Две формулировки: русская идёт в интерфейс, английская — в задание для
+  // Claude Code. Раньше русская протекала в английский текст, и собственная
+  // проверка «задание без кириллицы» на этом падала.
+  const diffs = [], diffsEn = [];
+  const liveFee = Math.round(execution.feePct * 1e5) / 1e3;
+  if (!sameNumber(result.config.targetPct, execution.targetPct)) {
+    diffs.push(`цель ${result.config.targetPct}% против ${execution.targetPct}%`);
+    diffsEn.push(`target ${result.config.targetPct}% vs ${execution.targetPct}%`);
+  }
+  if (!sameNumber(result.config.slPct, execution.slPct)) {
+    diffs.push(`стоп ${result.config.slPct}% против ${execution.slPct}%`);
+    diffsEn.push(`stop ${result.config.slPct}% vs ${execution.slPct}%`);
+  }
+  if (!sameNumber(result.config.feeSidePct, execution.feePct * 100)) {
+    diffs.push(`комиссия ${result.config.feeSidePct}% против ${liveFee}%`);
+    diffsEn.push(`fee ${result.config.feeSidePct}% vs ${liveFee}%`);
+  }
+  if (!sameNumber(result.config.maxHoldHours, execution.maxHoldH)) {
+    diffs.push(`удержание ${result.config.maxHoldHours}ч против ${execution.maxHoldH}ч`);
+    diffsEn.push(`hold ${result.config.maxHoldHours}h vs ${execution.maxHoldH}h`);
+  }
+  if (diffs.length) return { why: 'params', detail: diffs.join(', '), detailEn: diffsEn.join(', ') };
   return { result };
 }
 
@@ -5861,7 +5879,7 @@ function labApiPayload() {
       // Причину несовпадения задание печатает словами: «прогона нет» и
       // «прогон про другой эксперимент» лечатся по-разному.
       validationWhy: (scalpScan.validation || scalpValidationStatus()).why || null,
-      validationDetail: (scalpScan.validation || scalpValidationStatus()).detail || null,
+      validationDetail: (scalpScan.validation || scalpValidationStatus()).detailEn || null,
       archivedStats: lab.agg(staleClosed),
       runtime,
       cohortId: labState.cohortId || null,
