@@ -6071,7 +6071,7 @@
               <button class="buy-limit-btn" id="buyLimitBtn" onclick="executeBuyLimitOrder()" style="display: none !important;">Buy Limit</button>
               <button class="tracker-toggle-btn" id="trackerToggleBtn" onclick="togglePriceTracker()" title="Auto Price Tracker based on trend" style="display: none !important;">⚡ Track</button>
             </div>
-            <div id="buyDepthInfo" style="font-size:10px;color:var(--t2);margin-top:7px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;"></div>
+            <div id="buyDepthInfo" style="font-size:10px;color:var(--t2);margin-top:7px;display:flex;gap:12px;align-items:center;flex-wrap:nowrap;height:15px;overflow:hidden;white-space:nowrap;"></div>
             
             <div id="trackerPanel" class="tracker-panel" style="display: none; max-height: 0px; opacity: 0;">
               <div class="tracker-divider"></div>
@@ -6979,8 +6979,10 @@
         }
         el.innerHTML = `<span title="Глубина стакана в ±2% от цены: биды/аски">стакан ±2%: <span style="color:var(--green);font-weight:600;">${fmtVolShort(dBuy)}</span><span style="color:#555;">/</span><span style="color:#f55;font-weight:600;">${fmtVolShort(dSell)}</span></span>`
           + `<span class="tv-depthbar" style="width:70px;"><i style="width:${bp}%"></i></span>`
-          + (impact ? `<span style="color:#8b93a7;">${impact}</span>` : '')
-          + (cmp ? `<span style="color:#8b93a7;">${cmp}</span>` : '');
+          // Куски рисуем ВСЕГДА: пустые они держат ширину, и строка не
+          // перестраивается на каждом пересчёте.
+          + `<span style="color:#8b93a7;">${impact || ''}</span>`
+          + `<span style="color:#8b93a7;">${cmp || ''}</span>`;
       } catch { }
     }
     document.getElementById('buyUsdAmount')?.addEventListener('input', () => updateBuyDepth());
