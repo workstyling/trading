@@ -2445,6 +2445,7 @@
         <div style="color:#f5a524;font-weight:700;margin-bottom:8px;">Купить по рынку</div>
         <div style="font-size:13px;color:#cfd6e4;"><b>${coin}</b> на $${usd.toFixed(2)}, РЕАЛЬНЫЙ ордер.</div>
         <div id="mbLiveM" style="font-size:12.5px;color:#cfd6e4;margin-top:10px;font-variant-numeric:tabular-nums;">Считаю по стакану…</div>
+        <div id="mbAdviceM" style="margin-top:8px;padding:6px 8px;border-radius:6px;background:rgba(191,90,242,0.07);border:1px solid rgba(191,90,242,0.22);font-size:11px;line-height:1.4;min-height:54px;"></div>
         <div style="font-size:10.5px;color:#7c8698;margin-top:8px;">Обновляется каждую секунду. Отменить нельзя.</div>
         <div style="display:flex;gap:8px;margin-top:14px;">
           <button id="mbCancelM" style="flex:1;padding:10px;border-radius:8px;border:1px solid #333;background:transparent;color:#aab;">Отмена</button>
@@ -2454,6 +2455,8 @@
 
       let timer = null;
       const hist = [];   // {t, p} — история лучшего ask по тикам диалога
+      // Последний срез для советника — те же числа, что в окне.
+      let _lastBuyM = {};
       const stop = () => { if (timer) clearInterval(timer); timer = null; ov.remove(); };
 
       async function tick() {
@@ -2474,6 +2477,18 @@
           // разница комиссий. Спред сам по себе меньше и вводил бы в заблуждение.
           const vsLimit = bestBid > 0
             ? ((avg * (1 + feePct / 100)) / (bestBid * (1 + limitFeePct / 100)) - 1) * 100 : 0;
+          {
+            const vs = hist.map(x => x.v).filter(Number.isFinite);
+            _lastBuyM = {
+              usd, avgPrice: avg, qty: w.qty, levels: w.levels, slip,
+              spreadPct: bestBid > 0 && bestAsk > 0 ? (bestAsk / bestBid - 1) * 100 : null,
+              vsLimitPct: vsLimit, vsLimitUsd: usd * vsLimit / 100,
+              trend: vs.length > 1 ? (vs[vs.length - 1] > vs[0] ? 'дорожает' : vs[vs.length - 1] < vs[0] ? 'дешевеет' : 'стоит') : null,
+              trendPct: vs.length > 1 && vs[0] > 0 ? (vs[vs.length - 1] / vs[0] - 1) * 100 : null,
+              cheapest: vs.length ? Math.min(...vs) : null,
+              dearest: vs.length ? Math.max(...vs) : null,
+            };
+          }
           box.innerHTML = trendBox(hist, 'buy') +
             `Средняя: <b>$${fmt(avg)}</b><br>` + '<div style="height:16px;line-height:16px;overflow:hidden;white-space:nowrap;">' + (slip > 0.005 ? '<span style="color:var(--yellow);">проск. ' + slip.toFixed(3) + '%</span>' : '<span style="color:#7c8698;font-size:10px;">проскальзывания нет</span>') + '</div>' +
             `Уровней стакана: <b>${w.levels}</b><br>` +
@@ -2486,6 +2501,7 @@
         }
       }
       await tick();
+      askClaudeAdviceM('mbAdviceM', { side: 'buy', coin, ..._lastBuyM });
       timer = setInterval(tick, 1000);
 
       document.getElementById('mbCancelM').onclick = stop;

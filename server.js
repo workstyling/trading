@@ -6410,7 +6410,10 @@ app.post('/api/advise-sell', async (req, res) => {
   const coin = String(b.coin || '').toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 15);
   if (!coin) return res.status(400).json({ success: false, error: 'нет монеты' });
 
-  const cached = claudeAdviceCache.get(coin);
+  // Покупка и продажа — разные вопросы к одной монете, поэтому и кеш разный.
+  const side = b.side === 'buy' ? 'buy' : 'sell';
+  const cacheKey = side + ':' + coin;
+  const cached = claudeAdviceCache.get(cacheKey);
   if (cached && Date.now() - cached.at < CLAUDE_CACHE_MS) {
     return res.json({ success: true, ...cached.data, cached: true });
   }
@@ -6424,35 +6427,73 @@ app.post('/api/advise-sell', async (req, res) => {
 
   const num = (v, d = 2) => Number.isFinite(Number(v)) ? Number(Number(v).toFixed(d)) : null;
   const gate = (scalpScan.results || []).find(r => r.coin === coin);
-  const facts = {
+  const micro = (microScalpScan.results || []).find(r => r.coin === coin);
+  const common = {
     coin,
-    position: { qty: num(b.qty, 6), costUsd: num(b.cost), proceedsUsd: num(b.net), profitUsd: num(b.profit), profitPct: num(b.pct) },
     execution: { bookLevels: num(b.levels, 0), slippagePct: num(b.slip, 3), spreadPct: num(b.spreadPct, 3) },
-    lastMinute: { direction: b.trend || null, changeUsd: num(b.trendUsd), peakUsd: num(b.peakUsd), troughUsd: num(b.troughUsd) },
-    structuralGate: gate
-      ? { score: gate.score, conditionsMet: gate.passed + '/' + (gate.checks || []).length, verdict: gate.tagOwn || gate.tag, entryAllowed: !!gate.tradeReady }
-      : 'coin is not in the current scan',
     marketRegime: scalpScan.regime
       ? { btcVsEma20Pct: scalpScan.regime.distPct, btc7dReturnPct: scalpScan.regime.ret7 }
       : 'not computed yet',
   };
+  const facts = side === 'buy'
+    ? {
+      ...common,
+      order: { spendUsd: num(b.usd), avgFillPrice: num(b.avgPrice, 8), receiveQty: num(b.qty, 6) },
+      // Переплата против лимитки — единственное здесь число, которое точно
+      // известно и точно стоит денег.
+      vsLimitOrder: { overpayPct: num(b.vsLimitPct, 3), overpayUsd: num(b.vsLimitUsd) },
+      lastMinute: { direction: b.trend || null, changePct: num(b.trendPct, 3), cheapest: num(b.cheapest, 8), dearest: num(b.dearest, 8) },
+      structuralGate: gate
+        ? {
+          score: gate.score, conditionsMet: gate.passed + '/' + (gate.checks || []).length,
+          verdict: gate.tagOwn || gate.tag, entryAllowed: !!gate.tradeReady,
+          unmetConditions: (gate.checks || []).filter(c => !c.ok).map(c => c.en || c.k),
+        }
+        : 'coin is not in the current 2-6h scan',
+      fastGate: micro
+        ? { score: micro.score, conditionsMet: micro.passed + '/' + (micro.checks || []).length, readinessPct: micro.readiness && micro.readiness.pct }
+        : 'coin is not in the current 15-60min scan',
+    }
+    : {
+      ...common,
+      position: { qty: num(b.qty, 6), costUsd: num(b.cost), proceedsUsd: num(b.net), profitUsd: num(b.profit), profitPct: num(b.pct) },
+      lastMinute: { direction: b.trend || null, changeUsd: num(b.trendUsd), peakUsd: num(b.peakUsd), troughUsd: num(b.troughUsd) },
+      structuralGate: gate
+        ? { score: gate.score, conditionsMet: gate.passed + '/' + (gate.checks || []).length, verdict: gate.tagOwn || gate.tag, entryAllowed: !!gate.tradeReady }
+        : 'coin is not in the current scan',
+    };
 
-  const prompt = [
-    'You advise on ONE open crypto position that the owner is about to sell at market.',
-    'Answer in Russian. Reply with EXACTLY this shape and nothing else:',
-    'ВЕРДИКТ: <ЖДАТЬ|ПРОДАВАТЬ|НЕТ ОСНОВАНИЙ>',
-    'ПОЧЕМУ: <one sentence, max 25 words, citing a number from the facts>',
-    'РИСК: <one sentence, max 20 words, what would make this wrong>',
-    '',
-    'Rules:',
-    '- These facts are a snapshot of seconds. They carry no predictive power on their own.',
-    '- If the numbers do not support either action, answer НЕТ ОСНОВАНИЙ. That is a valid, expected answer.',
-    '- Never invent a probability, a win rate, or a price target. Cite only what is given.',
-    '- The structural gate is about ENTRIES over 2-6 hours; it says nothing about exiting an existing position.',
-    '',
-    'Facts:',
-    JSON.stringify(facts, null, 1),
-  ].join('\n');
+  const prompt = (side === 'buy'
+    ? [
+      'The owner is about to BUY this coin at market, right now, with real money.',
+      'Answer in Russian. Reply with EXACTLY this shape and nothing else:',
+      'ВЕРДИКТ: <ЖДАТЬ|ПОКУПАТЬ|НЕТ ОСНОВАНИЙ>',
+      'ПОЧЕМУ: <one sentence, max 25 words, citing a number from the facts>',
+      'РИСК: <one sentence, max 20 words, what would make this wrong>',
+      '',
+      'Rules:',
+      '- These facts are a snapshot of seconds. They carry no predictive power on their own.',
+      '- If the numbers do not support either action, answer НЕТ ОСНОВАНИЙ. That is a valid, expected answer.',
+      '- Never invent a probability, a win rate, or a price target. Cite only what is given.',
+      '- Both gates are UNVALIDATED experiments. A passing gate is not evidence the trade works;',
+      '  an unmet condition is a concrete reason the setup this system looks for is absent.',
+      '- overpayPct against a limit order is a certain cost, unlike any expected gain. Weigh it as such.',
+    ]
+    : [
+      'You advise on ONE open crypto position that the owner is about to sell at market.',
+      'Answer in Russian. Reply with EXACTLY this shape and nothing else:',
+      'ВЕРДИКТ: <ЖДАТЬ|ПРОДАВАТЬ|НЕТ ОСНОВАНИЙ>',
+      'ПОЧЕМУ: <one sentence, max 25 words, citing a number from the facts>',
+      'РИСК: <one sentence, max 20 words, what would make this wrong>',
+      '',
+      'Rules:',
+      '- These facts are a snapshot of seconds. They carry no predictive power on their own.',
+      '- If the numbers do not support either action, answer НЕТ ОСНОВАНИЙ. That is a valid, expected answer.',
+      '- Never invent a probability, a win rate, or a price target. Cite only what is given.',
+      '- The structural gate is about ENTRIES over 2-6 hours; it says nothing about exiting an existing position.',
+    ])
+    .concat(['', 'Facts:', JSON.stringify(facts, null, 1)])
+    .join(String.fromCharCode(10));
 
   claudeInFlight++;
   try {
@@ -6466,7 +6507,7 @@ app.post('/api/advise-sell', async (req, res) => {
     if (!text) return res.json({ success: false, error: 'пустой ответ' });
     const verdict = (text.match(/ВЕРДИКТ:\s*([^\n]+)/) || [])[1] || null;
     const data = { advice: text.slice(0, 800), verdict: verdict ? verdict.trim() : null, at: Date.now() };
-    claudeAdviceCache.set(coin, { at: Date.now(), data });
+    claudeAdviceCache.set(cacheKey, { at: Date.now(), data });
     res.json({ success: true, ...data });
   } catch (e) {
     res.json({ success: false, error: e.message });

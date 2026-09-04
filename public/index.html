@@ -7481,6 +7481,7 @@
           <div class="modal-body">
             <b>${coin}</b> на <b>$${quoteSize.toFixed(2)}</b> — это <b>РЕАЛЬНЫЙ</b> ордер.<br><br>
             <div id="mbLive" style="font-variant-numeric:tabular-nums;">Считаю по стакану…</div>
+            <div id="mbAdvice" style="margin-top:9px;padding:7px 9px;border-radius:6px;background:rgba(191,90,242,0.07);border:1px solid rgba(191,90,242,0.22);font-size:12px;line-height:1.45;min-height:58px;"></div>
             <div style="color:var(--t2);font-size:11px;margin-top:8px;">
               Цифры обновляются каждую секунду. Исполнится мгновенно, отменить нельзя.
             </div>
@@ -7493,7 +7494,10 @@
       document.body.appendChild(overlay);
 
       let timer = null;
-      const hist = [];   // {t, p} — история лучшего ask по тикам диалога
+      const hist = [];   // {t, p, v} — лучший ask и средняя цена входа по тикам
+      // Последний посчитанный срез: его отдаём советнику, чтобы он видел ровно
+      // те же числа, что и ты в окне.
+      let _lastBuy = {};
       const stop = () => { if (timer) clearInterval(timer); timer = null; overlay.remove(); };
 
       async function tick() {
@@ -7517,6 +7521,18 @@
           // + разница комиссий. Именно это число стоит в строке под панелью.
           const vsLimitPct = bestBid > 0
             ? ((avg * (1 + feePct / 100)) / (bestBid * (1 + limitFeePct / 100)) - 1) * 100 : 0;
+          {
+            const vs = hist.map(x => x.v).filter(Number.isFinite);
+            _lastBuy = {
+              usd: quoteSize, avgPrice: avg, qty: w.qty, levels: w.levels, slip,
+              spreadPct: bestBid > 0 && bestAsk > 0 ? (bestAsk / bestBid - 1) * 100 : null,
+              vsLimitPct, vsLimitUsd: quoteSize * vsLimitPct / 100,
+              trend: vs.length > 1 ? (vs[vs.length - 1] > vs[0] ? 'дорожает' : vs[vs.length - 1] < vs[0] ? 'дешевеет' : 'стоит') : null,
+              trendPct: vs.length > 1 && vs[0] > 0 ? (vs[vs.length - 1] / vs[0] - 1) * 100 : null,
+              cheapest: vs.length ? Math.min(...vs) : null,
+              dearest: vs.length ? Math.max(...vs) : null,
+            };
+          }
           box.innerHTML =
             `<div style="margin-bottom:8px;padding:6px 8px;border-radius:6px;background:rgba(255,255,255,0.04);">` +
             `<span style="color:var(--t2);font-size:11px;">Рынок сейчас:</span><br>${renderTrend(hist, 'buy')}</div>` +
@@ -7533,6 +7549,7 @@
         }
       }
       await tick();
+      askClaudeAdvice('mbAdvice', { side: 'buy', coin, ..._lastBuy });
       timer = setInterval(tick, 1000);
 
       overlay.querySelector('#mbCancel').onclick = stop;
