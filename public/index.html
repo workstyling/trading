@@ -6724,14 +6724,43 @@
       return '$' + Math.round(value);
     }
 
+    // Изменение за последние 15 минут. Считаем по пятиминутным свечам: три
+    // назад — это ровно четверть часа. Суточное число говорит о фоне, это —
+    // о том, что происходит прямо сейчас, а на графике 15m именно оно и есть
+    // предмет разговора.
+    async function _fetch15mChange(coin) {
+      try {
+        const r = await fetch(`https://api.exchange.coinbase.com/products/${coin}-USD/candles?granularity=300`);
+        if (!r.ok) return null;
+        const raw = await r.json();
+        if (!Array.isArray(raw) || raw.length < 4) return null;
+        // Coinbase отдаёт свечи новыми вперёд: [time, low, high, open, close, vol]
+        const rows = raw.slice(0, 4);
+        const now = Number(rows[0][4]);
+        const ago = Number(rows[3][4]);
+        if (!(now > 0) || !(ago > 0)) return null;
+        return (now / ago - 1) * 100;
+      } catch { return null; }
+    }
+
+    function _moveWord(pct, label) {
+      if (pct == null) return `${label}: —`;
+      if (pct > 0.05) return `${label}: ↑ рост +${pct.toFixed(2)}%`;
+      if (pct < -0.05) return `${label}: ↓ снижение ${pct.toFixed(2)}%`;
+      return `${label}: → боковик ${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`;
+    }
+
     async function _updateChartContext(coin) {
       const context = document.getElementById('tvChartContext');
       if (!context) return;
       context.dataset.coin = coin;
       context.style.color = 'var(--t2)';
-      context.textContent = 'Vol 24h: … · 24ч: …';
+      context.textContent = 'Vol 24h: … · 15м: … · 24ч: …';
       try {
-        const response = await fetch(`https://api.exchange.coinbase.com/products/${coin}-USD/stats`);
+        const [response, m15] = await Promise.all([
+          fetch(`https://api.exchange.coinbase.com/products/${coin}-USD/stats`),
+          _fetch15mChange(coin),
+        ]);
         if (!response.ok) throw new Error('stats unavailable');
         const stats = await response.json();
         if (context.dataset.coin !== coin) return;
@@ -6739,14 +6768,15 @@
         const open = Number(stats.open);
         const volumeUsd = Number(stats.volume) * last;
         const changePct = open > 0 && last > 0 ? (last - open) / open * 100 : null;
-        const movement = changePct == null ? '24ч: —'
-          : changePct > 0.05 ? `24ч: ↑ рост +${changePct.toFixed(2)}%`
-          : changePct < -0.05 ? `24ч: ↓ снижение ${changePct.toFixed(2)}%`
-          : `24ч: → боковик ${changePct >= 0 ? '+' : ''}${changePct.toFixed(2)}%`;
-        context.textContent = `Vol 24h: ${_fmtChartVolume(volumeUsd)} · ${movement}`;
-        context.style.color = changePct > 0.05 ? '#4ade80' : changePct < -0.05 ? '#f87171' : 'var(--t2)';
+        // Красим по 15 минутам: график открыт именно на них, и суточный фон
+        // не должен перекрашивать то, что видно на экране.
+        const c15 = m15 == null ? 'var(--t2)' : m15 > 0.05 ? '#4ade80' : m15 < -0.05 ? '#f87171' : 'var(--t2)';
+        context.innerHTML = `Vol 24h: ${_fmtChartVolume(volumeUsd)} · ` +
+          `<b style="color:${c15};">${_moveWord(m15, '15м')}</b> · ` +
+          `<span style="color:var(--t2);">${_moveWord(changePct, '24ч')}</span>`;
+        context.style.color = 'var(--t2)';
       } catch {
-        if (context.dataset.coin === coin) context.textContent = 'Vol 24h: — · 24ч: —';
+        if (context.dataset.coin === coin) context.textContent = 'Vol 24h: — · 15м: — · 24ч: —';
       }
     }
 
