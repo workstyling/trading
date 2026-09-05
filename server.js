@@ -6627,6 +6627,148 @@ app.post('/api/advise-sell', async (req, res) => {
   }
 });
 
+// ══════════════════════════════════════════════════════════════════
+// ═══ СТОРОЖ ПРОВАЛА: ждём просадку и зовём в Telegram ═══
+// ══════════════════════════════════════════════════════════════════
+//
+// Глубину провала называет Claude, но не из воздуха: ему отдаются измеренные
+// размахи последних часов и средний ход пятиминутной свечи, и он обязан
+// остаться внутри них. Это по-прежнему оценка, а не прогноз, и сообщение в
+// Telegram об этом говорит.
+//
+// Сторож одноразовый по монете: сработал — снялся. Иначе одна затяжная
+// просадка засыпала бы телефон одинаковыми сообщениями.
+// Собственные константы: CB объявлен локально внутри других функций,
+// общего в модуле нет.
+const DIP_CB = 'https://api.exchange.coinbase.com';
+const DIP_H = { headers: { 'User-Agent': 'trading-app/1.0' } };
+const DIP_WATCH_FILE = path.join(__dirname, 'dip-watch.json');
+let dipWatches = {};   // coin -> { at, startPx, targetPx, dipPct, why, pair }
+try { dipWatches = JSON.parse(fs.readFileSync(DIP_WATCH_FILE, 'utf8')) || {}; } catch { }
+function saveDipWatches() {
+  try { fs.writeFileSync(DIP_WATCH_FILE, JSON.stringify(dipWatches, null, 2)); } catch { }
+}
+
+async function dipFacts(coin) {
+  const pair = coin + '-USD';
+  const r = await fetch(`${DIP_CB}/products/${pair}/candles?granularity=300`, DIP_H);
+  if (!r.ok) throw new Error('свечи недоступны');
+  const raw = await r.json();
+  if (!Array.isArray(raw) || raw.length < 20) throw new Error('мало свечей');
+  // [time, low, high, open, close, volume], новые вперёд
+  const rows = raw.slice(0, 288);
+  const px = Number(rows[0][4]);
+  const win = (n) => {
+    const part = rows.slice(0, n);
+    return { low: Math.min(...part.map(x => Number(x[1]))), high: Math.max(...part.map(x => Number(x[2]))) };
+  };
+  const h1 = win(12), h4 = win(48), h24 = win(288);
+  const bodies = rows.slice(0, 12).map(x => (Number(x[2]) - Number(x[1])) / Number(x[4]) * 100).filter(Number.isFinite);
+  const avg5m = bodies.length ? bodies.reduce((a, b) => a + b, 0) / bodies.length : null;
+  const pct = (from) => from > 0 ? (px / from - 1) * 100 : null;
+  return {
+    coin, price: px,
+    last1h: { lowPct: pct(h1.low), highPct: pct(h1.high) },
+    last4h: { lowPct: pct(h4.low), highPct: pct(h4.high) },
+    last24h: { lowPct: pct(h24.low), highPct: pct(h24.high) },
+    avg5mCandleRangePct: avg5m == null ? null : Math.round(avg5m * 1000) / 1000,
+  };
+}
+
+async function askDipDepth(coin) {
+  const facts = await dipFacts(coin);
+  const prompt = [
+    'A trader wants to buy this coin on a dip. Name how far it could realistically dip from here.',
+    'Answer in Russian. Reply with EXACTLY these two lines and nothing else:',
+    'ЦЕЛЬ: <number>%',
+    'ПОЧЕМУ: <one sentence, max 20 words, citing a number from the facts>',
+    '',
+    'Rules:',
+    '- ЦЕЛЬ is a POSITIVE number: how many percent BELOW the current price to wait for.',
+    '- It must stay inside what the facts already show. Do not exceed the 24h low distance,',
+    '  and do not go below the average 5m candle range -- smaller than that is noise, not a dip.',
+    '- Never invent volatility, a probability, or a target the numbers do not support.',
+    '- Sensible range here is roughly 0.3% to 5%. Pick one number, not a range.',
+    '',
+    'Facts:',
+    JSON.stringify(facts, null, 1),
+  ].join(String.fromCharCode(10));
+
+  const r = await runClaude(prompt, { args: ['-p', '--output-format', 'json', '--model', 'sonnet'], timeoutMs: 45_000 });
+  if (!r.ok) throw new Error(r.error);
+  let text = '';
+  try { text = String(JSON.parse(r.stdout).result || '').trim(); } catch { text = String(r.stdout || '').trim(); }
+  const m = text.match(/ЦЕЛЬ:\s*-?([\d.,]+)\s*%/);
+  const why = (text.match(/ПОЧЕМУ:\s*([^\n]+)/) || [])[1] || '';
+  let dip = m ? parseFloat(String(m[1]).replace(',', '.')) : NaN;
+  if (!Number.isFinite(dip)) throw new Error('не удалось прочитать глубину из ответа');
+  // Держим в разумных рамках независимо от ответа: сторож не должен ждать
+  // ни шума, ни обвала, которого не было в измерениях.
+  dip = Math.max(0.3, Math.min(8, Math.abs(dip)));
+  return { dip, why: why.trim(), price: facts.price };
+}
+
+app.get('/api/dip-watch', (req, res) => {
+  res.json({ success: true, watches: dipWatches });
+});
+
+app.post('/api/dip-watch', async (req, res) => {
+  const coin = String((req.body || {}).coin || '').toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 15);
+  const enable = (req.body || {}).enable !== false;
+  if (!coin) return res.status(400).json({ success: false, error: 'нет монеты' });
+  if (!enable) {
+    delete dipWatches[coin];
+    saveDipWatches();
+    return res.json({ success: true, watches: dipWatches });
+  }
+  try {
+    const { dip, why, price } = await askDipDepth(coin);
+    dipWatches[coin] = {
+      at: Date.now(), pair: coin + '-USD',
+      startPx: price, targetPx: price * (1 - dip / 100),
+      dipPct: Math.round(dip * 100) / 100, why,
+    };
+    saveDipWatches();
+    res.json({ success: true, watch: dipWatches[coin], watches: dipWatches });
+  } catch (e) {
+    res.json({ success: false, error: e.message });
+  }
+});
+
+// Проверяем цены раз в 30 секунд. Отдельный цикл, а не внутри скана: сторож
+// должен работать и по монете, которой в скане нет.
+setInterval(async () => {
+  const coins = Object.keys(dipWatches);
+  if (!coins.length) return;
+  for (const coin of coins) {
+    const w = dipWatches[coin];
+    if (!w || !(w.targetPx > 0)) { delete dipWatches[coin]; saveDipWatches(); continue; }
+    try {
+      const r = await fetch(`${DIP_CB}/products/${w.pair}/ticker`, DIP_H);
+      if (!r.ok) continue;
+      const t = await r.json();
+      const bid = Number(t.bid);
+      if (!(bid > 0) || bid > w.targetPx) continue;
+      const fell = (bid / w.startPx - 1) * 100;
+      const sent = await sendTelegram(
+        '📉 <b>' + escTg(coin) + '</b> — просадка, которую ты ждал' + NL +
+        '━━━━━━━━━━━━━━━━━━' + NL +
+        'Цена: <b>$' + fmtPxAe(bid) + '</b> (было $' + fmtPxAe(w.startPx) + ')' + NL +
+        'Упало на <b>' + fell.toFixed(2) + '%</b>, ждали ' + w.dipPct + '%' + NL +
+        (w.why ? NL + '<i>' + escTg(w.why) + '</i>' + NL : '') + NL +
+        '<i>Глубина названа по измеренным размахам последних часов, но это' + NL +
+        'оценка, а не прогноз. Падение может продолжиться.</i>' + NL +
+        '(сторож одноразовый — снят)', 'HTML');
+      // Снимаем ТОЛЬКО если сообщение ушло: иначе отказ Telegram выглядел бы
+      // так, будто просадки не было.
+      if (!sent) { console.error('[dip-watch] ' + coin + ': Telegram не принял, сторож оставлен'); continue; }
+      delete dipWatches[coin];
+      saveDipWatches();
+      console.log('[dip-watch] ' + coin + ' сработал на ' + bid + ' (-' + fell.toFixed(2) + '%)');
+    } catch (e) { console.error('[dip-watch]', coin, e.message); }
+  }
+}, 30_000);
+
 // ── Ручное открытие paper-сделки из таблицы (ведётся тем же движком) ──
 app.post('/api/paper/open', async (req, res) => {
   try {

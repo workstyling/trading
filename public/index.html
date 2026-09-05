@@ -6066,6 +6066,7 @@
                 <input type="number" class="buy-size-input" id="bidLevelInput" step="1" max="0" value="0" style="width:26px;" onchange="onBidLevelChange()">
                 <button class="buy-input-btn plus" onclick="adjustBidLevel(1)">+</button>
               </div>
+              <button id="dipWatchBtn" onclick="toggleDipWatch()" style="padding:6px 10px;border:1px solid rgba(255,255,255,0.22);border-radius:8px;background:transparent;color:#8b93a7;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;flex-shrink:0;">📉 Ждать провал</button>
               <button onclick="toggleTVChart()" id="tvChartToggleBtn" title="TradingView 15m chart" style="padding:6px 10px;border:1px solid rgba(76,201,240,0.35);border-radius:8px;background:rgba(76,201,240,0.08);color:var(--blue);font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all 0.2s;flex-shrink:0;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align:middle;margin-right:3px;"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>Chart</button>
               <span class="limit-separator" style="display: none !important;">|</span>
               <input type="text" class="limit-price-input" id="limitPriceInput" placeholder="Price" autocomplete="off" style="display: none !important;">
@@ -7544,6 +7545,75 @@
       }
     }
     setInterval(paintFreshness, 1000);
+
+    // Кнопка ожидания просадки. Claude называет глубину по измеренным размахам,
+    // сервер следит за ценой и один раз пишет в Telegram. Кнопка показывает
+    // фактическое состояние: свободна, ждёт (с целью), или занята расчётом.
+    let _dipWatches = {};
+
+    function _dipCoin() {
+      const el = document.getElementById('buyCoin');
+      return String((el && el.value) || '').trim().toUpperCase();
+    }
+
+    function paintDipBtn() {
+      const b = document.getElementById('dipWatchBtn');
+      if (!b) return;
+      const coin = _dipCoin();
+      const w = coin && _dipWatches[coin];
+      if (w) {
+        b.textContent = '⏳ ждём −' + w.dipPct + '%';
+        b.title = coin + ': сообщу в Telegram при падении до $' + Number(w.targetPx).toFixed(6) +
+          ' (сейчас ставили от $' + Number(w.startPx).toFixed(6) + ')' +
+          (w.why ? '\n' + w.why : '') + '\nНажми ещё раз, чтобы снять.';
+        b.style.borderColor = 'var(--yellow)';
+        b.style.color = 'var(--yellow)';
+        b.style.background = 'rgba(245,197,24,0.12)';
+      } else {
+        b.textContent = '📉 Ждать провал';
+        b.title = 'Claude оценит, насколько монета может просесть, и пришлёт в Telegram, когда это случится. Одно сообщение, потом сторож снимается.';
+        b.style.borderColor = 'rgba(255,255,255,0.22)';
+        b.style.color = '#8b93a7';
+        b.style.background = 'transparent';
+      }
+    }
+
+    async function loadDipWatches() {
+      try {
+        const j = await (await fetch('/api/dip-watch')).json();
+        if (j.success) { _dipWatches = j.watches || {}; paintDipBtn(); }
+      } catch { }
+    }
+
+    async function toggleDipWatch() {
+      const b = document.getElementById('dipWatchBtn');
+      const coin = _dipCoin();
+      if (!coin) { showCustomAlert('Сначала выбери монету', true); return; }
+      const armed = !!_dipWatches[coin];
+      if (b) { b.disabled = true; if (!armed) b.textContent = '⏳ считаю глубину…'; }
+      try {
+        const r = await fetch('/api/dip-watch', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ coin, enable: !armed }),
+        });
+        const j = await r.json();
+        if (!j.success) { showCustomAlert(j.error || 'Не удалось', true); }
+        else if (j.watch) {
+          showCustomAlert(coin + ': жду падения на ' + j.watch.dipPct + '% — до $' +
+            Number(j.watch.targetPx).toFixed(6) + '. Сообщу в Telegram один раз.');
+        } else {
+          showCustomAlert(coin + ': сторож снят');
+        }
+        _dipWatches = j.watches || _dipWatches;
+      } catch (e) {
+        showCustomAlert('Ошибка: ' + e.message, true);
+      } finally {
+        if (b) b.disabled = false;
+        paintDipBtn();
+      }
+    }
+    setTimeout(loadDipWatches, 2000);
+    setInterval(loadDipWatches, 30000);
 
     function renderTrend(hist, mode) {
       if (!hist || hist.length < 2) {
