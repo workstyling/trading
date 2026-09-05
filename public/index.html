@@ -7547,9 +7547,13 @@
     setInterval(paintFreshness, 1000);
 
     // Кнопка ожидания просадки. Claude называет глубину по измеренным размахам,
-    // сервер следит за ценой и один раз пишет в Telegram. Кнопка показывает
-    // фактическое состояние: свободна, ждёт (с целью), или занята расчётом.
+    // сервер следит за ценой и один раз пишет в Telegram.
+    //
+    // Три состояния, и все три нажимаемы: свободна — поставить, считает —
+    // отменить, ждёт — снять. Раньше на время расчёта кнопка блокировалась,
+    // и отменить его было нечем: приходилось ждать до сорока пяти секунд.
     let _dipWatches = {};
+    let _dipPending = null;   // { coin, ctrl } — идущий расчёт
 
     function _dipCoin() {
       const el = document.getElementById('buyCoin');
@@ -7561,20 +7565,24 @@
       if (!b) return;
       const coin = _dipCoin();
       const w = coin && _dipWatches[coin];
-      if (w) {
-        b.textContent = '⏳ ждём −' + w.dipPct + '%';
-        b.title = coin + ': сообщу в Telegram при падении до $' + Number(w.targetPx).toFixed(6) +
-          ' (сейчас ставили от $' + Number(w.startPx).toFixed(6) + ')' +
-          (w.why ? '\n' + w.why : '') + '\nНажми ещё раз, чтобы снять.';
-        b.style.borderColor = 'var(--yellow)';
-        b.style.color = 'var(--yellow)';
-        b.style.background = 'rgba(245,197,24,0.12)';
+      const set = (text, col, bg, title) => {
+        b.textContent = text;
+        b.style.color = col;
+        b.style.borderColor = col === '#8b93a7' ? 'rgba(255,255,255,0.22)' : col;
+        b.style.background = bg;
+        b.title = title;
+      };
+      if (_dipPending) {
+        set('✕ отменить расчёт', '#ff6b6b', 'rgba(255,107,107,0.10)',
+          _dipPending.coin + ': Claude считает глубину провала. Нажми, чтобы отменить.');
+      } else if (w) {
+        set('⏳ ждём −' + w.dipPct + '%', 'var(--yellow)', 'rgba(245,197,24,0.12)',
+          coin + ': сообщу в Telegram при падении до $' + Number(w.targetPx).toFixed(6) +
+          ' (ставили от $' + Number(w.startPx).toFixed(6) + ')' +
+          (w.why ? '\n' + w.why : '') + '\nНажми, чтобы снять.');
       } else {
-        b.textContent = '📉 Ждать провал';
-        b.title = 'Claude оценит, насколько монета может просесть, и пришлёт в Telegram, когда это случится. Одно сообщение, потом сторож снимается.';
-        b.style.borderColor = 'rgba(255,255,255,0.22)';
-        b.style.color = '#8b93a7';
-        b.style.background = 'transparent';
+        set('📉 Ждать провал', '#8b93a7', 'transparent',
+          'Claude оценит, насколько монета может просесть, и пришлёт в Telegram, когда это случится. Одно сообщение, потом сторож снимается.');
       }
     }
 
@@ -7585,30 +7593,59 @@
       } catch { }
     }
 
+    async function _dipSend(coin, enable, signal) {
+      const r = await fetch('/api/dip-watch', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ coin, enable }), signal,
+      });
+      return r.json();
+    }
+
     async function toggleDipWatch() {
-      const b = document.getElementById('dipWatchBtn');
+      // 1) идёт расчёт — отменяем
+      if (_dipPending) {
+        const { coin, ctrl } = _dipPending;
+        _dipPending = null;
+        try { ctrl.abort(); } catch { }
+        // Сервер мог успеть поставить сторож до того, как мы бросили ответ:
+        // снимаем его явно, иначе осталась бы слежка, которую никто не просил.
+        try { await _dipSend(coin, false); } catch { }
+        await loadDipWatches();
+        showCustomAlert(coin + ': расчёт отменён');
+        return;
+      }
+
       const coin = _dipCoin();
       if (!coin) { showCustomAlert('Сначала выбери монету', true); return; }
-      const armed = !!_dipWatches[coin];
-      if (b) { b.disabled = true; if (!armed) b.textContent = '⏳ считаю глубину…'; }
-      try {
-        const r = await fetch('/api/dip-watch', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ coin, enable: !armed }),
-        });
-        const j = await r.json();
-        if (!j.success) { showCustomAlert(j.error || 'Не удалось', true); }
-        else if (j.watch) {
-          showCustomAlert(coin + ': жду падения на ' + j.watch.dipPct + '% — до $' +
-            Number(j.watch.targetPx).toFixed(6) + '. Сообщу в Telegram один раз.');
-        } else {
+
+      // 2) сторож стоит — снимаем
+      if (_dipWatches[coin]) {
+        try {
+          const j = await _dipSend(coin, false);
+          _dipWatches = j.watches || {};
           showCustomAlert(coin + ': сторож снят');
-        }
+        } catch (e) { showCustomAlert('Ошибка: ' + e.message, true); }
+        paintDipBtn();
+        return;
+      }
+
+      // 3) ставим новый
+      const ctrl = new AbortController();
+      _dipPending = { coin, ctrl };
+      paintDipBtn();
+      try {
+        const j = await _dipSend(coin, true, ctrl.signal);
+        if (!_dipPending) return;          // отменили, пока ждали
+        _dipPending = null;
+        if (!j.success) showCustomAlert(j.error || 'Не удалось', true);
+        else if (j.watch) showCustomAlert(coin + ': жду падения на ' + j.watch.dipPct + '% — до $' +
+          Number(j.watch.targetPx).toFixed(6) + '. Сообщу в Telegram один раз.');
         _dipWatches = j.watches || _dipWatches;
       } catch (e) {
+        if (e && e.name === 'AbortError') return;   // отмену сообщили выше
+        _dipPending = null;
         showCustomAlert('Ошибка: ' + e.message, true);
       } finally {
-        if (b) b.disabled = false;
         paintDipBtn();
       }
     }
