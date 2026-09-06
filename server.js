@@ -6649,8 +6649,18 @@ app.post('/api/advise-sell', async (req, res) => {
 const DIP_CB = 'https://api.exchange.coinbase.com';
 const DIP_H = { headers: { 'User-Agent': 'trading-app/1.0' } };
 const DIP_WATCH_FILE = path.join(__dirname, 'dip-watch.json');
+// Как часто пересчитывать обе границы. Обстановка за десять минут успевает
+// смениться, а чаще звать Opus незачем: размахи, по которым он считает,
+// меряются часами, а не минутами.
+const DIP_REVIEW_MS = 10 * 60 * 1000;
+const dipBusy = new Set();   // монеты, по которым сейчас идёт пересчёт
 let dipWatches = {};   // coin -> { at, startPx, targetPx, dipPct, why, pair }
 try { dipWatches = JSON.parse(fs.readFileSync(DIP_WATCH_FILE, 'utf8')) || {}; } catch { }
+// Сторожа, поставленные до появления верхней границы, её не имеют. Просим
+// пересчитать их на первом же круге, иначе они остались бы без отмены.
+for (const w of Object.values(dipWatches)) {
+  if (w && !w.fired && !w.stopped && !(w.abortPx > 0)) w.reviewAt = 1;
+}
 function saveDipWatches() {
   try { fs.writeFileSync(DIP_WATCH_FILE, JSON.stringify(dipWatches, null, 2)); } catch { }
 }
@@ -6681,20 +6691,32 @@ async function dipFacts(coin) {
   };
 }
 
+// Спрашиваем СРАЗУ обе границы: где ждать покупку и где ждать уже нет
+// смысла. Одной глубины мало — монета может уйти вверх, и сторож, который
+// умеет только ждать падения, будет молча висеть на исчезнувшей возможности.
+// Обе границы называются по одним и тем же измеренным размахам, поэтому и
+// пересчитываются вместе.
 async function askDipDepth(coin) {
   const facts = await dipFacts(coin);
   const prompt = [
-    'A trader wants to buy this coin on a dip. Name how far it could realistically dip from here.',
-    'Answer in Russian. Reply with EXACTLY these two lines and nothing else:',
+    'A trader wants to buy this coin on a dip. Name two levels: how far it could realistically',
+    'dip from here, and how far up would mean the setup is gone.',
+    'Answer in Russian. Reply with EXACTLY these three lines and nothing else:',
     'ЦЕЛЬ: <number>%',
+    'ОТМЕНА: <number>%',
     'ПОЧЕМУ: <one sentence, max 20 words, citing a number from the facts>',
     '',
     'Rules:',
     '- ЦЕЛЬ is a POSITIVE number: how many percent BELOW the current price to wait for.',
     '- It must stay inside what the facts already show. Do not exceed the 24h low distance,',
     '  and do not go below the average 5m candle range -- smaller than that is noise, not a dip.',
-    '- Never invent volatility, a probability, or a target the numbers do not support.',
-    '- Sensible range here is roughly 0.3% to 5%. Pick one number, not a range.',
+    '- A small ЦЕЛЬ is a perfectly good answer when the measured ranges are small. Do not',
+    '  inflate it to look decisive.',
+    '- ОТМЕНА is a POSITIVE number: how many percent ABOVE the current price would mean waiting',
+    '  for a dip no longer makes sense -- the move left without us and buying here is chasing.',
+    '  Base it on the same measured ranges. Sensible range 0.5% to 6%.',
+    '- Never invent volatility, a probability, or a level the numbers do not support.',
+    '- Sensible ЦЕЛЬ here is roughly 0.3% to 5%. Pick one number, not a range.',
     '',
     'Facts:',
     JSON.stringify(facts, null, 1),
@@ -6711,7 +6733,14 @@ async function askDipDepth(coin) {
   // Держим в разумных рамках независимо от ответа: сторож не должен ждать
   // ни шума, ни обвала, которого не было в измерениях.
   dip = Math.max(0.3, Math.min(8, Math.abs(dip)));
-  return { dip, why: why.trim(), price: facts.price };
+  // Уровень отмены читаем отдельно. Если модель его не назвала, ставим свой:
+  // без верхней границы сторож остался бы висеть на уехавшей монете, а это
+  // ровно то, ради чего граница и нужна.
+  const mu = text.match(/ОТМЕНА:\s*\+?([\d.,]+)\s*%/);
+  let up = mu ? parseFloat(String(mu[1]).replace(',', '.')) : NaN;
+  if (!Number.isFinite(up)) up = dip * 1.5;
+  up = Math.max(0.5, Math.min(10, Math.abs(up)));
+  return { dip, up, why: why.trim(), price: facts.price };
 }
 
 app.get('/api/dip-watch', (req, res) => {
@@ -6728,11 +6757,17 @@ app.post('/api/dip-watch', async (req, res) => {
     return res.json({ success: true, watches: dipWatches });
   }
   try {
-    const { dip, why, price } = await askDipDepth(coin);
+    const { dip, up, why, price } = await askDipDepth(coin);
     dipWatches[coin] = {
       at: Date.now(), pair: coin + '-USD',
       startPx: price, targetPx: price * (1 - dip / 100),
       dipPct: Math.round(dip * 100) / 100, why,
+      // Верхняя граница отсчитывается от цены постановки и дальше не растёт
+      // вместе с ценой: иначе она убегала бы вверх ровно от того движения,
+      // которое и должна ловить.
+      abortPx: price * (1 + up / 100),
+      upPct: Math.round(up * 100) / 100,
+      reviewAt: Date.now() + DIP_REVIEW_MS,
     };
     saveDipWatches();
     res.json({ success: true, watch: dipWatches[coin], watches: dipWatches });
@@ -6749,13 +6784,73 @@ setInterval(async () => {
   for (const coin of coins) {
     const w = dipWatches[coin];
     if (!w || !(w.targetPx > 0)) { delete dipWatches[coin]; saveDipWatches(); continue; }
-    if (w.fired) continue;   // сработал и ждёт сброса — цену больше не смотрим
+    if (w.fired || w.stopped) continue;   // отработал и ждёт сброса
+    if (dipBusy.has(coin)) continue;       // идёт пересчёт, цену трогаем следующим кругом
     try {
       const r = await fetch(`${DIP_CB}/products/${w.pair}/ticker`, DIP_H);
       if (!r.ok) continue;
       const t = await r.json();
       const bid = Number(t.bid);
-      if (!(bid > 0) || bid > w.targetPx) continue;
+      if (!(bid > 0)) continue;
+
+      // Ушла вверх настолько, что ждать провал уже не имеет смысла: покупка
+      // здесь — это погоня за уехавшим движением. Сторож снимается сам и
+      // говорит об этом, иначе он молча висел бы на исчезнувшей возможности.
+      if (w.abortPx > 0 && bid >= w.abortPx) {
+        const rose = (bid / w.startPx - 1) * 100;
+        const sent = await sendTelegram(
+          '🚫 <b>' + escTg(coin) + '</b> — сторож снят, монета ушла вверх' + NL +
+          '━━━━━━━━━━━━━━━━━━' + NL +
+          'Цена: <b>$' + fmtPxAe(bid) + '</b> (ставили от $' + fmtPxAe(w.startPx) + ')' + NL +
+          'Выросла на <b>+' + rose.toFixed(2) + '%</b>, отмена стояла на +' + w.upPct + '%' + NL + NL +
+          '<i>Ждать падения с этого уровня — уже погоня: движение ушло без нас,' + NL +
+          'и покупка здесь опаснее, чем пропустить её целиком.</i>' + NL +
+          '(сторож снят, падение больше не отслеживается)', 'HTML');
+        if (!sent) { console.error('[dip-watch] ' + coin + ': Telegram не принял отмену, сторож оставлен'); continue; }
+        w.stopped = 'up';
+        w.stoppedAt = Date.now();
+        w.stoppedPx = bid;
+        w.rosePct = Math.round(rose * 100) / 100;
+        saveDipWatches();
+        console.log('[dip-watch] ' + coin + ' снят ростом на ' + bid + ' (+' + rose.toFixed(2) + '%)');
+        continue;
+      }
+
+      // Обстановка меняется, а цель, названная один раз при постановке,
+      // остаётся от старого рынка. Пересчитываем обе границы по свежим
+      // размахам: цель может стать и мельче, если рынок успокоился.
+      if (w.reviewAt && Date.now() >= w.reviewAt) {
+        dipBusy.add(coin);
+        try {
+          const nx = await askDipDepth(coin);
+          const cur = dipWatches[coin];
+          if (cur && !cur.fired && !cur.stopped) {
+            const wasDip = cur.dipPct;
+            cur.targetPx = nx.price * (1 - nx.dip / 100);
+            cur.dipPct = Math.round(nx.dip * 100) / 100;
+            cur.upPct = Math.round(nx.up * 100) / 100;
+            // Отмена по-прежнему считается от цены ПОСТАНОВКИ, а не от текущей:
+            // привязка к текущей делала бы порог недостижимым при плавном росте.
+            cur.abortPx = cur.startPx * (1 + nx.up / 100);
+            if (nx.why) cur.why = nx.why;
+            cur.reviewAt = Date.now() + DIP_REVIEW_MS;
+            cur.reviewedAt = Date.now();
+            saveDipWatches();
+            console.log('[dip-watch] ' + coin + ' пересчитан: ' + wasDip + '% -> ' + cur.dipPct +
+              '%, отмена +' + cur.upPct + '%');
+          }
+        } catch (e) {
+          // Пересчитать не вышло — оставляем прежние границы и пробуем позже.
+          // Снимать сторож из-за недоступного Claude было бы худшим исходом.
+          w.reviewAt = Date.now() + 60_000;
+          console.error('[dip-watch] ' + coin + ': пересчёт не удался — ' + e.message);
+        } finally {
+          dipBusy.delete(coin);
+        }
+        continue;
+      }
+
+      if (bid > w.targetPx) continue;
       const fell = (bid / w.startPx - 1) * 100;
       const sent = await sendTelegram(
         '📉 <b>' + escTg(coin) + '</b> — просадка, которую ты ждал' + NL +

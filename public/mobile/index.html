@@ -3329,10 +3329,19 @@
         stop.textContent = '↺ Сбросить'; show(stop, RED);
         stop.title = coin + ': сообщение отправлено при $' + Number(w.firedPx || 0).toFixed(6) +
           '. Сторож одноразовый — сбрось, чтобы поставить заново.';
+      } else if (w && w.stopped) {
+        go.textContent = '🚫 ушла вверх +' + Math.abs(w.rosePct || 0).toFixed(2) + '%'; dim(go);
+        stop.textContent = '↺ Сбросить'; show(stop, RED);
+        stop.title = coin + ': выросла до $' + Number(w.stoppedPx || 0).toFixed(6) +
+          ' — ждать падения отсюда уже погоня, сторож снят сам.';
       } else if (w) {
         go.textContent = '⏳ ждём −' + w.dipPct + '%'; dim(go);
         stop.textContent = '✕ Стоп'; show(stop, RED);
-        stop.title = coin + ': сообщу в Telegram при падении до $' + Number(w.targetPx).toFixed(6) +
+        // Обе границы пересчитываются каждые 10 минут, поэтому в подсказке
+        // видно и цель, и уровень отмены, и что числа живые.
+        stop.title = coin + ': сигнал на покупку при падении до $' + Number(w.targetPx).toFixed(6) +
+          (w.upPct ? ', сниму сам при росте выше +' + w.upPct + '%' : '') +
+          '\nГраницы пересчитываются каждые 10 минут по свежим размахам.' +
           (w.why ? '\n' + w.why : '');
       } else {
         go.textContent = '📉 Ждать провал'; show(go, GREEN);
@@ -3384,7 +3393,8 @@
       const coin = _dipPendingM ? _dipPendingM.coin : _dipCoinM();
       if (!coin) return;
       const wasPending = !!_dipPendingM;
-      const wasFired = !!(_dipWatchesM[coin] && _dipWatchesM[coin].fired);
+      const wf = _dipWatchesM[coin];
+      const wasFired = !!(wf && (wf.fired || wf.stopped));
       if (wasPending) {
         const { ctrl } = _dipPendingM;
         _dipPendingM = null;
