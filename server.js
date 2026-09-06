@@ -4755,6 +4755,71 @@ function microScalpSetupStrength(row) {
   };
 }
 
+// Выгода входа ПРЯМО СЕЙЧАС. Готовность отвечает «сколько осталось до входа»,
+// сила — «насколько это похоже на нужный сетап». Оба отвечают про сетап, но
+// ни один не отвечает на вопрос покупателя: где сейчас выгоднее взять.
+//
+// Здесь нужны ОБА условия сразу: монета должна уже упасть (иначе покупаешь по
+// верхам) и уже развернуться (иначе ловишь падающий нож). Поэтому обе доли
+// перемножаются, а не складываются: ноль в любой из них обнуляет всё. При
+// сложении монета без отката всё равно набирала бы половину балла — а это
+// ровно та покупка, которой нужно избежать.
+//
+// Издержки и тренд только приглушают результат (до 55%), но не могут его
+// создать: дешёвый спред на монете без отката покупкой не становится.
+//
+// Это НЕ вероятность прибыли. Связь между этим числом и исходом не измерялась
+// ни разу — считается оно из живых чисел и говорит лишь, где сочетание
+// «уже упало и уже развернулось» сейчас выражено сильнее.
+//
+// Живёт в server.js, как готовность и сила: правка в src/micro-scalp/* сменила
+// бы отпечаток и обнулила набранную когорту.
+function microScalpEntryValue(row) {
+  // Number(null) === 0, а ноль конечен: без явной проверки на null пропуск
+  // в данных прошёл бы как «отката нет» и получил бы честный ноль баллов
+  // вместо отказа считать.
+  const num = (v) => v == null || v === '' ? NaN : Number(v);
+  const pull = num(row && row.pullbackPct);
+  const rsi = num(row && row.rsi);
+  if (!Number.isFinite(pull) || !Number.isFinite(rsi)) return null;
+
+  // Трапеция: слева ноль, в середине единица, справа снова ноль.
+  const band = (v, zeroLo, fullLo, fullHi, zeroHi) => {
+    if (v <= zeroLo || v >= zeroHi) return 0;
+    if (v < fullLo) return (v - zeroLo) / (fullLo - zeroLo);
+    if (v > fullHi) return (zeroHi - v) / (zeroHi - fullHi);
+    return 1;
+  };
+
+  // Скидка: насколько уже упало от получасового максимума. Меньше 0.05% —
+  // скидки нет; глубже 2.5% — это уже не откат внутри тренда, а слом.
+  const discount = band(pull, 0.05, 0.60, 1.20, 2.50);
+  // Разворот: RSI ниже 40 значит, что падение ещё идёт, выше 75 — что отскок
+  // уже отработан и покупать поздно.
+  const turn = band(rsi, 40, 52, 62, 75);
+
+  // Фон: во что обойдётся вход и цел ли тренд. Только приглушает.
+  const checks = Array.isArray(row.checks) ? row.checks : [];
+  const okOf = (prefix) => {
+    const c = checks.find(x => String(x.k || '').startsWith(prefix));
+    return c ? !!c.ok : null;
+  };
+  const spread = Number(row.spreadPct);
+  const costOk = Number.isFinite(spread) && spread > 0 ? Math.max(0, Math.min(1, 0.20 / spread)) : 0;
+  const liqOk = Math.max(0, Math.min(1, (Number(row.vol24) || 0) / 2e6));
+  const trendOk = okOf('Price above EMA9') === true ? 1 : 0.45;
+  const btcOk = okOf('BTC above EMA20') === true ? 1 : 0.8;
+  const backdrop = (costOk * 0.45 + liqOk * 0.25 + trendOk * 0.20 + btcOk * 0.10);
+
+  const pct = Math.round(100 * discount * turn * (0.55 + 0.45 * backdrop));
+  const why = discount === 0
+    ? (pull < 0.05 ? 'ещё не падала' : 'провалилась слишком глубоко')
+    : turn === 0
+      ? (rsi < 40 ? 'ещё падает' : 'отскок уже отработан')
+      : 'откат ' + pull + '%, RSI ' + Math.round(rsi);
+  return { pct, why, discount: Math.round(discount * 100), turn: Math.round(turn * 100) };
+}
+
 async function runMicroScalpScan() {
   if (microScalpScan.running || !cbVolumeCache.size) return;
   microScalpScan.running = true;
@@ -4771,6 +4836,7 @@ async function runMicroScalpScan() {
     for (const row of out.results) {
       row.readiness = microScalpReadiness(row);
       row.setupStrength = microScalpSetupStrength(row);
+      row.entryValue = microScalpEntryValue(row);
     }
     microScalpScan.results = out.results;
     microScalpScan.total = out.total;
@@ -6487,14 +6553,13 @@ app.get('/api/claude-status', async (req, res) => {
       // ним стоит, из флага не видно. Достаём настоящий идентификатор из
       // отчёта об использовании: это единственный способ проверить, а не
       // предположить.
-      // В modelUsage попадают ВСЕ модели сессии, включая служебную мелкую,
-      // поэтому первый ключ ничего не доказывает. Берём ту, что выдала
-      // больше всего токенов, и заодно отдаём весь список.
+      // В modelUsage попадают ВСЕ модели сессии, включая служебную мелкую для
+      // фоновых задач Claude Code. По числу токенов её не отличить: на ответ
+      // в одно слово она выдаёт больше основной. Ищем ту, что отвечает
+      // запрошенному псевдониму, и отдаём весь список для проверки.
       const mu = j.modelUsage || {};
-      const keys = Object.keys(mu);
-      model = keys.sort((a, b) =>
-        ((mu[b] || {}).outputTokens || 0) - ((mu[a] || {}).outputTokens || 0))[0] || j.model || null;
-      models = keys;
+      models = Object.keys(mu);
+      model = models.find(k => k.includes(CLAUDE_MODEL)) || j.model || models[0] || null;
     } catch { text = String(probe.stdout || '').slice(0, 120); }
     return res.json({ success: true, ...base, state: 'authorized', probe: text, model, models, asked: CLAUDE_MODEL });
   }
