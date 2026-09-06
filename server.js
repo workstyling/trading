@@ -6391,9 +6391,9 @@ setInterval(async () => {
 // узнали бы мы об этом по счёту, а не по поведению.
 const { spawn } = require('child_process');
 const CLAUDE_BIN = process.env.CLAUDE_BIN || 'claude';
-// Авторизованный CLI отвечает за 2-4 секунды. Долгое ожидание значит не
-// «думает», а «висит», и держать окно минуту незачем.
-const CLAUDE_TIMEOUT_MS = 25_000;
+// Opus думает дольше Sonnet: на разбор позиции уходит до полуминуты. Прежние
+// 25 секунд рубили ответ на полуслове, и окно показывало ноль разборов.
+const CLAUDE_TIMEOUT_MS = 45_000;
 // Окно обновляет совет раз в 20 секунд, поэтому минутный кеш возвращал бы
 // устаревший вердикт три раза подряд. Держим короче цикла обновления, но
 // достаточно, чтобы повторное открытие окна не тратило квоту заново.
@@ -6401,6 +6401,10 @@ const CLAUDE_CACHE_MS = 15_000;
 let claudeInFlight = 0;              // одновременно пускаем только один вызов
 const claudeAdviceCache = new Map(); // coin -> { at, data }
 let claudeStatusCache = { at: 0, data: null };
+
+// Модель для всех разборов. Opus: решение денежное, и разница между
+// моделями тут стоит дороже, чем лишние секунды ожидания.
+const CLAUDE_MODEL = 'opus';
 
 function runClaude(prompt, { timeoutMs = CLAUDE_TIMEOUT_MS, args = [] } = {}) {
   return new Promise((resolve) => {
@@ -6471,7 +6475,7 @@ app.get('/api/claude-status', async (req, res) => {
   // поэтому по нему нельзя отличить «установлен» от «авторизован».
   if (req.query.deep === '1' && base.ready) {
     const probe = await runClaude('Reply with exactly: OK',
-      { args: ['-p', '--output-format', 'json', '--model', 'sonnet'], timeoutMs: 45_000 });
+      { args: ['-p', '--output-format', 'json', '--model', CLAUDE_MODEL], timeoutMs: 45_000 });
     if (!probe.ok) {
       return res.json({ success: true, ...base, ready: false, state: 'unauthorized', error: probe.error });
     }
@@ -6499,7 +6503,9 @@ app.post('/api/advise-sell', async (req, res) => {
   // Раньше здесь был мгновенный отказ, и открытое второе окно получало
   // «уже думает над другой монетой» вместо ответа. Ждём освобождения —
   // вызов идёт секунды, а не минуты.
-  for (let waited = 0; claudeInFlight > 0 && waited < 20_000; waited += 400) {
+  // Ждём дольше самого вызова, иначе второй клиент получал «занят» ровно
+  // тогда, когда первый разбор ещё считался.
+  for (let waited = 0; claudeInFlight > 0 && waited < 50_000; waited += 400) {
     await new Promise(r => setTimeout(r, 400));
   }
   if (claudeInFlight > 0) return res.json({ success: false, error: 'советник занят, попробуй ещё раз' });
@@ -6592,7 +6598,7 @@ app.post('/api/advise-sell', async (req, res) => {
 
   claudeInFlight++;
   try {
-    const r = await runClaude(prompt, { args: ['-p', '--output-format', 'json', '--model', 'sonnet'] });
+    const r = await runClaude(prompt, { args: ['-p', '--output-format', 'json', '--model', CLAUDE_MODEL] });
     if (!r.ok) return res.json({ success: false, error: r.error });
     let text = '';
     try {
@@ -6694,7 +6700,7 @@ async function askDipDepth(coin) {
     JSON.stringify(facts, null, 1),
   ].join(String.fromCharCode(10));
 
-  const r = await runClaude(prompt, { args: ['-p', '--output-format', 'json', '--model', 'sonnet'], timeoutMs: 45_000 });
+  const r = await runClaude(prompt, { args: ['-p', '--output-format', 'json', '--model', CLAUDE_MODEL], timeoutMs: 45_000 });
   if (!r.ok) throw new Error(r.error);
   let text = '';
   try { text = String(JSON.parse(r.stdout).result || '').trim(); } catch { text = String(r.stdout || '').trim(); }
@@ -6743,6 +6749,7 @@ setInterval(async () => {
   for (const coin of coins) {
     const w = dipWatches[coin];
     if (!w || !(w.targetPx > 0)) { delete dipWatches[coin]; saveDipWatches(); continue; }
+    if (w.fired) continue;   // сработал и ждёт сброса — цену больше не смотрим
     try {
       const r = await fetch(`${DIP_CB}/products/${w.pair}/ticker`, DIP_H);
       if (!r.ok) continue;
@@ -6762,7 +6769,13 @@ setInterval(async () => {
       // Снимаем ТОЛЬКО если сообщение ушло: иначе отказ Telegram выглядел бы
       // так, будто просадки не было.
       if (!sent) { console.error('[dip-watch] ' + coin + ': Telegram не принял, сторож оставлен'); continue; }
-      delete dipWatches[coin];
+      // Не удаляем, а помечаем сработавшим: интерфейсу нужно что-то показать,
+      // иначе кнопка молча вернулась бы в исходное и выглядела бы так, будто
+      // ничего не было. Убирает запись только явный сброс.
+      w.fired = true;
+      w.firedAt = Date.now();
+      w.firedPx = bid;
+      w.fellPct = Math.round(fell * 100) / 100;
       saveDipWatches();
       console.log('[dip-watch] ' + coin + ' сработал на ' + bid + ' (-' + fell.toFixed(2) + '%)');
     } catch (e) { console.error('[dip-watch]', coin, e.message); }

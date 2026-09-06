@@ -348,7 +348,8 @@
 
     .toast-container {
       position: fixed; bottom: 70px; left: 50%; transform: translateX(-50%);
-      z-index: 200; display: flex; flex-direction: column; gap: 6px; align-items: center;
+      /* Выше модалок (до 9999): тост под затемнением никто не видел. */
+      z-index: 100001; display: flex; flex-direction: column; gap: 6px; align-items: center;
     }
     .toast {
       padding: 10px 20px; border-radius: 20px; font-size: 12px; font-weight: 600;
@@ -1547,7 +1548,10 @@
           <button class="trade-btn btn-buy" id="btnBuy" onclick="executeBuy()">BUY</button>
           <button class="trade-btn btn-mkt" id="btnBuyMkt" onclick="executeMarketBuy()">BUY MKT</button>
         </div>
-        <button id="dipWatchBtnM" onclick="toggleDipWatchM()" style="width:100%;margin-top:6px;padding:8px;border:1px solid rgba(255,255,255,0.22);border-radius:8px;background:transparent;color:#8b93a7;font-size:12px;font-weight:600;">📉 Ждать провал</button>
+        <div style="display:flex;margin-top:6px;border:1px solid rgba(191,90,242,0.45);border-radius:9px;overflow:hidden;background:rgba(191,90,242,0.06);">
+          <button id="dipGoM" onclick="dipGoM()" style="flex:1;padding:9px 6px;border:0;background:transparent;color:#8b93a7;font-size:12px;font-weight:600;">📉 Ждать провал</button>
+          <button id="dipStopM" onclick="dipStopM()" style="display:none;flex:0 0 92px;padding:9px 6px;border:0;border-left:1px solid rgba(191,90,242,0.45);background:transparent;color:#ff453a;font-size:12px;font-weight:700;">✕ Стоп</button>
+        </div>
         <button onclick="toggleTVChartMobile()" id="tvChartToggleBtnM" class="trade-chart-btn">📈 Chart (15m)</button>
       </div>
     </div>
@@ -1945,6 +1949,21 @@
     function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
 
     // ── Toast ──
+    // Отказ биржи мелькал тостом три секунды — на телефоне это ровно то же
+    // самое, что не показать ничего. Показываем окном до нажатия.
+    function showOrderError(title, html) {
+      const ov = document.createElement('div');
+      ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:99999;display:flex;align-items:center;justify-content:center;padding:16px;';
+      ov.innerHTML = `<div style="background:#12151c;border:1px solid rgba(255,107,107,0.5);border-radius:12px;padding:16px;max-width:340px;width:100%;max-height:88vh;overflow-y:auto;">
+        <div style="color:#ff6b6b;font-weight:700;margin-bottom:8px;">⚠️ ${title}</div>
+        <div style="font-size:12.5px;color:#cfd6e4;line-height:1.5;">${html}</div>
+        <button id="oeCloseM" style="width:100%;margin-top:14px;padding:10px;border-radius:8px;border:1px solid #333;background:transparent;color:#aab;">Понятно</button>
+      </div>`;
+      document.body.appendChild(ov);
+      ov.querySelector('#oeCloseM').onclick = () => ov.remove();
+      ov.onclick = (e) => { if (e.target === ov) ov.remove(); };
+    }
+
     function toast(msg, type = 'success') {
       const el = document.createElement('div');
       el.className = 'toast toast-' + type;
@@ -2130,7 +2149,9 @@
       if (flying) return flying;
       const pr = (async () => {
         try {
-          const r = await fetch(url);
+          // Таймаут обязателен: зависший запрос к бирже раньше висел без
+          // ограничения, и вызвавшая его кнопка молчала сколько угодно долго.
+          const r = await fetch(url, { signal: AbortSignal.timeout(8000) });
           if (!r.ok) throw new Error('HTTP ' + r.status);
           const data = await r.json();
           _cbCache.set(url, { at: Date.now(), data });
@@ -2539,7 +2560,7 @@
 
       const ov = document.createElement('div');
       ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;';
-      ov.innerHTML = `<div style="background:#12151c;border:1px solid rgba(245,158,11,0.4);border-radius:12px;padding:16px;max-width:340px;width:100%;">
+      ov.innerHTML = `<div style="background:#12151c;border:1px solid rgba(245,158,11,0.4);border-radius:12px;padding:16px;max-width:340px;width:100%;max-height:88vh;overflow-y:auto;">
         <div style="color:#f5a524;font-weight:700;margin-bottom:8px;">Купить по рынку</div>
         <div style="font-size:13px;color:#cfd6e4;"><b>${coin}</b> на $${usd.toFixed(2)}, РЕАЛЬНЫЙ ордер.</div>
         <div id="mbLiveM" style="font-size:12.5px;color:#cfd6e4;margin-top:10px;font-variant-numeric:tabular-nums;">Считаю по стакану…</div>
@@ -3263,12 +3284,15 @@
     }
     setInterval(paintFreshnessM, 1000);
 
-    // Кнопка ожидания просадки. Claude называет глубину по измеренным размахам,
-    // сервер следит за ценой и один раз пишет в Telegram.
+    // Сторож просадки: две кнопки в общей рамке — поставить и остановить.
     //
-    // Три состояния, и все три нажимаемы: свободна — поставить, считает —
-    // отменить, ждёт — снять. Раньше на время расчёта кнопка блокировалась,
-    // и отменить его было нечем: приходилось ждать до сорока пяти секунд.
+    // Четыре состояния, и в каждом ровно одна кнопка живая:
+    //   свободно  — «Ждать провал» активна, «Стоп» погашена
+    //   считает   — «Ждать» погашена, «Стоп» отменяет расчёт
+    //   ждёт      — «Ждать» погашена, «Стоп» снимает сторож
+    //   сработал  — «Ждать» погашена насовсем, «Стоп» превращается в «Сбросить»
+    // Последнее — то самое «одно сообщение, дальше кнопка неактивна»: сторож
+    // одноразовый, и пока его не сбросили, заново он не ставится.
     let _dipWatchesM = {};
     let _dipPendingM = null;   // { coin, ctrl } — идущий расчёт
 
@@ -3281,28 +3305,39 @@
     }
 
     function paintDipBtnM() {
-      const b = document.getElementById('dipWatchBtnM');
-      if (!b) return;
+      const go = document.getElementById('dipGoM');
+      const stop = document.getElementById('dipStopM');
+      if (!go || !stop) return;
       const coin = _dipCoinM();
       const w = coin && _dipWatchesM[coin];
-      const set = (text, col, bg, title) => {
-        b.textContent = text;
-        b.style.color = col;
-        b.style.borderColor = col === '#8b93a7' ? 'rgba(255,255,255,0.22)' : col;
-        b.style.background = bg;
-        b.title = title;
-      };
-      if (_dipPendingM) {
-        set('✕ отменить расчёт', '#ff6b6b', 'rgba(255,107,107,0.10)',
-          _dipPendingM.coin + ': Claude считает глубину провала. Нажми, чтобы отменить.');
+      const pending = !!_dipPendingM;
+      // Пока сторожа нет, останавливать нечего — вторая кнопка не показывается
+      // вовсе. Она появляется ровно тогда, когда первая включена, и по ней
+      // сразу видно, что слежка идёт. Зелёная — пуск, красная — стоп.
+      const hide = (b) => { b.style.display = 'none'; b.disabled = true; };
+      const dim = (b) => { b.style.display = ''; b.disabled = true; b.style.opacity = '0.5'; b.style.cursor = 'default'; b.style.color = '#8b93a7'; };
+      const show = (b, col) => { b.style.display = ''; b.disabled = false; b.style.opacity = '1'; b.style.cursor = 'pointer'; b.style.color = col; b.style.fontWeight = '700'; };
+      const GREEN = '#30d158', RED = '#ff453a';
+
+      if (pending) {
+        go.textContent = '⏳ считаю глубину…'; dim(go);
+        stop.textContent = '✕ Отменить'; show(stop, RED);
+        stop.title = 'Прервать расчёт';
+      } else if (w && w.fired) {
+        // fellPct приходит уже со знаком: без Math.abs получалось «−-1.71%».
+        go.textContent = '✓ сработал −' + Math.abs(w.fellPct != null ? w.fellPct : w.dipPct).toFixed(2) + '%'; dim(go);
+        stop.textContent = '↺ Сбросить'; show(stop, RED);
+        stop.title = coin + ': сообщение отправлено при $' + Number(w.firedPx || 0).toFixed(6) +
+          '. Сторож одноразовый — сбрось, чтобы поставить заново.';
       } else if (w) {
-        set('⏳ ждём −' + w.dipPct + '%', 'var(--yellow)', 'rgba(245,197,24,0.12)',
-          coin + ': сообщу в Telegram при падении до $' + Number(w.targetPx).toFixed(6) +
-          ' (ставили от $' + Number(w.startPx).toFixed(6) + ')' +
-          (w.why ? '\n' + w.why : '') + '\nНажми, чтобы снять.');
+        go.textContent = '⏳ ждём −' + w.dipPct + '%'; dim(go);
+        stop.textContent = '✕ Стоп'; show(stop, RED);
+        stop.title = coin + ': сообщу в Telegram при падении до $' + Number(w.targetPx).toFixed(6) +
+          (w.why ? '\n' + w.why : '');
       } else {
-        set('📉 Ждать провал', '#8b93a7', 'transparent',
-          'Claude оценит, насколько монета может просесть, и пришлёт в Telegram, когда это случится. Одно сообщение, потом сторож снимается.');
+        go.textContent = '📉 Ждать провал'; show(go, GREEN);
+        go.title = 'Claude оценит, насколько монета может просесть, и пришлёт в Telegram, когда это случится. Одно сообщение, потом сторож гаснет.';
+        stop.textContent = '✕ Стоп'; hide(stop);
       }
     }
 
@@ -3321,35 +3356,10 @@
       return r.json();
     }
 
-    async function toggleDipWatchM() {
-      // 1) идёт расчёт — отменяем
-      if (_dipPendingM) {
-        const { coin, ctrl } = _dipPendingM;
-        _dipPendingM = null;
-        try { ctrl.abort(); } catch { }
-        // Сервер мог успеть поставить сторож до того, как мы бросили ответ:
-        // снимаем его явно, иначе осталась бы слежка, которую никто не просил.
-        try { await _dipSendM(coin, false); } catch { }
-        await loadDipWatchesM();
-        _dipToast(coin + ': расчёт отменён');
-        return;
-      }
-
+    async function dipGoM() {
       const coin = _dipCoinM();
       if (!coin) { _dipToast('Сначала выбери монету', true); return; }
-
-      // 2) сторож стоит — снимаем
-      if (_dipWatchesM[coin]) {
-        try {
-          const j = await _dipSendM(coin, false);
-          _dipWatchesM = j.watches || {};
-          _dipToast(coin + ': сторож снят');
-        } catch (e) { _dipToast('Ошибка: ' + e.message, true); }
-        paintDipBtnM();
-        return;
-      }
-
-      // 3) ставим новый
+      if (_dipPendingM || _dipWatchesM[coin]) return;
       const ctrl = new AbortController();
       _dipPendingM = { coin, ctrl };
       paintDipBtnM();
@@ -3362,8 +3372,31 @@
           Number(j.watch.targetPx).toFixed(6) + '. Сообщу в Telegram один раз.');
         _dipWatchesM = j.watches || _dipWatchesM;
       } catch (e) {
-        if (e && e.name === 'AbortError') return;   // отмену сообщили выше
+        if (e && e.name === 'AbortError') return;
         _dipPendingM = null;
+        _dipToast('Ошибка: ' + e.message, true);
+      } finally {
+        paintDipBtnM();
+      }
+    }
+
+    async function dipStopM() {
+      const coin = _dipPendingM ? _dipPendingM.coin : _dipCoinM();
+      if (!coin) return;
+      const wasPending = !!_dipPendingM;
+      const wasFired = !!(_dipWatchesM[coin] && _dipWatchesM[coin].fired);
+      if (wasPending) {
+        const { ctrl } = _dipPendingM;
+        _dipPendingM = null;
+        try { ctrl.abort(); } catch { }
+      }
+      try {
+        // Снимаем и после отмены расчёта: сервер мог успеть поставить сторож
+        // между обрывом и ответом.
+        const j = await _dipSendM(coin, false);
+        _dipWatchesM = j.watches || {};
+        _dipToast(coin + (wasPending ? ': расчёт отменён' : wasFired ? ': сброшен, можно ставить заново' : ': сторож снят'));
+      } catch (e) {
         _dipToast('Ошибка: ' + e.message, true);
       } finally {
         paintDipBtnM();
@@ -3505,7 +3538,7 @@
 
       const ov = document.createElement('div');
       ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;';
-      ov.innerHTML = `<div style="background:#12151c;border:1px solid rgba(245,158,11,0.4);border-radius:12px;padding:16px;max-width:340px;width:100%;">
+      ov.innerHTML = `<div style="background:#12151c;border:1px solid rgba(245,158,11,0.4);border-radius:12px;padding:16px;max-width:340px;width:100%;max-height:88vh;overflow-y:auto;">
         <div style="color:#f5a524;font-weight:700;margin-bottom:8px;">Продать всё по рынку</div>
         <div style="font-size:13px;color:#cfd6e4;"><b>${coin}</b> — ${qty} шт., РЕАЛЬНАЯ продажа.</div>
         <div id="msWarnM"></div>
@@ -3630,7 +3663,16 @@
             const fee = w.gross * feePct / 100;
             const net = w.gross - fee;
             fresh = { net, profit: net - cost, pct: (net - cost) / cost * 100, avg: w.filled > 0 ? w.gross / w.filled : 0 };
-          } catch {
+          } catch (e) {
+            // Свежую цену получить не удалось. Молча продавать нельзя, но и молча
+            // отказывать тоже: сообщение уходило тостом ПОД оверлей окна, кнопка
+            // просто возвращалась в «Продать», и это читалось как «не работает».
+            // Теперь причина пишется прямо в окне.
+            const box = document.getElementById('msWarnM');
+            if (box) box.innerHTML =
+              '<div style="padding:10px;border-radius:8px;margin:10px 0;background:rgba(245,197,24,0.12);border:1px solid rgba(245,197,24,0.45);color:#f5c518;font-size:12px;">' +
+              'Не удалось перепроверить цену: ' + ((e && e.message) || 'нет ответа') +
+              '.<br>Ордер НЕ отправлен. Нажми «Продать» ещё раз.</div>';
             toast('Не удалось перепроверить цену', 'error');
             restore();
             return;
@@ -3671,9 +3713,9 @@
       // Fetch live ask price
       let askPrice;
       try {
-        const tr = await fetch(`https://api.exchange.coinbase.com/products/${pair}/ticker`);
-        const tj = await tr.json();
-        askPrice = parseFloat(tj.ask);
+        // Через общий кеш: он один ходит на биржу с таймаутом.
+        const tj = await cbGet(`https://api.exchange.coinbase.com/products/${pair}/ticker`, 1500);
+        askPrice = parseFloat(tj && tj.ask);
       } catch {}
       if (!askPrice) askPrice = monitorPriceCache[pair]?.ask;
       if (!askPrice) { toast('No ask price', 'error'); return; }
@@ -3704,7 +3746,8 @@
         body: JSON.stringify({ productId: pair, size: size, price: fmtPriceForOrder(askPrice) })
       });
       if (r.success) { toast('Sell at Ask placed!'); loadOrders().then(updateMonitor); }
-      else toast(r.error || 'Failed', 'error');
+      else showOrderError('Биржа отклонила продажу',
+        'Ордер НЕ создан. Причина от Coinbase:<br><br><b>' + ((r && r.error) || 'без объяснения') + '</b>');
     }
 
     async function cancelOrder(id) {
