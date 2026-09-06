@@ -6479,9 +6479,17 @@ app.get('/api/claude-status', async (req, res) => {
     if (!probe.ok) {
       return res.json({ success: true, ...base, ready: false, state: 'unauthorized', error: probe.error });
     }
-    let text = '';
-    try { text = String(JSON.parse(probe.stdout).result || '').trim(); } catch { text = String(probe.stdout || '').slice(0, 120); }
-    return res.json({ success: true, ...base, state: 'authorized', probe: text });
+    let text = '', model = null;
+    try {
+      const j = JSON.parse(probe.stdout);
+      text = String(j.result || '').trim();
+      // Псевдоним «opus» разрешается на стороне CLI, и какая именно версия за
+      // ним стоит, из флага не видно. Достаём настоящий идентификатор из
+      // отчёта об использовании: это единственный способ проверить, а не
+      // предположить.
+      model = Object.keys(j.modelUsage || {})[0] || j.model || null;
+    } catch { text = String(probe.stdout || '').slice(0, 120); }
+    return res.json({ success: true, ...base, state: 'authorized', probe: text, model, asked: CLAUDE_MODEL });
   }
   res.json({ success: true, ...base });
 });
@@ -6941,7 +6949,19 @@ setInterval(async () => {
           const cur = dipWatches[coin];
           if (cur && !cur.fired && !cur.stopped) {
             const wasDip = cur.dipPct;
-            cur.targetPx = nx.price * (1 - nx.dip / 100);
+            // Глубина отсчитывается от МЕНЬШЕЙ из двух цен: текущей и той, на
+            // которой сторож поставили.
+            //
+            // Если считать только от текущей, то при росте цель ползёт вверх
+            // вместе с ней. Замерено на живом сторожe TRUMP: цена выросла на
+            // 0.5%, цель −0.69% превратилась в −0.37% от цены постановки. А
+            // при росте выше 0.70% цель уходит ВЫШЕ цены постановки, и при
+            // отмене на +1.5% остаётся целая полоса, где сторож прислал бы
+            // «просадку» по цене ДОРОЖЕ той, на которой его ставили.
+            //
+            // При падении меньшая цена — текущая, и цель честно идёт вниз
+            // следом, как и задумано.
+            cur.targetPx = Math.min(nx.price, cur.startPx) * (1 - nx.dip / 100);
             cur.dipPct = Math.round(nx.dip * 100) / 100;
             cur.upPct = Math.round(nx.up * 100) / 100;
             // Отмена по-прежнему считается от цены ПОСТАНОВКИ, а не от текущей:
