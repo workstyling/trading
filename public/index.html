@@ -6368,6 +6368,7 @@
           </div>
           <div style="color:var(--t2);font-size:11.5px;margin-bottom:10px;max-width:78ch;">Журнал полностью отделён от основного скальп-гейта: свой отпечаток стратегии, цель, стоп, сделки и статистика. Сигналы служат только для сбора независимых Paper-данных.</div>
           <div id="microLabStats"></div>
+          <div id="markoutBox" style="margin-top:10px;padding:10px;border:1px solid var(--b1);border-radius:8px;overflow-x:auto;"></div>
           <div id="microLabRows" style="margin-top:10px;"></div>
         </div>
         <div id="labSection" style="margin-bottom:22px;padding-bottom:20px;border-bottom:1px solid rgba(255,255,255,0.08);">
@@ -15911,6 +15912,60 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
       }
     }
 
+    // Markout: что цена делала ПОСЛЕ входа, разложенное по сегментам ВХОДА и
+    // СИЛЫ. Это ответ на вопрос, который сами баллы не отвечают — есть ли у
+    // них вообще связь с исходом. Пока связи нет, панель это и показывает,
+    // вместо того чтобы прятать.
+    function _markoutTable(title, buckets, horizons, note) {
+      const head = '<tr><th style="text-align:left;padding:3px 6px;color:var(--t2);font-weight:600;">' + title +
+        '</th><th style="padding:3px 6px;color:var(--t2);">n</th>' +
+        horizons.map(h => '<th style="padding:3px 6px;color:var(--t2);">+' + h + 'м</th>').join('') + '</tr>';
+      const body = (buckets || []).map(b => {
+        if (!b.n) return '<tr><td style="padding:3px 6px;color:var(--t2);">' + b.label +
+          '</td><td style="text-align:center;color:var(--t2);">0</td><td colspan="' + horizons.length +
+          '" style="text-align:center;color:var(--t2);font-size:10px;">нет сделок</td></tr>';
+        return '<tr><td style="padding:3px 6px;color:var(--t1);">' + b.label + '</td>' +
+          '<td style="text-align:center;color:var(--t1);">' + b.n + '</td>' +
+          horizons.map(h => {
+            const c = b['h' + h];
+            if (!c) return '<td style="text-align:center;color:var(--t2);">—</td>';
+            const col = c.avg > 0 ? 'var(--green)' : c.avg < 0 ? '#ff6b6b' : 'var(--t2)';
+            return '<td style="text-align:center;color:' + col + ';font-weight:700;white-space:nowrap;">' +
+              (c.avg >= 0 ? '+' : '') + c.avg.toFixed(2) + '%' +
+              '<br><span style="color:var(--t2);font-weight:400;font-size:9px;">вверх ' + c.up + '%</span></td>';
+          }).join('') + '</tr>';
+      }).join('');
+      return '<table style="width:100%;border-collapse:collapse;font-size:11px;font-variant-numeric:tabular-nums;">' +
+        '<thead>' + head + '</thead><tbody>' + body + '</tbody></table>' +
+        (note ? '<div style="color:var(--t2);font-size:10px;margin-top:4px;">' + note + '</div>' : '');
+    }
+
+    async function loadMarkout() {
+      const box = document.getElementById('markoutBox');
+      if (!box) return;
+      try {
+        const j = await (await fetch('/api/micro-scalp-markout')).json();
+        if (!j.success) { box.innerHTML = '<div style="color:var(--t2);">' + (j.error || 'нет данных') + '</div>'; return; }
+        if (!j.n) { box.innerHTML = '<div style="color:var(--t2);font-size:11px;">Markout появится, когда закроется первая сделка.</div>'; return; }
+        const H = j.horizons || [1, 5, 15, 60];
+        box.innerHTML =
+          '<div style="color:var(--t1);font-weight:700;font-size:12px;margin-bottom:6px;">' +
+          'Markout: куда ушла цена ПОСЛЕ входа' +
+          '<span style="color:var(--t2);font-weight:400;"> · ' + j.n + ' сделок' +
+          (j.pending ? ', ещё ' + j.pending + ' считается' : '') + '</span></div>' +
+          _markoutTable('ВСЕ', [{ label: 'все входы', ...(j.overall || {}) }], H, null) +
+          '<div style="height:8px;"></div>' +
+          _markoutTable('по ВХОДУ', j.byEntry, H, null) +
+          '<div style="height:8px;"></div>' +
+          _markoutTable('по СИЛЕ', j.byStrength, H,
+            'Отсчёт от цены входа (ask), поэтому абсолютная величина занижена примерно на половину спреда — ' +
+            'одинаково для всех строк, так что сравнивать сегменты между собой это не мешает. ' +
+            'Если у сегментов с высоким баллом markout не выше, чем у низких, значит балл входы не различает.');
+      } catch (e) {
+        box.innerHTML = '<div style="color:var(--t2);font-size:11px;">Markout недоступен: ' + e.message + '</div>';
+      }
+    }
+
     let _microLabPollTimer = null;
     function _microLabSchedulePoll() {
       clearTimeout(_microLabPollTimer);
@@ -15920,6 +15975,7 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
     }
     async function loadMicroLab() {
       try {
+        loadMarkout();
         const r = await fetch('/api/micro-scalp-lab');
         if (!r.ok) throw new Error('Micro lab API unavailable');
         const j = await r.json();

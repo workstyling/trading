@@ -4900,6 +4900,132 @@ function microScalpReview(payload) {
     ready: closedBursts >= MICRO_SCALP_MIN_CLOSED_BURSTS,
   };
 }
+// ── Markout: что цена сделала ПОСЛЕ входа ──────────────────────────────────
+//
+// Диагностика вперёд всего остального. И СИЛА, и ВХОД считаются из живых
+// чисел, но связь с исходом у обоих не измерена, а без неё это мнения с
+// процентами. Markout измеряет ровно то, что нужно покупателю: насколько
+// цена ушла в его сторону через 1, 5, 15 и 60 минут после входа.
+//
+// Считается ЗАДНИМ ЧИСЛОМ по минутным свечам, а не живым замером. Это
+// сознательно: живой замер потребовал бы правки src/micro-scalp/lab.js, а её
+// хэширует отпечаток когорты — набранная выборка обнулилась бы ради того,
+// чтобы начать её мерить. Свечи дают тот же ответ, не трогая ничего.
+//
+// Отсчёт идёт от цены входа, а это ask (мы покупали). Сравнение с более
+// поздним закрытием свечи занижает markout примерно на половину спреда —
+// одинаково для всех сделок, поэтому на сравнение сегментов между собой это
+// не влияет, а на абсолютную величину влияет, и об этом сказано в панели.
+const MARKOUT_FILE = path.join(__dirname, 'micro-markout.json');
+const MARKOUT_HORIZONS = [1, 5, 15, 60];
+const MARKOUT_MAX_PER_CALL = 40;   // чтобы один запрос не выедал лимит биржи
+let markoutCache = {};
+try { markoutCache = JSON.parse(fs.readFileSync(MARKOUT_FILE, 'utf8')) || {}; } catch { }
+function saveMarkout() {
+  try { fs.writeFileSync(MARKOUT_FILE, JSON.stringify(markoutCache)); } catch (e) { console.error('[markout] save', e.message); }
+}
+
+// Все закрытые сделки текущей когорты. payload() отдаёт только последние 30,
+// а файл лаборатории хранит всё — читаем его напрямую и только на чтение.
+function markoutTrades() {
+  let state;
+  try { state = JSON.parse(fs.readFileSync(MICRO_SCALP_FILE, 'utf8')); } catch { return []; }
+  const cohortId = (state && state.cohortId) || null;
+  return ((state && state.trades) || []).filter(t =>
+    t && t.closedAt && t.ctx && t.entry > 0 && t.openedAt > 0 &&
+    (!cohortId || t.cohortId === cohortId));
+}
+
+async function markoutFor(trade) {
+  const from = trade.openedAt;
+  const last = MARKOUT_HORIZONS[MARKOUT_HORIZONS.length - 1];
+  // Берём с запасом в минуту с обеих сторон: свеча закрывается по границе
+  // минуты, и точное попадание в неё не гарантировано.
+  const start = new Date(from - 60_000).toISOString();
+  const end = new Date(from + (last + 2) * 60_000).toISOString();
+  const url = `${DIP_CB}/products/${trade.pair}/candles?granularity=60&start=${start}&end=${end}`;
+  const r = await fetch(url, DIP_H);
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  const raw = await r.json();
+  if (!Array.isArray(raw) || !raw.length) throw new Error('нет свечей');
+  const out = {};
+  for (const m of MARKOUT_HORIZONS) {
+    const want = Math.floor((from + m * 60_000) / 1000);
+    let best = null;
+    for (const row of raw) {
+      const t = Number(row[0]);
+      const d = Math.abs(t - want);
+      // Дальше 90 секунд от нужной минуты это уже другая цена, а не задержка
+      if (d <= 90 && (!best || d < best.d)) best = { d, px: Number(row[4]) };
+    }
+    out['h' + m] = best && best.px > 0
+      ? Math.round((best.px / trade.entry - 1) * 10000) / 100
+      : null;
+  }
+  return out;
+}
+
+app.get('/api/micro-scalp-markout', async (req, res) => {
+  try {
+    const trades = markoutTrades();
+    // Считаем только то, чего ещё нет: markout сделки не меняется никогда.
+    const todo = trades.filter(t => !markoutCache[t.id]).slice(0, MARKOUT_MAX_PER_CALL);
+    let added = 0;
+    for (const t of todo) {
+      try {
+        markoutCache[t.id] = await markoutFor(t);
+        added++;
+      } catch (e) {
+        console.error('[markout] ' + t.coin + ': ' + e.message);
+      }
+      await new Promise(r2 => setTimeout(r2, 220));
+    }
+    if (added) saveMarkout();
+
+    const rows = [];
+    for (const t of trades) {
+      const mo = markoutCache[t.id];
+      if (!mo) continue;
+      const strength = microScalpSetupStrength(t.ctx);
+      const entry = microScalpEntryValue(t.ctx);
+      rows.push({
+        coin: t.coin, pnlPct: t.pnlPct != null ? t.pnlPct : null,
+        strength: strength ? strength.pct : null,
+        entry: entry ? entry.pct : null,
+        mo,
+      });
+    }
+
+    const agg = (list) => {
+      if (!list.length) return null;
+      const o = { n: list.length };
+      for (const m of MARKOUT_HORIZONS) {
+        const vals = list.map(x => x.mo['h' + m]).filter(v => typeof v === 'number');
+        o['h' + m] = vals.length
+          ? { avg: Math.round(vals.reduce((a, b) => a + b, 0) / vals.length * 1000) / 1000,
+              up: Math.round(vals.filter(v => v > 0).length / vals.length * 100),
+              n: vals.length }
+          : null;
+      }
+      return o;
+    };
+    const bucket = (key, edges) => edges.map(([label, lo, hi]) =>
+      ({ label, ...(agg(rows.filter(x => x[key] != null && x[key] >= lo && x[key] < hi)) || { n: 0 }) }));
+
+    res.json({
+      success: true,
+      horizons: MARKOUT_HORIZONS,
+      n: rows.length,
+      pending: trades.filter(t => !markoutCache[t.id]).length,
+      overall: agg(rows),
+      byEntry: bucket('entry', [['0–39', 0, 40], ['40–69', 40, 70], ['70–100', 70, 101]]),
+      byStrength: bucket('strength', [['<80', 0, 80], ['80–89', 80, 90], ['90–100', 90, 101]]),
+    });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
 app.get('/api/micro-scalp-lab', (req, res) => {
   const payload = microScalpLab.payload();
   res.json({ ...payload, review: microScalpReview(payload) });
