@@ -6479,7 +6479,7 @@ app.get('/api/claude-status', async (req, res) => {
     if (!probe.ok) {
       return res.json({ success: true, ...base, ready: false, state: 'unauthorized', error: probe.error });
     }
-    let text = '', model = null;
+    let text = '', model = null, models = [];
     try {
       const j = JSON.parse(probe.stdout);
       text = String(j.result || '').trim();
@@ -6487,9 +6487,16 @@ app.get('/api/claude-status', async (req, res) => {
       // ним стоит, из флага не видно. Достаём настоящий идентификатор из
       // отчёта об использовании: это единственный способ проверить, а не
       // предположить.
-      model = Object.keys(j.modelUsage || {})[0] || j.model || null;
+      // В modelUsage попадают ВСЕ модели сессии, включая служебную мелкую,
+      // поэтому первый ключ ничего не доказывает. Берём ту, что выдала
+      // больше всего токенов, и заодно отдаём весь список.
+      const mu = j.modelUsage || {};
+      const keys = Object.keys(mu);
+      model = keys.sort((a, b) =>
+        ((mu[b] || {}).outputTokens || 0) - ((mu[a] || {}).outputTokens || 0))[0] || j.model || null;
+      models = keys;
     } catch { text = String(probe.stdout || '').slice(0, 120); }
-    return res.json({ success: true, ...base, state: 'authorized', probe: text, model, asked: CLAUDE_MODEL });
+    return res.json({ success: true, ...base, state: 'authorized', probe: text, model, models, asked: CLAUDE_MODEL });
   }
   res.json({ success: true, ...base });
 });
