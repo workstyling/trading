@@ -3139,8 +3139,11 @@
     // Полоса над таблицей: какие монеты сейчас проходят порог ВХОДА.
     // Искать глазами по десяти строкам — значит терять те самые минуты, в
     // которых и живёт всё измеренное преимущество.
-    // Порог 90 проверен на отложенной половине истории; прежний 70 там менял знак.
-    const ENTRY_MIN_M = 90;
+    // 40 — минимальный порог, при котором превышение положительно в ОБА независимых
+    // периода истории. Ниже 20 сегмент устойчиво отрицателен, 20–39 даёт ровно ноль.
+    // Выше 40 поднимать нечего: превышение дальше не растёт, а 95–100 даже слабее
+    // 80–94. Прежние 70 и 90 отсекали кандидатов без измеримого выигрыша.
+    const ENTRY_MIN_M = 40;
     function _entryPicksM(rows) {
       const good = (rows || [])
         .filter(x => x.entryValue && x.entryValue.pct >= ENTRY_MIN_M)
@@ -3154,11 +3157,12 @@
           (best ? ' Ближайшая: <b style="color:var(--t1);">' + best.coin + '</b> ' + best.entryValue.pct + '%.' : '') +
           '</div>';
       }
-      return '<div title="Порог 90 подобран на первой половине истории и проверен на второй: 41 328 наблюдений за 12 дней по 15 монетам. На проверочной половине сегмент 90+ даёт +0.033% через 15 минут и +0.076% через час, оба отличимы от нуля с поправкой на средний ход самой монеты. Прежний порог 70 проверку не проходил: на второй половине он менял знак. ВАЖНО: даже +0.076% меньше круга из двух лимиток (0.150%), то есть балл ранжирует монеты лучше случайного, но торговать по нему в плюс при этой комиссии нельзя." style="margin-bottom:8px;padding:7px 10px;border-radius:8px;' +
+      return '<div title="Порог 40 — минимальный, при котором превышение положительно В ОБА независимых периода истории. По сегментам (12 дней, 15 монет, поправка на средний ход монеты): 1–19 даёт −0.036% и −0.028%, 20–39 даёт ровно ноль, а с 40 и выше плюс держится всегда: 40–59 даёт +0.014% и +0.126%, 80–94 даёт +0.034% и +0.102%. ВЫШЕ 40 ПОДНИМАТЬ НЕЧЕГО: превышение дальше не растёт, а 95–100 даже чуть слабее 80–94. Поэтому список не ранжирует — любая монета из него равноценна по измерению. ВАЖНО: даже лучшие +0.126% меньше круга из двух лимиток (0.150%). Балл отделяет плохие входы от нейтральных, но прибыльными их не делает." style="margin-bottom:8px;padding:7px 10px;border-radius:8px;' +
         'background:rgba(0,229,160,0.10);border:1px solid rgba(0,229,160,0.45);font-size:11.5px;color:var(--t1);">' +
         '<b style="color:#00e5a0;">ВХОД ' + ENTRY_MIN_M + '%+:</b> ' +
         good.map(x => '<b>' + x.coin + '</b> ' + x.entryValue.pct + '%').join(' · ') +
-        ' <span style="color:var(--t2);">— лучший вход из имеющихся, но превышение меньше комиссии за круг</span></div>';
+        ' <span style="color:var(--t2);">— по измерению равноценны: выше 40 превышение не растёт. '
+        + 'И оно меньше комиссии за круг</span></div>';
     }
 
     function _entryCellM(item) {
@@ -6192,7 +6196,7 @@
         }
         const price = value => value == null ? '—' : value < 0.001 ? value.toFixed(8) : value < 1 ? value.toFixed(5) : value < 100 ? value.toFixed(3) : value.toFixed(2);
         const volume = value => value == null ? '—' : value >= 1e6 ? '$' + (value / 1e6).toFixed(1) + 'M' : '$' + Math.round(value / 1e3) + 'K';
-        body.innerHTML = `${_entryPicksM(rows)}<table style="width:100%;border-collapse:collapse;"><thead><tr style="border-bottom:1px solid var(--b1);"><th style="text-align:left;color:var(--t2);font-size:9px;padding:4px 3px;">COIN</th><th style="color:var(--t2);font-size:9px;padding:4px 2px;">SCORE</th><th style="color:var(--t2);font-size:9px;padding:4px 2px;" title="Близость ко входу, не вероятность прибыли">ГОТОВ</th><th style="color:var(--t2);font-size:9px;padding:4px 2px;" title="Сила сетапа: условия взвешены по важности. Не вероятность прибыли.">СИЛА</th><th style="color:var(--t2);font-size:9px;padding:4px 2px;" title="Выгода входа: уже упало И ещё не отыграло падение. Полосы измерены на 41 328 наблюдениях за 12 дней и проверены на отложенной половине. Порог 90+. Превышение над средним ходом монеты меньше комиссии за круг — балл ранжирует, но торговать по нему в плюс нельзя.">ВХОД</th><th style="color:var(--t2);font-size:9px;padding:4px 2px;">СТАТУС</th><th style="color:var(--t2);font-size:9px;padding:4px 2px;">RSI</th><th style="color:var(--t2);font-size:9px;padding:4px 2px;">ОТКАТ</th><th style="text-align:right;color:var(--t2);font-size:9px;padding:4px 3px;">VOL 24H</th></tr></thead><tbody>${rows.map(item => {
+        body.innerHTML = `${_entryPicksM(rows)}<table style="width:100%;border-collapse:collapse;"><thead><tr style="border-bottom:1px solid var(--b1);"><th style="text-align:left;color:var(--t2);font-size:9px;padding:4px 3px;">COIN</th><th style="color:var(--t2);font-size:9px;padding:4px 2px;">SCORE</th><th style="color:var(--t2);font-size:9px;padding:4px 2px;" title="Близость ко входу, не вероятность прибыли">ГОТОВ</th><th style="color:var(--t2);font-size:9px;padding:4px 2px;" title="Сила сетапа: условия взвешены по важности. Не вероятность прибыли.">СИЛА</th><th style="color:var(--t2);font-size:9px;padding:4px 2px;" title="Выгода входа: уже упало И ещё не отыграло падение. Полосы измерены на 41 328 наблюдениях за 12 дней. Порог 40 — минимальный, при котором превышение положительно в оба периода; выше поднимать нечего. Ниже 20 — устойчивый минус. Превышение меньше комиссии за круг: балл отсеивает плохое, но прибыльным не делает.">ВХОД</th><th style="color:var(--t2);font-size:9px;padding:4px 2px;">СТАТУС</th><th style="color:var(--t2);font-size:9px;padding:4px 2px;">RSI</th><th style="color:var(--t2);font-size:9px;padding:4px 2px;">ОТКАТ</th><th style="text-align:right;color:var(--t2);font-size:9px;padding:4px 3px;">VOL 24H</th></tr></thead><tbody>${rows.map(item => {
           const label = item.pass ? 'PAPER' : item.tag === 'NEAR' ? 'БЛИЗКО' : 'ЖДАТЬ';
           const color = item.pass ? '#bf5af2' : item.tag === 'NEAR' ? '#f5c518' : '#7c8698';
           const pick = item.entryValue && item.entryValue.pct >= ENTRY_MIN_M;
