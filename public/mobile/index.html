@@ -1552,7 +1552,6 @@
           <button id="dipGoM" onclick="dipGoM()" style="flex:1;padding:9px 6px;border:0;background:transparent;color:#8b93a7;font-size:12px;font-weight:600;">📉 Ждать провал</button>
           <button id="dipStopM" onclick="dipStopM()" style="display:none;flex:0 0 92px;padding:9px 6px;border:0;border-left:1px solid rgba(191,90,242,0.45);background:transparent;color:#ff453a;font-size:12px;font-weight:700;">✕ Стоп</button>
         </div>
-        <div id="dipOtherM" data-show="flex" style="display:none;gap:5px;flex-wrap:wrap;margin-top:5px;"></div>
         <button onclick="toggleTVChartMobile()" id="tvChartToggleBtnM" class="trade-chart-btn">📈 Chart (15m)</button>
       </div>
     </div>
@@ -3353,39 +3352,6 @@
         go.title = 'Claude оценит, насколько монета может просесть, и пришлёт в Telegram, когда это случится. Одно сообщение, потом сторож гаснет.';
         stop.textContent = '✕ Стоп'; hide(stop);
       }
-      paintDipOthersM(coin);
-    }
-
-    // Сторожа по ДРУГИМ монетам. Без этого сработавший сторож был не виден,
-    // пока не переключишься обратно на его монету: сообщение в Telegram уже
-    // пришло, а на экране кнопка спокойно ждала провала по текущей.
-    function paintDipOthersM(coin) {
-      const box = document.getElementById('dipOtherM');
-      if (!box) return;
-      const rest = Object.keys(_dipWatchesM).filter(c => c !== coin);
-      if (!rest.length) { box.style.display = 'none'; box.innerHTML = ''; return; }
-      box.style.display = box.dataset.show || 'flex';
-      box.innerHTML = rest.map(c => {
-        const x = _dipWatchesM[c];
-        const done = x.fired || x.stopped;
-        const mark = x.fired ? '✓' : x.stopped ? '🚫' : '⏳';
-        const col = x.fired ? '#30d158' : x.stopped ? '#ff453a' : '#8b93a7';
-        const tip = x.fired ? c + ': сообщение уже ушло в Telegram, сторож отработал'
-          : x.stopped ? c + ': снят сам, монета ушла вверх'
-            : c + ': ждёт −' + x.dipPct + '%';
-        return '<span onclick="dipClearM(' + JSON.stringify(c) + ')" title="' + tip + ' (нажми, чтобы убрать)"' +
-          ' style="cursor:pointer;padding:2px 6px;border-radius:6px;font-size:10px;font-weight:700;color:' + col +
-          ';border:1px solid ' + col + '55;background:' + col + '14;' + (done ? '' : 'opacity:0.75;') + '">' +
-          mark + ' ' + c + '</span>';
-      }).join(' ');
-    }
-
-    async function dipClearM(coin) {
-      try {
-        const j = await _dipSendM(coin, false);
-        _dipWatchesM = j.watches || {};
-      } catch { }
-      paintDipBtnM();
     }
 
     async function loadDipWatchesM() {

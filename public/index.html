@@ -6078,7 +6078,6 @@
                 <button id="dipGo" onclick="dipGo()" style="padding:6px 10px;border:0;background:transparent;color:#8b93a7;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;">📉 Ждать провал</button>
                 <button id="dipStop" onclick="dipStop()" style="display:none;padding:6px 10px;border:0;border-left:1px solid rgba(191,90,242,0.45);background:transparent;color:#ff453a;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">✕ Стоп</button>
               </span>
-              <span id="dipOther" data-show="inline-flex" style="display:none;gap:4px;align-items:center;flex-shrink:0;"></span>
               <button onclick="toggleTVChart()" id="tvChartToggleBtn" title="TradingView 15m chart" style="padding:6px 10px;border:1px solid rgba(76,201,240,0.35);border-radius:8px;background:rgba(76,201,240,0.08);color:var(--blue);font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all 0.2s;flex-shrink:0;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align:middle;margin-right:3px;"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>Chart</button>
               <span class="limit-separator" style="display: none !important;">|</span>
               <input type="text" class="limit-price-input" id="limitPriceInput" placeholder="Price" autocomplete="off" style="display: none !important;">
@@ -7623,39 +7622,6 @@
         go.title = 'Claude оценит, насколько монета может просесть, и пришлёт в Telegram, когда это случится. Одно сообщение, потом сторож гаснет.';
         stop.textContent = '✕ Стоп'; hide(stop);
       }
-      paintDipOthers(coin);
-    }
-
-    // Сторожа по ДРУГИМ монетам. Без этого сработавший сторож был не виден,
-    // пока не переключишься обратно на его монету: сообщение в Telegram уже
-    // пришло, а на экране кнопка спокойно ждала провала по текущей.
-    function paintDipOthers(coin) {
-      const box = document.getElementById('dipOther');
-      if (!box) return;
-      const rest = Object.keys(_dipWatches).filter(c => c !== coin);
-      if (!rest.length) { box.style.display = 'none'; box.innerHTML = ''; return; }
-      box.style.display = box.dataset.show || 'flex';
-      box.innerHTML = rest.map(c => {
-        const x = _dipWatches[c];
-        const done = x.fired || x.stopped;
-        const mark = x.fired ? '✓' : x.stopped ? '🚫' : '⏳';
-        const col = x.fired ? '#30d158' : x.stopped ? '#ff453a' : '#8b93a7';
-        const tip = x.fired ? c + ': сообщение уже ушло в Telegram, сторож отработал'
-          : x.stopped ? c + ': снят сам, монета ушла вверх'
-            : c + ': ждёт −' + x.dipPct + '%';
-        return '<span onclick="dipClear(' + JSON.stringify(c) + ')" title="' + tip + ' (нажми, чтобы убрать)"' +
-          ' style="cursor:pointer;padding:2px 6px;border-radius:6px;font-size:10px;font-weight:700;color:' + col +
-          ';border:1px solid ' + col + '55;background:' + col + '14;' + (done ? '' : 'opacity:0.75;') + '">' +
-          mark + ' ' + c + '</span>';
-      }).join(' ');
-    }
-
-    async function dipClear(coin) {
-      try {
-        const j = await _dipSend(coin, false);
-        _dipWatches = j.watches || {};
-      } catch { }
-      paintDipBtn();
     }
 
     async function loadDipWatches() {
