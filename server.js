@@ -3701,8 +3701,53 @@ function journalStats() {
   };
 }
 
-app.get('/api/journal', (req, res) => {
-  res.json({ success: true, open: journal.open, closed: journal.closed.slice(-100).reverse(), stats: journalStats() });
+// Открытые позиции считаются вместе с закрытыми, а не молчат в стороне.
+//
+// Winrate 96% при двух проигрышах из 48 получался не от точности, а от
+// выживаемости: прибыльные позиции продаются и попадают в статистику,
+// убыточные остаются висеть открытыми и в неё не входят вовсе. На момент
+// правки открытого было −$332 при показанных +$3405 закрытого, и одна
+// открытая монета сидела в минусе три дня, никак не отражаясь в цифрах.
+async function journalOpenLive() {
+  const out = [];
+  for (const p of Object.values(journal.open || {})) {
+    const row = { ...p, nowUsd: null, unrealized: null, unrealizedPct: null, daysHeld: null };
+    if (p.entryAt) row.daysHeld = Math.round((Date.now() - p.entryAt) / 86400000 * 10) / 10;
+    if (p.totalSize > 0 && p.restCost > 0) {
+      try {
+        const r = await fetch(`https://api.exchange.coinbase.com/products/${p.coin}-USD/ticker`,
+          { headers: { 'User-Agent': 'trading-app/1.0' } });
+        if (r.ok) {
+          const bid = Number((await r.json()).bid);
+          if (bid > 0) {
+            const fee = (parseFloat(loadSettings().marketFee) || 0.25) / 100;
+            row.nowUsd = Math.round(bid * p.totalSize * (1 - fee) * 100) / 100;
+            row.unrealized = Math.round((row.nowUsd - p.restCost) * 100) / 100;
+            row.unrealizedPct = Math.round(row.unrealized / p.restCost * 10000) / 100;
+          }
+        }
+      } catch { /* цена недоступна — позиция всё равно показывается, но без оценки */ }
+    }
+    out.push(row);
+  }
+  return out;
+}
+
+app.get('/api/journal', async (req, res) => {
+  const open = await journalOpenLive();
+  const stats = journalStats();
+  // Считаем только те позиции, чью цену удалось получить: подставлять ноль
+  // вместо неизвестной оценки значило бы завышать итог ровно так же, как это
+  // делало полное умолчание об открытых.
+  const priced = open.filter(p => p.unrealized != null);
+  const unrealized = Math.round(priced.reduce((s, p) => s + p.unrealized, 0) * 100) / 100;
+  stats.openTotal = {
+    n: open.length,
+    priced: priced.length,
+    unrealized,
+    withOpen: Math.round((((stats.overall && stats.overall.totalPnl) || 0) + unrealized) * 100) / 100,
+  };
+  res.json({ success: true, open, closed: journal.closed.slice(-100).reverse(), stats });
 });
 
 app.delete('/api/journal/closed', (req, res) => {

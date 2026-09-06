@@ -1850,15 +1850,28 @@
         const j = await r.json();
         if (j.success) {
           const ov = j.stats.overall;
-          document.getElementById('mjSummary').textContent = ov.n ? `${ov.n} сделок · winrate ${ov.winrate}%` : '';
+          const ot = j.stats.openTotal || {};
+          // Winrate считает только закрытые, поэтому рядом с ним всегда стоит
+          // итог с открытыми: без этого процент побед завышен выживаемостью.
+          document.getElementById('mjSummary').textContent = ov.n ? `${ov.n} сделок · winrate ${ov.winrate}% (закр.)` : '';
           const closed = (j.closed || []).slice(0, 8);
-          const openN = Object.keys(j.open || {}).length;
+          const openList = Array.isArray(j.open) ? j.open : Object.values(j.open || {});
+          const openN = openList.length;
+          const pnlCol = v => v >= 0 ? 'var(--green)' : 'var(--red)';
+          const money = v => (v >= 0 ? '+' : '−') + '$' + Math.abs(v || 0).toFixed(2);
           document.getElementById('mjBody').innerHTML = ov.n || openN ? `
             <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
-              <span style="background:var(--s2);border-radius:8px;padding:4px 10px;">PnL: <b style="color:${ov.totalPnl >= 0 ? 'var(--green)' : 'var(--red)'};">${ov.totalPnl >= 0 ? '+' : ''}$${(ov.totalPnl || 0).toFixed(2)}</b></span>
-              <span style="background:var(--s2);border-radius:8px;padding:4px 10px;">Открыто: <b style="color:var(--t0);">${openN}</b></span>
+              <span style="background:var(--s2);border-radius:8px;padding:4px 10px;">Закрыто: <b style="color:${pnlCol(ov.totalPnl)};">${money(ov.totalPnl)}</b></span>
+              ${ot.n ? `<span style="background:var(--s2);border-radius:8px;padding:4px 10px;">Открыто ${ot.n}: <b style="color:${pnlCol(ot.unrealized)};">${money(ot.unrealized)}</b></span>
+              <span style="background:rgba(245,197,24,0.12);border:1px solid rgba(245,197,24,0.35);border-radius:8px;padding:4px 10px;">ИТОГО: <b style="color:${pnlCol(ot.withOpen)};">${money(ot.withOpen)}</b></span>` :
+              `<span style="background:var(--s2);border-radius:8px;padding:4px 10px;">Открыто: <b style="color:var(--t0);">0</b></span>`}
               <span style="background:var(--s2);border-radius:8px;padding:4px 10px;">Avg hold: <b style="color:var(--t0);">${ov.avgHoldH != null ? ov.avgHoldH + 'h' : '—'}</b></span>
             </div>
+            ${ot.n ? `<div style="font-size:10.5px;color:var(--t2);line-height:1.45;margin-bottom:8px;">Winrate считает только закрытые: прибыльные продаются и попадают в статистику, убыточные висят открытыми и в неё не входят.</div>
+            ${openList.map(pos => `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px dashed var(--b0);">
+              <span style="color:var(--t1);font-weight:600;font-size:11px;">${pos.coin} <span style="color:var(--t2);font-weight:400;">открыта${pos.daysHeld != null ? ' ' + pos.daysHeld + ' дн' : ''}</span></span>
+              <span style="color:${pos.unrealized == null ? 'var(--t2)' : pnlCol(pos.unrealized)};font-weight:700;font-size:11px;">${pos.unrealized == null ? '—' : money(pos.unrealized) + ' (' + (pos.unrealizedPct >= 0 ? '+' : '') + pos.unrealizedPct + '%)'}</span>
+            </div>`).join('')}` : ''}
             ${closed.map(c => `<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--b0);">
               <span style="color:var(--t0);font-weight:600;">${c.coin} <span style="color:var(--t2);font-weight:400;font-size:10px;">${c.ctx && c.ctx.rbTag ? c.ctx.rbTag : ''} ${c.holdH}h</span></span>
               <span style="color:${c.pnl >= 0 ? 'var(--green)' : 'var(--red)'};font-weight:700;">${c.pnl >= 0 ? '+' : '−'}$${Math.abs(c.pnl).toFixed(2)} (${c.pnlPct >= 0 ? '+' : ''}${c.pnlPct}%)</span>
