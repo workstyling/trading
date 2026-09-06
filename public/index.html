@@ -6610,11 +6610,37 @@
 
     // ── Алерт безубытка: Telegram-сообщение, когда Limit P&L монеты дойдёт до 0 (одноразовый) ──
     let _beWatches = {};
+
+    // Сторож безубытка одноразовый: отправив сообщение, сервер снимает его сам.
+    // Состояние спрашивалось ОДИН раз при загрузке страницы, поэтому после
+    // срабатывания кнопка оставалась «BE ON» до перезагрузки — сообщение в
+    // Telegram уже пришло, а на экране алерт всё ещё числился включённым.
+    // Теперь состояние переспрашивается, как у сторожа просадки.
+    const BE_POLL_MS = 20000;
+
+    function _paintBeBtn(el, coin) {
+      const on = !!_beWatches[coin];
+      el.textContent = on ? '🔔 BE ON' : '🔔 BE';
+      el.style.borderColor = on ? 'var(--yellow)' : 'rgba(255,255,255,0.25)';
+      el.style.background = on ? 'rgba(245,197,24,0.15)' : 'transparent';
+      el.style.color = on ? 'var(--yellow)' : '#889';
+    }
+
+    // Кнопок столько, сколько монет в таблице, и перерисовывать надо все:
+    // сработать мог сторож не той монеты, что сейчас под курсором.
+    function paintBeButtons() {
+      document.querySelectorAll('[id^="bew_"]').forEach(el => _paintBeBtn(el, el.id.slice(4)));
+    }
+
     async function loadBeWatches() {
       try {
         const r = await fetch('/api/be-watch');
         const j = await r.json();
-        if (j.success) { _beWatches = {}; (j.watches || []).forEach(w => _beWatches[w.coin] = w); }
+        if (j.success) {
+          _beWatches = {};
+          (j.watches || []).forEach(w => _beWatches[w.coin] = w);
+          paintBeButtons();
+        }
       } catch { }
     }
     async function toggleBeWatch(coin, pair, filled, usd) {
@@ -6628,18 +6654,13 @@
         if (!j.success) { showCustomAlert(j.error || 'Ошибка', true); return; }
         _beWatches = {};
         (j.watches || []).forEach(w => _beWatches[w.coin] = w);
-        const b = document.getElementById('bew_' + coin);
-        if (b) {
-          const on = !!_beWatches[coin];
-          b.textContent = on ? '🔔 BE ON' : '🔔 BE';
-          b.style.borderColor = on ? 'var(--yellow)' : 'rgba(255,255,255,0.25)';
-          b.style.background = on ? 'rgba(245,197,24,0.15)' : 'transparent';
-          b.style.color = on ? 'var(--yellow)' : '#889';
-        }
+        paintBeButtons();
         if (enable) showCustomAlert(`Алерт включён: Telegram-сообщение, когда ${coin} выйдет в безубыток`);
+        else showCustomAlert(`Алерт по ${coin} снят`);
       } catch (e) { showCustomAlert('Ошибка: ' + e.message, true); }
     }
     loadBeWatches();
+    setInterval(loadBeWatches, BE_POLL_MS);
 
     // Кнопка AUTO (серверная TP/SL-лестница из РЕАЛЬНЫХ ордеров) убрана из
     // шапки позиции — вместе с ней ушёл и весь клиентский код: она была

@@ -2440,6 +2440,10 @@ setInterval(async () => {
       const pnl = w.filled * ask * (1 - fee) - w.usd;
       if (pnl >= 0) {
         const sent = await sendTelegram(`🔔 ${w.pair}: BREAK-EVEN reached!\nLimit P&L: +$${pnl.toFixed(2)} · Ask: $${ask}\nYou can sell without loss now. (one-shot alert — now OFF)`);
+        // Снимаем ТОЛЬКО если сообщение ушло. Раньше сторож удалялся в любом
+        // случае, и отказ Telegram выглядел бы так, будто безубытка не было:
+        // кнопка гаснет, сообщения нет. Как у сторожа просадки.
+        if (!sent) { console.error('[be-watch] ' + w.pair + ': Telegram не принял, сторож оставлен'); continue; }
         beWatches = beWatches.filter(x => x.coin !== w.coin);
         saveBeWatches();
         console.log(`[be-watch] ${w.pair} fired at ask=${ask}, pnl=${pnl.toFixed(2)}, telegram=${sent}`);

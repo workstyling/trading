@@ -2374,10 +2374,33 @@
 
     // ── Алерт безубытка: Telegram при Limit P&L ≥ 0 (одноразовый) ──
     let _beWatches = {};
+
+    // Сторож безубытка одноразовый: отправив сообщение, сервер снимает его сам.
+    // Состояние спрашивалось ОДИН раз при загрузке, поэтому после срабатывания
+    // кнопка оставалась «ON» до перезагрузки — сообщение уже пришло, а на
+    // экране алерт всё ещё числился включённым.
+    const BE_POLL_MS = 20000;
+
+    function _paintBeBtnM(el, coin) {
+      const on = !!_beWatches[coin];
+      el.textContent = on ? '🔔 ON' : '🔔';
+      el.style.borderColor = on ? 'var(--yellow)' : 'rgba(255,255,255,0.25)';
+      el.style.background = on ? 'rgba(245,197,24,0.15)' : 'transparent';
+      el.style.color = on ? 'var(--yellow)' : '#889';
+    }
+
+    function paintBeButtonsM() {
+      document.querySelectorAll('[id^="bewM_"]').forEach(el => _paintBeBtnM(el, el.id.slice(5)));
+    }
+
     async function loadBeWatchesM() {
       try {
         const r = await api('/api/be-watch');
-        if (r.success) { _beWatches = {}; (r.watches || []).forEach(w => _beWatches[w.coin] = w); }
+        if (r.success) {
+          _beWatches = {};
+          (r.watches || []).forEach(w => _beWatches[w.coin] = w);
+          paintBeButtonsM();
+        }
       } catch { }
     }
     async function toggleBeWatchM(coin, pair, filled, usd) {
@@ -2389,17 +2412,12 @@
       if (!r.success) { toast(r.error || 'Ошибка', 'error'); return; }
       _beWatches = {};
       (r.watches || []).forEach(w => _beWatches[w.coin] = w);
-      const b = document.getElementById('bewM_' + coin);
-      if (b) {
-        const on = !!_beWatches[coin];
-        b.textContent = on ? '🔔 ON' : '🔔';
-        b.style.borderColor = on ? 'var(--yellow)' : 'rgba(255,255,255,0.25)';
-        b.style.background = on ? 'rgba(245,197,24,0.15)' : 'transparent';
-        b.style.color = on ? 'var(--yellow)' : '#889';
-      }
+      paintBeButtonsM();
       if (enable) toast(`Алерт включён: ${coin} → Telegram при безубытке`);
+      else toast(`Алерт по ${coin} снят`);
     }
     loadBeWatchesM();
+    setInterval(loadBeWatchesM, BE_POLL_MS);
 
     // ── Глубина стакана ±2% + «сколько уровней ask заберёт покупка» ──
     let _mDepthBook = { coin: null, bids: [], asks: [], t: 0 };
