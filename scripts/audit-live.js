@@ -33,6 +33,15 @@ function ema(v, p) {
   ok(!!scan && scan.success, 'эндпоинт отвечает');
   if (!scan) return;
   ok(scan.total > 50, 'просканировано монет', scan.scanned + '/' + scan.total);
+  // Скан идёт минуты, и попасть в его середину легко. Тогда режим ещё null,
+  // результатов ноль, и дальше скрипт разбивался на scan.regime.above —
+  // выглядело это как провал аудита, хотя проверять было просто нечего.
+  // Говорим об этом прямо и выходим, а не выдаём чужие failʼы за настоящие.
+  if (scan.running || scan.scanned !== scan.total || !scan.regime) {
+    console.log('\n  СКАН ЕЩЁ ИДЁТ (' + scan.scanned + '/' + scan.total +
+      '), проверять нечего. Повтори через минуту.');
+    process.exit(2);
+  }
   ok(scan.scanned === scan.total, 'проход завершён полностью');
   ok(scan.agoSec != null && scan.agoSec < 300, 'скан свежий', scan.agoSec + 'с назад');
   ok(!!scan.regime, 'режим посчитан', scan.regime ? scan.regime.distPct + '%' : '—');
