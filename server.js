@@ -6649,17 +6649,19 @@ app.post('/api/advise-sell', async (req, res) => {
 const DIP_CB = 'https://api.exchange.coinbase.com';
 const DIP_H = { headers: { 'User-Agent': 'trading-app/1.0' } };
 const DIP_WATCH_FILE = path.join(__dirname, 'dip-watch.json');
-// Как часто пересчитывать обе границы. Обстановка за десять минут успевает
-// смениться, а чаще звать Opus незачем: размахи, по которым он считает,
-// меряются часами, а не минутами.
-const DIP_REVIEW_MS = 10 * 60 * 1000;
+// Пересчёт идёт по событиям, а не по расписанию: рынок меняется рывками, и
+// в тихий час десять минут это слишком часто, а на резком движении --
+// непозволительно редко. Границы задают только пол и потолок.
+const DIP_REVIEW_MIN_MS = 90 * 1000;        // чаще Opus не зовём
+const DIP_REVIEW_MAX_MS = 20 * 60 * 1000;   // и не реже, даже если всё стоит
 const dipBusy = new Set();   // монеты, по которым сейчас идёт пересчёт
 let dipWatches = {};   // coin -> { at, startPx, targetPx, dipPct, why, pair }
 try { dipWatches = JSON.parse(fs.readFileSync(DIP_WATCH_FILE, 'utf8')) || {}; } catch { }
-// Сторожа, поставленные до появления верхней границы, её не имеют. Просим
-// пересчитать их на первом же круге, иначе они остались бы без отмены.
+// Сторожа, поставленные до появления верхней границы, её не имеют. Отсутствие
+// отметки о пересчёте само означает «пересчитать немедленно», поэтому её
+// достаточно снять — на первом же круге границы появятся.
 for (const w of Object.values(dipWatches)) {
-  if (w && !w.fired && !w.stopped && !(w.abortPx > 0)) w.reviewAt = 1;
+  if (w && !w.fired && !w.stopped && !(w.abortPx > 0)) { w.reviewedAt = 0; w.retryAfter = 0; }
 }
 function saveDipWatches() {
   try { fs.writeFileSync(DIP_WATCH_FILE, JSON.stringify(dipWatches, null, 2)); } catch { }
@@ -6682,12 +6684,83 @@ async function dipFacts(coin) {
   const bodies = rows.slice(0, 12).map(x => (Number(x[2]) - Number(x[1])) / Number(x[4]) * 100).filter(Number.isFinite);
   const avg5m = bodies.length ? bodies.reduce((a, b) => a + b, 0) / bodies.length : null;
   const pct = (from) => from > 0 ? (px / from - 1) * 100 : null;
+  const r2 = (v) => v == null || !Number.isFinite(v) ? null : Math.round(v * 100) / 100;
+
+  // Уровни, от которых цена уже отскакивала. Просто «минус два процента» —
+  // это круглое число, а не место, где кто-то готов покупать; выгодный вход
+  // стоит искать там, где рынок уже разворачивался. Минимумы 5m свечей за
+  // сутки сбиваем в корзины по 0.25% и берём те, куда цена возвращалась
+  // хотя бы дважды.
+  const lows = rows.map(x => Number(x[1])).filter(v => v > 0 && v < px);
+  const buckets = new Map();
+  for (const lo of lows) {
+    const key = Math.round((px / lo - 1) * 400) / 400;   // шаг 0.25% ниже цены
+    const b = buckets.get(key) || { belowPct: key * 100, touches: 0, sum: 0 };
+    b.touches++; b.sum += lo;
+    buckets.set(key, b);
+  }
+  // Расстояние считаем от СРЕДНЕЙ цены корзины, а не от её границы: иначе
+  // уровни выходили ровной лесенкой 0.25 / 0.5 / 0.75, то есть теми самыми
+  // круглыми числами, вместо которых всё это и затевалось.
+  //
+  // И отбираем по числу касаний, а не по близости: сильный уровень чуть
+  // глубже важнее слабого прямо под ценой. Уже отобранные потом ставим по
+  // возрастанию глубины, чтобы читались сверху вниз.
+  const bounceLevels = [...buckets.values()]
+    .filter(b => b.touches >= 2 && b.belowPct > 0.05)
+    .map(b => ({ price: b.sum / b.touches, touches: b.touches }))
+    .map(b => ({ belowPct: r2((px / b.price - 1) * 100), price: b.price, touches: b.touches }))
+    .filter(b => b.belowPct > 0.05)
+    .sort((a, b) => b.touches - a.touches || a.belowPct - b.belowPct)
+    .slice(0, 4)
+    .sort((a, b) => a.belowPct - b.belowPct);
+
+  // Плотная заявка в стакане — второй вид уровня: там продавцу придётся
+  // пробивать чужие деньги, а не воздух.
+  let bidWall = null;
+  try {
+    const rb = await fetch(`${DIP_CB}/products/${pair}/book?level=2`, DIP_H);
+    if (rb.ok) {
+      const book = await rb.json();
+      let best = null;
+      for (const [pxs, szs] of (book.bids || []).slice(0, 120)) {
+        const bp = Number(pxs), bs = Number(szs);
+        if (!(bp > 0) || !(bs > 0)) continue;
+        const below = (px / bp - 1) * 100;
+        if (below < 0.05 || below > 6) continue;
+        const usd = bp * bs;
+        if (!best || usd > best.usd) best = { usd, belowPct: below, price: bp };
+      }
+      if (best) bidWall = { belowPct: r2(best.belowPct), price: best.price, usd: Math.round(best.usd) };
+    }
+  } catch { /* стакан не обязателен: без него остаются уровни по свечам */ }
+
+  // RSI(14) на 5m и место цены в суточном диапазоне: по ним видно, дно это
+  // или середина падения, которое ещё идёт.
+  const closes = rows.slice(0, 15).map(x => Number(x[4])).reverse();
+  let rsi = null;
+  if (closes.length === 15) {
+    let up = 0, dn = 0;
+    for (let i = 1; i < closes.length; i++) {
+      const d = closes[i] - closes[i - 1];
+      if (d >= 0) up += d; else dn -= d;
+    }
+    rsi = dn === 0 ? 100 : Math.round(100 - 100 / (1 + (up / 14) / (dn / 14)));
+  }
+  const span24 = h24.high - h24.low;
+
   return {
     coin, price: px,
     last1h: { lowPct: pct(h1.low), highPct: pct(h1.high) },
     last4h: { lowPct: pct(h4.low), highPct: pct(h4.high) },
     last24h: { lowPct: pct(h24.low), highPct: pct(h24.high) },
     avg5mCandleRangePct: avg5m == null ? null : Math.round(avg5m * 1000) / 1000,
+    chg15mPct: rows[3] ? r2((px / Number(rows[3][4]) - 1) * 100) : null,
+    chg1hPct: rows[12] ? r2((px / Number(rows[12][4]) - 1) * 100) : null,
+    posIn24hRangePct: span24 > 0 ? r2((px - h24.low) / span24 * 100) : null,
+    rsi14_5m: rsi,
+    bounceLevels,
+    bidWall,
   };
 }
 
@@ -6708,10 +6781,18 @@ async function askDipDepth(coin) {
     '',
     'Rules:',
     '- ЦЕЛЬ is a POSITIVE number: how many percent BELOW the current price to wait for.',
+    '- Aim at a LEVEL, not at a round percentage. bounceLevels are places the price already',
+    '  turned around (touches = how many times), bidWall is where real money is queued to buy.',
+    '  If one of them sits inside the sensible range, put ЦЕЛЬ on it -- an entry there is worth',
+    '  more than the same depth in empty space. Prefer more touches and a nearer level.',
     '- It must stay inside what the facts already show. Do not exceed the 24h low distance,',
     '  and do not go below the average 5m candle range -- smaller than that is noise, not a dip.',
     '- A small ЦЕЛЬ is a perfectly good answer when the measured ranges are small. Do not',
     '  inflate it to look decisive.',
+    '- Read the state, not just the ranges: rsi14_5m near 30 with posIn24hRangePct low means the',
+    '  fall is already spent and a shallow ЦЕЛЬ is enough; a fresh drop (chg15mPct strongly',
+    '  negative) with rsi still high means it has further to go, so do not buy the first step down.',
+    '- ПОЧЕМУ must name the level you aimed at when you used one.',
     '- ОТМЕНА is a POSITIVE number: how many percent ABOVE the current price would mean waiting',
     '  for a dip no longer makes sense -- the move left without us and buying here is chasing.',
     '  Base it on the same measured ranges. Sensible range 0.5% to 6%.',
@@ -6743,6 +6824,34 @@ async function askDipDepth(coin) {
   return { dip, up, why: why.trim(), price: facts.price };
 }
 
+// Повод пересчитать границы, или null. Вынесено из цикла отдельно: это
+// единственное место, где решается, когда звать Opus, и его надо уметь
+// проверить без биржи и без модели.
+//
+// Поводов два: цена заметно ушла от той, по которой считали в прошлый раз,
+// либо давно не смотрели. Пол в полторы минуты не даёт дёргать модель на
+// каждом тике, потолок в двадцать минут не даёт границам застояться на
+// спокойном рынке.
+//
+// Отдельного повода «подошли к цели» здесь нет намеренно: цель всегда стоит
+// на dipPct ниже опорной цены, а порог сдвига — 0.4 от той же величины, так
+// что подойти к цели, не пробив порог сдвига, невозможно. Такая проверка
+// была бы мёртвой веткой.
+function dipReviewReason(w, bid, now) {
+  if (!w || !(bid > 0)) return null;
+  if (now < (w.retryAfter || 0)) return null;
+  const sinceReview = now - (w.reviewedAt || 0);
+  if (sinceReview < DIP_REVIEW_MIN_MS) return null;
+  if (sinceReview >= DIP_REVIEW_MAX_MS) return 'давно';
+  const base = w.reviewPx > 0 ? w.reviewPx : w.startPx;
+  if (!(base > 0)) return 'нет опорной цены';
+  const drift = Math.abs(bid / base - 1) * 100;
+  // Порог сдвига привязан к самой цели: у мелкой цели в полпроцента и уход
+  // на четверть процента уже меняет расклад, у крупной — нет.
+  if (drift >= Math.max(0.25, (w.dipPct || 1) * 0.4)) return 'цена ушла на ' + drift.toFixed(2) + '%';
+  return null;
+}
+
 app.get('/api/dip-watch', (req, res) => {
   res.json({ success: true, watches: dipWatches });
 });
@@ -6767,7 +6876,9 @@ app.post('/api/dip-watch', async (req, res) => {
       // которое и должна ловить.
       abortPx: price * (1 + up / 100),
       upPct: Math.round(up * 100) / 100,
-      reviewAt: Date.now() + DIP_REVIEW_MS,
+      // Постановка -- это и есть первый пересчёт: границы только что названы
+      // по свежим фактам, второй раз спрашивать не за чем.
+      reviewedAt: Date.now(), reviewPx: price,
     };
     saveDipWatches();
     res.json({ success: true, watch: dipWatches[coin], watches: dipWatches });
@@ -6816,10 +6927,14 @@ setInterval(async () => {
         continue;
       }
 
-      // Обстановка меняется, а цель, названная один раз при постановке,
-      // остаётся от старого рынка. Пересчитываем обе границы по свежим
-      // размахам: цель может стать и мельче, если рынок успокоился.
-      if (w.reviewAt && Date.now() >= w.reviewAt) {
+      // Пересчитываем не по часам, а когда обстановка действительно сменилась.
+      // Поводов три: цена заметно ушла от той, по которой считали в прошлый
+      // раз; цена подошла к цели вплотную и решение вот-вот понадобится;
+      // либо просто давно не смотрели. Пол в полторы минуты не даёт дёргать
+      // Opus на каждом тике, потолок в двадцать минут не даёт границам
+      // застояться на спокойном рынке.
+      const reason = dipReviewReason(w, bid, Date.now());
+      if (reason) {
         dipBusy.add(coin);
         try {
           const nx = await askDipDepth(coin);
@@ -6833,16 +6948,17 @@ setInterval(async () => {
             // привязка к текущей делала бы порог недостижимым при плавном росте.
             cur.abortPx = cur.startPx * (1 + nx.up / 100);
             if (nx.why) cur.why = nx.why;
-            cur.reviewAt = Date.now() + DIP_REVIEW_MS;
             cur.reviewedAt = Date.now();
+            cur.reviewPx = nx.price;
+            cur.reviewReason = reason;
             saveDipWatches();
-            console.log('[dip-watch] ' + coin + ' пересчитан: ' + wasDip + '% -> ' + cur.dipPct +
-              '%, отмена +' + cur.upPct + '%');
+            console.log('[dip-watch] ' + coin + ' пересчитан (' + reason + '): ' + wasDip + '% -> ' +
+              cur.dipPct + '%, отмена +' + cur.upPct + '%');
           }
         } catch (e) {
           // Пересчитать не вышло — оставляем прежние границы и пробуем позже.
           // Снимать сторож из-за недоступного Claude было бы худшим исходом.
-          w.reviewAt = Date.now() + 60_000;
+          w.retryAfter = Date.now() + 60_000;
           console.error('[dip-watch] ' + coin + ': пересчёт не удался — ' + e.message);
         } finally {
           dipBusy.delete(coin);
