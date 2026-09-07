@@ -14748,7 +14748,10 @@ Requirements:
             (x.spreadPct != null ? ', спред ' + x.spreadPct + '%' : '') +
             (x.dayFallPct != null ? String.fromCharCode(10) + 'от суточного максимума ниже на ' + x.dayFallPct + '%' : '') +
             (rec ? String.fromCharCode(10) + 'на такой глубине цена возвращалась к входу за час в ' + rec.hour +
-              '% случаев, зависала в ' + rec.stuck + '% (замер по 9 596 входам за 12 дней)' : '') + '"' +
+              '% случаев, зависала в ' + rec.stuck + '% (замер по 11 103 входам за 12 дней)' : '') +
+            (x.runup ? String.fromCharCode(10) + 'выросла от суточного минимума на ' + x.runup.runup +
+              '% — у такого разгона возврат за час случался в ' + x.runup.hour +
+              '% случаев (15 215 замеров за 25 дней). Разгон возврату не мешает, а помогает.' : '') + '"' +
             ' style="cursor:pointer;display:flex;justify-content:space-between;gap:8px;padding:4px 6px;border-radius:6px;' +
             (e.pct >= ENTRY_MIN ? 'background:rgba(0,229,160,0.10);' : '') + '">' +
             '<span style="color:var(--blue);font-weight:700;font-size:11px;min-width:52px;">' + x.coin + '</span>' +
