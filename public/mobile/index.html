@@ -6165,8 +6165,11 @@
         const cell = (x) => {
           const e = x.entryValue;
           const col = e.pct >= ENTRY_MIN_M ? '#00e5a0' : e.pct >= 20 ? '#f5c518' : '#7c8698';
-          return '<div onclick="selectCoinForTradeM(' + JSON.stringify(x.coin) + ')" title="' +
-            'откат ' + (x.pullbackPct == null ? '—' : x.pullbackPct + '%') + ', RSI ' + Math.round(x.rsi || 0) +
+          // Одинарные кавычки внутри двойных: JSON.stringify рвал атрибут.
+          const safe = String(x.coin).replace(/[^A-Z0-9]/gi, '');
+          return '<div onclick="selectCoinForTradeM(\'' + safe + '\')" title="' +
+            'Выбрать ' + safe + ' для покупки и открыть график' +
+            String.fromCharCode(10) + 'откат ' + (x.pullbackPct == null ? '—' : x.pullbackPct + '%') + ', RSI ' + Math.round(x.rsi || 0) +
             (x.spreadPct != null ? ', спред ' + x.spreadPct + '%' : '') + '"' +
             ' style="cursor:pointer;display:flex;justify-content:space-between;gap:8px;padding:4px 6px;border-radius:6px;' +
             (e.pct >= ENTRY_MIN_M ? 'background:rgba(0,229,160,0.10);' : '') + '">' +
