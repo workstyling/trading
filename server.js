@@ -5224,6 +5224,14 @@ let entryPaper = { trades: [], startedAt: 0 };
 try { entryPaper = JSON.parse(fs.readFileSync(ENTRY_PAPER_FILE, 'utf8')) || entryPaper; } catch { }
 if (!entryPaper.startedAt) entryPaper.startedAt = Date.now();
 if (!Array.isArray(entryPaper.trades)) entryPaper.trades = [];
+// Сделки, посчитанные до исправления учёта времени, пересчитываются заново.
+// Прежний расчёт завышал: пятиминутка, начинавшаяся ровно на шестидесятой,
+// входила в зачёт вместе с ростом на 64-й минуте, а отметка «через 5 минут»
+// бралась с одиннадцатой. Оставить такие данные значило бы проверять панель
+// по испорченным измерениям — то есть не проверять вовсе.
+for (const t of entryPaper.trades) {
+  if (t.done60 && !t.v2) { delete t.done60; delete t.done3d; delete t.tries60; delete t.tries3d; }
+}
 function saveEntryPaper() {
   try {
     if (entryPaper.trades.length > ENTRY_PAPER_MAX) {
@@ -5348,6 +5356,7 @@ async function entryPaperSettle() {
         t.recHour = fresh.hour;
       }
       t.done60 = true;
+      t.v2 = true;                // посчитано после исправления учёта времени
       changed = true;
     } catch (e) { console.error('[entry-paper]', t.coin, e.message); }
     await new Promise(r => setTimeout(r, 220));
