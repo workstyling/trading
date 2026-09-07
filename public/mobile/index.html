@@ -6152,12 +6152,15 @@
       try {
         const j = await (await fetch('' + BASE + '/api/entry-scan')).json();
         if (!j.success) return;
+        // Тот же счётчик, что у сканов: показывает, когда считали и сколько
+        // до следующего пересчёта, с поправкой на расхождение часов.
+        trackFreshnessM('entryAgoM', j);
         const rows = j.results || [];
         const good = rows.filter(x => x.entryValue && x.entryValue.pct >= ENTRY_MIN_M);
         const head = '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:6px;">' +
           '<span style="color:var(--t1);font-weight:700;font-size:12px;">Лучший вход по рынку</span>' +
           '<span style="color:var(--t2);font-size:10px;">' + (j.total || 0) + ' монет · порог ' + ENTRY_MIN_M + '%+' +
-          (j.scanning ? ' · сканирую…' : '') + '</span></div>';
+          (j.scanning ? ' · сканирую…' : '') + ' · <span id="entryAgoM"></span></span></div>';
         if (!rows.length) {
           box.innerHTML = head + '<div style="color:var(--t2);font-size:11px;">Первый скан после запуска…</div>';
           return;
@@ -6185,7 +6188,11 @@
               'балл отсеивает плохие входы, прибыльными не делает.</div>'
             : rows.slice(0, 3).map(cell).join('') +
               '<div style="color:var(--t2);font-size:10px;margin-top:5px;">Порог не взял никто — показаны ближайшие.</div>');
-      } catch { }
+      } catch (e) {
+        // Молчащий catch уже однажды скрыл панель, которая не работала вовсе.
+        // Пустое место не отличить от «нет кандидатов», поэтому пишем причину.
+        box.innerHTML = '<div style="color:var(--t2);font-size:11px;">Панель входа недоступна: ' + e.message + '</div>';
+      }
     }
 
     async function loadMicroScalpM() {
