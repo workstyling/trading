@@ -4877,6 +4877,107 @@ function microScalpEntryValue(row) {
   return { pct, why, discount: Math.round(discount * 100), turn: Math.round(turn * 100) };
 }
 
+// ── Отдельный скан ВХОДА по всей объёмной вселенной ────────────────────────
+//
+// Таблица микро-скальпа показывает верх по SCORE, а SCORE даёт 45 очков из 100
+// за «уже развернулась»: rsiRecovery, aboveEma9, emaStack. ВХОД измеряет
+// обратное — «ещё не отыграла падение». Измерено на 12 днях: на всех монетах
+// ВХОД доходит до 40 в 26% наблюдений, а на отобранных критериями SCORE —
+// всего в 3%. Девятикратная разница, и она объясняет, почему в той таблице
+// почти всегда нули.
+//
+// Поэтому ВХОД считается здесь по СВОЕЙ вселенной, без отбора «уже
+// развернулась»: те же монеты по объёму, но без гейта микро-скальпа.
+//
+// fetchMicroSignals импортируется, а не переписывается: правка
+// src/micro-scalp/scanner.js сменила бы отпечаток и обнулила когорту.
+const ENTRY_SCAN_INTERVAL_MS = 5 * 60 * 1000;
+const ENTRY_SCAN_MAX_COINS = 60;
+const entryScan = { results: [], at: 0, total: 0, running: false };
+
+async function runEntryScan() {
+  if (entryScan.running || !cbVolumeCache.size) return;
+  entryScan.running = true;
+  try {
+    const universe = [...cbVolumeCache.entries()]
+      .map(([coin, volume]) => ({ coin, volume: Number(volume) || 0 }))
+      .filter(x => x.volume >= microScalpScanner.MIN_VOLUME_USD)
+      .sort((a, b) => b.volume - a.volume)
+      .slice(0, ENTRY_SCAN_MAX_COINS);
+
+    const rows = [];
+    for (let i = 0; i < universe.length; i += 3) {
+      const batch = universe.slice(i, i + 3);
+      await Promise.all(batch.map(async ({ coin, volume }) => {
+        try {
+          const sig = await microScalpScanner.fetchMicroSignals(coin);
+          if (!sig) return;
+          // Спред пока неизвестен — считаем ядро балла. Полный балл добираем
+          // только для прошедших порог: тикер на все шестьдесят монет удвоил
+          // бы нагрузку на биржу ради строк, которые всё равно не показать.
+          const core = microScalpEntryValue({
+            pullbackPct: sig.pullbackPct, rsi: sig.rsi5,
+            spreadPct: null, vol24: volume, checks: [],
+          });
+          if (!core) return;
+          rows.push({
+            coin, pair: coin + '-USD', price: sig.price, vol24: volume,
+            rsi: sig.rsi5, pullbackPct: sig.pullbackPct,
+            entryValue: core,
+          });
+        } catch { /* одна монета не должна ронять весь скан */ }
+      }));
+      await new Promise(r => setTimeout(r, 250));
+    }
+
+    rows.sort((a, b) => b.entryValue.pct - a.entryValue.pct);
+    // Спред уточняем у первой десятки: он только приглушает балл, поэтому
+    // порядок от него почти не зависит, а запросов экономит впятеро.
+    for (const row of rows.slice(0, 10)) {
+      try {
+        const r = await fetch(`${DIP_CB}/products/${row.pair}/ticker`, DIP_H);
+        if (!r.ok) continue;
+        const t = await r.json();
+        const bid = Number(t.bid), ask = Number(t.ask);
+        if (bid > 0 && ask > 0 && ask >= bid) {
+          row.spreadPct = Math.round((ask / bid - 1) * 10000) / 100;
+          const full = microScalpEntryValue({
+            pullbackPct: row.pullbackPct, rsi: row.rsi,
+            spreadPct: row.spreadPct, vol24: row.vol24, checks: [],
+          });
+          if (full) row.entryValue = full;
+        }
+      } catch { }
+      await new Promise(r => setTimeout(r, 120));
+    }
+    rows.sort((a, b) => b.entryValue.pct - a.entryValue.pct);
+
+    entryScan.results = rows;
+    entryScan.total = universe.length;
+    entryScan.at = Date.now();
+    const good = rows.filter(x => x.entryValue.pct >= 40).length;
+    console.log('[entry-scan] ' + rows.length + '/' + universe.length + ' монет, 40+: ' + good);
+  } catch (e) {
+    console.error('[entry-scan]', e.message);
+  } finally {
+    entryScan.running = false;
+  }
+}
+setInterval(runEntryScan, ENTRY_SCAN_INTERVAL_MS);
+setTimeout(runEntryScan, 70_000);
+
+app.get('/api/entry-scan', (req, res) => {
+  res.json({
+    success: true,
+    at: entryScan.at,
+    total: entryScan.total,
+    scanning: entryScan.running,
+    intervalMs: ENTRY_SCAN_INTERVAL_MS,
+    serverNow: Date.now(),
+    results: entryScan.results.slice(0, 15),
+  });
+});
+
 async function runMicroScalpScan() {
   if (microScalpScan.running || !cbVolumeCache.size) return;
   microScalpScan.running = true;

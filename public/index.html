@@ -6223,6 +6223,7 @@
               <span id="msTelegramLabel" style="font-size:10px;color:#bf5af2;background:rgba(191,90,242,.10);border:1px solid rgba(191,90,242,.3);border-radius:6px;padding:4px 7px;">Telegram: «15–60 мин · Paper» · без ордеров</span>
             </div>
           </div>
+          <div id="entryScanBox" style="margin-bottom:10px;padding:8px 10px;border:1px solid rgba(0,229,160,0.30);border-radius:8px;background:rgba(0,229,160,0.04);"></div>
           <div id="msBody"><div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">Первый быстрый скан после запуска…</div></div>
         </div>
         <div id="scalpScanPanel" style="margin-bottom:14px;">
@@ -7343,41 +7344,11 @@
 
     // Ячейка «ВХОД». Второй строкой — короткая причина: без неё ноль выглядел
     // бы поломкой, хотя чаще всего он означает «эта монета ещё не падала».
-    // Полоса над таблицей: какие монеты сейчас проходят порог ВХОДА.
-    // Искать глазами по десяти строкам — значит терять те самые минуты, в
-    // которых и живёт всё измеренное преимущество.
     // 40 — минимальный порог, при котором превышение положительно в ОБА независимых
     // периода истории. Ниже 20 сегмент устойчиво отрицателен, 20–39 даёт ровно ноль.
     // Выше 40 поднимать нечего: превышение дальше не растёт, а 95–100 даже слабее
     // 80–94. Прежние 70 и 90 отсекали кандидатов без измеримого выигрыша.
     const ENTRY_MIN = 40;
-    function _entryPicks(rows) {
-      // Полоса смотрит ВСЕ монеты скана, а не только видимые строки.
-      // Таблица показывает верх по SCORE, а SCORE даёт 45 очков из 100 за
-      // «уже развернулась» (rsiRecovery 15, aboveEma9 15, emaStack 15). ВХОД
-      // измеряет обратное — «ещё не отыграла падение». Два порядка тянут в
-      // разные стороны, поэтому кандидат по ВХОДУ часто оказывается ниже
-      // десятой строки и в видимую часть не попадает. Замеченный случай: TAO
-      // с 35% стояла двенадцатой, а полоса её не видела вовсе.
-      const good = (rows || [])
-        .filter(x => x.entryValue && x.entryValue.pct >= ENTRY_MIN)
-        .sort((a, b) => b.entryValue.pct - a.entryValue.pct);
-      if (!good.length) {
-        const best = (rows || []).filter(x => x.entryValue)
-          .sort((a, b) => b.entryValue.pct - a.entryValue.pct)[0];
-        return '<div style="margin-bottom:8px;padding:7px 10px;border-radius:8px;background:rgba(255,255,255,0.04);' +
-          'border:1px solid var(--b1);font-size:11.5px;color:var(--t2);">' +
-          'Ни одна монета не набрала ВХОД ' + ENTRY_MIN + '% — брать нечего.' +
-          (best ? ' Ближайшая: <b style="color:var(--t1);">' + best.coin + '</b> ' + best.entryValue.pct + '%.' : '') +
-          '</div>';
-      }
-      return '<div title="Порог 40 — минимальный, при котором превышение положительно В ОБА независимых периода истории. По сегментам (12 дней, 15 монет, поправка на средний ход монеты): 1–19 даёт −0.036% и −0.028%, 20–39 даёт ровно ноль, а с 40 и выше плюс держится всегда: 40–59 даёт +0.014% и +0.126%, 80–94 даёт +0.034% и +0.102%. ВЫШЕ 40 ПОДНИМАТЬ НЕЧЕГО: превышение дальше не растёт, а 95–100 даже чуть слабее 80–94. Поэтому список не ранжирует — любая монета из него равноценна по измерению. ВАЖНО: даже лучшие +0.126% меньше круга из двух лимиток (0.150%). Балл отделяет плохие входы от нейтральных, но прибыльными их не делает." style="margin-bottom:8px;padding:7px 10px;border-radius:8px;' +
-        'background:rgba(0,229,160,0.10);border:1px solid rgba(0,229,160,0.45);font-size:11.5px;color:var(--t1);">' +
-        '<b style="color:#00e5a0;">ВХОД ' + ENTRY_MIN + '%+:</b> ' +
-        good.map(x => '<b>' + x.coin + '</b> ' + x.entryValue.pct + '%').join(' · ') +
-        ' <span style="color:var(--t2);">— по измерению равноценны: выше 40 превышение не растёт. '
-        + 'И оно меньше комиссии за круг</span></div>';
-    }
 
     function _entryCell(item) {
       const e = item && item.entryValue;
@@ -14747,6 +14718,50 @@ Requirements:
     setInterval(loadScalpScan, 45_000);
     loadScalpScan();
 
+    // Панель ВХОДА по всей объёмной вселенной. Отдельная от таблицы
+    // микро-скальпа намеренно: та ранжирует по SCORE, который даёт 45 очков из
+    // 100 за «уже развернулась», а ВХОД измеряет обратное. На отобранных по
+    // SCORE монетах порог 40 берётся в 3% случаев против 26% на всех — поэтому
+    // в той таблице почти всегда нули, и искать вход надо не в ней.
+    async function loadEntryScan() {
+      const box = document.getElementById('entryScanBox');
+      if (!box) return;
+      try {
+        const j = await (await fetch('/api/entry-scan')).json();
+        if (!j.success) return;
+        const rows = j.results || [];
+        const good = rows.filter(x => x.entryValue && x.entryValue.pct >= ENTRY_MIN);
+        const head = '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:6px;">' +
+          '<span style="color:var(--t1);font-weight:700;font-size:12px;">Лучший вход по рынку</span>' +
+          '<span style="color:var(--t2);font-size:10px;">' + (j.total || 0) + ' монет · порог ' + ENTRY_MIN + '%+' +
+          (j.scanning ? ' · сканирую…' : '') + '</span></div>';
+        if (!rows.length) {
+          box.innerHTML = head + '<div style="color:var(--t2);font-size:11px;">Первый скан после запуска…</div>';
+          return;
+        }
+        const cell = (x) => {
+          const e = x.entryValue;
+          const col = e.pct >= ENTRY_MIN ? '#00e5a0' : e.pct >= 20 ? '#f5c518' : '#7c8698';
+          return '<div onclick="selectCoinForTrade(' + JSON.stringify(x.coin) + ')" title="' +
+            'откат ' + (x.pullbackPct == null ? '—' : x.pullbackPct + '%') + ', RSI ' + Math.round(x.rsi || 0) +
+            (x.spreadPct != null ? ', спред ' + x.spreadPct + '%' : '') + '"' +
+            ' style="cursor:pointer;display:flex;justify-content:space-between;gap:8px;padding:4px 6px;border-radius:6px;' +
+            (e.pct >= ENTRY_MIN ? 'background:rgba(0,229,160,0.10);' : '') + '">' +
+            '<span style="color:var(--blue);font-weight:700;font-size:11px;">' + x.coin + '</span>' +
+            '<span style="color:var(--t2);font-size:10px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + e.why + '</span>' +
+            '<span style="color:' + col + ';font-weight:800;font-size:11px;">' + e.pct + '%</span></div>';
+        };
+        box.innerHTML = head +
+          (good.length
+            ? good.slice(0, 6).map(cell).join('') +
+              '<div style="color:var(--t2);font-size:10px;margin-top:5px;line-height:1.4;">' +
+              'По измерению они равноценны: выше 40 превышение не растёт. И оно меньше комиссии за круг (0.150%) — ' +
+              'балл отсеивает плохие входы, прибыльными не делает.</div>'
+            : rows.slice(0, 3).map(cell).join('') +
+              '<div style="color:var(--t2);font-size:10px;margin-top:5px;">Порог не взял никто — показаны ближайшие.</div>');
+      } catch { }
+    }
+
     async function loadMicroScalp() {
       try {
         const r = await fetch('/api/micro-scalp-scan');
@@ -14772,7 +14787,6 @@ Requirements:
         const price = value => value == null ? '—' : value < 0.001 ? value.toFixed(8) : value < 1 ? value.toFixed(5) : value < 100 ? value.toFixed(3) : value.toFixed(2);
         const volume = value => value >= 1e6 ? '$' + (value / 1e6).toFixed(1) + 'M' : '$' + Math.round((value || 0) / 1e3) + 'K';
         body.innerHTML = `<div style="padding:6px 8px;margin-bottom:6px;border-radius:6px;font-size:10px;line-height:1.35;background:rgba(191,90,242,.07);border:1px solid rgba(191,90,242,.24);color:#d8b4fe;">Paper-лаборатория: условия и выходы пока не подтверждены историей. Нажатие на монету подставляет её в покупку, открывает Trade и график 15m — ордер не создаётся. Telegram всегда помечает эти сигналы как «15–60 мин · Paper».</div>
-          ${_entryPicks(j.results || [])}
           <table class="tg-table" style="width:100%;"><thead><tr><th>COIN</th><th>SCORE</th><th title="Насколько близко до входа: сколько условий выполнено и насколько далеко ближайшее невыполненное от своего порога. Это не вероятность прибыли — её пока не на чем считать.">ГОТОВ</th><th title="Сила сетапа: условия взвешены по важности, а не посчитаны поштучно. Ядро — падение с разворотом внутри растущего тренда — весит 70 из 100 (RSI из отката 30, сам откат 20, тренд EMA 20). Остальное — издержки и фон: спред 12, ликвидность 8, объём 6, режим BTC 4. Второй строкой — только ядро. Это НЕ вероятность прибыли: связь силы с исходом не измерялась.">СИЛА</th><th title="Выгода входа прямо сейчас: монета должна УЖЕ упасть и ЕЩЁ НЕ отыграть падение. Обе доли перемножаются, поэтому ноль в любой обнуляет весь балл — монета без отката не наберёт его дешёвым спредом. Полосы измерены на 41 328 наблюдениях за 12 дней: откат 0.4–0.8% даёт +0.029%, а 0.8–1.5% даёт −0.047%; RSI ниже 45 даёт +0.034…+0.044%, а 55–65 даёт −0.048% — все значимо. Прежняя версия ждала RSI 52–62, то есть покупала ровно на измеренном минусе. Тренд EMA убран: на 37 тысячах наблюдений он дал чистый ноль. Порог 40 — минимальный, при котором превышение положительно в оба независимых периода; выше поднимать нечего, дальше оно не растёт. Балл отделяет ПЛОХИЕ входы (ниже 20 — устойчивый минус) от нейтральных, но прибыльными их не делает: даже лучшие +0.126% меньше комиссии за круг в 0.150%.">ВХОД</th><th>СЕТАП</th><th>RSI</th><th>ОТКАТ</th><th>VOL 24H</th></tr></thead><tbody>${rows.map(item => {
             const setup = item.pass ? 'PAPER' : item.tag === 'NEAR' ? 'БЛИЗКО' : 'ЖДАТЬ';
             const color = item.pass ? '#bf5af2' : item.tag === 'NEAR' ? '#f5c518' : '#7c8698';
@@ -14852,6 +14866,10 @@ Requirements:
     }
     setInterval(loadMicroScalp, 60_000);
     loadMicroScalp();
+    // Скан ВХОДА обновляется раз в пять минут на сервере, поэтому чаще
+    // спрашивать нечего.
+    setInterval(loadEntryScan, 60_000);
+    loadEntryScan();
 
     // Короткое имя условия для строки таблицы: полные подписи не влезают
     function _shortCheck(k) {
