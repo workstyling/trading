@@ -4901,15 +4901,30 @@ function microScalpEntryValue(row) {
 // минуты дают 0.54 — треть устаревания снимается почти даром.
 const ENTRY_SCAN_INTERVAL_MS = 2 * 60 * 1000;
 const ENTRY_SCAN_MAX_COINS = 60;
-const entryScan = { results: [], at: 0, total: 0, running: false };
+const entryScan = { results: [], at: 0, total: 0, running: false, failedAt: 0 };
 
 // Сколько монета уже висит в списке. TAO попал в него 51 раз за 35 часов, и
 // каждое попадание выглядело новым сигналом — хотя это было одно непрерывное
 // падение. Статистически повторы не хуже первых входов, но купить одну монету
 // пятьдесят раз это не пятьдесят сделок, а одна позиция в пятидесятикратном
 // размере. Срок в списке делает это видимым.
-const entrySince = new Map();   // coin -> когда впервые прошёл порог в текущей серии
+const ENTRY_SINCE_FILE = path.join(__dirname, 'entry-since.json');
 const ENTRY_SERIES_GAP_MS = 30 * 60 * 1000;   // перерыв больше получаса — новая серия
+// На диск, а не только в память: деплой перезапускает процесс, и метка «35ч в
+// списке» обнулялась бы при каждом обновлении — ровно тогда, когда она нужнее
+// всего. Замечено сразу после выкладки: TAO висел сутки, а счётчик показал ноль.
+let entrySince = new Map();
+try {
+  const raw = JSON.parse(fs.readFileSync(ENTRY_SINCE_FILE, 'utf8'));
+  const now = Date.now();
+  for (const [coin, st] of Object.entries(raw || {})) {
+    // Серия, оборванная долгим простоем сервера, не продолжается
+    if (st && st.from > 0 && now - st.seen <= ENTRY_SERIES_GAP_MS) entrySince.set(coin, st);
+  }
+} catch { }
+function saveEntrySince() {
+  try { fs.writeFileSync(ENTRY_SINCE_FILE, JSON.stringify(Object.fromEntries(entrySince))); } catch { }
+}
 
 // Свой сбор сигналов вместо fetchMicroSignals.
 //
@@ -4955,6 +4970,14 @@ async function entrySignals(coin) {
 
 // Измеренная доля возвратов за час для глубины падения от суточного максимума.
 // Не прогноз, а частота из 9 596 наблюдений за 12 дней — так и подписано.
+//
+// Числа получены на окне, закончившемся 7 сентября 2026, и это был растущий
+// рынок: монеты за те 12 дней прибавили в среднем 21.9%. На затяжном падении
+// «упала на 10% и вернётся» будет означать другое, поэтому таблицу надо
+// перемерять. Дата рядом с числами, чтобы устаревание было видно, а не
+// обнаружилось убытком.
+const RECOVERY_MEASURED_AT = '2026-09-07';
+const RECOVERY_SAMPLE = 9596;
 function recoveryOdds(dayFallPct) {
   const d = Number(dayFallPct);
   if (!Number.isFinite(d)) return null;
@@ -5040,10 +5063,20 @@ async function runEntryScan() {
         const st = entrySince.get(row.coin);
         row.inListMin = st ? Math.round((now - st.from) / 60000) : null;
       }
+      saveEntrySince();
+    }
+    // Пустой результат при непустой вселенной — это отказ биржи, а не «нет
+    // кандидатов». Затирать им удачный скан нельзя: панель показала бы
+    // «первый скан после запуска» и выглядела бы работающей.
+    if (!rows.length && universe.length && entryScan.results.length) {
+      entryScan.failedAt = Date.now();
+      console.error('[entry-scan] ни одной монеты из ' + universe.length + ' — прежний результат сохранён');
+      return;
     }
     entryScan.results = rows;
     entryScan.total = universe.length;
     entryScan.at = Date.now();
+    entryScan.failedAt = 0;
     const good = rows.filter(x => x.entryValue.pct >= 40).length;
     console.log('[entry-scan] ' + rows.length + '/' + universe.length + ' монет, 40+: ' + good);
   } catch (e) {
@@ -5060,7 +5093,12 @@ app.get('/api/entry-scan', (req, res) => {
     success: true,
     at: entryScan.at,
     total: entryScan.total,
+    recoveryMeasuredAt: RECOVERY_MEASURED_AT,
+    recoverySample: RECOVERY_SAMPLE,
     scanning: entryScan.running,
+    // Если последний скан провалился, панель обязана сказать об этом, а не
+    // молча показывать устаревший список как свежий.
+    staleSince: entryScan.failedAt || 0,
     intervalMs: ENTRY_SCAN_INTERVAL_MS,
     serverNow: Date.now(),
     results: entryScan.results.slice(0, 15),

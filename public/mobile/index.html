@@ -6160,7 +6160,11 @@
         const head = '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:6px;">' +
           '<span style="color:var(--t1);font-weight:700;font-size:12px;">Лучший вход по рынку</span>' +
           '<span style="color:var(--t2);font-size:10px;">' + (j.total || 0) + ' монет · порог ' + ENTRY_MIN_M + '%+' +
-          (j.scanning ? ' · сканирую…' : '') + ' · <span id="entryAgoM"></span></span></div>';
+          (j.scanning ? ' · сканирую…' : '') + ' · <span id="entryAgoM"></span>' +
+          // Отвалившийся скан обязан быть видимым: устаревший список выглядит
+          // рабочим, и по нему можно купить по цене, которой уже нет.
+          (j.staleSince ? '<span style="color:#ff6b6b;font-weight:700;"> · биржа не ответила, список устарел</span>' : '') +
+          '</span></div>';
         if (!rows.length) {
           box.innerHTML = head + '<div style="color:var(--t2);font-size:11px;">Первый скан после запуска…</div>';
           return;
@@ -6199,7 +6203,8 @@
               'Слева — ВХОД: где брать лучше. Справа ↩ — доля случаев, когда цена возвращалась к входу за час, ' +
               'по глубине падения от суточного максимума (9 596 замеров за 12 дней). Чем глубже упала, тем надёжнее возврат: ' +
               'ниже 1% — 52%, глубже 10% — 86% и ни одного зависания за трое суток. ' +
-              'ВХОД меньше комиссии за круг — он отсеивает плохое, прибыльным не делает.</div>'
+              'ВХОД меньше комиссии за круг — он отсеивает плохое, прибыльным не делает. ' +
+              'Замер сделан ' + (j.recoveryMeasuredAt || '—') + ' на растущем рынке; на затяжном падении эти доли надо перемерять.</div>'
             : rows.slice(0, 3).map(cell).join('') +
               '<div style="color:var(--t2);font-size:10px;margin-top:5px;">Порог не взял никто — показаны ближайшие.</div>');
       } catch (e) {
