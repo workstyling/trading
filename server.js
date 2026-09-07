@@ -4954,6 +4954,13 @@ async function entrySignals(coin) {
   const raw = await r.json();
   if (!Array.isArray(raw) || raw.length < 30) return null;
   // [time, low, high, open, close, volume], новые вперёд
+  // Свежесть ряда. Свечи приходят новыми вперёд, и если по монете давно не
+  // было сделок, верхняя окажется вчерашней — а считалась бы за текущую цену.
+  // На ликвидной полусотне это не срабатывает (проверено: худшая задержка
+  // 10.6 минуты), но монеты в списке меняются, и молча считать вчерашнее
+  // сегодняшним нельзя.
+  const newest = Number(raw[0] && raw[0][0]) * 1000;
+  if (!(newest > 0) || Date.now() - newest > 20 * 60_000) return null;
   const rows = raw.slice(0, 288).map(x => ({ lo: Number(x[1]), hi: Number(x[2]), cl: Number(x[4]) }))
     .filter(x => x.lo > 0 && x.hi > 0 && x.cl > 0);
   if (rows.length < 30) return null;
@@ -5006,13 +5013,16 @@ async function entrySpread(coin) {
 // 25 дней даёт обратное:
 //
 //   разгон за сутки   вернулось за час   зависло   просадка худших 10%
-//   менее 5%                65%            3.0%          −2.63%
-//   5–10%                   74%            1.5%          −2.97%
-//   10–20%                  79%            1.2%          −3.91%
-//   20–35%                  88%            0.0%          −2.70%
+//   менее 5%                63%            3.2%          −2.63%
+//   5–10%                   71%            1.8%          −2.97%
+//   10–20%                  77%            1.4%          −3.91%
+//   20–35%                  86%            0.0%          −2.70%
+//
+// Перемерено по времени: прежние 65/74/79/88 считались числом свечей и были
+// завышены на 2 пункта тем же способом, что и доли возврата.
 //
 // Разница между «20–35%» и «менее 5%» составляет +22.7 п.п. при погрешности
-// ±2.3 — значимо. Разница в средней просадке (−1.23% против −1.01%) значимой
+// ±2.5 — значимо. Разница в средней просадке (−1.23% против −1.01%) значимой
 // НЕ вышла, поэтому «зато глубже проседает» я утверждать не могу: это верно
 // для группы 10–20%, но не подтвердилось в целом.
 //
@@ -5029,7 +5039,7 @@ const RUNUP_MEASURED_AT = '2026-09-07';
 function runupOdds(runupPct) {
   const r = Number(runupPct);
   if (!Number.isFinite(r)) return null;
-  const hour = r >= 20 ? 88 : r >= 10 ? 79 : r >= 5 ? 74 : 65;
+  const hour = r >= 20 ? 86 : r >= 10 ? 77 : r >= 5 ? 71 : 63;
   return { runup: Math.round(r * 10) / 10, hour };
 }
 
@@ -5289,28 +5299,39 @@ async function entryPaperSettle() {
     try {
       const start = new Date(t.at).toISOString();
       const end = new Date(t.at + 65 * 60_000).toISOString();
-      const r = await fetch(`${DIP_CB}/products/${t.pair}/candles?granularity=300&start=${start}&end=${end}`, DIP_H);
-      if (!r.ok) { t.done60 = 'нет свечей'; changed = true; continue; }
+      // Минутные свечи, а не пятиминутные. На пятиминутных отметка «через 5
+      // минут» бралась из свечи, начинающейся на десятой: искалась ближайшая
+      // по началу в пределах ±5 минут, и при входе в 15:04 ближайшей к 15:09
+      // оказывалась свеча 15:10. За 65 минут выходит 65 минутных свечей — в
+      // предел запроса укладывается с большим запасом.
+      const r = await fetch(`${DIP_CB}/products/${t.pair}/candles?granularity=60&start=${start}&end=${end}`, DIP_H);
+      // Временный отказ биржи не должен хоронить сделку навсегда: раньше
+      // единственная неудача помечала её «нет свечей» и результат терялся.
+      // Три попытки, потом сдаёмся.
+      if (!r.ok) { t.tries60 = (t.tries60 || 0) + 1; if (t.tries60 >= 3) t.done60 = 'нет свечей'; changed = true; continue; }
       const raw = await r.json();
       const cs = (Array.isArray(raw) ? raw : [])
         .map(x => ({ t: Number(x[0]) * 1000, lo: Number(x[1]), hi: Number(x[2]), cl: Number(x[4]) }))
         .filter(c => c.t >= t.at).sort((a, b) => a.t - b.t);
-      if (!cs.length) { t.done60 = 'нет свечей'; changed = true; continue; }
+      if (!cs.length) { t.tries60 = (t.tries60 || 0) + 1; if (t.tries60 >= 3) t.done60 = 'нет свечей'; changed = true; continue; }
+      // Отметка на минуте N — закрытие свечи, которая эту минуту покрывает.
+      // Допуск полторы минуты: минутный ряд рвётся, когда сделок нет.
       const at = (min) => {
         const want = t.at + min * 60_000;
         let best = null;
-        for (const c of cs) { const d = Math.abs(c.t - want); if (d <= 5 * 60_000 && (!best || d < best.d)) best = { d, cl: c.cl }; }
+        for (const c of cs) { const d = Math.abs(c.t - want); if (d <= 90_000 && (!best || d < best.d)) best = { d, cl: c.cl }; }
         return best ? Math.round((best.cl / t.entry - 1) * 10000) / 100 : null;
       };
       t.m5 = at(5); t.m15 = at(15); t.m60 = at(60);
       const tp = t.entry * (1 + ENTRY_PAPER_NEED / 100);
-      // Свечи качаются с запасом до 65-й минуты, поэтому попадание надо
-      // отсекать ПО ВРЕМЕНИ: иначе достижение цели на 63-й минуте
-      // засчитывалось бы как «дошло за час».
+      // Отсечка по времени, и по КОНЦУ свечи, а не по началу. Со свечами по
+      // пять минут проверка `mins > 60` пропускала свечу, начинающуюся ровно
+      // на шестидесятой: она покрывает 60-65, и рост на 64-й минуте шёл в
+      // зачёт как часовой. С минутными свечами граница точная.
       let hit = null, worst = 0;
       for (const c of cs) {
         const mins = (c.t - t.at) / 60_000;
-        if (mins > 60) break;
+        if (mins + 1 > 60) break;
         const d = (c.lo / t.entry - 1) * 100; if (d < worst) worst = d;
         if (c.hi >= tp) { hit = Math.round(mins); break; }
       }
@@ -5336,9 +5357,13 @@ async function entryPaperSettle() {
     try {
       const r = await fetch(`${DIP_CB}/products/${t.pair}/candles?granularity=3600` +
         `&start=${new Date(t.at).toISOString()}&end=${new Date(t.at + 3 * 24 * 3600_000).toISOString()}`, DIP_H);
-      if (!r.ok) { t.done3d = 'нет свечей'; changed = true; continue; }
+      if (!r.ok) { t.tries3d = (t.tries3d || 0) + 1; if (t.tries3d >= 3) t.done3d = 'нет свечей'; changed = true; continue; }
       const raw = await r.json();
-      const cs = (Array.isArray(raw) ? raw : []).map(x => ({ t: Number(x[0]) * 1000, hi: Number(x[2]) }));
+      // Часовая свеча, начавшаяся ДО входа, покрывает и время до него —
+      // её максимум к сделке отношения не имеет. Часовой расчёт такую
+      // отсекал, трёхдневный нет.
+      const cs = (Array.isArray(raw) ? raw : []).map(x => ({ t: Number(x[0]) * 1000, hi: Number(x[2]) }))
+        .filter(c => c.t >= t.at);
       const tp = t.entry * (1 + ENTRY_PAPER_NEED / 100);
       const hit = cs.filter(c => c.hi >= tp).sort((a, b) => a.t - b.t)[0];
       t.hit3d = hit ? Math.round((hit.t - t.at) / 60_000) : null;

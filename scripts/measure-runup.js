@@ -45,13 +45,19 @@ for (const coin in cache) {
     const hiDay = Math.max(...cs.slice(i - H24, i + 1).map(c => c.hi));
     const fall = hiDay > 0 ? (hiDay - px) / hiDay * 100 : null;
 
+    // ПО ВРЕМЕНИ, а не по числу свечей: ряд рвётся, когда нет сделок, и
+    // «12 свечей вперёд» на 30% случаев оказываются длиннее часа. Тот же
+    // изъян был в замере возвратов и там уже исправлен.
+    const t0 = cs[i].t;
     const tp = px * (1 + NEED / 100);
-    let bars = null, worst = 0;
-    for (let k = i + 1; k <= i + WINDOW; k++) {
+    let hitMin = null, worst = 0;
+    for (let k = i + 1; k < cs.length; k++) {
+      const dt = (cs[k].t - t0) / 60;
+      if (dt > WINDOW * 5) break;
       const d = (cs[k].lo / px - 1) * 100; if (d < worst) worst = d;
-      if (cs[k].hi >= tp) { bars = k - i; break; }
+      if (cs[k].hi >= tp) { hitMin = dt; break; }
     }
-    rows.push({ coin, runup, fall, bars, worst });
+    rows.push({ coin, runup, fall, hitMin, worst });
   }
 }
 
@@ -68,10 +74,10 @@ for (const [label, lo, hi] of G) {
   if (g.length < 100) { console.log('  ' + label.padEnd(20) + String(g.length).padStart(6) + '   мало'); continue; }
   store[label] = g;
   console.log('  ' + label.padEnd(20) + String(g.length).padStart(6) + '   ' +
-    pct(g, r => r.bars != null && r.bars <= H1).toFixed(0).padStart(5) + '%  ' +
-    pct(g, r => r.bars != null && r.bars <= H6).toFixed(0).padStart(5) + '%  ' +
-    pct(g, r => r.bars != null && r.bars <= H24).toFixed(0).padStart(6) + '%   ' +
-    pct(g, r => r.bars == null).toFixed(1).padStart(10) + '%   ' +
+    pct(g, r => r.hitMin != null && r.hitMin <= 60).toFixed(0).padStart(5) + '%  ' +
+    pct(g, r => r.hitMin != null && r.hitMin <= 360).toFixed(0).padStart(5) + '%  ' +
+    pct(g, r => r.hitMin != null && r.hitMin <= 1440).toFixed(0).padStart(6) + '%   ' +
+    pct(g, r => r.hitMin == null).toFixed(1).padStart(10) + '%   ' +
     q(g.map(r => r.worst), 0.10).toFixed(2) + '%');
 }
 
@@ -81,8 +87,8 @@ const hiKeys = ['20–35%', 'более 35%'];
 if (store[lowKey]) {
   for (const k of hiKeys) {
     if (!store[k]) continue;
-    const a = store[lowKey].map(r => r.bars != null && r.bars <= H1 ? 1 : 0);
-    const b = store[k].map(r => r.bars != null && r.bars <= H1 ? 1 : 0);
+    const a = store[lowKey].map(r => r.hitMin != null && r.hitMin <= 60 ? 1 : 0);
+    const b = store[k].map(r => r.hitMin != null && r.hitMin <= 60 ? 1 : 0);
     const A = st(a), B = st(b);
     const d = (B.m - A.m) * 100, se = Math.sqrt(A.se ** 2 + B.se ** 2) * 100;
     console.log('\n  «' + k + '» против «' + lowKey + '» по возврату за час: ' +
