@@ -3135,23 +3135,6 @@
         '</div>';
     }
 
-    // Ячейка «ВХОД». Второй строкой — короткая причина: без неё ноль выглядел
-    // бы поломкой, хотя чаще всего он означает «эта монета ещё не падала».
-    // 40 — минимальный порог, при котором превышение положительно в ОБА независимых
-    // периода истории. Ниже 20 сегмент устойчиво отрицателен, 20–39 даёт ровно ноль.
-    // Выше 40 поднимать нечего: превышение дальше не растёт, а 95–100 даже слабее
-    // 80–94. Прежние 70 и 90 отсекали кандидатов без измеримого выигрыша.
-    const ENTRY_MIN_M = 40;
-
-    function _entryCellM(item) {
-      const e = item && item.entryValue;
-      if (!e) return '<span style="color:var(--t2);">—</span>';
-      const col = e.pct >= 70 ? '#00e5a0' : e.pct >= 40 ? '#f5c518' : e.pct > 0 ? '#f5843a' : '#7c8698';
-      const why = String(e.why || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-      return '<span style="color:' + col + ';font-weight:800;">' + e.pct + '%</span>' +
-        '<br><span style="color:var(--t2);font-size:9px;">' + why + '</span>';
-    }
-
     function _readyCellM(item, small) {
       const r = item && item.readiness;
       if (!r || !Number.isFinite(r.pct)) return '<span style="color:#556;">—</span>';
@@ -6157,6 +6140,12 @@
     // 100 за «уже развернулась», а ВХОД измеряет обратное. На отобранных по
     // SCORE монетах порог 40 берётся в 3% случаев против 26% на всех — поэтому
     // в той таблице почти всегда нули, и искать вход надо не в ней.
+    // 40 — минимальный порог, при котором превышение положительно в ОБА
+    // независимых периода истории. Ниже 20 сегмент устойчиво отрицателен,
+    // 20–39 даёт ровно ноль. Выше 40 поднимать нечего: превышение дальше не
+    // растёт, а 95–100 даже слабее 80–94.
+    const ENTRY_MIN_M = 40;
+
     async function loadEntryScanM() {
       const box = document.getElementById('entryScanBoxM');
       if (!box) return;
@@ -6218,11 +6207,10 @@
         }
         const price = value => value == null ? '—' : value < 0.001 ? value.toFixed(8) : value < 1 ? value.toFixed(5) : value < 100 ? value.toFixed(3) : value.toFixed(2);
         const volume = value => value == null ? '—' : value >= 1e6 ? '$' + (value / 1e6).toFixed(1) + 'M' : '$' + Math.round(value / 1e3) + 'K';
-        body.innerHTML = `<table style="width:100%;border-collapse:collapse;"><thead><tr style="border-bottom:1px solid var(--b1);"><th style="text-align:left;color:var(--t2);font-size:9px;padding:4px 3px;">COIN</th><th style="color:var(--t2);font-size:9px;padding:4px 2px;">SCORE</th><th style="color:var(--t2);font-size:9px;padding:4px 2px;" title="Близость ко входу, не вероятность прибыли">ГОТОВ</th><th style="color:var(--t2);font-size:9px;padding:4px 2px;" title="Сила сетапа: условия взвешены по важности. Не вероятность прибыли.">СИЛА</th><th style="color:var(--t2);font-size:9px;padding:4px 2px;" title="Выгода входа: уже упало И ещё не отыграло падение. Полосы измерены на 41 328 наблюдениях за 12 дней. Порог 40 — минимальный, при котором превышение положительно в оба периода; выше поднимать нечего. Ниже 20 — устойчивый минус. Превышение меньше комиссии за круг: балл отсеивает плохое, но прибыльным не делает.">ВХОД</th><th style="color:var(--t2);font-size:9px;padding:4px 2px;">СТАТУС</th><th style="color:var(--t2);font-size:9px;padding:4px 2px;">RSI</th><th style="color:var(--t2);font-size:9px;padding:4px 2px;">ОТКАТ</th><th style="text-align:right;color:var(--t2);font-size:9px;padding:4px 3px;">VOL 24H</th></tr></thead><tbody>${rows.map(item => {
+        body.innerHTML = `<table style="width:100%;border-collapse:collapse;"><thead><tr style="border-bottom:1px solid var(--b1);"><th style="text-align:left;color:var(--t2);font-size:9px;padding:4px 3px;">COIN</th><th style="color:var(--t2);font-size:9px;padding:4px 2px;">SCORE</th><th style="color:var(--t2);font-size:9px;padding:4px 2px;" title="Близость ко входу, не вероятность прибыли">ГОТОВ</th><th style="color:var(--t2);font-size:9px;padding:4px 2px;" title="Сила сетапа: условия взвешены по важности. Не вероятность прибыли.">СИЛА</th><th style="color:var(--t2);font-size:9px;padding:4px 2px;">СТАТУС</th><th style="color:var(--t2);font-size:9px;padding:4px 2px;">RSI</th><th style="color:var(--t2);font-size:9px;padding:4px 2px;">ОТКАТ</th><th style="text-align:right;color:var(--t2);font-size:9px;padding:4px 3px;">VOL 24H</th></tr></thead><tbody>${rows.map(item => {
           const label = item.pass ? 'PAPER' : item.tag === 'NEAR' ? 'БЛИЗКО' : 'ЖДАТЬ';
           const color = item.pass ? '#bf5af2' : item.tag === 'NEAR' ? '#f5c518' : '#7c8698';
-          const pick = item.entryValue && item.entryValue.pct >= ENTRY_MIN_M;
-          return `<tr style="border-bottom:1px solid rgba(255,255,255,.03);cursor:pointer;${pick ? 'background:rgba(0,229,160,0.10);box-shadow:inset 3px 0 0 #00e5a0;' : ''}" onclick="selectCoinForTradeM('${item.coin}')" title="Выбрать ${item.coin} для покупки, открыть Trade и график 15m"><td style="padding:6px 3px;"><span style="color:var(--blue);font-weight:700;font-size:11px;">${item.coin}</span><br><span style="font-size:9px;color:#555;">$${price(item.price)}</span></td><td style="text-align:center;color:${color};font-size:12px;font-weight:800;">${item.score}</td><td style="text-align:center;line-height:1.15;">${_readyCellM(item, true)}</td><td style="text-align:center;line-height:1.15;">${_strengthCellM(item, true)}</td><td style="text-align:center;line-height:1.15;font-size:10px;">${_entryCellM(item)}</td><td style="text-align:center;"><span style="font-size:7px;color:${color};font-weight:800;background:${color}22;padding:2px 3px;border-radius:3px;">${label}</span></td><td style="text-align:center;font-size:11px;color:var(--t1);">${item.rsi ?? '—'}</td><td style="text-align:center;font-size:10px;color:${item.pullbackPct != null && item.pullbackPct <= 1.5 ? 'var(--green)' : 'var(--t2)'};">${item.pullbackPct == null ? '—' : item.pullbackPct + '%'}</td><td style="text-align:right;padding:6px 3px;color:var(--t2);font-size:9px;white-space:nowrap;">${volume(item.vol24)}</td></tr>`;
+          return `<tr style="border-bottom:1px solid rgba(255,255,255,.03);cursor:pointer;" onclick="selectCoinForTradeM('${item.coin}')" title="Выбрать ${item.coin} для покупки, открыть Trade и график 15m"><td style="padding:6px 3px;"><span style="color:var(--blue);font-weight:700;font-size:11px;">${item.coin}</span><br><span style="font-size:9px;color:#555;">$${price(item.price)}</span></td><td style="text-align:center;color:${color};font-size:12px;font-weight:800;">${item.score}</td><td style="text-align:center;line-height:1.15;">${_readyCellM(item, true)}</td><td style="text-align:center;line-height:1.15;">${_strengthCellM(item, true)}</td><td style="text-align:center;"><span style="font-size:7px;color:${color};font-weight:800;background:${color}22;padding:2px 3px;border-radius:3px;">${label}</span></td><td style="text-align:center;font-size:11px;color:var(--t1);">${item.rsi ?? '—'}</td><td style="text-align:center;font-size:10px;color:${item.pullbackPct != null && item.pullbackPct <= 1.5 ? 'var(--green)' : 'var(--t2)'};">${item.pullbackPct == null ? '—' : item.pullbackPct + '%'}</td><td style="text-align:right;padding:6px 3px;color:var(--t2);font-size:9px;white-space:nowrap;">${volume(item.vol24)}</td></tr>`;
         }).join('')}</tbody></table>`;
         if (j.scanning && !window._msPollM) {
           window._msPollM = true;
