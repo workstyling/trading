@@ -5052,22 +5052,34 @@ function runupOdds(runupPct) {
 // а на монетах из списка это 79%. Завышение на десять пунктов ровно там, где
 // цифра выглядит убедительнее всего.
 //
-//   падение     n      за час   за 6ч   за сут   НЕ вернулось
-//   <1%        917       58%     81%     91%        4.0%
-//   1-3%      5050       61%     85%     93%        3.4%
-//   3-6%      4902       70%     88%     95%        2.7%
-//   6-10%     2660       75%     92%     97%        1.4%
-//   >10%      1686       79%     93%     97%        0.4%
+// Перемерено по ВРЕМЕНИ, а не по числу свечей.
+//
+// Прежний замер брал «двенадцать пятиминутных свечей вперёд» за час. Но ряд
+// свечей неразрывен только пока идут сделки: на 209 295 проверенных пар
+// 30.17% таких окон оказались ДЛИННЕЕ часа, а худшее растянулось на 1180
+// минут. То есть возвраты, случившиеся много позже, засчитывались как
+// часовые, и доли выходили завышенными на 1-4 пункта, тем сильнее, чем
+// глубже падение.
+//
+//   падение     n      за час   за 6ч   НЕ вернулось   было (по свечам)
+//   <1%        917      56.7%    80%       4.1%              58%
+//   1-3%      5050      59.2%    84%       3.6%              61%
+//   3-6%      4902      67.3%    87%       3.0%              70%
+//   6-10%     2660      71.7%    91%       1.8%              75%
+//   >10%      1686      75.1%    91%       0.5%              79%
+//
+// Порядок и разрыв между группами устояли — вывод не изменился, изменились
+// величины. Считать надо по отметкам времени: node scripts/measure-recovery.js
 const RECOVERY_MEASURED_AT = '2026-09-07';
 const RECOVERY_SAMPLE = 15215;
 function recoveryOdds(dayFallPct) {
   const d = Number(dayFallPct);
   if (!Number.isFinite(d)) return null;
-  if (d >= 10) return { hour: 79, stuck: 0.4 };
-  if (d >= 6) return { hour: 75, stuck: 1.4 };
-  if (d >= 3) return { hour: 70, stuck: 2.7 };
-  if (d >= 1) return { hour: 61, stuck: 3.4 };
-  return { hour: 58, stuck: 4.0 };
+  if (d >= 10) return { hour: 75, stuck: 0.5 };
+  if (d >= 6) return { hour: 72, stuck: 1.8 };
+  if (d >= 3) return { hour: 67, stuck: 3.0 };
+  if (d >= 1) return { hour: 59, stuck: 3.6 };
+  return { hour: 57, stuck: 4.1 };
 }
 
 async function runEntryScan() {
@@ -5224,7 +5236,13 @@ function saveEntryPaper() {
 // чаще незачем, а к неделе их накопится столько же, сколько основных.
 function entryPaperOpen(rows) {
   const now = Date.now();
-  const openCoins = new Set(entryPaper.trades.filter(t => !t.done60).map(t => t.coin));
+  // Два отдельных набора. Раньше был один, и контрольная запись по монете
+  // блокировала основную на целый час: монета, взятая в контроль ниже порога,
+  // при пересечении порога уже числилась «открытой» и основным сигналом не
+  // записывалась. Это выбивало из главной выборки именно те монеты, что
+  // только что перешли из контроля — то есть смещало её систематически.
+  const openMain = new Set(entryPaper.trades.filter(t => !t.done60 && !t.control).map(t => t.coin));
+  const openCtrl = new Set(entryPaper.trades.filter(t => !t.done60 && t.control).map(t => t.coin));
   const add = (row, control) => {
     entryPaper.trades.push({
       id: row.coin + '_' + now,
@@ -5234,13 +5252,13 @@ function entryPaperOpen(rows) {
       spreadPct: row.spreadPct,
       control: control || undefined,
     });
-    openCoins.add(row.coin);
+    (control ? openCtrl : openMain).add(row.coin);
   };
 
   let added = 0;
   for (const row of rows) {
     if (!row.entryValue || row.entryValue.pct < 40) continue;
-    if (openCoins.has(row.coin)) continue;
+    if (openMain.has(row.coin)) continue;
     // Только первое пересечение серии: inListMin считает, сколько монета уже
     // висит, и повторный вход в ту же серию сделкой не считается.
     if (row.inListMin != null && row.inListMin > 4) continue;
@@ -5251,7 +5269,7 @@ function entryPaperOpen(rows) {
   // Контроль: одна монета ниже порога, случайно. Условия входа у неё те же —
   // отличается только балл, а значит разница в исходе будет разницей порога.
   const below = rows.filter(r => r.entryValue && r.entryValue.pct < 40 &&
-    r.price > 0 && !openCoins.has(r.coin));
+    r.price > 0 && !openCtrl.has(r.coin) && !openMain.has(r.coin));
   if (below.length) {
     add(below[Math.floor(Math.random() * below.length)], true);
     added++;
@@ -5286,10 +5304,15 @@ async function entryPaperSettle() {
       };
       t.m5 = at(5); t.m15 = at(15); t.m60 = at(60);
       const tp = t.entry * (1 + ENTRY_PAPER_NEED / 100);
+      // Свечи качаются с запасом до 65-й минуты, поэтому попадание надо
+      // отсекать ПО ВРЕМЕНИ: иначе достижение цели на 63-й минуте
+      // засчитывалось бы как «дошло за час».
       let hit = null, worst = 0;
       for (const c of cs) {
+        const mins = (c.t - t.at) / 60_000;
+        if (mins > 60) break;
         const d = (c.lo / t.entry - 1) * 100; if (d < worst) worst = d;
-        if (c.hi >= tp) { hit = Math.round((c.t - t.at) / 60_000); break; }
+        if (c.hi >= tp) { hit = Math.round(mins); break; }
       }
       t.hit60 = hit;              // за сколько минут дошло до +0.30%, или null
       t.mae60 = Math.round(worst * 100) / 100;
@@ -5420,11 +5443,20 @@ async function runMicroScalpScan() {
     microScalpScan.progress = 100;
   }
 }
+// Защита от наложения: тик ходит на биржу за котировками по каждой открытой
+// позиции, и на медленном ответе следующий запуск догонял предыдущий. Два
+// параллельных тика видели одну и ту же ещё не записанную сделку и открывали
+// её дважды.
+let microLabTicking = false;
 async function tickMicroScalpLab() {
+  if (microLabTicking) return;
+  microLabTicking = true;
   try {
     await microScalpLab.tick({ results: microScalpScan.results, scanAt: microScalpScan.at });
   } catch (error) {
     console.error('[micro-lab]', error.message);
+  } finally {
+    microLabTicking = false;
   }
 }
 setInterval(runMicroScalpScan, MICRO_SCAN_INTERVAL_MS);

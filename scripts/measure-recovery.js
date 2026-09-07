@@ -7,7 +7,7 @@
 //
 // Считаются ТОЛЬКО те точки, что попадают в панель, то есть с баллом 40+.
 // Первая версия скрипта мерила все подряд, а это другая совокупность: у самой
-// глубокой группы получалось 89% возврата вместо настоящих 79%.
+// глубокой группы получалось 89% возврата вместо настоящих 75%.
 //
 // Свечи пятиминутные: возврат меряется с точностью до пяти минут, минутного
 // разрешения тут не нужно, а качать в пять раз меньше. Кеш общий с
@@ -108,10 +108,19 @@ async function candles(pair, fromMs, toMs) {
       if (!(hiDay > 0)) continue;
       const fall = fallPct(hiDay, px);
 
+      // Считаем ПО ВРЕМЕНИ, а не по числу свечей. Ряд свечей неразрывен только
+      // пока идут сделки: на 209 295 проверенных пар 30.17% окон «12 свечей
+      // вперёд» оказались длиннее часа, худшее растянулось на 1180 минут. По
+      // индексам доли выходили завышенными на 1-4 пункта.
+      const t0 = cs[i].t;
       const tp = px * (1 + NEED / 100);
-      let bars = null;
-      for (let k = i + 1; k <= i + WINDOW; k++) if (cs[k].hi >= tp) { bars = k - i; break; }
-      rows.push({ fall, bars });
+      let hitMin = null;
+      for (let k = i + 1; k < cs.length; k++) {
+        const dt = (cs[k].t - t0) / 60;
+        if (dt > WINDOW * 5) break;
+        if (cs[k].hi >= tp) { hitMin = dt; break; }
+      }
+      rows.push({ fall, hitMin });
     }
   }
 
@@ -125,16 +134,16 @@ async function candles(pair, fromMs, toMs) {
     const g = rows.filter(r => r.fall >= lo && r.fall < hi);
     if (g.length < 50) { console.log('  ' + (lo + '-' + hi).padEnd(34) + 'мало (' + g.length + ')'); continue; }
     const label = hi > 1e8 ? ('более ' + lo + '%') : (lo + '-' + hi + '%');
-    const h1 = pct(g, r => r.bars != null && r.bars <= H1);
+    const h1 = pct(g, r => r.hitMin != null && r.hitMin <= 60);
     got.push(Math.round(h1));
     console.log('  ' + label.padEnd(34) + String(g.length).padStart(5) + '   ' +
       h1.toFixed(0).padStart(6) + '%  ' +
-      pct(g, r => r.bars != null && r.bars <= H6).toFixed(0).padStart(5) + '%  ' +
-      pct(g, r => r.bars != null && r.bars <= H24).toFixed(0).padStart(6) + '%   ' +
-      pct(g, r => r.bars == null).toFixed(1).padStart(11) + '%');
+      pct(g, r => r.hitMin != null && r.hitMin <= 360).toFixed(0).padStart(5) + '%  ' +
+      pct(g, r => r.hitMin != null && r.hitMin <= 1440).toFixed(0).padStart(6) + '%   ' +
+      pct(g, r => r.hitMin == null).toFixed(1).padStart(11) + '%');
   }
 
-  const shipped = [58, 61, 70, 75, 79];
+  const shipped = [57, 59, 67, 72, 75];
   console.log('\n  зашито в recoveryOdds():  ' + shipped.join(' / '));
   console.log('  получено сейчас:          ' + got.join(' / '));
   const same = got.length === shipped.length && got.every((v, i) => Math.abs(v - shipped[i]) <= 3);
