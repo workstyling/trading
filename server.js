@@ -4903,6 +4903,60 @@ const ENTRY_SCAN_INTERVAL_MS = 2 * 60 * 1000;
 const ENTRY_SCAN_MAX_COINS = 60;
 const entryScan = { results: [], at: 0, total: 0, running: false };
 
+// Свой сбор сигналов вместо fetchMicroSignals.
+//
+// Тот возвращает готовые поля и суточного максимума среди них нет, а
+// дополнить его нельзя: src/micro-scalp/scanner.js хэшируется отпечатком
+// когорты. Запрос при этом тот же самый — 5-минутные свечи за сутки, — так
+// что нагрузка на биржу не растёт.
+//
+// Суточная глубина нужна потому, что именно она предсказывает ВОЗВРАТ, а это
+// главный риск стратегии «держать до плюса». Измерено на 9 596 точках входа
+// за 12 дней: упавшие от суточного максимума более чем на 10% возвращались к
+// цене входа плюс комиссия в течение часа в 86% случаев и ни разу не зависли
+// за трое суток. Упавшие менее чем на 1% — 52% за час и 2.4% зависших.
+async function entrySignals(coin) {
+  const r = await fetch(`${DIP_CB}/products/${coin}-USD/candles?granularity=300`, DIP_H);
+  if (!r.ok) return null;
+  const raw = await r.json();
+  if (!Array.isArray(raw) || raw.length < 30) return null;
+  // [time, low, high, open, close, volume], новые вперёд
+  const rows = raw.slice(0, 288).map(x => ({ lo: Number(x[1]), hi: Number(x[2]), cl: Number(x[4]) }))
+    .filter(x => x.lo > 0 && x.hi > 0 && x.cl > 0);
+  if (rows.length < 30) return null;
+  const price = rows[0].cl;
+
+  // RSI(14) по 5-минутным закрытиям
+  const closes = rows.slice(0, 15).map(x => x.cl).reverse();
+  let rsi = null;
+  if (closes.length === 15) {
+    let up = 0, dn = 0;
+    for (let i = 1; i < closes.length; i++) { const d = closes[i] - closes[i - 1]; if (d >= 0) up += d; else dn -= d; }
+    rsi = dn === 0 ? 100 : Math.round((100 - 100 / (1 + (up / 14) / (dn / 14))) * 10) / 10;
+  }
+
+  const high30 = Math.max(...rows.slice(0, 7).map(x => x.hi));
+  const highDay = Math.max(...rows.map(x => x.hi));
+  return {
+    price,
+    rsi5: rsi,
+    pullbackPct: high30 > 0 ? Math.round((high30 / price - 1) * 10000) / 100 : null,
+    dayFallPct: highDay > 0 ? Math.round((highDay / price - 1) * 10000) / 100 : null,
+  };
+}
+
+// Измеренная доля возвратов за час для глубины падения от суточного максимума.
+// Не прогноз, а частота из 9 596 наблюдений за 12 дней — так и подписано.
+function recoveryOdds(dayFallPct) {
+  const d = Number(dayFallPct);
+  if (!Number.isFinite(d)) return null;
+  if (d >= 10) return { hour: 86, stuck: 0.0 };
+  if (d >= 6) return { hour: 76, stuck: 0.5 };
+  if (d >= 3) return { hour: 68, stuck: 0.7 };
+  if (d >= 1) return { hour: 63, stuck: 2.7 };
+  return { hour: 52, stuck: 2.4 };
+}
+
 async function runEntryScan() {
   if (entryScan.running || !cbVolumeCache.size) return;
   entryScan.running = true;
@@ -4918,7 +4972,7 @@ async function runEntryScan() {
       const batch = universe.slice(i, i + 3);
       await Promise.all(batch.map(async ({ coin, volume }) => {
         try {
-          const sig = await microScalpScanner.fetchMicroSignals(coin);
+          const sig = await entrySignals(coin);
           if (!sig) return;
           // Спред пока неизвестен — считаем ядро балла. Полный балл добираем
           // только для прошедших порог: тикер на все шестьдесят монет удвоил
@@ -4931,6 +4985,7 @@ async function runEntryScan() {
           rows.push({
             coin, pair: coin + '-USD', price: sig.price, vol24: volume,
             rsi: sig.rsi5, pullbackPct: sig.pullbackPct,
+            dayFallPct: sig.dayFallPct, recovery: recoveryOdds(sig.dayFallPct),
             entryValue: core,
           });
         } catch { /* одна монета не должна ронять весь скан */ }
