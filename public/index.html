@@ -14774,9 +14774,34 @@ Requirements:
               'по глубине падения от суточного максимума (15 215 замеров по монетам из этого же списка). Чем глубже упала, тем надёжнее возврат: ' +
               'ниже 1% — 58%, глубже 10% — 79%. ' +
               'ВХОД меньше комиссии за круг — он отсеивает плохое, прибыльным не делает. ' +
-              'Замер сделан ' + (j.recoveryMeasuredAt || '—') + ' на растущем рынке; на затяжном падении эти доли надо перемерять.</div>'
+              'Замер сделан ' + (j.recoveryMeasuredAt || '—') + ' на растущем рынке; на затяжном падении эти доли надо перемерять.</div>' +
+            '<div id="entryPaper" style="margin-top:6px;padding-top:5px;border-top:1px solid var(--b1);font-size:10px;color:var(--t2);"></div>'
             : rows.slice(0, 3).map(cell).join('') +
               '<div style="color:var(--t2);font-size:10px;margin-top:5px;">Порог не взял никто — показаны ближайшие.</div>');
+
+        // Форвардный журнал: обещанное панелью против случившегося. Пока
+        // сделок мало, показываем счётчик — чтобы было видно, что проверка
+        // идёт, а не что её нет.
+        try {
+          const pj = await (await fetch('/api/entry-paper')).json();
+          const el = document.getElementById('entryPaper');
+          if (el && pj.success) {
+            const o = pj.overall;
+            if (!o || o.n < 20) {
+              const days = pj.startedAt ? Math.max(0, Math.round((Date.now() - pj.startedAt) / 86400000 * 10) / 10) : 0;
+              el.innerHTML = '<span style="color:var(--t2);">Проверка вперёд идёт: ' + (o ? o.n : 0) +
+                ' сделок посчитано, ' + pj.open + ' в работе' + (days ? ', ' + days + ' сут' : '') +
+                '. Выводы появятся после двадцати.</span>';
+            } else {
+              const pf = (pj.promiseVsFact || []).filter(x => x.n >= 5);
+              el.innerHTML = '<b style="color:var(--t1);">Проверка вперёд:</b> ' + o.n + ' сделок · ' +
+                'до +' + pj.needPct + '% за час дошли <b>' + o.hitHour + '%</b> · ' +
+                'через час в среднем <b style="color:' + (o.m60 >= 0 ? 'var(--green)' : '#ff6b6b') + ';">' +
+                (o.m60 >= 0 ? '+' : '') + o.m60 + '%</b>' +
+                (pf.length ? ' · обещано/вышло: ' + pf.map(x => x.label + ' ' + x.promised + '→' + x.actual + '%').join(', ') : '');
+            }
+          }
+        } catch { }
       } catch (e) {
         // Молчащий catch уже однажды скрыл панель, которая не работала вовсе.
         // Пустое место не отличить от «нет кандидатов», поэтому пишем причину.

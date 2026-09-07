@@ -5133,6 +5133,7 @@ async function runEntryScan() {
         row.inListMin = st ? Math.round((now - st.from) / 60000) : null;
       }
       saveEntrySince();
+      entryPaperOpen(rows);
     }
     // Пустой результат при непустой вселенной — это отказ биржи, а не «нет
     // кандидатов». Затирать им удачный скан нельзя: панель показала бы
@@ -5156,6 +5157,162 @@ async function runEntryScan() {
 }
 setInterval(runEntryScan, ENTRY_SCAN_INTERVAL_MS);
 setTimeout(runEntryScan, 70_000);
+
+// ── Форвардный журнал «Рейтинга отката» ───────────────────────────────────
+//
+// Всё, что панель сегодня утверждает, измерено ЗАДНИМ ЧИСЛОМ по свечам. Это не
+// то же самое, что проверка вперёд: ретроспективный замер не видит своих
+// ошибок — он считает по тем же данным, на которых подбирались полосы.
+// Сегодня мы трижды на этом обожглись: полоса RSI стояла наоборот, порог 90 не
+// прошёл отложенную проверку, доли возврата оказались завышены на десять
+// пунктов из-за несовпадения совокупностей.
+//
+// Журнал открывает виртуальную сделку в момент, когда монета ВПЕРВЫЕ пересекает
+// порог, и через час считает по свечам, что было дальше: цена через 5, 15 и 60
+// минут и дошла ли до +0.30% (это окупает круг маркет+лимитка). Через трое
+// суток проверяет второй раз — вернулась ли вообще.
+//
+// Ордера не создаются. Повторные сигналы по той же монете игнорируются, пока
+// открыта предыдущая: TAO дал 51 сигнал за 35 часов, и считать их за 51
+// независимую сделку значило бы подменить одну позицию пятьюдесятью.
+const ENTRY_PAPER_FILE = path.join(__dirname, 'entry-paper.json');
+const ENTRY_PAPER_NEED = 0.30;        // сколько нужно, чтобы окупить комиссию
+const ENTRY_PAPER_MAX = 4000;         // сделок в файле, дальше режем старые
+let entryPaper = { trades: [], startedAt: 0 };
+try { entryPaper = JSON.parse(fs.readFileSync(ENTRY_PAPER_FILE, 'utf8')) || entryPaper; } catch { }
+if (!entryPaper.startedAt) entryPaper.startedAt = Date.now();
+if (!Array.isArray(entryPaper.trades)) entryPaper.trades = [];
+function saveEntryPaper() {
+  try {
+    if (entryPaper.trades.length > ENTRY_PAPER_MAX) {
+      entryPaper.trades = entryPaper.trades.slice(-ENTRY_PAPER_MAX);
+    }
+    fs.writeFileSync(ENTRY_PAPER_FILE, JSON.stringify(entryPaper));
+  } catch (e) { console.error('[entry-paper] save', e.message); }
+}
+
+// Открываем сделки по монетам, которые только что вошли в список.
+function entryPaperOpen(rows) {
+  const now = Date.now();
+  const openCoins = new Set(entryPaper.trades.filter(t => !t.done60).map(t => t.coin));
+  let added = 0;
+  for (const row of rows) {
+    if (!row.entryValue || row.entryValue.pct < 40) continue;
+    if (openCoins.has(row.coin)) continue;
+    // Только первое пересечение серии: inListMin считает, сколько монета уже
+    // висит, и повторный вход в ту же серию сделкой не считается.
+    if (row.inListMin != null && row.inListMin > 4) continue;
+    entryPaper.trades.push({
+      id: row.coin + '_' + now,
+      coin: row.coin, pair: row.pair, at: now, entry: row.price,
+      score: row.entryValue.pct, dayFall: row.dayFallPct,
+      recHour: row.recovery ? row.recovery.hour : null,
+      spreadPct: row.spreadPct,
+    });
+    openCoins.add(row.coin);
+    added++;
+  }
+  if (added) { saveEntryPaper(); console.log('[entry-paper] открыто ' + added); }
+}
+
+// Считаем результат по свечам: точно и одним запросом на сделку.
+async function entryPaperSettle() {
+  const now = Date.now();
+  const due60 = entryPaper.trades.filter(t => !t.done60 && now - t.at >= 62 * 60_000).slice(0, 8);
+  const due3d = entryPaper.trades.filter(t => t.done60 && !t.done3d && now - t.at >= 3 * 24 * 3600_000).slice(0, 4);
+  let changed = false;
+
+  for (const t of due60) {
+    try {
+      const start = new Date(t.at).toISOString();
+      const end = new Date(t.at + 65 * 60_000).toISOString();
+      const r = await fetch(`${DIP_CB}/products/${t.pair}/candles?granularity=300&start=${start}&end=${end}`, DIP_H);
+      if (!r.ok) { t.done60 = 'нет свечей'; changed = true; continue; }
+      const raw = await r.json();
+      const cs = (Array.isArray(raw) ? raw : [])
+        .map(x => ({ t: Number(x[0]) * 1000, lo: Number(x[1]), hi: Number(x[2]), cl: Number(x[4]) }))
+        .filter(c => c.t >= t.at).sort((a, b) => a.t - b.t);
+      if (!cs.length) { t.done60 = 'нет свечей'; changed = true; continue; }
+      const at = (min) => {
+        const want = t.at + min * 60_000;
+        let best = null;
+        for (const c of cs) { const d = Math.abs(c.t - want); if (d <= 5 * 60_000 && (!best || d < best.d)) best = { d, cl: c.cl }; }
+        return best ? Math.round((best.cl / t.entry - 1) * 10000) / 100 : null;
+      };
+      t.m5 = at(5); t.m15 = at(15); t.m60 = at(60);
+      const tp = t.entry * (1 + ENTRY_PAPER_NEED / 100);
+      let hit = null, worst = 0;
+      for (const c of cs) {
+        const d = (c.lo / t.entry - 1) * 100; if (d < worst) worst = d;
+        if (c.hi >= tp) { hit = Math.round((c.t - t.at) / 60_000); break; }
+      }
+      t.hit60 = hit;              // за сколько минут дошло до +0.30%, или null
+      t.mae60 = Math.round(worst * 100) / 100;
+      t.done60 = true;
+      changed = true;
+    } catch (e) { console.error('[entry-paper]', t.coin, e.message); }
+    await new Promise(r => setTimeout(r, 220));
+  }
+
+  for (const t of due3d) {
+    try {
+      const r = await fetch(`${DIP_CB}/products/${t.pair}/candles?granularity=3600` +
+        `&start=${new Date(t.at).toISOString()}&end=${new Date(t.at + 3 * 24 * 3600_000).toISOString()}`, DIP_H);
+      if (!r.ok) { t.done3d = 'нет свечей'; changed = true; continue; }
+      const raw = await r.json();
+      const cs = (Array.isArray(raw) ? raw : []).map(x => ({ t: Number(x[0]) * 1000, hi: Number(x[2]) }));
+      const tp = t.entry * (1 + ENTRY_PAPER_NEED / 100);
+      const hit = cs.filter(c => c.hi >= tp).sort((a, b) => a.t - b.t)[0];
+      t.hit3d = hit ? Math.round((hit.t - t.at) / 60_000) : null;
+      t.done3d = true;
+      changed = true;
+    } catch (e) { console.error('[entry-paper]', t.coin, e.message); }
+    await new Promise(r => setTimeout(r, 220));
+  }
+
+  if (changed) saveEntryPaper();
+}
+setInterval(entryPaperSettle, 3 * 60 * 1000);
+setTimeout(entryPaperSettle, 100_000);
+
+app.get('/api/entry-paper', (req, res) => {
+  const done = entryPaper.trades.filter(t => t.done60 === true);
+  const avg = a => a.length ? Math.round(a.reduce((x, y) => x + y, 0) / a.length * 1000) / 1000 : null;
+  const share = (a, f) => a.length ? Math.round(a.filter(f).length / a.length * 100) : null;
+  const group = (list) => !list.length ? null : {
+    n: list.length,
+    m5: avg(list.map(t => t.m5).filter(v => v != null)),
+    m15: avg(list.map(t => t.m15).filter(v => v != null)),
+    m60: avg(list.map(t => t.m60).filter(v => v != null)),
+    hitHour: share(list, t => t.hit60 != null),
+    mae: avg(list.map(t => t.mae60).filter(v => v != null)),
+  };
+  const long = entryPaper.trades.filter(t => t.done3d === true);
+  res.json({
+    success: true,
+    startedAt: entryPaper.startedAt,
+    open: entryPaper.trades.filter(t => !t.done60).length,
+    // Порог окупаемости: цель +0.30% при круге маркет+лимитка 0.225%.
+    needPct: ENTRY_PAPER_NEED,
+    overall: group(done),
+    byScore: [
+      { label: '40-69', ...(group(done.filter(t => t.score < 70)) || { n: 0 }) },
+      { label: '70-100', ...(group(done.filter(t => t.score >= 70)) || { n: 0 }) },
+    ],
+    byFall: [
+      { label: '<3%', ...(group(done.filter(t => (t.dayFall || 0) < 3)) || { n: 0 }) },
+      { label: '3-6%', ...(group(done.filter(t => (t.dayFall || 0) >= 3 && (t.dayFall || 0) < 6)) || { n: 0 }) },
+      { label: '>6%', ...(group(done.filter(t => (t.dayFall || 0) >= 6)) || { n: 0 }) },
+    ],
+    // Обещанное панелью против случившегося: главная проверка честности
+    promiseVsFact: [3, 6, 10].map(lo => {
+      const g = done.filter(t => (t.dayFall || 0) >= lo && (t.dayFall || 0) < (lo === 3 ? 6 : lo === 6 ? 10 : 1e9));
+      return { label: lo === 10 ? '>10%' : lo + '-' + (lo === 3 ? 6 : 10) + '%',
+        n: g.length, promised: g.length ? g[0].recHour : null, actual: share(g, t => t.hit60 != null) };
+    }),
+    recovered3d: long.length ? { n: long.length, share: share(long, t => t.hit3d != null) } : null,
+  });
+});
 
 app.get('/api/entry-scan', (req, res) => {
   res.json({
