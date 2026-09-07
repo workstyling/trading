@@ -5395,9 +5395,11 @@ app.get('/api/entry-paper', (req, res) => {
         n: g.length, promised: g.length ? g[0].recHour : null, actual: share(g, t => t.hit60 != null) };
     }),
     recovered3d: long.length ? { n: long.length, share: share(long, t => t.hit3d != null) } : null,
-    // Сами сделки, последние двадцать. Без них журнал нечем проверить: видно
-    // только итог, а не то, что в него попало.
-    trades: entryPaper.trades.slice(-20).reverse().map(t => ({
+    // Сами сделки: посчитанные и последние открытые. Раньше отдавались просто
+    // последние двадцать по времени, и посчитанные в них не попадали — то есть
+    // именно то, ради чего список и заводился, было не видно.
+    trades: [...all.slice(-20), ...entryPaper.trades.filter(t => !t.done60).slice(-10)]
+      .reverse().map(t => ({
       coin: t.coin, at: t.at, entry: t.entry, score: t.score, dayFall: t.dayFall,
       control: !!t.control,
       promised: t.recHour, state: t.done60 === true ? 'посчитана' : t.done60 ? String(t.done60) : 'в работе',
