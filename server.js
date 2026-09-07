@@ -5191,10 +5191,32 @@ function saveEntryPaper() {
   } catch (e) { console.error('[entry-paper] save', e.message); }
 }
 
-// Открываем сделки по монетам, которые только что вошли в список.
+// Открываем сделки по монетам, которые только что вошли в список, и по одной
+// КОНТРОЛЬНОЙ монете ниже порога.
+//
+// Без контрольной группы журнал проверяет только одно: сбывается ли обещанная
+// доля возврата. На главный вопрос — лучше ли 40+ всего остального — он
+// ответить не может, потому что «всего остального» в нём нет. Сравнивать
+// сегодняшние сделки с историческим замером нельзя: это разные периоды, и
+// разница между ними будет разницей рынков, а не порога.
+//
+// Контрольная берётся случайно из тех, кто НЕ прошёл порог, по одной за скан:
+// чаще незачем, а к неделе их накопится столько же, сколько основных.
 function entryPaperOpen(rows) {
   const now = Date.now();
   const openCoins = new Set(entryPaper.trades.filter(t => !t.done60).map(t => t.coin));
+  const add = (row, control) => {
+    entryPaper.trades.push({
+      id: row.coin + '_' + now,
+      coin: row.coin, pair: row.pair, at: now, entry: row.price,
+      score: row.entryValue.pct, dayFall: row.dayFallPct,
+      recHour: row.recovery ? row.recovery.hour : null,
+      spreadPct: row.spreadPct,
+      control: control || undefined,
+    });
+    openCoins.add(row.coin);
+  };
+
   let added = 0;
   for (const row of rows) {
     if (!row.entryValue || row.entryValue.pct < 40) continue;
@@ -5202,16 +5224,19 @@ function entryPaperOpen(rows) {
     // Только первое пересечение серии: inListMin считает, сколько монета уже
     // висит, и повторный вход в ту же серию сделкой не считается.
     if (row.inListMin != null && row.inListMin > 4) continue;
-    entryPaper.trades.push({
-      id: row.coin + '_' + now,
-      coin: row.coin, pair: row.pair, at: now, entry: row.price,
-      score: row.entryValue.pct, dayFall: row.dayFallPct,
-      recHour: row.recovery ? row.recovery.hour : null,
-      spreadPct: row.spreadPct,
-    });
-    openCoins.add(row.coin);
+    add(row, false);
     added++;
   }
+
+  // Контроль: одна монета ниже порога, случайно. Условия входа у неё те же —
+  // отличается только балл, а значит разница в исходе будет разницей порога.
+  const below = rows.filter(r => r.entryValue && r.entryValue.pct < 40 &&
+    r.price > 0 && !openCoins.has(r.coin));
+  if (below.length) {
+    add(below[Math.floor(Math.random() * below.length)], true);
+    added++;
+  }
+
   if (added) { saveEntryPaper(); console.log('[entry-paper] открыто ' + added); }
 }
 
@@ -5276,7 +5301,9 @@ setInterval(entryPaperSettle, 3 * 60 * 1000);
 setTimeout(entryPaperSettle, 100_000);
 
 app.get('/api/entry-paper', (req, res) => {
-  const done = entryPaper.trades.filter(t => t.done60 === true);
+  const all = entryPaper.trades.filter(t => t.done60 === true);
+  const done = all.filter(t => !t.control);
+  const ctrl = all.filter(t => t.control);
   const avg = a => a.length ? Math.round(a.reduce((x, y) => x + y, 0) / a.length * 1000) / 1000 : null;
   const share = (a, f) => a.length ? Math.round(a.filter(f).length / a.length * 100) : null;
   const group = (list) => !list.length ? null : {
@@ -5291,10 +5318,14 @@ app.get('/api/entry-paper', (req, res) => {
   res.json({
     success: true,
     startedAt: entryPaper.startedAt,
-    open: entryPaper.trades.filter(t => !t.done60).length,
+    open: entryPaper.trades.filter(t => !t.done60 && !t.control).length,
+    openControl: entryPaper.trades.filter(t => !t.done60 && t.control).length,
     // Порог окупаемости: цель +0.30% при круге маркет+лимитка 0.225%.
     needPct: ENTRY_PAPER_NEED,
     overall: group(done),
+    // Контроль: те же условия, балл ниже порога. Разница между этими двумя
+    // строками и есть ответ на вопрос, стоит ли порог хоть чего-нибудь.
+    control: group(ctrl),
     byScore: [
       { label: '40-69', ...(group(done.filter(t => t.score < 70)) || { n: 0 }) },
       { label: '70-100', ...(group(done.filter(t => t.score >= 70)) || { n: 0 }) },
@@ -5315,6 +5346,7 @@ app.get('/api/entry-paper', (req, res) => {
     // только итог, а не то, что в него попало.
     trades: entryPaper.trades.slice(-20).reverse().map(t => ({
       coin: t.coin, at: t.at, entry: t.entry, score: t.score, dayFall: t.dayFall,
+      control: !!t.control,
       promised: t.recHour, state: t.done60 === true ? 'посчитана' : t.done60 ? String(t.done60) : 'в работе',
       m5: t.m5 ?? null, m15: t.m15 ?? null, m60: t.m60 ?? null,
       hit60: t.hit60 ?? null, mae60: t.mae60 ?? null, hit3d: t.hit3d ?? null,

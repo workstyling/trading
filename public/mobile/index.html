@@ -6224,13 +6224,19 @@
             if (!o || o.n < 20) {
               const days = pj.startedAt ? Math.max(0, Math.round((Date.now() - pj.startedAt) / 86400000 * 10) / 10) : 0;
               el.innerHTML = '<span style="color:var(--t2);">Проверка вперёд идёт: ' + (o ? o.n : 0) +
-                ' сделок посчитано, ' + pj.open + ' в работе' + (days ? ', ' + days + ' сут' : '') +
+                ' сделок посчитано, ' + pj.open + ' в работе' +
+                (pj.openControl ? ' + ' + pj.openControl + ' контрольных' : '') +
+                (days ? ', ' + days + ' сут' : '') +
                 '. Выводы появятся после двадцати.</span>';
             } else {
               const pf = (pj.promiseVsFact || []).filter(x => x.n >= 5);
+              const c = pj.control;
               el.innerHTML = '<b style="color:var(--t1);">Проверка вперёд:</b> ' + o.n + ' сделок · ' +
-                'до +' + pj.needPct + '% за час дошли <b>' + o.hitHour + '%</b> · ' +
-                'через час в среднем <b style="color:' + (o.m60 >= 0 ? 'var(--green)' : '#ff6b6b') + ';">' +
+                'до +' + pj.needPct + '% за час дошли <b>' + o.hitHour + '%</b>' +
+                // Контроль — те же условия, балл ниже порога. Без него не видно,
+                // стоит ли порог хоть чего-нибудь.
+                (c && c.n >= 10 ? ' против <b>' + c.hitHour + '%</b> у контрольных (' + c.n + ')' : '') +
+                ' · через час в среднем <b style="color:' + (o.m60 >= 0 ? 'var(--green)' : '#ff6b6b') + ';">' +
                 (o.m60 >= 0 ? '+' : '') + o.m60 + '%</b>' +
                 (pf.length ? ' · обещано/вышло: ' + pf.map(x => x.label + ' ' + x.promised + '→' + x.actual + '%').join(', ') : '');
             }
