@@ -6158,7 +6158,7 @@
         const rows = j.results || [];
         const good = rows.filter(x => x.entryValue && x.entryValue.pct >= ENTRY_MIN_M);
         const head = '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:6px;">' +
-          '<span style="color:var(--t1);font-weight:700;font-size:12px;">Лучший вход по рынку</span>' +
+          '<span style="color:var(--t1);font-weight:700;font-size:12px;">Рейтинг отката</span>' +
           '<span style="color:var(--t2);font-size:10px;">' + (j.total || 0) + ' монет · порог ' + ENTRY_MIN_M + '%+' +
           (j.scanning ? ' · сканирую…' : '') + ' · <span id="entryAgoM"></span>' +
           // Отвалившийся скан обязан быть видимым: устаревший список выглядит
@@ -6200,7 +6200,8 @@
           (good.length
             ? good.slice(0, 6).map(cell).join('') +
               '<div style="color:var(--t2);font-size:10px;margin-top:5px;line-height:1.4;">' +
-              'Слева — ВХОД: где брать лучше. Справа ↩ — доля случаев, когда цена возвращалась к входу за час, ' +
+              'Список ранжирует ОТКАТЫ, а не обещает прибыль: своего paper-журнала у него пока нет, ' +
+              'а строгая лаборатория проверяет другую стратегию. Слева — ВХОД: где откат глубже и свежее. Справа ↩ — доля случаев, когда цена возвращалась к входу за час, ' +
               'по глубине падения от суточного максимума (9 596 замеров за 12 дней). Чем глубже упала, тем надёжнее возврат: ' +
               'ниже 1% — 52%, глубже 10% — 86% и ни одного зависания за трое суток. ' +
               'ВХОД меньше комиссии за круг — он отсеивает плохое, прибыльным не делает. ' +

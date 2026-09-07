@@ -4863,8 +4863,18 @@ function microScalpEntryValue(row) {
   // против +0.001% — чистый ноль, а стоял множителем 0.45, то есть крупным
   // штрафом ни за что. Остались спред и ликвидность: они не предсказывают
   // ход, а определяют цену входа, и такого заявления в них нет.
-  const spread = Number(row.spreadPct);
-  const costOk = Number.isFinite(spread) && spread > 0 ? Math.max(0, Math.min(1, 0.20 / spread)) : 0;
+  // Спред. Раньше здесь было `spread > 0 ? ... : 0`, и это давало ровно
+  // обратный эффект задуманному: у монеты с идеальным спредом значение
+  // округлялось до нуля, проверка не проходила, и ЛУЧШИЙ спред получал ХУДШУЮ
+  // оценку. Плюс монеты, у которых спред просто не замерили, получали такой же
+  // штраф — то есть наказывались за отсутствие данных, а не за издержки.
+  //
+  // Теперь: null означает «не измерен» и не штрафует (нейтральное 0.5), а ноль
+  // означает «спред меньше шага цены», то есть отличный.
+  const spread = row.spreadPct == null ? null : Number(row.spreadPct);
+  const costOk = spread == null || !Number.isFinite(spread)
+    ? 0.5
+    : Math.max(0, Math.min(1, 0.20 / Math.max(spread, 0.005)));
   const liqOk = Math.max(0, Math.min(1, (Number(row.vol24) || 0) / 2e6));
   const backdrop = costOk * 0.65 + liqOk * 0.35;
 
@@ -4964,8 +4974,25 @@ async function entrySignals(coin) {
     price,
     rsi5: rsi,
     pullbackPct: high30 > 0 ? Math.round((high30 / price - 1) * 10000) / 100 : null,
-    dayFallPct: highDay > 0 ? Math.round((highDay / price - 1) * 10000) / 100 : null,
+    // Падение считается долей САМОГО максимума, а не «на сколько цене надо
+    // вырасти обратно». Прежняя формула (highDay/price − 1) завышала глубину:
+    // её 10% это настоящие 9.1%, и подпись в панели вводила в заблуждение.
+    dayFallPct: highDay > 0 ? Math.round((highDay - price) / highDay * 10000) / 100 : null,
   };
+}
+
+// Спред в процентах, или null если не удалось. Точность до тысячной доли
+// процента: округление до сотых превращало отличный спред в ноль, а ноль
+// прежняя формула трактовала как «неизвестно» и штрафовала.
+async function entrySpread(coin) {
+  try {
+    const r = await fetch(`${DIP_CB}/products/${coin}-USD/ticker`, DIP_H);
+    if (!r.ok) return null;
+    const t = await r.json();
+    const bid = Number(t.bid), ask = Number(t.ask);
+    if (!(bid > 0) || !(ask > 0) || ask < bid) return null;
+    return Math.round((ask / bid - 1) * 100 * 1000) / 1000;
+  } catch { return null; }
 }
 
 // Измеренная доля возвратов за час для глубины падения от суточного максимума.
@@ -4976,16 +5003,19 @@ async function entrySignals(coin) {
 // «упала на 10% и вернётся» будет означать другое, поэтому таблицу надо
 // перемерять. Дата рядом с числами, чтобы устаревание было видно, а не
 // обнаружилось убытком.
+//
+// Воспроизводится: node scripts/measure-recovery.js — раньше эти числа
+// приходили из разового скрипта и проверить их было нечем.
 const RECOVERY_MEASURED_AT = '2026-09-07';
-const RECOVERY_SAMPLE = 9596;
+const RECOVERY_SAMPLE = 11103;
 function recoveryOdds(dayFallPct) {
   const d = Number(dayFallPct);
   if (!Number.isFinite(d)) return null;
-  if (d >= 10) return { hour: 86, stuck: 0.0 };
-  if (d >= 6) return { hour: 76, stuck: 0.5 };
-  if (d >= 3) return { hour: 68, stuck: 0.7 };
-  if (d >= 1) return { hour: 63, stuck: 2.7 };
-  return { hour: 52, stuck: 2.4 };
+  if (d >= 10) return { hour: 89, stuck: 0.0 };
+  if (d >= 6) return { hour: 77, stuck: 0.4 };
+  if (d >= 3) return { hour: 66, stuck: 0.9 };
+  if (d >= 1) return { hour: 63, stuck: 3.2 };
+  return { hour: 55, stuck: 2.4 };
 }
 
 async function runEntryScan() {
@@ -5003,47 +5033,33 @@ async function runEntryScan() {
       const batch = universe.slice(i, i + 3);
       await Promise.all(batch.map(async ({ coin, volume }) => {
         try {
-          const sig = await entrySignals(coin);
+          // Спред тянем сразу, а не «у первой десятки». Прежняя экономия давала
+          // систематический перекос: монеты вне десятки получали множитель 0.71
+          // против 1.00 у остальных — то есть штраф в 29% за то, что их не
+          // измерили, а не за реальные издержки. Обогнать десятку они не могли
+          // в принципе. Цена честности — второй запрос на монету: 100 обращений
+          // на скан вместо 50, около 0.83 в секунду при лимите биржи в 10.
+          const [sig, sp] = await Promise.all([entrySignals(coin), entrySpread(coin)]);
           if (!sig) return;
           // Спред пока неизвестен — считаем ядро балла. Полный балл добираем
           // только для прошедших порог: тикер на все шестьдесят монет удвоил
           // бы нагрузку на биржу ради строк, которые всё равно не показать.
-          const core = microScalpEntryValue({
+          const value = microScalpEntryValue({
             pullbackPct: sig.pullbackPct, rsi: sig.rsi5,
-            spreadPct: null, vol24: volume, checks: [],
+            spreadPct: sp, vol24: volume, checks: [],
           });
-          if (!core) return;
+          if (!value) return;
           rows.push({
             coin, pair: coin + '-USD', price: sig.price, vol24: volume,
-            rsi: sig.rsi5, pullbackPct: sig.pullbackPct,
+            rsi: sig.rsi5, pullbackPct: sig.pullbackPct, spreadPct: sp,
             dayFallPct: sig.dayFallPct, recovery: recoveryOdds(sig.dayFallPct),
-            entryValue: core,
+            entryValue: value,
           });
         } catch { /* одна монета не должна ронять весь скан */ }
       }));
       await new Promise(r => setTimeout(r, 250));
     }
 
-    rows.sort((a, b) => b.entryValue.pct - a.entryValue.pct);
-    // Спред уточняем у первой десятки: он только приглушает балл, поэтому
-    // порядок от него почти не зависит, а запросов экономит впятеро.
-    for (const row of rows.slice(0, 10)) {
-      try {
-        const r = await fetch(`${DIP_CB}/products/${row.pair}/ticker`, DIP_H);
-        if (!r.ok) continue;
-        const t = await r.json();
-        const bid = Number(t.bid), ask = Number(t.ask);
-        if (bid > 0 && ask > 0 && ask >= bid) {
-          row.spreadPct = Math.round((ask / bid - 1) * 10000) / 100;
-          const full = microScalpEntryValue({
-            pullbackPct: row.pullbackPct, rsi: row.rsi,
-            spreadPct: row.spreadPct, vol24: row.vol24, checks: [],
-          });
-          if (full) row.entryValue = full;
-        }
-      } catch { }
-      await new Promise(r => setTimeout(r, 120));
-    }
     rows.sort((a, b) => b.entryValue.pct - a.entryValue.pct);
 
     // Отметки серий: монета остаётся «в списке», пока держит порог; выпала
