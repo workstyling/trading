@@ -4903,6 +4903,14 @@ const ENTRY_SCAN_INTERVAL_MS = 2 * 60 * 1000;
 const ENTRY_SCAN_MAX_COINS = 60;
 const entryScan = { results: [], at: 0, total: 0, running: false };
 
+// Сколько монета уже висит в списке. TAO попал в него 51 раз за 35 часов, и
+// каждое попадание выглядело новым сигналом — хотя это было одно непрерывное
+// падение. Статистически повторы не хуже первых входов, но купить одну монету
+// пятьдесят раз это не пятьдесят сделок, а одна позиция в пятидесятикратном
+// размере. Срок в списке делает это видимым.
+const entrySince = new Map();   // coin -> когда впервые прошёл порог в текущей серии
+const ENTRY_SERIES_GAP_MS = 30 * 60 * 1000;   // перерыв больше получаса — новая серия
+
 // Свой сбор сигналов вместо fetchMicroSignals.
 //
 // Тот возвращает готовые поля и суточного максимума среди них нет, а
@@ -5015,6 +5023,24 @@ async function runEntryScan() {
     }
     rows.sort((a, b) => b.entryValue.pct - a.entryValue.pct);
 
+    // Отметки серий: монета остаётся «в списке», пока держит порог; выпала
+    // больше чем на полчаса — следующее попадание считается новым.
+    {
+      const now = Date.now();
+      const above = new Set(rows.filter(x => x.entryValue.pct >= 40).map(x => x.coin));
+      for (const [coin, st] of entrySince) {
+        if (!above.has(coin) && now - st.seen > ENTRY_SERIES_GAP_MS) entrySince.delete(coin);
+      }
+      for (const coin of above) {
+        const st = entrySince.get(coin);
+        if (st) st.seen = now;
+        else entrySince.set(coin, { from: now, seen: now });
+      }
+      for (const row of rows) {
+        const st = entrySince.get(row.coin);
+        row.inListMin = st ? Math.round((now - st.from) / 60000) : null;
+      }
+    }
     entryScan.results = rows;
     entryScan.total = universe.length;
     entryScan.at = Date.now();

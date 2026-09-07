@@ -14749,6 +14749,12 @@ Requirements:
             (e.pct >= ENTRY_MIN ? 'background:rgba(0,229,160,0.10);' : '') + '">' +
             '<span style="color:var(--blue);font-weight:700;font-size:11px;min-width:52px;">' + x.coin + '</span>' +
             '<span style="color:var(--t2);font-size:10px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + e.why + '</span>' +
+            (x.inListMin > 90
+              ? '<span title="Держится в списке уже ' + (x.inListMin >= 120 ? Math.round(x.inListMin / 60) + ' ч' : x.inListMin + ' мин') +
+                '. Это не новый сигнал, а одно затянувшееся движение — покупать её повторно значит наращивать одну позицию, а не открывать новую."' +
+                ' style="color:#f5843a;font-size:9px;font-weight:700;white-space:nowrap;">' +
+                (x.inListMin >= 120 ? Math.round(x.inListMin / 60) + 'ч' : x.inListMin + 'м') + ' в списке</span>'
+              : '') +
             (rec ? '<span style="color:' + recCol + ';font-size:10px;font-weight:700;white-space:nowrap;" >↩ ' + rec.hour + '%</span>' : '') +
             '<span style="color:' + col + ';font-weight:800;font-size:11px;min-width:34px;text-align:right;">' + e.pct + '%</span></div>';
         };
