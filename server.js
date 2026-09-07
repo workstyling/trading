@@ -5316,6 +5316,16 @@ async function entryPaperSettle() {
       }
       t.hit60 = hit;              // за сколько минут дошло до +0.30%, или null
       t.mae60 = Math.round(worst * 100) / 100;
+      // Обещание пересчитываем по ДЕЙСТВУЮЩЕЙ таблице, а исходное сохраняем.
+      // Иначе сравнение «обещано/вышло» смешивает разные версии: сделки,
+      // открытые до исправления часа, несут завышенные 58/61/70/75/79, а
+      // открытые после — верные 57/59/67/72/75. Проверять надо ту таблицу,
+      // что показывается сейчас; прежняя остаётся для истории.
+      const fresh = recoveryOdds(t.dayFall);
+      if (fresh) {
+        if (t.recHour !== fresh.hour) t.recHourAtOpen = t.recHour;
+        t.recHour = fresh.hour;
+      }
       t.done60 = true;
       changed = true;
     } catch (e) { console.error('[entry-paper]', t.coin, e.message); }
