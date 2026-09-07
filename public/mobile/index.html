@@ -3145,6 +3145,13 @@
     // 80–94. Прежние 70 и 90 отсекали кандидатов без измеримого выигрыша.
     const ENTRY_MIN_M = 40;
     function _entryPicksM(rows) {
+      // Полоса смотрит ВСЕ монеты скана, а не только видимые строки.
+      // Таблица показывает верх по SCORE, а SCORE даёт 45 очков из 100 за
+      // «уже развернулась» (rsiRecovery 15, aboveEma9 15, emaStack 15). ВХОД
+      // измеряет обратное — «ещё не отыграла падение». Два порядка тянут в
+      // разные стороны, поэтому кандидат по ВХОДУ часто оказывается ниже
+      // десятой строки и в видимую часть не попадает. Замеченный случай: TAO
+      // с 35% стояла двенадцатой, а полоса её не видела вовсе.
       const good = (rows || [])
         .filter(x => x.entryValue && x.entryValue.pct >= ENTRY_MIN_M)
         .sort((a, b) => b.entryValue.pct - a.entryValue.pct);
@@ -6196,7 +6203,7 @@
         }
         const price = value => value == null ? '—' : value < 0.001 ? value.toFixed(8) : value < 1 ? value.toFixed(5) : value < 100 ? value.toFixed(3) : value.toFixed(2);
         const volume = value => value == null ? '—' : value >= 1e6 ? '$' + (value / 1e6).toFixed(1) + 'M' : '$' + Math.round(value / 1e3) + 'K';
-        body.innerHTML = `${_entryPicksM(rows)}<table style="width:100%;border-collapse:collapse;"><thead><tr style="border-bottom:1px solid var(--b1);"><th style="text-align:left;color:var(--t2);font-size:9px;padding:4px 3px;">COIN</th><th style="color:var(--t2);font-size:9px;padding:4px 2px;">SCORE</th><th style="color:var(--t2);font-size:9px;padding:4px 2px;" title="Близость ко входу, не вероятность прибыли">ГОТОВ</th><th style="color:var(--t2);font-size:9px;padding:4px 2px;" title="Сила сетапа: условия взвешены по важности. Не вероятность прибыли.">СИЛА</th><th style="color:var(--t2);font-size:9px;padding:4px 2px;" title="Выгода входа: уже упало И ещё не отыграло падение. Полосы измерены на 41 328 наблюдениях за 12 дней. Порог 40 — минимальный, при котором превышение положительно в оба периода; выше поднимать нечего. Ниже 20 — устойчивый минус. Превышение меньше комиссии за круг: балл отсеивает плохое, но прибыльным не делает.">ВХОД</th><th style="color:var(--t2);font-size:9px;padding:4px 2px;">СТАТУС</th><th style="color:var(--t2);font-size:9px;padding:4px 2px;">RSI</th><th style="color:var(--t2);font-size:9px;padding:4px 2px;">ОТКАТ</th><th style="text-align:right;color:var(--t2);font-size:9px;padding:4px 3px;">VOL 24H</th></tr></thead><tbody>${rows.map(item => {
+        body.innerHTML = `${_entryPicksM(j.results || [])}<table style="width:100%;border-collapse:collapse;"><thead><tr style="border-bottom:1px solid var(--b1);"><th style="text-align:left;color:var(--t2);font-size:9px;padding:4px 3px;">COIN</th><th style="color:var(--t2);font-size:9px;padding:4px 2px;">SCORE</th><th style="color:var(--t2);font-size:9px;padding:4px 2px;" title="Близость ко входу, не вероятность прибыли">ГОТОВ</th><th style="color:var(--t2);font-size:9px;padding:4px 2px;" title="Сила сетапа: условия взвешены по важности. Не вероятность прибыли.">СИЛА</th><th style="color:var(--t2);font-size:9px;padding:4px 2px;" title="Выгода входа: уже упало И ещё не отыграло падение. Полосы измерены на 41 328 наблюдениях за 12 дней. Порог 40 — минимальный, при котором превышение положительно в оба периода; выше поднимать нечего. Ниже 20 — устойчивый минус. Превышение меньше комиссии за круг: балл отсеивает плохое, но прибыльным не делает.">ВХОД</th><th style="color:var(--t2);font-size:9px;padding:4px 2px;">СТАТУС</th><th style="color:var(--t2);font-size:9px;padding:4px 2px;">RSI</th><th style="color:var(--t2);font-size:9px;padding:4px 2px;">ОТКАТ</th><th style="text-align:right;color:var(--t2);font-size:9px;padding:4px 3px;">VOL 24H</th></tr></thead><tbody>${rows.map(item => {
           const label = item.pass ? 'PAPER' : item.tag === 'NEAR' ? 'БЛИЗКО' : 'ЖДАТЬ';
           const color = item.pass ? '#bf5af2' : item.tag === 'NEAR' ? '#f5c518' : '#7c8698';
           const pick = item.entryValue && item.entryValue.pct >= ENTRY_MIN_M;
