@@ -5311,6 +5311,14 @@ app.get('/api/entry-paper', (req, res) => {
         n: g.length, promised: g.length ? g[0].recHour : null, actual: share(g, t => t.hit60 != null) };
     }),
     recovered3d: long.length ? { n: long.length, share: share(long, t => t.hit3d != null) } : null,
+    // Сами сделки, последние двадцать. Без них журнал нечем проверить: видно
+    // только итог, а не то, что в него попало.
+    trades: entryPaper.trades.slice(-20).reverse().map(t => ({
+      coin: t.coin, at: t.at, entry: t.entry, score: t.score, dayFall: t.dayFall,
+      promised: t.recHour, state: t.done60 === true ? 'посчитана' : t.done60 ? String(t.done60) : 'в работе',
+      m5: t.m5 ?? null, m15: t.m15 ?? null, m60: t.m60 ?? null,
+      hit60: t.hit60 ?? null, mae60: t.mae60 ?? null, hit3d: t.hit3d ?? null,
+    })),
   });
 });
 
