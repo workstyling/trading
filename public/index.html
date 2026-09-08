@@ -5641,6 +5641,15 @@
       color: #1a1a1a !important;
     }
     .sell-all-btn.stop:hover { filter: brightness(1.1) !important; }
+    .step-btn {
+      width: 18px; height: 18px; line-height: 1; padding: 0;
+      border: 1px solid var(--b1); border-radius: 4px;
+      background: var(--s3); color: var(--t1);
+      font-size: 12px; font-weight: 700; cursor: pointer;
+      display: inline-flex; align-items: center; justify-content: center;
+    }
+    .step-btn:hover { background: var(--s2); color: var(--t0); }
+
 
 
     .buy-limit-btn, .tracker-toggle-btn, .at-add-btn, .telegram-btn {
@@ -6649,6 +6658,17 @@
       document.querySelectorAll('[id^="bew_"]').forEach(el => _paintBeBtn(el, el.id.slice(4)));
     }
 
+    // Список ордеров перерисовывается из _beWatches, поэтому после каждой
+    // перерисовки состояние надо переспросить — иначе кнопка возвращается к
+    // тому, что было на момент последнего опроса.
+    let _beAfterOrders = 0;
+    function beRefreshSoon() {
+      const now = Date.now();
+      if (now - _beAfterOrders < 3000) return;   // не долбим биржу на каждый тик
+      _beAfterOrders = now;
+      loadBeWatches();
+    }
+
     async function loadBeWatches() {
       try {
         const r = await fetch('/api/be-watch');
@@ -6912,6 +6932,14 @@
     function refreshAfterTrade(orderId) {
       try { loadUsdBalance(); } catch { }
       try { loadVolume30d(true); } catch { }
+      // Сторож безубытка и избранное ставит сервер по факту исполнения, а его
+      // цикл ходит раз в полминуты. Рыночный ордер исполняется мгновенно, и
+      // всё это время кнопка показывала «выключено», хотя сторож уже стоял.
+      // Просим проверить исполнения сейчас и сразу забираем состояние.
+      (async () => {
+        try { await fetch('/api/check-fills', { method: 'POST' }); } catch { }
+        try { await loadBeWatches(); } catch { }
+      })();
       let i = 0;
       const tick = async () => {
         try { await loadLatestOrders(true); } catch { }
@@ -9973,6 +10001,17 @@
         });
     }
 
+
+    // Шаг кнопкой, а не набором с клавиатуры. Ноль — лучший ask: это видно из
+    // подписи под полем, потому что «0» само по себе ничего не говорит.
+    function bumpSellStep(coin, pair, which, delta) {
+      const el = document.getElementById((which === 'ask' ? 'sellStepAsk_' : 'sellStepUp_') + coin);
+      if (!el) return;
+      const v = Math.max(0, Math.min(50, (parseInt(el.value, 10) || 0) + delta));
+      el.value = v;
+      recalcSellSteps(coin, pair);
+    }
+
     async function sellAllLimit(productId, size, coin) {
       const priceInput = document.getElementById('limitSellPrice_' + coin);
       const price = priceInput ? priceInput.value.trim() : '';
@@ -12569,11 +12608,21 @@ Requirements:
           ${totalFilled > 0 ? (() => { const _st = sellSteps(coin); return `<span style="margin-left:10px;display:inline-flex;align-items:center;gap:4px;flex-wrap:wrap;">
             <input type="text" id="limitSellPrice_${coin}" placeholder="Limit price" value="${_st.limit != null ? _st.limit : ''}" style="width:90px;padding:3px 6px;background:var(--s3);border:1px solid var(--b1);border-radius:5px;color:var(--t0);font-family:'JetBrains Mono',monospace;font-size:11px;outline:none;" autocomplete="off">
             <button onclick="sellAllLimit('${pair}','${totalFilled}','${coin}')" style="padding:3px 10px;border:1px solid var(--yellow);border-radius:5px;background:transparent;color:var(--yellow);font-size:10px;font-weight:600;cursor:pointer;">Sell Limit</button>
-            <label style="font-size:9px;color:var(--t2);display:inline-flex;align-items:center;gap:3px;" title="На сколько шагов стакана НИЖЕ лучшего ask встанет лимитная цена. Уровень 0 — сам лучший ask, дальше идут уровни bid: чем ниже, тем вероятнее исполнение.">ask −<input type="number" id="sellStepAsk_${coin}" value="${_st.ask}" min="0" max="50" step="1" onchange="recalcSellSteps('${coin}','${pair}')" style="width:38px;padding:2px 4px;background:var(--s3);border:1px solid var(--b1);border-radius:4px;color:var(--t0);font-size:10px;"></label>
-            <label style="font-size:9px;color:var(--t2);display:inline-flex;align-items:center;gap:3px;" title="На сколько шагов стакана ВЫШЕ лимитной цены встанет стоп. Стоп обязан быть выше лимита: он срабатывает при падении к нему, и только тогда в стакан уходит лимитка.">стоп +<input type="number" id="sellStepUp_${coin}" value="${_st.up}" min="0" max="50" step="1" onchange="recalcSellSteps('${coin}','${pair}')" style="width:38px;padding:2px 4px;background:var(--s3);border:1px solid var(--b1);border-radius:4px;color:var(--t0);font-size:10px;"></label>
+            <span style="display:inline-flex;align-items:center;gap:2px;" title="На сколько шагов стакана НИЖЕ лучшего ask встанет лимитная цена. Ноль — сам лучший ask, дальше идут уровни bid: чем ниже, тем вероятнее исполнение.">
+              <span style="font-size:9px;color:var(--t2);">ask −</span>
+              <button class="step-btn" onclick="bumpSellStep('${coin}','${pair}','ask',-1)" title="ближе к лучшему ask">−</button>
+              <input type="number" id="sellStepAsk_${coin}" value="${_st.ask}" min="0" max="50" step="1" onchange="recalcSellSteps('${coin}','${pair}')" style="width:34px;text-align:center;padding:2px 3px;background:var(--s3);border:1px solid var(--b1);border-radius:4px;color:var(--t0);font-size:10px;">
+              <button class="step-btn" onclick="bumpSellStep('${coin}','${pair}','ask',1)" title="глубже в биды">+</button>
+            </span>
+            <span style="display:inline-flex;align-items:center;gap:2px;" title="На сколько шагов стакана ВЫШЕ лимитной цены встанет стоп. Стоп обязан быть выше лимита: он срабатывает при падении к нему, и только тогда в стакан уходит лимитка.">
+              <span style="font-size:9px;color:var(--t2);">стоп +</span>
+              <button class="step-btn" onclick="bumpSellStep('${coin}','${pair}','up',-1)" title="стоп ближе к лимиту">−</button>
+              <input type="number" id="sellStepUp_${coin}" value="${_st.up}" min="0" max="50" step="1" onchange="recalcSellSteps('${coin}','${pair}')" style="width:34px;text-align:center;padding:2px 3px;background:var(--s3);border:1px solid var(--b1);border-radius:4px;color:var(--t0);font-size:10px;">
+              <button class="step-btn" onclick="bumpSellStep('${coin}','${pair}','up',1)" title="стоп выше над лимитом">+</button>
+            </span>
             <button onclick="recalcSellSteps('${coin}','${pair}')" title="Пересчитать по текущему стакану" style="padding:3px 7px;border:1px solid var(--b1);border-radius:5px;background:transparent;color:var(--t2);font-size:10px;cursor:pointer;">⟳</button>
             <button onclick="sellStopInline('${pair}','${totalFilled}','${coin}')" title="Поставить стоп-лимит на весь объём по этим числам" style="padding:3px 10px;border:1px solid #f5c518;border-radius:5px;background:rgba(245,197,24,0.12);color:#f5c518;font-size:10px;font-weight:700;cursor:pointer;">Sell Stop</button>
-            <span id="sellStepInfo_${coin}" style="font-size:9px;color:var(--t2);">${_st.stop != null && _st.limit != null ? `стоп $${fmtPrice(_st.stop)} · лимит $${fmtPrice(_st.limit)}` : 'нажми ⟳ или измени шаги'}</span>
+            <span id="sellStepInfo_${coin}" style="font-size:9px;color:var(--t2);" title="0 — лучший ask, дальше уровни bid вниз">${_st.stop != null && _st.limit != null ? `стоп $${fmtPrice(_st.stop)} · лимит $${fmtPrice(_st.limit)}` : '0 = лучший ask · нажми ⟳'}</span>
           </span>`; })() : ''}</div>
 
           <table class="profit-table" data-pair="${pair}" data-filled="${totalFilled}" data-usd="${totalUSD}" data-avgbuy="${avgBuyPrice}">
@@ -12888,6 +12937,9 @@ Requirements:
       // Only update if content changed (reduces flickering)
       if (container.innerHTML !== h) {
         container.innerHTML = h;
+        // Кнопки алерта нарисованы из _beWatches на момент сборки строки.
+        // Сторож мог включиться сервером за это время — переспрашиваем.
+        try { beRefreshSoon(); } catch {}
         // After re-render: paint last-known positions from cache, then refresh in background
         try { rehydratePositionsFromCache(); } catch {}
         // Trigger an immediate refresh so positions stay current after render

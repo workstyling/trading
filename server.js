@@ -2500,6 +2500,21 @@ function saveBeWatches() { try { fs.writeFileSync(BE_WATCH_FILE, JSON.stringify(
 
 app.get('/api/be-watch', (req, res) => res.json({ success: true, watches: beWatches }));
 
+// Проверить исполнения немедленно, не дожидаясь тридцатисекундного цикла.
+//
+// Рыночный ордер исполняется мгновенно, а сторож безубытка и избранное
+// ставятся по факту исполнения — то есть до полуминуты кнопка на экране
+// показывала «выключено», хотя сторож уже был нужен. Клиент дёргает это сразу
+// после сделки, и состояние сходится за секунду, а не за полминуты.
+app.post('/api/check-fills', async (req, res) => {
+  try {
+    await checkFilledOrders();
+    res.json({ success: true, watches: beWatches });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
 app.post('/api/be-watch', (req, res) => {
   const { coin, pair, filled, usd, enable } = req.body || {};
   if (!coin) return res.status(400).json({ success: false, error: 'no coin' });
