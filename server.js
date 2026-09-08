@@ -5688,6 +5688,23 @@ app.get('/api/entry-paper', (req, res) => {
       { label: '3-6%', ...(group(done.filter(t => (t.dayFall || 0) >= 3 && (t.dayFall || 0) < 6)) || { n: 0 }) },
       { label: '>6%', ...(group(done.filter(t => (t.dayFall || 0) >= 6)) || { n: 0 }) },
     ],
+    // Та же разбивка по КОНТРОЛЮ. Без неё нельзя ответить на главный вопрос:
+    // работает глубина падения сама по себе или только вместе с баллом. Если
+    // она делит и контрольную группу — значит порог по баллу можно менять на
+    // порог по глубине, а балл убирать.
+    byFallControl: [
+      { label: '<3%', ...(group(ctrl.filter(t => (t.dayFall || 0) < 3)) || { n: 0 }) },
+      { label: '3-6%', ...(group(ctrl.filter(t => (t.dayFall || 0) >= 3 && (t.dayFall || 0) < 6)) || { n: 0 }) },
+      { label: '>6%', ...(group(ctrl.filter(t => (t.dayFall || 0) >= 6)) || { n: 0 }) },
+    ],
+    // Что дал бы порог по ГЛУБИНЕ вместо порога по баллу: обе группы вместе,
+    // разделённые только глубиной. Балл при этом не учитывается вовсе.
+    byFallAll: [3, 6].map(lo => {
+      const deep = all.filter(t => (t.dayFall || 0) >= lo);
+      const shallow = all.filter(t => (t.dayFall || 0) < lo);
+      const g = group(deep), h = group(shallow);
+      return { label: '>=' + lo + '%', deep: g || { n: 0 }, shallow: h || { n: 0 } };
+    }),
     // Обещанное панелью против случившегося: главная проверка честности.
     //
     // Полосы те же, что в recoveryOdds, и обещание берётся ОТТУДА, а не из
