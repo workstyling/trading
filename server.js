@@ -5228,6 +5228,43 @@ function recoveryOdds(dayFallPct) {
   return { hour: 56, stuck: 4.4 };
 }
 
+// Порог входа: ГЛУБИНА ПАДЕНИЯ, а не балл ВХОД.
+//
+// Балл вперёд себя не подтвердил. На 325 сделках против 502 контрольных доля
+// дошедших до цели вышла 66% против 70% — то есть на 4 пункта ХУЖЕ контроля
+// при погрешности 3.3, что неотличимо от нуля. Доходность тоже: +0.082 при
+// погрешности ±0.141.
+//
+// Глубина падения делит выборку сильно и, главное, делит ОБЕ группы сразу:
+//
+//   основная (балл 40+):  падение <3% -> 50% дошли,  >6% -> 78%   (+28 ±6.5)
+//   контроль (балл <40):  падение <3% -> 62% дошли,  >6% -> 74%   (+12 ±5.2)
+//   обе вместе, порог 3%: глубже 73%, мельче 58%     (+15 ±3.5 — 4.3 сигмы)
+//
+// То, что признак работает и в контрольной группе, где его не отбирали, и
+// был предсказан заранее ретроспективным замером на 14 844 точках, — самое
+// сильное подтверждение, какое здесь вообще возможно.
+//
+// Спред проверяется отдельно и по существу, а не баллом: цель +0.30%, и если
+// спред шире цели, сделка не может выйти в плюс в принципе. Неизвестный спред
+// считается отказом — «нет данных» здесь не разрешение.
+const ENTRY_GATE_FALL = 3;               // падение от суточного максимума, %
+// Спред не шире цели. Число повторено, а не взято из ENTRY_PAPER_NEED:
+// та константа объявлена ниже по файлу, и ссылка на неё отсюда роняет
+// процесс при старте. Ниже стоит сверка — разойтись они не смогут.
+const ENTRY_GATE_SPREAD = 0.30;
+const ENTRY_RULE = 'fall3';              // метка правила на сделках журнала
+
+function entryPasses(r) {
+  if (!r) return false;
+  const fall = r.dayFallPct;
+  if (fall == null || fall === '' || !Number.isFinite(Number(fall))) return false;
+  if (Number(fall) < ENTRY_GATE_FALL) return false;
+  const sp = r.spreadPct;
+  if (sp == null || sp === '' || !Number.isFinite(Number(sp))) return false;
+  return Number(sp) <= ENTRY_GATE_SPREAD;
+}
+
 async function runEntryScan() {
   if (entryScan.running || !cbVolumeCache.size) return;
   entryScan.running = true;
@@ -5288,7 +5325,7 @@ async function runEntryScan() {
     // и проходящие могли не попасть в отдаваемые пятнадцать строк. Порядок
     // такой: сначала прошедшие порог по возврату, следом остальные.
     const recHour = r => (r.recovery && r.recovery.hour) || 0;
-    const passes = r => r.entryValue.pct >= 40 ? 1 : 0;
+    const passes = r => entryPasses(r) ? 1 : 0;
     rows.sort((a, b) =>
       passes(b) - passes(a) ||
       recHour(b) - recHour(a) ||
@@ -5298,7 +5335,7 @@ async function runEntryScan() {
     // больше чем на полчаса — следующее попадание считается новым.
     {
       const now = Date.now();
-      const above = new Set(rows.filter(x => x.entryValue.pct >= 40).map(x => x.coin));
+      const above = new Set(rows.filter(entryPasses).map(x => x.coin));
       for (const [coin, st] of entrySince) {
         if (!above.has(coin) && now - st.seen > ENTRY_SERIES_GAP_MS) entrySince.delete(coin);
       }
@@ -5358,7 +5395,7 @@ async function runEntryScan() {
     entryScan.total = universe.length;
     entryScan.at = Date.now();
     entryScan.failedAt = 0;
-    const good = rows.filter(x => x.entryValue.pct >= 40).length;
+    const good = rows.filter(entryPasses).length;
     console.log('[entry-scan] ' + rows.length + '/' + universe.length + ' монет, 40+: ' + good);
   } catch (e) {
     console.error('[entry-scan]', e.message);
@@ -5388,6 +5425,11 @@ setTimeout(runEntryScan, 70_000);
 // независимую сделку значило бы подменить одну позицию пятьюдесятью.
 const ENTRY_PAPER_FILE = path.join(__dirname, 'entry-paper.json');
 const ENTRY_PAPER_NEED = 0.30;        // сколько нужно, чтобы окупить комиссию
+// Порог по спреду обязан совпадать с целью: если спред шире цели, сделка не
+// может выйти в плюс. Числа стоят в двух местах по необходимости — тут сверка.
+if (ENTRY_GATE_SPREAD !== ENTRY_PAPER_NEED) {
+  throw new Error('порог спреда ' + ENTRY_GATE_SPREAD + ' разошёлся с целью ' + ENTRY_PAPER_NEED);
+}
 const ENTRY_PAPER_MAX = 4000;         // сделок в файле, дальше режем старые
 let entryPaper = { trades: [], startedAt: 0 };
 try { entryPaper = JSON.parse(fs.readFileSync(ENTRY_PAPER_FILE, 'utf8')) || entryPaper; } catch { }
@@ -5429,6 +5471,11 @@ const ENTRY_PAPER_SKIP = new Set(['USDT', 'USDC', 'DAI', 'PYUSD', 'USDS', 'EURC'
 
 function entryPaperOpen(rows) {
   const now = Date.now();
+  if (!entryPaper.ruleSince || entryPaper.rule !== ENTRY_RULE) {
+    entryPaper.rule = ENTRY_RULE;
+    entryPaper.ruleSince = now;
+    console.log('[entry-paper] правило входа сменилось на ' + ENTRY_RULE + ', отсчёт заново');
+  }
   // Два отдельных набора. Раньше был один, и контрольная запись по монете
   // блокировала основную на целый час: монета, взятая в контроль ниже порога,
   // при пересечении порога уже числилась «открытой» и основным сигналом не
@@ -5440,7 +5487,7 @@ function entryPaperOpen(rows) {
     entryPaper.trades.push({
       id: row.coin + '_' + now,
       coin: row.coin, pair: row.pair, at: now, entry: row.price,
-      score: row.entryValue.pct, dayFall: row.dayFallPct,
+      score: row.entryValue.pct, dayFall: row.dayFallPct, rule: ENTRY_RULE,
       recHour: row.recovery ? row.recovery.hour : null,
       spreadPct: row.spreadPct,
       control: control || undefined,
@@ -5451,7 +5498,7 @@ function entryPaperOpen(rows) {
   let added = 0;
   for (const row of rows) {
     if (ENTRY_PAPER_SKIP.has(row.coin)) continue;
-    if (!row.entryValue || row.entryValue.pct < 40) continue;
+    if (!entryPasses(row)) continue;
     if (openMain.has(row.coin)) continue;
     // Только первое пересечение серии: inListMin считает, сколько монета уже
     // висит, и повторный вход в ту же серию сделкой не считается.
@@ -5462,7 +5509,7 @@ function entryPaperOpen(rows) {
 
   // Контроль: одна монета ниже порога, случайно. Условия входа у неё те же —
   // отличается только балл, а значит разница в исходе будет разницей порога.
-  const below = rows.filter(r => r.entryValue && r.entryValue.pct < 40 &&
+  const below = rows.filter(r => !entryPasses(r) &&
     r.price > 0 && !ENTRY_PAPER_SKIP.has(r.coin) &&
     !openCtrl.has(r.coin) && !openMain.has(r.coin));
   if (below.length) {
@@ -5631,8 +5678,13 @@ app.get('/api/entry-paper', (req, res) => {
   // Записи стейблов, попавшие в журнал до того, как их стали пропускать,
   // из мерки исключаем: в файле они остаются, но эталоном служить не могут.
   const all = entryPaper.trades.filter(t => t.done60 === true && !ENTRY_PAPER_SKIP.has(t.coin));
-  const done = all.filter(t => !t.control);
-  const ctrl = all.filter(t => t.control);
+  // Правило входа сменилось: порог по баллу заменён порогом по глубине
+  // падения. Наблюдения, набранные под прежним правилом, отвечают на другой
+  // вопрос — держим их отдельно, а не подмешиваем.
+  const cur = all.filter(t => t.rule === ENTRY_RULE);
+  const old = all.filter(t => t.rule !== ENTRY_RULE);
+  const done = cur.filter(t => !t.control);
+  const ctrl = cur.filter(t => t.control);
   const avg = a => a.length ? Math.round(a.reduce((x, y) => x + y, 0) / a.length * 1000) / 1000 : null;
   const share = (a, f) => a.length ? Math.round(a.filter(f).length / a.length * 100) : null;
   // Разброс нужен не меньше среднего: без него нельзя сказать, отличается ли
@@ -5665,6 +5717,19 @@ app.get('/api/entry-paper', (req, res) => {
     openControl: entryPaper.trades.filter(t => !t.done60 && t.control).length,
     // Порог окупаемости: цель +0.30% при круге маркет+лимитка 0.225%.
     needPct: ENTRY_PAPER_NEED,
+    // Какое правило действует сейчас и что накоплено под ним. Прежний набор
+    // остаётся рядом: он и есть доказательство, что порог по баллу не работал.
+    rule: {
+      id: ENTRY_RULE,
+      what: 'падение от суточного максимума ' + ENTRY_GATE_FALL + '%+, спред не шире ' + ENTRY_GATE_SPREAD + '%',
+      since: entryPaper.ruleSince || null,
+      n: cur.length,
+    },
+    previousRule: old.length ? {
+      what: 'балл ВХОД 40+',
+      main: group(old.filter(t => !t.control)),
+      control: group(old.filter(t => t.control)),
+    } : null,
     // Пересчёт старых сделок под исправленный отсчёт минут: сколько осталось
     // и сдвинул ли он средний результат. Пока идёт, выборка смешанная, и
     // об этом надо знать, а не догадываться.
@@ -5699,6 +5764,8 @@ app.get('/api/entry-paper', (req, res) => {
     ],
     // Что дал бы порог по ГЛУБИНЕ вместо порога по баллу: обе группы вместе,
     // разделённые только глубиной. Балл при этом не учитывается вовсе.
+    // По ОБЕИМ группам и по всем наблюдениям, включая набранные под прежним
+    // правилом: именно этот разрез и показал, что делит глубина, а не балл.
     byFallAll: [3, 6].map(lo => {
       const deep = all.filter(t => (t.dayFall || 0) >= lo);
       const shallow = all.filter(t => (t.dayFall || 0) < lo);
@@ -5749,6 +5816,7 @@ app.get('/api/entry-scan', (req, res) => {
     total: entryScan.total,
     recoveryMeasuredAt: RECOVERY_MEASURED_AT,
     recoverySample: RECOVERY_SAMPLE,
+    gate: { fallPct: ENTRY_GATE_FALL, spreadPct: ENTRY_GATE_SPREAD },
     scanning: entryScan.running,
     // Если последний скан провалился, панель обязана сказать об этом, а не
     // молча показывать устаревший список как свежий.

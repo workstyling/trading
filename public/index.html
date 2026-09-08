@@ -14735,7 +14735,22 @@ Requirements:
     // независимых периода истории. Ниже 20 сегмент устойчиво отрицателен,
     // 20–39 даёт ровно ноль. Выше 40 поднимать нечего: превышение дальше не
     // растёт, а 95–100 даже слабее 80–94.
-    const ENTRY_MIN = 40;
+    // Порог входа — ГЛУБИНА ПАДЕНИЯ, а не балл. Балл вперёд себя не
+    // подтвердил: 66% дошедших до цели против 70% у контроля при погрешности
+    // 3.3 — то есть хуже случайного отбора. Глубина делит обе группы сразу:
+    // 73% против 58% при погрешности 3.5, это 4.3 сигмы.
+    //
+    // Числа приходят с сервера: повторять их здесь значит однажды разойтись.
+    function ENTRY_MIN(j) {
+      const g = (j && j.gate) || {};
+      return { fall: g.fallPct == null ? 3 : g.fallPct, spread: g.spreadPct == null ? 0.3 : g.spreadPct };
+    }
+    function entryPassesUi(x, g) {
+      if (!x || x.dayFallPct == null || x.dayFallPct === '') return false;
+      if (Number(x.dayFallPct) < g.fall) return false;
+      if (x.spreadPct == null || x.spreadPct === '') return false;   // нет данных — не разрешение
+      return Number(x.spreadPct) <= g.spread;
+    }
 
     async function loadEntryScan() {
       const box = document.getElementById('entryScanBox');
@@ -14747,10 +14762,11 @@ Requirements:
         // до следующего пересчёта, с поправкой на расхождение часов.
         trackFreshness('entryAgo', j);
         const rows = j.results || [];
-        const good = rows.filter(x => x.entryValue && x.entryValue.pct >= ENTRY_MIN);
+        const gate = ENTRY_MIN(j);
+        const good = rows.filter(x => entryPassesUi(x, gate));
         const head = '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:6px;">' +
           '<span style="color:var(--t1);font-weight:700;font-size:12px;" title="' + 'Порядок — по вероятности возврата, а не по баллу: внутри списка сам ВХОД возврат не предсказывает (66.9% против 68.4%, разница неотличима), а глубина падения даёт разброс в 18 пунктов.' + String.fromCharCode(10) + 'Список ранжирует откаты, а не обещает прибыль.' + String.fromCharCode(10) + 'Возврат — доля случаев, когда цена возвращалась к входу за час, по глубине падения от суточного максимума (14 844 замера по монетам из этого же списка): ниже 1% — 56%, глубже 10% — 77%.' + String.fromCharCode(10) + 'ВХОД прибыльной сделку не делает: обе группы журнала в минусе. Сокращает ли он убыток — проверяется вперёд прямо сейчас, и подтверждения пока нет. Что вышло на сегодня, говорит строка под таблицей: если там написано «в пределах погрешности», значит порог себя ещё не доказал.' + String.fromCharCode(10) + 'Замер ' + (j.recoveryMeasuredAt || '—') + ' на растущем рынке; на затяжном падении доли надо перемерять.' + '">Рейтинг отката</span>' +
-          '<span style="color:var(--t2);font-size:10px;">' + (j.total || 0) + ' монет · порог ' + ENTRY_MIN + '%+' +
+          '<span style="color:var(--t2);font-size:10px;">' + (j.total || 0) + ' монет · падение от ' + gate.fall + '%' +
           (j.scanning ? ' · сканирую…' : '') + ' · <span id="entryAgo"></span>' +
           // Отвалившийся скан обязан быть видимым: устаревший список выглядит
           // рабочим, и по нему можно купить по цене, которой уже нет.
@@ -14812,7 +14828,10 @@ Requirements:
           '<th style="text-align:right;padding:3px 6px;">в списке</th></tr>';
         const cell = (x) => {
           const e = x.entryValue;
-          const col = e.pct >= ENTRY_MIN ? '#00e5a0' : e.pct >= 20 ? '#f5c518' : '#7c8698';
+          const pass = entryPassesUi(x, gate);
+          // Балл остаётся на экране, но больше ничего не решает: цвет и
+          // подсветка идут от того, прошла ли монета порог по глубине.
+          const col = pass ? '#00e5a0' : '#7c8698';
           const rec = x.recovery;
           const recCol = !rec ? 'var(--t2)' : rec.hour >= 76 ? '#00e5a0' : rec.hour >= 63 ? '#f5c518' : '#f5843a';
           // Одинарные кавычки внутри двойных: JSON.stringify рвал атрибут.
@@ -14834,7 +14853,7 @@ Requirements:
               '% — разгон возврату помогает, а не мешает' : '') +
             (x.inListMin > 90 ? String.fromCharCode(10) +
               'висит в списке долго: это не новый сигнал, а одно затянувшееся движение' : '') + '"' +
-            ' style="cursor:pointer;' + (e.pct >= ENTRY_MIN ? 'background:rgba(0,229,160,0.10);' : '') + '">' +
+            ' style="cursor:pointer;' + (pass ? 'background:rgba(0,229,160,0.10);' : '') + '">' +
             '<td style="padding:4px 6px;"><span style="color:var(--blue);font-weight:700;font-size:11px;">' + x.coin +
             '</span><br><span style="color:var(--t2);font-size:9px;">$' + price(x.price) + '</span></td>' +
             num(rec ? '↩ ' + rec.hour + '%' : '—', recCol, true) +
