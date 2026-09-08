@@ -5659,6 +5659,16 @@
       background: var(--s3); border: 1px solid var(--b1); border-radius: 5px;
       color: var(--t0); font-size: 13px; font-weight: 700;
       font-family: 'JetBrains Mono', monospace;
+      /* Родные стрелки убраны: они занимали место справа, из-за чего число
+         съезжало влево от центра, и дублировали кнопки, которые уже стоят по
+         бокам. Шаг задаётся только ими. */
+      -moz-appearance: textfield;
+      appearance: textfield;
+    }
+    .step-inp::-webkit-outer-spin-button,
+    .step-inp::-webkit-inner-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
     }
 
     .step-btn:hover { background: var(--s2); color: var(--t0); }
