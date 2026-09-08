@@ -7944,6 +7944,7 @@
           }
           overlay.remove();
           showCustomAlert(`${coin}: куплено по рынку на $${quoteSize.toFixed(2)}`);
+          favoriteAfterOrder(coin);
           if (j.orderId && !selectedOrders.includes(j.orderId)) {
             selectedOrders.push(j.orderId);
             safeStorage.setItem(SELECTED_ORDERS_KEY, JSON.stringify(selectedOrders));
@@ -8041,6 +8042,7 @@
           console.log('SUCCESS! Order created');
           const cryptoSize = (quoteSize / limitPrice).toFixed(6);
           showCustomAlert(`Buy order: ${cryptoSize} ${selectedBuyCoin} @ $${limitPrice.toLocaleString()}`);
+          favoriteAfterOrder(selectedBuyCoin);
           // Add to selected orders
           const newOrderId = data.order_id;
           if (newOrderId && !selectedOrders.includes(newOrderId)) {
@@ -8103,6 +8105,7 @@
 
         if (data.success && data.order?.success !== false) {
           showCustomAlert(`Buy Limit: ${cryptoSize} ${selectedBuyCoin} @ $${limitPrice}`);
+          favoriteAfterOrder(selectedBuyCoin);
           const newOrderId = data.order_id;
           if (newOrderId && !selectedOrders.includes(newOrderId)) {
             selectedOrders.push(newOrderId);
@@ -10540,6 +10543,19 @@ Requirements:
           body: JSON.stringify({ coins: [...favoriteCoins] })
         });
       } catch {}
+    }
+
+
+    // Монета, по которой выставлен ордер, сама попадает в избранное. Ставить
+    // BE-сторож здесь нельзя: у лимитки в этот момент ничего не исполнено, а
+    // безубыток считается от исполненного объёма и потраченной суммы —
+    // сторож с нулями молчал бы всегда. Его ставит сервер по факту
+    // исполнения, и работает это при закрытом браузере.
+    async function favoriteAfterOrder(coin) {
+      if (!coin || favoriteCoins.has(coin)) return;
+      favoriteCoins.add(coin);
+      safeStorage.setItem(FAVORITE_COINS_KEY, JSON.stringify([...favoriteCoins]));
+      await saveFavoritesToServer();
     }
 
     function toggleFavoriteCoin(coin) {

@@ -2356,6 +2356,65 @@ let fillBaselineDone = notifiedFills.length > 0;
 function fmtNumTg(n, d = 2) { return Number(n).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }); }
 function fmtPxTg(p) { p = parseFloat(p) || 0; return p < 0.001 ? p.toFixed(8) : p < 1 ? p.toFixed(6) : p < 100 ? p.toFixed(4) : p.toFixed(2); }
 
+// BE-сторож включается сам, когда покупка исполнилась.
+//
+// Почему на сервере, а не в браузере при выставлении ордера: безубыток
+// считается от ИСПОЛНЕННОГО объёма и потраченной суммы, а у лимитки в момент
+// выставления не исполнено ничего — сторож с нулями молчал бы всегда. К тому
+// же лимитка может исполниться через сутки при закрытом браузере, а ради
+// этого алерт и заводился.
+//
+// Позиция считается по всем исполненным ордерам монеты, как в панели:
+// покупки прибавляют объём и потраченное, исполненные продажи вычитают.
+// Панель считает по ВЫБРАННЫМ ордерам, сервер — по всем; если часть ордеров
+// скрыта вручную, числа разойдутся, и это честнее, чем угадывать выбор.
+function positionFromOrders(orders, productId) {
+  let filled = 0, usd = 0;
+  for (const o of orders) {
+    if (o.product_id !== productId || o.status !== 'FILLED') continue;
+    const size = parseFloat(o.filled_size) || 0;
+    const val = Math.round((parseFloat(o.total_value) || 0) * 100) / 100;
+    if (o.side === 'BUY') { filled += size; usd += val; }
+    else if (size > 0) { filled -= size; usd -= val; }
+  }
+  return { filled, usd };
+}
+
+function autoFavorite(coin) {
+  try {
+    const cur = fs.existsSync(favoritesFile) ? JSON.parse(fs.readFileSync(favoritesFile, 'utf8')) : [];
+    if (!Array.isArray(cur) || cur.includes(coin)) return;
+    cur.push(coin);
+    fs.writeFileSync(favoritesFile, JSON.stringify(cur));
+    console.log('[auto-watch] ' + coin + ' добавлена в избранное');
+  } catch (e) { console.error('[auto-watch] избранное: ' + e.message); }
+}
+
+function autoBeWatch(coin, productId, orders) {
+  const s = loadSettings();
+  if (!(s.telegramToken && s.telegramChat)) {
+    console.log('[auto-watch] ' + coin + ': Telegram не настроен, сторож не поставлен');
+    return;
+  }
+  const { filled, usd } = positionFromOrders(orders, productId);
+  // Позиции нет — сторожить нечего. Так же снимаем сторож после того, как
+  // монету распродали: иначе он остался бы висеть на нуле.
+  if (!(filled > 0) || !(usd > 0)) {
+    if (beWatches.some(w => w.coin === coin)) {
+      beWatches = beWatches.filter(w => w.coin !== coin);
+      saveBeWatches();
+      console.log('[auto-watch] ' + coin + ': позиция закрыта, сторож снят');
+    }
+    return;
+  }
+  // Ставим заново даже если сторож уже был: докупка меняет и объём, и
+  // потраченное, а старый сторож считал бы безубыток по прежней позиции.
+  beWatches = beWatches.filter(w => w.coin !== coin);
+  beWatches.push({ coin, pair: productId, filled, usd, t: Date.now(), auto: true });
+  saveBeWatches();
+  console.log('[auto-watch] ' + coin + ': сторож безубытка поставлен (' + filled + ' на $' + usd.toFixed(2) + ')');
+}
+
 async function checkFilledOrders() {
   try {
     let orders;
@@ -2393,6 +2452,12 @@ async function checkFilledOrders() {
       console.log(`[fill-notify] ${o.product_id} ${o.side} filled, telegram=${sent}`);
       // Журнал сделок: фиксируем вход/выход с контекстом рынка на момент исполнения
       try { journalOnFill(o); } catch (e) { console.error('[journal] onFill', e.message); }
+      // Купили — монета в избранном, сторож безубытка включён. Продали —
+      // сторож пересчитан по остатку или снят, если вышли полностью.
+      try {
+        if (isBuy) autoFavorite(coin);
+        autoBeWatch(coin, o.product_id, orders);
+      } catch (e) { console.error('[auto-watch] ' + coin + ': ' + e.message); }
     }
     if (changed) {
       notifiedFills = notifiedFills.slice(-800);

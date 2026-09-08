@@ -1763,6 +1763,18 @@
       } catch {}
     }
 
+    // Монета, по которой выставлен ордер, сама попадает в избранное. BE-сторож
+    // здесь не ставится: у лимитки в этот момент ничего не исполнено, а
+    // безубыток считается от исполненного объёма и потраченной суммы. Его
+    // ставит сервер по факту исполнения — и это работает при закрытом
+    // браузере, ради чего алерт и заводился.
+    async function favoriteAfterOrder(coin) {
+      if (!coin || favoriteCoins.has(coin)) return;
+      favoriteCoins.add(coin);
+      try { localStorage.setItem(FAVORITE_COINS_KEY, JSON.stringify([...favoriteCoins])); } catch (e) { }
+      await saveFavoritesToServer();
+    }
+
     function toggleFavoriteCoin(coin) {
       const adding = !favoriteCoins.has(coin);
       if (adding) favoriteCoins.add(coin); else favoriteCoins.delete(coin);
@@ -2637,6 +2649,7 @@
       document.getElementById('btnBuy').textContent = 'BUY';
       if (r.success) {
         toast('Buy order placed!');
+        favoriteAfterOrder(coin);
         if (r.order_id && !selectedOrders.includes(r.order_id)) {
           selectedOrders.push(r.order_id);
           saveSelectedToServer();
@@ -2738,6 +2751,7 @@
         if (r && r.success) {
           ov.remove();
           toast('Куплено по рынку');
+          favoriteAfterOrder(coin);
           if (r.orderId && !selectedOrders.includes(r.orderId)) {
             selectedOrders.push(r.orderId);
             saveSelectedToServer();
@@ -2797,6 +2811,7 @@
       });
       if (r.success) {
         toast('Limit order placed!');
+        favoriteAfterOrder(coin);
         if (r.order_id && !selectedOrders.includes(r.order_id)) {
           selectedOrders.push(r.order_id);
           saveSelectedToServer();
@@ -4954,6 +4969,7 @@
             if (data.success && data.order?.success !== false) {
               const orderText = `Buy Order Placed: ${cryptoSize} ${coin} @ $${limitPrice}`;
               toast(orderText);
+              favoriteAfterOrder(coin);
               const newOrderId = data.order_id;
               if (newOrderId && !selectedOrders.includes(newOrderId)) {
                 selectedOrders.push(newOrderId);
