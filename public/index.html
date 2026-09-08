@@ -6209,6 +6209,7 @@
       <div class="main-right">
         <!-- Открытые paper-сделки — самое верхнее, за ними следят чаще всего -->
         <div id="tlPaperStrip" style="display:none;margin-bottom:14px;"></div>
+        <div id="entryScanBox" style="margin-bottom:14px;padding:9px 11px;border:1px solid rgba(0,229,160,0.30);border-radius:8px;background:rgba(0,229,160,0.04);"></div>
         <div id="microScalpPanel" style="margin-bottom:14px;">
           <div class="tl-head">
             <div class="tl-head-top">
@@ -6221,9 +6222,9 @@
               <button class="tl-btn" id="msLoopBtn" onclick="toggleMicroScalpLoop()" title="Непрерывный Telegram-поток быстрых Paper-сетапов. Отдельно от скальпа 2–6 часов.">🔁 Поток</button>
               <button class="tl-btn tl-refresh" id="msRefreshBtn" onclick="refreshMicroScalp()" title="Запустить новый скан быстрых Paper-сетапов">⟳ Скан</button>
               <span id="msTelegramLabel" style="font-size:10px;color:#bf5af2;background:rgba(191,90,242,.10);border:1px solid rgba(191,90,242,.3);border-radius:6px;padding:4px 7px;">Telegram: «до 8 ч · Paper» · без ордеров</span>
+              <button class="tl-btn" id="msFoldBtn" onclick="labFold('msBody', this)" title="Стенд, а не список для покупки: во всех перебранных настройках он измерен как убыточный. Покупать — из «Рейтинга отката» выше. Свёрнутый блок продолжает считаться на сервере.">развернуть</button>
             </div>
           </div>
-          <div id="entryScanBox" style="margin-bottom:10px;padding:8px 10px;border:1px solid rgba(0,229,160,0.30);border-radius:8px;background:rgba(0,229,160,0.04);"></div>
           <div id="msBody"><div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">Первый быстрый скан после запуска…</div></div>
         </div>
         <div id="scalpScanPanel" style="margin-bottom:14px;">
@@ -6254,10 +6255,39 @@
               <button class="tl-btn" id="tlScalpLoopBtn" onclick="toggleScalpLoop()"
                 title="Непрерывный Telegram-алерт. Работает, пока не выключишь, и шлёт каждый новый вход по гейту. По одной и той же монете повторное сообщение придёт только после того, как она подешевеет минимум на 1% и снова пройдёт гейт — иначе монета на границе условий слала бы сообщение каждую минуту. Входы приходят пачками, поэтому за один проход отправляется одно сообщение со списком, а не десяток подряд.">🔁 Поток</button>
               <button class="tl-btn" id="ssRefreshBtn" onclick="loadScalpScan(true)" title="Пересканировать рынок сейчас (~30 сек)"><span class="spin-icon">⟳</span> Скан</button>
+              <button class="tl-btn" id="ssFoldBtn" onclick="labFold('ssBody', this)" title="Стенд, а не список для покупки: во всех перебранных настройках он измерен как убыточный. Покупать — из «Рейтинга отката» выше. Свёрнутый блок продолжает считаться на сервере.">развернуть</button>
             </div>
           </div>
           <div id="ssBody"><div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">Первый скан через минуту после старта…</div></div>
         </div>
+        <!-- Свёрнутые лаборатории. Обе таблицы ниже измерены как убыточные во
+             всех перебранных настройках: это стенды, а не списки для покупки.
+             Держать их раскрытыми рядом с «Рейтингом отката» значит предлагать
+             выбор там, где выбора нет. Расчёты продолжают идти на сервере
+             независимо от того, свёрнут блок или нет. -->
+        <script>
+          function labFold(bodyId, btn) {
+            var body = document.getElementById(bodyId);
+            if (!body) return;
+            var open = body.style.display !== 'none';
+            open = !open;
+            body.style.display = open ? '' : 'none';
+            btn.textContent = open ? 'свернуть' : 'развернуть';
+            try { localStorage.setItem('fold_' + bodyId, open ? 'open' : 'shut'); } catch (e) { }
+          }
+          (function () {
+            var pairs = [['msBody', 'msFoldBtn'], ['ssBody', 'ssFoldBtn'],
+                         ['msBodyM', 'msFoldBtnM'], ['ssBodyM', 'ssFoldBtnM']];
+            for (var i = 0; i < pairs.length; i++) {
+              var body = document.getElementById(pairs[i][0]), btn = document.getElementById(pairs[i][1]);
+              if (!body || !btn) continue;
+              var open = false;
+              try { open = localStorage.getItem('fold_' + pairs[i][0]) === 'open'; } catch (e) { }
+              body.style.display = open ? '' : 'none';
+              btn.textContent = open ? 'свернуть' : 'развернуть';
+            }
+          })();
+        </script>
         <div id="profitPanel">
           <div class="profit-header">
             <span class="profit-title">Total Profit <span id="todayProfit" style="margin-left:8px;font-size:11px;font-weight:700;color:#00e5a0;background:rgba(0,229,160,0.1);padding:2px 8px;border-radius:8px;" title="Прибыль за сегодня — по времени фактического исполнения продажи, а не по моменту сохранения записи. Купил вчера, продал сегодня — считается сюда. Продал вчера, а кнопку нажал сегодня — не считается.">today: $0.00</span></span>
