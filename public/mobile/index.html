@@ -2630,14 +2630,25 @@
     // Позиция открытых лимитников в стакане (#1 = лучший bid/ask)
     async function updateOrderPositionsM() {
       const els = document.querySelectorAll('.order-pos[data-pair]');
-      if (!els.length) return;
+      const steps = document.querySelectorAll('[id^="sellStepInfoM_"]');
+      // Выходили сразу, если нет ни одного открытого лимитного ордера. Но
+      // строка стоп-лимита есть и без них, и ей нужен тот же стакан.
+      if (!els.length && !steps.length) return;
       const groups = {};
       els.forEach(el => { (groups[el.dataset.pair] = groups[el.dataset.pair] || []).push(el); });
+      // Позиция, купленная по рынку, элемента позиции в очереди не имеет —
+      // её пара в опрос не попадала, и строка не пересчитывалась вовсе.
+      steps.forEach(el => {
+        const pair = el.id.slice('sellStepInfoM_'.length) + '-USD';
+        if (!groups[pair]) groups[pair] = [];
+      });
       await Promise.all(Object.keys(groups).map(async pair => {
         try {
           const r = { ok: true, json: async () => await cbGet(`https://api.exchange.coinbase.com/products/${pair}/book?level=2`) };
           if (!r.ok) return;
           const book = await r.json();
+          // Стакан уже в руках — считаем по нему и цены стоп-лимита.
+          try { sellStepPaintFromBookM(pair, book); } catch { }
           groups[pair].forEach(el => {
             const lp = parseFloat(el.dataset.limit), side = el.dataset.side;
             const lv = side === 'SELL' ? (book.asks || []) : (book.bids || []);
@@ -3134,7 +3145,7 @@
             <button class="step-btn wide" onclick="recalcSellStepsM('${coin}','${pair}','${totalFilledStr}',${totalUSD})" title="Пересчитать по стакану">⟳</button>
             <button class="mon-sell-btn stop" onclick="sellStopInlineM('${pair}','${totalFilledStr}','${coin}')">SELL STOP</button>
           </div>
-          <div id="sellStepInfoM_${coin}" class="step-info">${_st.stop != null && _st.limit != null ? sellStepInfoHtmlM(_st.stop, _st.limit, totalFilledStr, totalUSD, false, false, 0, 0) : 'нажми ⟳'}</div>`;
+          <div id="sellStepInfoM_${coin}" class="step-info" data-size="${totalFilledStr}" data-cost="${totalUSD}">${_st.stop != null && _st.limit != null ? sellStepInfoHtmlM(_st.stop, _st.limit, totalFilledStr, totalUSD, false, false, 0, 0) : 'нажми ⟳'}</div>`;
         }
 
         html += `</div>`;
@@ -3807,6 +3818,28 @@
       const bids = (book.bids || []).map(b => parseFloat(b[0])).filter(x => x > 0);
       if (!asks.length || !bids.length) return null;
       return [asks[0], ...bids];
+    }
+
+    // Перерисовать строку стоп-лимита по уже полученному стакану. Своих
+    // запросов не делает: зовётся оттуда, где стакан уже получен для позиций
+    // в очереди. Без этого строка обновлялась только по нажатию, а цена шла —
+    // и числа на экране застывали, оставаясь на вид живыми.
+    function sellStepPaintFromBookM(pair, book) {
+      const coin = pair.replace('-USD', '');
+      const info = document.getElementById('sellStepInfoM_' + coin);
+      if (!info) return;
+      const asks = (book.asks || []).map(a => parseFloat(a[0])).filter(x => x > 0);
+      const bids = (book.bids || []).map(b => parseFloat(b[0])).filter(x => x > 0);
+      if (!asks.length || !bids.length) return;
+      const ladder = [asks[0], ...bids];
+      const st = sellStepsM(coin);
+      const px = sellStepPricesM(ladder, st.sd, st.ld);
+      if (!px) return;
+      sellStepsSaveM(coin, { limit: px.limit, stop: px.stop });
+      // Объём и потраченное берём с самой строки: пересчёт зовётся из общего
+      // цикла, который про монету ничего не знает.
+      const size = info.dataset.size, cost = info.dataset.cost;
+      info.innerHTML = sellStepInfoHtmlM(px.stop, px.limit, size, cost, px.stuck, px.short, px.levels, ladder[1]);
     }
 
     async function recalcSellStepsM(coin, pair, size, cost) {
