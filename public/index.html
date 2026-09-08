@@ -9862,6 +9862,117 @@
       };
     }
 
+
+    // Шаги стакана для продажи, по каждой монете отдельно.
+    //
+    // Лестница цен строится вниз от лучшего ASK: уровень 0 — сам лучший ask,
+    // дальше идут уровни bid. Ниже ask своих уровней нет, поэтому «на сколько
+    // шагов ниже ask» — это и есть путь по бидам, и он же путь к исполнению:
+    // чем ниже ставишь продажу, тем вероятнее её заберут.
+    //
+    //   лимит = лестница[шагов вниз от ask]
+    //   стоп  = лестница[шагов вниз − подъём стопа]   (то есть ВЫШЕ лимита)
+    //
+    // Стоп обязан быть выше лимита: он срабатывает при падении к нему, и
+    // только тогда в стакан уходит лимитка. Если стоп ниже лимита, ордер
+    // сработает уже после того, как цена прошла лимитную — и не исполнится.
+    const SELL_STEPS_KEY = 'sellSteps';
+    function sellStepsAll() {
+      try { return JSON.parse(safeStorage.getItem(SELL_STEPS_KEY) || '{}') || {}; } catch { return {}; }
+    }
+    function sellSteps(coin) {
+      const v = sellStepsAll()[coin] || {};
+      return {
+        ask: Number.isFinite(+v.ask) ? Math.max(0, Math.min(50, +v.ask)) : 1,
+        up: Number.isFinite(+v.up) ? Math.max(0, Math.min(50, +v.up)) : 1,
+        limit: v.limit == null ? null : +v.limit,
+        stop: v.stop == null ? null : +v.stop,
+      };
+    }
+    function sellStepsSave(coin, patch) {
+      const all = sellStepsAll();
+      all[coin] = { ...(all[coin] || {}), ...patch };
+      try { safeStorage.setItem(SELL_STEPS_KEY, JSON.stringify(all)); } catch { }
+    }
+
+    // Лестница цен вниз от лучшего ask
+    async function sellLadder(pair) {
+      const book = await cbGet('https://api.exchange.coinbase.com/products/' + pair + '/book?level=2');
+      const asks = (book.asks || []).map(a => parseFloat(a[0])).filter(p => p > 0);
+      const bids = (book.bids || []).map(b => parseFloat(b[0])).filter(p => p > 0);
+      if (!asks.length || !bids.length) return null;
+      return [asks[0], ...bids];
+    }
+
+    // Пересчёт по введённым шагам. Считается только по действию пользователя:
+    // тянуть стакан по всем монетам при каждой перерисовке списка ордеров
+    // значит выесть лимит биржи ради чисел, на которые никто не смотрит.
+    async function recalcSellSteps(coin, pair) {
+      const info = document.getElementById('sellStepInfo_' + coin);
+      const askEl = document.getElementById('sellStepAsk_' + coin);
+      const upEl = document.getElementById('sellStepUp_' + coin);
+      if (!askEl || !upEl) return;
+      const ask = Math.max(0, Math.min(50, parseInt(askEl.value, 10) || 0));
+      const up = Math.max(0, Math.min(50, parseInt(upEl.value, 10) || 0));
+      sellStepsSave(coin, { ask, up });
+      if (info) info.textContent = '…';
+      try {
+        const ladder = await sellLadder(pair);
+        if (!ladder) { if (info) info.textContent = 'стакан пуст'; return; }
+        const iLim = Math.min(ask, ladder.length - 1);
+        const iStop = Math.max(0, iLim - up);
+        const limit = ladder[iLim], stop = ladder[iStop];
+        sellStepsSave(coin, { limit, stop });
+        const pi = document.getElementById('limitSellPrice_' + coin);
+        if (pi) pi.value = String(limit);
+        if (info) {
+          // Вырожденный случай: подъём больше, чем шагов вниз, — стоп упирается
+          // в лучший ask и совпадает с лимитом. Молчать об этом нельзя.
+          const flat = iStop === iLim;
+          info.innerHTML = 'стоп <b style="color:var(--yellow);">$' + fmtPrice(stop) + '</b> · лимит <b>$' + fmtPrice(limit) + '</b>' +
+            (flat ? ' <span style="color:#ff6b6b;">стоп совпал с лимитом: подъём больше, чем шагов вниз</span>' : '') +
+            (ask > ladder.length - 1 ? ' <span style="color:var(--yellow);">стакан короче запроса</span>' : '');
+        }
+      } catch (e) {
+        if (info) info.textContent = 'стакан недоступен';
+      }
+    }
+
+    // Стоп-лимит по этим же числам, без окна: значения уже видны в строке.
+    async function sellStopInline(pair, size, coin) {
+      const st = sellSteps(coin);
+      if (!(st.limit > 0) || !(st.stop > 0)) {
+        showCustomAlert('Сначала задай шаги — цены ещё не посчитаны', true);
+        return;
+      }
+      if (st.stop < st.limit) {
+        showOrderError('Стоп ниже лимита', 'Стоп должен быть ВЫШЕ лимитной цены, иначе ордер сработает уже после того, как цена прошла лимитную, и не исполнится.');
+        return;
+      }
+      showConfirmModal('Стоп-лимит на всё: ' + coin,
+        'Стоп <strong>$' + fmtPrice(st.stop) + '</strong>, лимитка <strong>$' + fmtPrice(st.limit) + '</strong><br>' +
+        'Объём: <strong>' + fmtSize(parseFloat(size)) + ' ' + coin + '</strong><br>' +
+        '<span style="color:var(--t2);font-size:11px;">Стоп-лимит не гарантирует исполнения: если цена проскочит мимо лимитной, ордер останется висеть.</span>',
+        async () => {
+          try {
+            const r = await fetch('/create-sell-order', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ productId: pair, size, price: st.limit, orderType: 'stop_limit', stopPrice: st.stop })
+            });
+            const j = await r.json();
+            if (!j.success) { showOrderError('Стоп не поставлен', j.error || 'Биржа отклонила ордер'); return; }
+            showCustomAlert(coin + ': стоп-лимит поставлен на $' + fmtPrice(st.stop));
+            const id = j.order_id || (j.order && j.order.order_id);
+            if (id && !selectedOrders.includes(id)) {
+              selectedOrders.push(id);
+              safeStorage.setItem(SELECTED_ORDERS_KEY, JSON.stringify(selectedOrders));
+              saveSelectedToServer();
+            }
+            await loadLatestOrders();
+          } catch (e) { showOrderError('Стоп не поставлен', e.message); }
+        });
+    }
+
     async function sellAllLimit(productId, size, coin) {
       const priceInput = document.getElementById('limitSellPrice_' + coin);
       const price = priceInput ? priceInput.value.trim() : '';
@@ -12455,10 +12566,15 @@ Requirements:
         h += `<div class="coin-group" data-coin="${coin}" data-coin-pair="${pair}">
           <h4><span onclick="selectCoinForTrade('${coin}')" title="Выбрать ${coin} и открыть график 15m здесь" style="cursor:pointer;color:var(--blue);">${pair}</span>${todayBadge} <span onclick="toggleFavoriteCoin('${coin}')" title="${isFav ? 'Remove from favorites' : 'Add to favorites'}" style="cursor:pointer;font-size:16px;opacity:${isFav ? '1' : '0.25'};padding:0 6px;color:${isFav ? '#f5c518' : 'inherit'};">★</span><button class="select-coin-btn" onclick="selectCoinForBuy('${coin}')" title="Set for Buy">⬆</button></h4>
           <div class="balance">Selected: ${fmtSize(totalFilled)} ${coin} <span id="realBal_${coin}" style="color:var(--t2);font-size:10px;">(loading real balance...)</span> ${totalFilled > 0 ? `<button class="sell-all-btn" onclick="sellAllCoin('${pair}', '${totalFilled}', ${avgBuyPrice}, ${totalUSD})">SELL ALL</button> <button class="sell-all-btn mkt" onclick="sellAllMarket('${pair}', '${totalFilled}', '${coin}', ${totalUSD})" title="Продать всё ПО РЫНКУ. Диалог покажет реальную цену исполнения по стакану и прибыль, обновляя их каждую секунду.">SELL MKT</button> <button class="sell-all-btn stop" onclick="sellAllStopLimit('${pair}', '${totalFilled}', '${coin}', ${totalUSD})" title="Продать всё СТОП-ЛИМИТОМ. Стоп встаёт на выбранный уровень стакана ниже лучшего bid, лимитка — ещё на несколько уровней ниже, чтобы ордер успел исполниться. Диалог показывает получившиеся цены, проценты и деньги.">SELL STOP</button> <button id="bew_${coin}" onclick="toggleBeWatch('${coin}','${pair}',${totalFilled},${totalUSD})" title="Telegram-алерт, когда Limit P&L дойдёт до 0 (сработает один раз и выключится)" style="padding:3px 8px;border:1px solid ${_beWatches[coin] ? 'var(--yellow)' : 'rgba(255,255,255,0.25)'};border-radius:5px;background:${_beWatches[coin] ? 'rgba(245,197,24,0.15)' : 'transparent'};color:${_beWatches[coin] ? 'var(--yellow)' : '#889'};font-size:10px;font-weight:600;cursor:pointer;">🔔 BE${_beWatches[coin] ? ' ON' : ''}</button>` : ''} <button class="${btnClass}" onclick="saveGroupProfit('${coin}', ${groupProfit.toFixed(2)}, '${filledBuys.map(o => o.order_id).join(',')}', '${filledSells.map(o => o.order_id).join(',')}', ${buyCreatedDate ? `'${buyCreatedDate}'` : 'null'})" ${btnDisabled ? 'disabled' : ''}>${btnText}</button>
-          ${totalFilled > 0 ? `<span style="margin-left:10px;display:inline-flex;align-items:center;gap:4px;">
-            <input type="text" id="limitSellPrice_${coin}" placeholder="Limit price" style="width:90px;padding:3px 6px;background:var(--s3);border:1px solid var(--b1);border-radius:5px;color:var(--t0);font-family:'JetBrains Mono',monospace;font-size:11px;outline:none;" autocomplete="off">
+          ${totalFilled > 0 ? (() => { const _st = sellSteps(coin); return `<span style="margin-left:10px;display:inline-flex;align-items:center;gap:4px;flex-wrap:wrap;">
+            <input type="text" id="limitSellPrice_${coin}" placeholder="Limit price" value="${_st.limit != null ? _st.limit : ''}" style="width:90px;padding:3px 6px;background:var(--s3);border:1px solid var(--b1);border-radius:5px;color:var(--t0);font-family:'JetBrains Mono',monospace;font-size:11px;outline:none;" autocomplete="off">
             <button onclick="sellAllLimit('${pair}','${totalFilled}','${coin}')" style="padding:3px 10px;border:1px solid var(--yellow);border-radius:5px;background:transparent;color:var(--yellow);font-size:10px;font-weight:600;cursor:pointer;">Sell Limit</button>
-          </span>` : ''}</div>
+            <label style="font-size:9px;color:var(--t2);display:inline-flex;align-items:center;gap:3px;" title="На сколько шагов стакана НИЖЕ лучшего ask встанет лимитная цена. Уровень 0 — сам лучший ask, дальше идут уровни bid: чем ниже, тем вероятнее исполнение.">ask −<input type="number" id="sellStepAsk_${coin}" value="${_st.ask}" min="0" max="50" step="1" onchange="recalcSellSteps('${coin}','${pair}')" style="width:38px;padding:2px 4px;background:var(--s3);border:1px solid var(--b1);border-radius:4px;color:var(--t0);font-size:10px;"></label>
+            <label style="font-size:9px;color:var(--t2);display:inline-flex;align-items:center;gap:3px;" title="На сколько шагов стакана ВЫШЕ лимитной цены встанет стоп. Стоп обязан быть выше лимита: он срабатывает при падении к нему, и только тогда в стакан уходит лимитка.">стоп +<input type="number" id="sellStepUp_${coin}" value="${_st.up}" min="0" max="50" step="1" onchange="recalcSellSteps('${coin}','${pair}')" style="width:38px;padding:2px 4px;background:var(--s3);border:1px solid var(--b1);border-radius:4px;color:var(--t0);font-size:10px;"></label>
+            <button onclick="recalcSellSteps('${coin}','${pair}')" title="Пересчитать по текущему стакану" style="padding:3px 7px;border:1px solid var(--b1);border-radius:5px;background:transparent;color:var(--t2);font-size:10px;cursor:pointer;">⟳</button>
+            <button onclick="sellStopInline('${pair}','${totalFilled}','${coin}')" title="Поставить стоп-лимит на весь объём по этим числам" style="padding:3px 10px;border:1px solid #f5c518;border-radius:5px;background:rgba(245,197,24,0.12);color:#f5c518;font-size:10px;font-weight:700;cursor:pointer;">Sell Stop</button>
+            <span id="sellStepInfo_${coin}" style="font-size:9px;color:var(--t2);">${_st.stop != null && _st.limit != null ? `стоп $${fmtPrice(_st.stop)} · лимит $${fmtPrice(_st.limit)}` : 'нажми ⟳ или измени шаги'}</span>
+          </span>`; })() : ''}</div>
 
           <table class="profit-table" data-pair="${pair}" data-filled="${totalFilled}" data-usd="${totalUSD}" data-avgbuy="${avgBuyPrice}">
             <thead><tr><th>Num</th><th>Best Bid</th><th>Best Ask</th><th>Filled Size</th><th>USD</th><th>Avg Buy</th><th>Limit</th><th>Market</th></tr></thead>
