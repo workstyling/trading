@@ -1593,7 +1593,7 @@
     <div style="margin:4px 0 16px;border-bottom:1px solid var(--b1);padding-bottom:12px;">
     <div style="display:flex;align-items:center;gap:7px;margin-bottom:7px;">
       <span style="font-weight:700;color:#bf5af2;font-size:13px;">⚡ Быстрый скальп</span>
-      <span style="font-size:10px;color:var(--t2);">Paper · 15–60 мин</span>
+      <span style="font-size:10px;color:var(--t2);">Paper · до 8 ч · +2%/−2%</span>
       <span id="msAgoM" style="margin-left:auto;font-size:10px;color:var(--t2);">—</span>
     </div>
     <div class="tl-bar" style="margin-bottom:7px;">
@@ -1601,7 +1601,7 @@
       <button class="tl-btn" id="msLoopBtnM" onclick="toggleMicroScalpLoopM()" title="Непрерывный поток быстрых Paper-сетапов">🔁 Поток</button>
       <button class="tl-btn tl-refresh" id="msRefreshBtnM" onclick="refreshMicroScalpM()" title="Запустить новый быстрый скан">⟳ Скан</button>
     </div>
-    <div style="font-size:10px;color:#d8b4fe;background:rgba(191,90,242,.07);border:1px solid rgba(191,90,242,.24);border-radius:6px;padding:5px 7px;margin-bottom:7px;">Paper-исследование: нажатие на монету только подставляет её в поле покупки, ордер не создаётся. Telegram помечает его «15–60 мин · Paper».</div>
+    <div style="font-size:10px;color:#d8b4fe;background:rgba(191,90,242,.07);border:1px solid rgba(191,90,242,.24);border-radius:6px;padding:5px 7px;margin-bottom:7px;">Paper-исследование: нажатие на монету только подставляет её в поле покупки, ордер не создаётся. Telegram помечает его «до 8 ч · Paper».</div>
     <div id="entryScanBoxM" style="margin-bottom:8px;padding:7px 8px;border:1px solid rgba(0,229,160,0.30);border-radius:8px;background:rgba(0,229,160,0.04);"></div>
     <div id="msBodyM" style="color:var(--t2);font-size:11px;text-align:center;padding:8px;">Первый быстрый скан после запуска…</div>
     </div>
@@ -5832,7 +5832,7 @@
       if (!result || !result.success) { toast((result && result.error) || 'Ошибка', 'error'); return; }
       _microScalpWatchM = !!result.armed;
       _paintMicroScalpWatchBtnM();
-      if (_microScalpWatchM) toast('Быстрый Paper-скальп: Telegram «15–60 мин · Paper», без реального ордера');
+      if (_microScalpWatchM) toast('Быстрый Paper-скальп: Telegram «до 8 ч · Paper», без реального ордера');
     }
     async function toggleMicroScalpLoopM() {
       const result = await api('/api/micro-scalp-watch-loop', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enable: !_microScalpLoopM }) });
@@ -6169,39 +6169,54 @@
           box.innerHTML = head + '<div style="color:var(--t2);font-size:11px;">Первый скан после запуска…</div>';
           return;
         }
+        // Таблица с постоянными колонками, а не список строк переменной формы.
+        // Прежде подпись «откат 0.44%, RSI 41» занимала столько места, сколько
+        // занимала, и числа при каждом обновлении оказывались в новом месте.
+        // Здесь они всегда в одном столбце.
+        const price = v => v == null ? '—' : v < 0.001 ? v.toFixed(8) : v < 1 ? v.toFixed(5) : v < 100 ? v.toFixed(3) : v.toFixed(2);
+        const head2 =
+          '<tr style="color:var(--t2);font-size:9px;text-transform:uppercase;letter-spacing:0.4px;">' +
+          '<th style="text-align:left;padding:3px 6px;">монета</th>' +
+          '<th style="text-align:right;padding:3px 6px;" title="Доля случаев, когда цена возвращалась к входу за час. Главный столбец: по нему список и упорядочен.">возврат</th>' +
+          '<th style="text-align:right;padding:3px 6px;" title="Насколько ниже суточного максимума. Именно эта глубина и определяет возврат.">за сутки</th>' +
+          '<th style="text-align:right;padding:3px 6px;" title="Откат от получасового максимума">откат</th>' +
+          '<th style="text-align:right;padding:3px 6px;">RSI</th>' +
+          '<th style="text-align:right;padding:3px 6px;" title="Балл входа. Возврат он не предсказывает, но убыток сокращает.">вход</th>' +
+          '<th style="text-align:right;padding:3px 6px;">в списке</th></tr>';
         const cell = (x) => {
           const e = x.entryValue;
           const col = e.pct >= ENTRY_MIN_M ? '#00e5a0' : e.pct >= 20 ? '#f5c518' : '#7c8698';
-          // Одинарные кавычки внутри двойных: JSON.stringify рвал атрибут.
-          const safe = String(x.coin).replace(/[^A-Z0-9]/gi, '');
           const rec = x.recovery;
           const recCol = !rec ? 'var(--t2)' : rec.hour >= 76 ? '#00e5a0' : rec.hour >= 63 ? '#f5c518' : '#f5843a';
-          return '<div onclick="selectCoinForTradeM(\'' + safe + '\')" title="' +
+          // Одинарные кавычки внутри двойных: JSON.stringify рвал атрибут.
+          const safe = String(x.coin).replace(/[^A-Z0-9]/gi, '');
+          const held = x.inListMin == null ? null
+            : x.inListMin >= 120 ? Math.round(x.inListMin / 60) + ' ч'
+              : x.inListMin + ' мин';
+          const num = (v, c, w) => '<td style="text-align:right;padding:4px 6px;color:' + (c || 'var(--t1)') +
+            ';font-size:11px;font-variant-numeric:tabular-nums;' + (w ? 'font-weight:800;' : '') + '">' + v + '</td>';
+          return '<tr onclick="selectCoinForTradeM(\'' + safe + '\')" title="' +
             'Выбрать ' + safe + ' для покупки и открыть график' +
-            String.fromCharCode(10) + 'откат ' + (x.pullbackPct == null ? '—' : x.pullbackPct + '%') + ', RSI ' + Math.round(x.rsi || 0) +
-            (x.spreadPct != null ? ', спред ' + x.spreadPct + '%' : '') +
-            (x.dayFallPct != null ? String.fromCharCode(10) + 'от суточного максимума ниже на ' + x.dayFallPct + '%' : '') +
             (rec ? String.fromCharCode(10) + 'на такой глубине цена возвращалась к входу за час в ' + rec.hour +
               '% случаев, зависала в ' + rec.stuck + '% (15 215 замеров, только монеты из списка)' : '') +
+            (x.spreadPct != null ? String.fromCharCode(10) + 'спред ' + x.spreadPct + '%' : '') +
             (x.runup ? String.fromCharCode(10) + 'выросла от суточного минимума на ' + x.runup.runup +
-              '% — у такого разгона возврат за час случался в ' + x.runup.hour +
-              '% случаев (15 215 замеров за 25 дней). Разгон возврату не мешает, а помогает.' : '') + '"' +
-            ' style="cursor:pointer;display:flex;justify-content:space-between;gap:8px;padding:4px 6px;border-radius:6px;' +
-            (e.pct >= ENTRY_MIN_M ? 'background:rgba(0,229,160,0.10);' : '') + '">' +
-            '<span style="color:var(--blue);font-weight:700;font-size:11px;min-width:52px;">' + x.coin + '</span>' +
-            '<span style="color:var(--t2);font-size:10px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + e.why + '</span>' +
-            (x.inListMin > 90
-              ? '<span title="Держится в списке уже ' + (x.inListMin >= 120 ? Math.round(x.inListMin / 60) + ' ч' : x.inListMin + ' мин') +
-                '. Это не новый сигнал, а одно затянувшееся движение — покупать её повторно значит наращивать одну позицию, а не открывать новую."' +
-                ' style="color:#f5843a;font-size:9px;font-weight:700;white-space:nowrap;">' +
-                (x.inListMin >= 120 ? Math.round(x.inListMin / 60) + 'ч' : x.inListMin + 'м') + ' в списке</span>'
-              : '') +
-            (rec ? '<span style="color:' + recCol + ';font-size:10px;font-weight:700;white-space:nowrap;" >↩ ' + rec.hour + '%</span>' : '') +
-            '<span style="color:' + col + ';font-weight:800;font-size:11px;min-width:34px;text-align:right;">' + e.pct + '%</span></div>';
+              '% — разгон возврату помогает, а не мешает' : '') +
+            (x.inListMin > 90 ? String.fromCharCode(10) +
+              'висит в списке долго: это не новый сигнал, а одно затянувшееся движение' : '') + '"' +
+            ' style="cursor:pointer;' + (e.pct >= ENTRY_MIN_M ? 'background:rgba(0,229,160,0.10);' : '') + '">' +
+            '<td style="padding:4px 6px;"><span style="color:var(--blue);font-weight:700;font-size:11px;">' + x.coin +
+            '</span><br><span style="color:var(--t2);font-size:9px;">$' + price(x.price) + '</span></td>' +
+            num(rec ? '↩ ' + rec.hour + '%' : '—', recCol, true) +
+            num(x.dayFallPct == null ? '—' : '−' + x.dayFallPct + '%', 'var(--t2)') +
+            num(x.pullbackPct == null ? '—' : x.pullbackPct + '%', 'var(--t2)') +
+            num(x.rsi == null ? '—' : Math.round(x.rsi), 'var(--t2)') +
+            num(e.pct + '%', col, true) +
+            num(held || '—', x.inListMin > 90 ? '#f5843a' : 'var(--t2)') + '</tr>';
         };
         box.innerHTML = head +
           (good.length
-            ? good.slice(0, 6).map(cell).join('') +
+            ? '<table style="width:100%;border-collapse:collapse;"><thead>' + head2 + '</thead><tbody>' + good.slice(0, 8).map(cell).join('') + '</tbody></table>' +
               '<div style="color:var(--t2);font-size:10px;margin-top:5px;line-height:1.4;">' +
               'Порядок — по вероятности ВОЗВРАТА (↩), а не по баллу: измерено, что внутри списка сам ВХОД возврат не предсказывает ' +
               '(66.9% против 68.4%, разница неотличима), а глубина падения даёт разброс в 18 пунктов. ' +
@@ -6213,7 +6228,7 @@
               'вперёд измерено +0.274 п.п. против контроля при погрешности ±0.127, это больше круга в 0.200%. ' +
               'Замер сделан ' + (j.recoveryMeasuredAt || '—') + ' на растущем рынке; на затяжном падении эти доли надо перемерять.</div>' +
             '<div id="entryPaperM" style="margin-top:6px;padding-top:5px;border-top:1px solid var(--b1);font-size:10px;color:var(--t2);"></div>'
-            : rows.slice(0, 3).map(cell).join('') +
+            : '<table style="width:100%;border-collapse:collapse;"><thead>' + head2 + '</thead><tbody>' + rows.slice(0, 3).map(cell).join('') + '</tbody></table>' +
               '<div style="color:var(--t2);font-size:10px;margin-top:5px;">Порог не взял никто — показаны ближайшие.</div>');
 
         // Форвардный журнал: обещанное панелью против случившегося. Пока

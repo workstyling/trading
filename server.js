@@ -4639,10 +4639,33 @@ const MICRO_TICK_INTERVAL_MS = 30 * 1000;
 // Он не является условием входа и не меняет его отпечаток: текущая когорта
 // должна спокойно дожить до осмысленной независимой выборки.
 const MICRO_SCALP_MIN_CLOSED_BURSTS = 15;
+// Цель и стоп разведены до 2%, удержание — до восьми часов.
+//
+// Прежние +1/−1 за час перебирались поминутно по реальным свечам: все краевые
+// средние отрицательны, лучшая клетка не отличима от нуля. Воспроизведение
+// входа на 30 монетах за 25 дней даёт то же самое, и показывает, где предел:
+//
+//   +1%  / −1%  /  60 мин   n=3162   −0.169% ±0.014
+//   +1%  / −1%  / 240 мин   n=2717   −0.165% ±0.018
+//   +1.5%/ −1.5%/ 240 мин   n=2429   −0.112% ±0.027
+//   +2%  / −2%  / 480 мин   n=2001   −0.036% ±0.040
+//
+// Убыток сокращается вчетверо, и разница значима. Но прибыли тут нет:
+// −0.036% ±0.040 неотличимо от нуля, а модель считает по 0.075% с каждой
+// стороны — при настоящем входе маркетом (0.150%) лучший вариант даёт −0.111%.
+// Это правка «терять меньше», а не «начать зарабатывать», и выдавать её за
+// второе нельзя.
+//
+// Проверялась и другая мысль — потребовать глубокого суточного падения, того
+// самого признака, что отлично предсказывает возврат в «Рейтинге отката». Она
+// сделала ХУЖЕ: −0.194% при пороге 3% и −0.197% при 6%. Гейт уже требует
+// отскочившего RSI и растущего стека EMA; монета, вдобавок упавшая на 6% за
+// сутки, — редкое и плохое сочетание. Признак, работающий для «дождусь ли
+// возврата», к «возьму ли +1% за час» не переносится.
 const MICRO_EXECUTION = Object.freeze({
-  targetPct: 1.0,
-  slPct: 1.0,
-  maxHoldMin: 60,
+  targetPct: 2.0,
+  slPct: 2.0,
+  maxHoldMin: 480,
   executionModel: 'ask-entry / limit-target / observed-bid-stop-time-v1',
 });
 function microScalpFingerprint() {
@@ -6871,7 +6894,7 @@ function microScalpBrief(payload) {
     `- ${trade.pair || trade.coin}: OPEN, ${formatPct(trade.pnlPct)}, age ${Math.max(0, Math.round((Date.now() - trade.openedAt) / 60000))} min`
   );
   return [
-    '## B. FAST SCALP PAPER LAB (15–60 MINUTES)',
+    '## B. FAST SCALP PAPER LAB (UP TO 8 HOURS)',
     'This is a separate paper-only experiment. It never places real orders. Do not mix its evidence, thresholds, or conclusions with the 2–6 hour scalp gate.',
     `Cohort fingerprint: ${payload.cohort && payload.cohort.fingerprint || 'unknown'}; state: ${payload.entryBlocked ? 'ENTRY BLOCKED' : 'collecting'}; running: ${payload.hoursRunning ?? 'n/a'}h.`,
     `Execution: target +${execution.targetPct ?? 'n/a'}%, stop -${execution.slPct ?? 'n/a'}%, time limit ${execution.maxHoldMin ?? 'n/a'} min, limit fee ${Number.isFinite(execution.feePct) ? Math.round(execution.feePct * 1e5) / 1e3 : 'n/a'}%.`,
@@ -7049,7 +7072,7 @@ function microScalpAlertPool() {
 
 function microScalpAlertText(candidate) {
   const checks = Array.isArray(candidate.checks) ? candidate.checks : [];
-  return '⚡ <b>БЫСТРЫЙ СКАЛЬП · 15–60 МИН · PAPER</b> — <b>' + escTg(candidate.pair) + '</b>' + NL +
+  return '⚡ <b>БЫСТРЫЙ СКАЛЬП · ДО 8 Ч · PAPER</b> — <b>' + escTg(candidate.pair) + '</b>' + NL +
     'Рейтинг <b>' + candidate.score + '/100</b> · все условия Paper-сетапа выполнены' + NL +
     '━━━━━━━━━━━━━━━━━━' + NL +
     checks.map(check => (check.ok ? '✅ ' : '❌ ') + escTg(check.k) + ': ' + escTg(check.v)).join(NL) + NL +
@@ -7062,8 +7085,8 @@ function microScalpAlertText(candidate) {
 
 function microScalpLoopText(list, total) {
   const head = list.length === 1
-    ? '⚡ <b>БЫСТРЫЙ СКАЛЬП · 15–60 МИН · PAPER</b> — <b>' + escTg(list[0].pair) + '</b>'
-    : '⚡ <b>БЫСТРЫЙ СКАЛЬП · 15–60 МИН · PAPER: сетапов ' + list.length + '</b>';
+    ? '⚡ <b>БЫСТРЫЙ СКАЛЬП · ДО 8 Ч · PAPER</b> — <b>' + escTg(list[0].pair) + '</b>'
+    : '⚡ <b>БЫСТРЫЙ СКАЛЬП · ДО 8 Ч · PAPER: сетапов ' + list.length + '</b>';
   const rows = list.map(candidate => {
     const again = microScalpSent[candidate.coin] ? ' <i>(повторно после отката)</i>' : '';
     return '<b>' + escTg(candidate.pair) + '</b> — <b>' + candidate.score + '/100</b>' + again + NL +
@@ -7406,7 +7429,7 @@ app.post('/api/advise-sell', async (req, res) => {
         : 'coin is not in the current 2-6h scan',
       fastGate: micro
         ? { score: micro.score, conditionsMet: micro.passed + '/' + (micro.checks || []).length, readinessPct: micro.readiness && micro.readiness.pct }
-        : 'coin is not in the current 15-60min scan',
+        : 'coin is not in the current fast-scalp scan',
     }
     : {
       ...common,

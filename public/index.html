@@ -6213,14 +6213,14 @@
           <div class="tl-head">
             <div class="tl-head-top">
               <span class="tl-name" style="color:#bf5af2;">⚡ Быстрый скальп</span>
-              <span class="tl-sub">Paper · 15–60 мин · цель +1% · стоп −1%</span>
+              <span class="tl-sub">Paper · до 8 ч · цель +2% · стоп −2%</span>
               <span class="tl-status"><span id="msAgo">—</span></span>
             </div>
             <div class="tl-bar">
               <button class="tl-btn" id="msWatchBtn" onclick="toggleMicroScalpWatch()" title="Одноразовый Telegram-алерт для быстрого Paper-скальпа: после первого сетапа выключится">⚡ Алерт</button>
               <button class="tl-btn" id="msLoopBtn" onclick="toggleMicroScalpLoop()" title="Непрерывный Telegram-поток быстрых Paper-сетапов. Отдельно от скальпа 2–6 часов.">🔁 Поток</button>
               <button class="tl-btn tl-refresh" id="msRefreshBtn" onclick="refreshMicroScalp()" title="Запустить новый скан быстрых Paper-сетапов">⟳ Скан</button>
-              <span id="msTelegramLabel" style="font-size:10px;color:#bf5af2;background:rgba(191,90,242,.10);border:1px solid rgba(191,90,242,.3);border-radius:6px;padding:4px 7px;">Telegram: «15–60 мин · Paper» · без ордеров</span>
+              <span id="msTelegramLabel" style="font-size:10px;color:#bf5af2;background:rgba(191,90,242,.10);border:1px solid rgba(191,90,242,.3);border-radius:6px;padding:4px 7px;">Telegram: «до 8 ч · Paper» · без ордеров</span>
             </div>
           </div>
           <div id="entryScanBox" style="margin-bottom:10px;padding:8px 10px;border:1px solid rgba(0,229,160,0.30);border-radius:8px;background:rgba(0,229,160,0.04);"></div>
@@ -6365,7 +6365,7 @@
         <div id="microLabSection" style="margin-bottom:22px;padding-bottom:20px;border-bottom:1px solid rgba(255,255,255,0.08);">
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
             <span style="font-size:13px;font-weight:700;color:#bf5af2;">⚡ Быстрый скальп — Paper-лаборатория</span>
-            <span style="font-size:11px;color:var(--t2);">отдельная стратегия · горизонт 15–60 минут · без реальных ордеров</span>
+            <span style="font-size:11px;color:var(--t2);">отдельная стратегия · горизонт до 8 часов · без реальных ордеров</span>
           </div>
           <div style="color:var(--t2);font-size:11.5px;margin-bottom:10px;max-width:78ch;">Журнал полностью отделён от основного скальп-гейта: свой отпечаток стратегии, цель, стоп, сделки и статистика. Сигналы служат только для сбора независимых Paper-данных.</div>
           <div id="microLabStats"></div>
@@ -6389,7 +6389,7 @@
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
             <span style="font-size:12px;font-weight:600;color:var(--t0);">Готовое общее задание для Claude Code</span>
             <button class="tg-refresh-btn" id="labCopyBtn" onclick="copyLabBrief()">📋 Скопировать</button>
-            <span style="font-size:10.5px;color:#667;">один клик: скальп 2–6 ч + быстрый Paper 15–60 мин</span>
+            <span style="font-size:10.5px;color:#667;">один клик: скальп 2–6 ч + быстрый Paper до 8 ч</span>
             <span id="labGens" style="font-size:10.5px;color:#667;"></span>
           </div>
           <pre id="labBrief" style="white-space:pre-wrap;word-break:break-word;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.07);border-radius:8px;padding:12px 14px;font-size:11px;line-height:1.55;color:var(--t1);max-height:340px;overflow:auto;margin:0;font-family:'JetBrains Mono',monospace;">Загрузка…</pre>
@@ -14735,39 +14735,54 @@ Requirements:
           box.innerHTML = head + '<div style="color:var(--t2);font-size:11px;">Первый скан после запуска…</div>';
           return;
         }
+        // Таблица с постоянными колонками, а не список строк переменной формы.
+        // Прежде подпись «откат 0.44%, RSI 41» занимала столько места, сколько
+        // занимала, и числа при каждом обновлении оказывались в новом месте.
+        // Здесь они всегда в одном столбце.
+        const price = v => v == null ? '—' : v < 0.001 ? v.toFixed(8) : v < 1 ? v.toFixed(5) : v < 100 ? v.toFixed(3) : v.toFixed(2);
+        const head2 =
+          '<tr style="color:var(--t2);font-size:9px;text-transform:uppercase;letter-spacing:0.4px;">' +
+          '<th style="text-align:left;padding:3px 6px;">монета</th>' +
+          '<th style="text-align:right;padding:3px 6px;" title="Доля случаев, когда цена возвращалась к входу за час. Главный столбец: по нему список и упорядочен.">возврат</th>' +
+          '<th style="text-align:right;padding:3px 6px;" title="Насколько ниже суточного максимума. Именно эта глубина и определяет возврат.">за сутки</th>' +
+          '<th style="text-align:right;padding:3px 6px;" title="Откат от получасового максимума">откат</th>' +
+          '<th style="text-align:right;padding:3px 6px;">RSI</th>' +
+          '<th style="text-align:right;padding:3px 6px;" title="Балл входа. Возврат он не предсказывает, но убыток сокращает.">вход</th>' +
+          '<th style="text-align:right;padding:3px 6px;">в списке</th></tr>';
         const cell = (x) => {
           const e = x.entryValue;
           const col = e.pct >= ENTRY_MIN ? '#00e5a0' : e.pct >= 20 ? '#f5c518' : '#7c8698';
-          // Одинарные кавычки внутри двойных: JSON.stringify рвал атрибут.
-          const safe = String(x.coin).replace(/[^A-Z0-9]/gi, '');
           const rec = x.recovery;
           const recCol = !rec ? 'var(--t2)' : rec.hour >= 76 ? '#00e5a0' : rec.hour >= 63 ? '#f5c518' : '#f5843a';
-          return '<div onclick="selectCoinForTrade(\'' + safe + '\')" title="' +
+          // Одинарные кавычки внутри двойных: JSON.stringify рвал атрибут.
+          const safe = String(x.coin).replace(/[^A-Z0-9]/gi, '');
+          const held = x.inListMin == null ? null
+            : x.inListMin >= 120 ? Math.round(x.inListMin / 60) + ' ч'
+              : x.inListMin + ' мин';
+          const num = (v, c, w) => '<td style="text-align:right;padding:4px 6px;color:' + (c || 'var(--t1)') +
+            ';font-size:11px;font-variant-numeric:tabular-nums;' + (w ? 'font-weight:800;' : '') + '">' + v + '</td>';
+          return '<tr onclick="selectCoinForTrade(\'' + safe + '\')" title="' +
             'Выбрать ' + safe + ' для покупки и открыть график' +
-            String.fromCharCode(10) + 'откат ' + (x.pullbackPct == null ? '—' : x.pullbackPct + '%') + ', RSI ' + Math.round(x.rsi || 0) +
-            (x.spreadPct != null ? ', спред ' + x.spreadPct + '%' : '') +
-            (x.dayFallPct != null ? String.fromCharCode(10) + 'от суточного максимума ниже на ' + x.dayFallPct + '%' : '') +
             (rec ? String.fromCharCode(10) + 'на такой глубине цена возвращалась к входу за час в ' + rec.hour +
               '% случаев, зависала в ' + rec.stuck + '% (15 215 замеров, только монеты из списка)' : '') +
+            (x.spreadPct != null ? String.fromCharCode(10) + 'спред ' + x.spreadPct + '%' : '') +
             (x.runup ? String.fromCharCode(10) + 'выросла от суточного минимума на ' + x.runup.runup +
-              '% — у такого разгона возврат за час случался в ' + x.runup.hour +
-              '% случаев (15 215 замеров за 25 дней). Разгон возврату не мешает, а помогает.' : '') + '"' +
-            ' style="cursor:pointer;display:flex;justify-content:space-between;gap:8px;padding:4px 6px;border-radius:6px;' +
-            (e.pct >= ENTRY_MIN ? 'background:rgba(0,229,160,0.10);' : '') + '">' +
-            '<span style="color:var(--blue);font-weight:700;font-size:11px;min-width:52px;">' + x.coin + '</span>' +
-            '<span style="color:var(--t2);font-size:10px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + e.why + '</span>' +
-            (x.inListMin > 90
-              ? '<span title="Держится в списке уже ' + (x.inListMin >= 120 ? Math.round(x.inListMin / 60) + ' ч' : x.inListMin + ' мин') +
-                '. Это не новый сигнал, а одно затянувшееся движение — покупать её повторно значит наращивать одну позицию, а не открывать новую."' +
-                ' style="color:#f5843a;font-size:9px;font-weight:700;white-space:nowrap;">' +
-                (x.inListMin >= 120 ? Math.round(x.inListMin / 60) + 'ч' : x.inListMin + 'м') + ' в списке</span>'
-              : '') +
-            (rec ? '<span style="color:' + recCol + ';font-size:10px;font-weight:700;white-space:nowrap;" >↩ ' + rec.hour + '%</span>' : '') +
-            '<span style="color:' + col + ';font-weight:800;font-size:11px;min-width:34px;text-align:right;">' + e.pct + '%</span></div>';
+              '% — разгон возврату помогает, а не мешает' : '') +
+            (x.inListMin > 90 ? String.fromCharCode(10) +
+              'висит в списке долго: это не новый сигнал, а одно затянувшееся движение' : '') + '"' +
+            ' style="cursor:pointer;' + (e.pct >= ENTRY_MIN ? 'background:rgba(0,229,160,0.10);' : '') + '">' +
+            '<td style="padding:4px 6px;"><span style="color:var(--blue);font-weight:700;font-size:11px;">' + x.coin +
+            '</span><br><span style="color:var(--t2);font-size:9px;">$' + price(x.price) + '</span></td>' +
+            num(rec ? '↩ ' + rec.hour + '%' : '—', recCol, true) +
+            num(x.dayFallPct == null ? '—' : '−' + x.dayFallPct + '%', 'var(--t2)') +
+            num(x.pullbackPct == null ? '—' : x.pullbackPct + '%', 'var(--t2)') +
+            num(x.rsi == null ? '—' : Math.round(x.rsi), 'var(--t2)') +
+            num(e.pct + '%', col, true) +
+            num(held || '—', x.inListMin > 90 ? '#f5843a' : 'var(--t2)') + '</tr>';
         };
         box.innerHTML = head +
           (good.length
-            ? good.slice(0, 6).map(cell).join('') +
+            ? '<table style="width:100%;border-collapse:collapse;"><thead>' + head2 + '</thead><tbody>' + good.slice(0, 8).map(cell).join('') + '</tbody></table>' +
               '<div style="color:var(--t2);font-size:10px;margin-top:5px;line-height:1.4;">' +
               'Порядок — по вероятности ВОЗВРАТА (↩), а не по баллу: измерено, что внутри списка сам ВХОД возврат не предсказывает ' +
               '(66.9% против 68.4%, разница неотличима), а глубина падения даёт разброс в 18 пунктов. ' +
@@ -14779,7 +14794,7 @@ Requirements:
               'вперёд измерено +0.274 п.п. против контроля при погрешности ±0.127, это больше круга в 0.200%. ' +
               'Замер сделан ' + (j.recoveryMeasuredAt || '—') + ' на растущем рынке; на затяжном падении эти доли надо перемерять.</div>' +
             '<div id="entryPaper" style="margin-top:6px;padding-top:5px;border-top:1px solid var(--b1);font-size:10px;color:var(--t2);"></div>'
-            : rows.slice(0, 3).map(cell).join('') +
+            : '<table style="width:100%;border-collapse:collapse;"><thead>' + head2 + '</thead><tbody>' + rows.slice(0, 3).map(cell).join('') + '</tbody></table>' +
               '<div style="color:var(--t2);font-size:10px;margin-top:5px;">Порог не взял никто — показаны ближайшие.</div>');
 
         // Форвардный журнал: обещанное панелью против случившегося. Пока
@@ -14861,7 +14876,7 @@ Requirements:
         }
         const price = value => value == null ? '—' : value < 0.001 ? value.toFixed(8) : value < 1 ? value.toFixed(5) : value < 100 ? value.toFixed(3) : value.toFixed(2);
         const volume = value => value >= 1e6 ? '$' + (value / 1e6).toFixed(1) + 'M' : '$' + Math.round((value || 0) / 1e3) + 'K';
-        body.innerHTML = `<div style="padding:6px 8px;margin-bottom:6px;border-radius:6px;font-size:10px;line-height:1.35;background:rgba(191,90,242,.07);border:1px solid rgba(191,90,242,.24);color:#d8b4fe;">Paper-лаборатория: условия и выходы пока не подтверждены историей. Нажатие на монету подставляет её в покупку, открывает Trade и график 15m — ордер не создаётся. Telegram всегда помечает эти сигналы как «15–60 мин · Paper».</div>
+        body.innerHTML = `<div style="padding:6px 8px;margin-bottom:6px;border-radius:6px;font-size:10px;line-height:1.35;background:rgba(191,90,242,.07);border:1px solid rgba(191,90,242,.24);color:#d8b4fe;">Paper-лаборатория: условия и выходы пока не подтверждены историей. Нажатие на монету подставляет её в покупку, открывает Trade и график 15m — ордер не создаётся. Telegram всегда помечает эти сигналы как «до 8 ч · Paper».</div>
           <table class="tg-table" style="width:100%;"><thead><tr><th>COIN</th><th>SCORE</th><th title="Насколько близко до входа: сколько условий выполнено и насколько далеко ближайшее невыполненное от своего порога. Это не вероятность прибыли — её пока не на чем считать.">ГОТОВ</th><th title="Сила сетапа: условия взвешены по важности, а не посчитаны поштучно. Ядро — падение с разворотом внутри растущего тренда — весит 70 из 100 (RSI из отката 30, сам откат 20, тренд EMA 20). Остальное — издержки и фон: спред 12, ликвидность 8, объём 6, режим BTC 4. Второй строкой — только ядро. Это НЕ вероятность прибыли: связь силы с исходом не измерялась.">СИЛА</th><th>СЕТАП</th><th>RSI</th><th>ОТКАТ</th><th>VOL 24H</th></tr></thead><tbody>${rows.map(item => {
             const setup = item.pass ? 'PAPER' : item.tag === 'NEAR' ? 'БЛИЗКО' : 'ЖДАТЬ';
             const color = item.pass ? '#bf5af2' : item.tag === 'NEAR' ? '#f5c518' : '#7c8698';
@@ -14907,7 +14922,7 @@ Requirements:
         if (!result.success) { showCustomAlert(result.error || 'Ошибка', true); return; }
         _microScalpWatch = !!result.armed;
         _paintMicroScalpWatchBtn();
-        if (_microScalpWatch) showCustomAlert('Слежу за быстрым Paper-скальпом. Telegram пометит сигнал «15–60 мин · Paper»; реальный ордер не ставится.');
+        if (_microScalpWatch) showCustomAlert('Слежу за быстрым Paper-скальпом. Telegram пометит сигнал «до 8 ч · Paper»; реальный ордер не ставится.');
       } catch (error) { showCustomAlert('Ошибка: ' + error.message, true); }
     }
     async function toggleMicroScalpLoop() {
@@ -14921,7 +14936,7 @@ Requirements:
         _microScalpLoop = !!result.loop;
         _paintMicroScalpLoopBtn();
         showCustomAlert(_microScalpLoop
-          ? 'Поток быстрых Paper-сетапов включён. В Telegram каждый будет помечен «15–60 мин · Paper». Реальные ордера не ставятся.'
+          ? 'Поток быстрых Paper-сетапов включён. В Telegram каждый будет помечен «до 8 ч · Paper». Реальные ордера не ставятся.'
           : 'Поток быстрых Paper-сетапов выключен.');
       } catch (error) { showCustomAlert('Ошибка: ' + error.message, true); }
     }
