@@ -153,6 +153,7 @@
       border: 1px solid rgba(245, 158, 11, 0.55);
       color: #f5a524;
     }
+    .mon-sell-btn.stop { background: linear-gradient(135deg,#f5c518,#d99e00); color:#1a1a1a; }
 
     .btn-mkt {
       background: rgba(245, 158, 11, 0.14);
@@ -3054,6 +3055,7 @@
           html += `<div style="margin-top:8px;display:flex;gap:6px;">
             <button class="mon-sell-btn all" style="flex:1;padding:10px;" onclick="sellAtAsk('${pair}','${totalFilledStr}',${avgBuy},${totalUSD})">SELL ALL ${coin}</button>
             <button class="mon-sell-btn mkt" style="flex:0 0 96px;padding:10px;" onclick="sellAllMarketM('${pair}','${totalFilledStr}','${coin}',${totalUSD})">SELL MKT</button>
+            <button class="mon-sell-btn stop" style="flex:0 0 96px;padding:10px;" onclick="sellAllStopLimitM('${pair}','${totalFilledStr}','${coin}',${totalUSD})" title="Стоп-лимит: стоп на выбранном уровне стакана, лимитка ниже него">SELL STOP</button>
           </div>`;
         }
 
@@ -3658,6 +3660,115 @@
         if (left <= 0) break;
       }
       return { gross, filled: size - left, short: left > 0, levels, worst };
+    }
+
+
+    // Продажа всего по стоп-лимиту. Зеркало десктопной: две настройки в шагах
+    // стакана — уровень стопа ниже лучшего bid и отступ лимитки ниже стопа.
+    //
+    // Отступ нужен потому, что стоп-лимит не гарантирует исполнения: при
+    // срабатывании в стакан уходит лимитка, и если она стоит ровно на стопе,
+    // цена может проскочить мимо, а ордер останется висеть.
+    async function sellAllStopLimitM(pair, size, coin, actualCost) {
+      const qty = parseFloat(size) || 0;
+      if (!(qty > 0)) { toast('Нечего продавать', 'error'); return; }
+
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay';
+      overlay.innerHTML =
+        '<div class="modal-box">' +
+        '<div class="modal-title">Стоп-лимит на всё: ' + coin + '</div>' +
+        '<div class="modal-body">' +
+        '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;">' +
+        '<label style="font-size:11px;color:var(--t2);flex:1;">уровень стопа<br>' +
+        '<input type="number" id="slLvlM" value="3" min="1" max="50" step="1" inputmode="numeric" ' +
+        'style="width:100%;margin-top:4px;padding:7px;border-radius:6px;border:1px solid var(--b1);background:var(--s2);color:var(--t0);font-size:14px;"></label>' +
+        '<label style="font-size:11px;color:var(--t2);flex:1;">отступ лимита вниз<br>' +
+        '<input type="number" id="slGapM" value="2" min="0" max="50" step="1" inputmode="numeric" ' +
+        'style="width:100%;margin-top:4px;padding:7px;border-radius:6px;border:1px solid var(--b1);background:var(--s2);color:var(--t0);font-size:14px;"></label>' +
+        '</div>' +
+        '<div id="slInfoM" style="font-size:12px;line-height:1.6;min-height:110px;">Читаю стакан…</div>' +
+        '</div>' +
+        '<div class="modal-actions">' +
+        '<button class="modal-btn" id="slCancelM">Отмена</button>' +
+        '<button class="modal-btn danger" id="slGoM" disabled>Поставить стоп</button>' +
+        '</div></div>';
+      document.body.appendChild(overlay);
+
+      let timer = null, ready = null;
+      const stop = () => { if (timer) clearInterval(timer); overlay.remove(); };
+
+      async function tick() {
+        const info = overlay.querySelector('#slInfoM');
+        const lvl = Math.max(1, parseInt(overlay.querySelector('#slLvlM').value) || 1);
+        const gap = Math.max(0, parseInt(overlay.querySelector('#slGapM').value) || 0);
+        try {
+          const book = await cbGet('https://api.exchange.coinbase.com/products/' + pair + '/book?level=2');
+          const bids = (book.bids || []).map(b => ({ p: parseFloat(b[0]) })).filter(b => b.p > 0);
+          if (bids.length < 2) { info.innerHTML = '<span style="color:var(--yellow);">Стакан пуст, цены не посчитать.</span>'; ready = null; return; }
+          const best = bids[0].p;
+          const iStop = Math.min(lvl, bids.length - 1);
+          const iLim = Math.min(lvl + gap, bids.length - 1);
+          const stopPx = bids[iStop].p, limPx = bids[iLim].p;
+          const short = (lvl > bids.length - 1) || (lvl + gap > bids.length - 1);
+          const feeL = (parseFloat(tradingSettings.tradeFee) || 0.125) / 100;
+          const gotUsd = qty * limPx * (1 - feeL);
+          const pnl = actualCost ? gotUsd - actualCost : null;
+          ready = { stopPx, limPx };
+          overlay.querySelector('#slGoM').disabled = false;
+          info.innerHTML =
+            '<div style="display:grid;grid-template-columns:auto 1fr;gap:3px 10px;">' +
+            '<span style="color:var(--t2);">лучший bid</span><b>$' + fmt(best) + '</b>' +
+            '<span style="color:var(--t2);">стоп на</span><b style="color:var(--yellow);">$' + fmt(stopPx) + '</b>' +
+            '<span style="color:var(--t2);">ниже bid на</span><b>' + ((1 - stopPx / best) * 100).toFixed(2) + '%</b>' +
+            '<span style="color:var(--t2);">лимитка по</span><b>$' + fmt(limPx) + '</b>' +
+            '<span style="color:var(--t2);">ниже стопа на</span><b>' + (stopPx > 0 ? ((1 - limPx / stopPx) * 100).toFixed(2) : '0') + '%</b>' +
+            '<span style="color:var(--t2);">получите</span><b>$' + gotUsd.toFixed(2) + '</b>' +
+            (pnl != null ? '<span style="color:var(--t2);">против потраченного</span><b style="color:' +
+              (pnl >= 0 ? 'var(--green)' : '#ff6b6b') + ';">' + (pnl >= 0 ? '+' : '') + '$' + pnl.toFixed(2) + '</b>' : '') +
+            '</div>' +
+            (short ? '<div style="color:var(--yellow);margin-top:8px;">В стакане всего ' + bids.length + ' уровней — взят последний.</div>' : '') +
+            '<div style="color:var(--t2);margin-top:8px;font-size:11px;">Стоп-лимит не гарантирует исполнения: если цена проскочит мимо лимитной, ордер останется висеть.</div>';
+        } catch (e) {
+          info.innerHTML = '<span style="color:var(--yellow);">Стакан недоступен: ' + e.message + '</span>';
+          ready = null;
+          overlay.querySelector('#slGoM').disabled = true;
+        }
+      }
+
+      overlay.querySelector('#slLvlM').oninput = tick;
+      overlay.querySelector('#slGapM').oninput = tick;
+      overlay.querySelector('#slCancelM').onclick = stop;
+      overlay.onclick = (e) => { if (e.target === overlay) stop(); };
+      await tick();
+      timer = setInterval(tick, 2000);
+
+      overlay.querySelector('#slGoM').onclick = async () => {
+        if (!ready) return;
+        const b = overlay.querySelector('#slGoM');
+        b.disabled = true; b.textContent = '...';
+        if (timer) { clearInterval(timer); timer = null; }
+        try {
+          const r = await fetch('/create-sell-order', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ productId: pair, size: qty, price: ready.limPx, orderType: 'stop_limit', stopPrice: ready.stopPx })
+          });
+          const j = await r.json();
+          if (!j.success) {
+            showOrderError('Стоп не поставлен', j.error || 'Биржа отклонила ордер');
+            b.disabled = false; b.textContent = 'Поставить стоп'; timer = setInterval(tick, 2000);
+            return;
+          }
+          overlay.remove();
+          toast(coin + ': стоп-лимит на $' + fmt(ready.stopPx));
+          const id = j.order_id || (j.order && j.order.order_id);
+          if (id && !selectedOrders.includes(id)) { selectedOrders.push(id); saveSelectedToServer(); }
+          if (typeof loadOrders === 'function') loadOrders();
+        } catch (e) {
+          showOrderError('Стоп не поставлен', e.message);
+          b.disabled = false; b.textContent = 'Поставить стоп'; timer = setInterval(tick, 2000);
+        }
+      };
     }
 
     async function sellAllMarketM(pair, size, coin, actualCost) {

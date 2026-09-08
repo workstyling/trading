@@ -343,12 +343,25 @@ app.post('/api/market-sell', async (req, res) => {
 // API: Create limit sell order
 app.post('/create-sell-order', async (req, res) => {
   try {
-    const { productId, size, price } = req.body || {};
+    const { productId, size, price, orderType, stopPrice } = req.body || {};
     const product = normalizeSpotUsdProduct(productId);
     const sellSize = Number(size);
     const limitPrice = Number(price);
+    const isStop = orderType === 'stop_limit';
+    const stopVal = Number(stopPrice);
     if (!product || !isPositiveFiniteNumber(sellSize) || !isPositiveFiniteNumber(limitPrice)) {
       return invalidOrderInput(res, 'A valid USD product, size and limit price are required');
+    }
+    if (isStop) {
+      if (!isPositiveFiniteNumber(stopVal)) {
+        return invalidOrderInput(res, 'A valid stop price is required for a stop-limit order');
+      }
+      // Лимит ВЫШЕ стопа означает, что при срабатывании ордер уйдёт в стакан
+      // по цене, которой там уже нет, и не исполнится. Для продажи вниз лимит
+      // обязан быть не выше стопа — это не придирка, а условие исполнения.
+      if (limitPrice > stopVal) {
+        return invalidOrderInput(res, 'Для продажи по стопу лимитная цена должна быть не выше стоп-цены, иначе ордер не исполнится');
+      }
     }
     const clientOrderId = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
 
@@ -385,8 +398,20 @@ app.post('/create-sell-order', async (req, res) => {
     }
 
     // Fix precision
-    orderData.order_configuration.limit_limit_gtc.limit_price = limitPrice.toFixed(quoteDecimals);
-    orderData.order_configuration.limit_limit_gtc.base_size = sellSize.toFixed(baseDecimals);
+    if (isStop) {
+      // Продажа по стопу срабатывает при движении ВНИЗ: STOP_DOWN. С STOP_UP
+      // ордер сработал бы на росте, то есть ровно наоборот.
+      delete orderData.order_configuration.limit_limit_gtc;
+      orderData.order_configuration.stop_limit_stop_limit_gtc = {
+        base_size: sellSize.toFixed(baseDecimals),
+        limit_price: limitPrice.toFixed(quoteDecimals),
+        stop_price: stopVal.toFixed(quoteDecimals),
+        stop_direction: 'STOP_DIRECTION_STOP_DOWN',
+      };
+    } else {
+      orderData.order_configuration.limit_limit_gtc.limit_price = limitPrice.toFixed(quoteDecimals);
+      orderData.order_configuration.limit_limit_gtc.base_size = sellSize.toFixed(baseDecimals);
+    }
 
     console.log('Creating sell order:', orderData);
     const response = await client.createOrder(orderData);
