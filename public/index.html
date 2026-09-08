@@ -5661,7 +5661,9 @@
       padding: 3px 7px; border-radius: 7px;
       background: rgba(255, 255, 255, 0.03); border: 1px solid var(--b1);
     }
-    .step-lbl { font-size: 11px; color: var(--t2); font-weight: 600; }
+    /* Ширина фиксирована: «стоп» и «ask» разной длины, и без неё кнопки
+       под ними не совпадали по вертикали при переносе групп. */
+    .step-lbl { font-size: 11px; color: var(--t2); font-weight: 600; min-width: 34px; }
     .step-inp {
       width: 46px; text-align: center; padding: 4px 4px;
       background: var(--s3); border: 1px solid var(--b1); border-radius: 5px;
@@ -12657,7 +12659,7 @@ Requirements:
           </div>` ; })() : ''}</div>
 
           <table class="profit-table" data-pair="${pair}" data-filled="${totalFilled}" data-usd="${totalUSD}" data-avgbuy="${avgBuyPrice}">
-            <thead><tr><th>Num</th><th>Best Bid</th><th>Best Ask</th><th>Filled Size</th><th>USD</th><th>Avg Buy</th><th>Limit</th><th>Market</th></tr></thead>
+            <thead><tr><th>Num</th><th>Best Bid</th><th>Best Ask</th><th>Filled Size</th><th title="Чисто вложено: потрачено на покупки минус получено с продаж. Пока продаж не было, это и есть потраченное.">USD</th><th>Avg Buy</th><th>Limit</th><th>Market</th></tr></thead>
             <tbody><tr>
               <td>1</td>
               <td id="bid_${coin}">$${fmtPrice(bestBid)}</td>

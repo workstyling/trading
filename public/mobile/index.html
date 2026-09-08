@@ -170,7 +170,9 @@
       background: rgba(255, 255, 255, 0.04); border: 1px solid var(--b1);
       flex: 0 0 auto;
     }
-    .step-lbl { font-size: 11px; color: var(--t2); font-weight: 600; }
+    /* Ширина фиксирована: «стоп» и «ask» разной длины, и без неё кнопки
+       под ними не совпадали по вертикали, когда группы переносятся. */
+    .step-lbl { font-size: 11px; color: var(--t2); font-weight: 600; min-width: 34px; }
     .step-inp {
       width: 52px; text-align: center; padding: 5px 2px;
       background: var(--s3); border: 1px solid var(--b1); border-radius: 6px;
@@ -3078,7 +3080,9 @@
             <div class="monitor-stat"><span class="monitor-stat-label">Ask</span><span class="monitor-stat-val" style="color:var(--loss)">$${fmt(ask)}</span></div>
             <div class="monitor-stat"><span class="monitor-stat-label">Avg Buy</span><span class="monitor-stat-val">$${fmt(avgBuy)}</span></div>
             <div class="monitor-stat"><span class="monitor-stat-label">Filled</span><span class="monitor-stat-val">${totalFilled.toFixed(totalFilled < 1 ? 6 : 2)}</span></div>
-            <div class="monitor-stat"><span class="monitor-stat-label">Spent</span><span class="monitor-stat-val">$${totalUSD.toFixed(2)}</span></div>
+            <div class="monitor-stat" title="${buyUSD > totalUSD + 0.01
+              ? `Куплено на $${buyUSD.toFixed(2)}, получено с продаж $${(buyUSD - totalUSD).toFixed(2)}. Остаётся вложено $${totalUSD.toFixed(2)}.`
+              : `Потрачено на покупку. Продаж по этой монете ещё не было.`}"><span class="monitor-stat-label">${buyUSD > totalUSD + 0.01 ? 'Вложено' : 'Потрачено'}</span><span class="monitor-stat-val">$${totalUSD.toFixed(2)}</span></div>
             <div class="monitor-stat"><span class="monitor-stat-label">Market</span><span class="monitor-stat-val" style="color:${mktColor}">${marketPnL >= 0 ? '+' : ''}$${Math.abs(marketPnL).toFixed(2)}</span></div>
           </div>`;
 
@@ -6527,56 +6531,50 @@
         // Здесь они всегда в одном столбце.
         const price = v => v == null ? '—' : v < 0.001 ? v.toFixed(8) : v < 1 ? v.toFixed(5) : v < 100 ? v.toFixed(3) : v.toFixed(2);
         const head2 =
-          '<tr style="color:var(--t2);font-size:9px;text-transform:uppercase;letter-spacing:0.4px;">' +
-          '<th style="text-align:left;padding:3px 6px;">монета</th>' +
-          '<th style="text-align:right;padding:3px 6px;" title="Доля случаев, когда цена возвращалась к входу за час. Главный столбец: по нему список и упорядочен.">возврат</th>' +
-          '<th style="text-align:right;padding:3px 6px;" title="Насколько ниже суточного максимума. Именно эта глубина и определяет возврат.">за сутки</th>' +
-          '<th style="text-align:right;padding:3px 6px;" title="Откат от получасового максимума">откат</th>' +
-          '<th style="text-align:right;padding:3px 6px;">RSI</th>' +
-          '<th style="text-align:right;padding:3px 6px;" title="Балл входа. Возврат он не предсказывает; сокращает ли убыток — проверяется вперёд, подтверждения пока нет.">вход</th>' +
-          '<th style="text-align:right;padding:3px 6px;">в списке</th></tr>';
+          '<tr style="color:var(--t2);font-size:9px;text-transform:uppercase;letter-spacing:0.3px;">' +
+          '<th style="text-align:left;padding:3px 4px;">монета</th>' +
+          '<th style="text-align:right;padding:3px 4px;" title="Доля случаев, когда цена возвращалась к входу за час. Главный столбец: по нему список и упорядочен.">возврат</th>' +
+          '<th style="text-align:right;padding:3px 4px;" title="Насколько ниже суточного максимума. Именно эта глубина и определяет возврат.">за сутки</th>' +
+          '<th style="text-align:right;padding:3px 4px;" title="Балл входа. Возврат он не предсказывает; сокращает ли убыток — проверяется вперёд, подтверждения пока нет.">вход</th></tr>';
         const cell = (x) => {
           const e = x.entryValue;
-          const pass = entryPassesUi(x, gate);
-          // Балл остаётся на экране, но больше ничего не решает: цвет и
-          // подсветка идут от того, прошла ли монета порог по глубине.
-          const col = pass ? '#00e5a0' : '#7c8698';
           const rec = x.recovery;
           const recCol = !rec ? 'var(--t2)' : rec.hour >= 76 ? '#00e5a0' : rec.hour >= 63 ? '#f5c518' : '#f5843a';
-          // Одинарные кавычки внутри двойных: JSON.stringify рвал атрибут.
+          const pass = entryPassesUi(x, gate);
+          const col = pass ? '#00e5a0' : '#7c8698';
           const safe = String(x.coin).replace(/[^A-Z0-9]/gi, '');
           const held = x.inListMin == null ? null
             : x.inListMin >= 120 ? Math.round(x.inListMin / 60) + ' ч'
               : x.inListMin + ' мин';
-          const num = (v, c, w) => '<td style="text-align:right;padding:4px 6px;color:' + (c || 'var(--t1)') +
+          const num = (v, c, w) => '<td style="text-align:right;padding:4px 4px;color:' + (c || 'var(--t1)') +
             ';font-size:11px;font-variant-numeric:tabular-nums;' + (w ? 'font-weight:800;' : '') + '">' + v + '</td>';
           return '<tr onclick="selectCoinForTradeM(\'' + safe + '\')" title="' +
-            'Выбрать ' + safe + ' для покупки и открыть график' +
+            'Выбрать ' + safe + ' для покупки' +
             (rec ? String.fromCharCode(10) + 'на такой глубине цена возвращалась к входу за час в ' + rec.hour +
-              '% случаев, зависала в ' + rec.stuck + '% (14 844 замера, только монеты из списка)' : '') +
+              '% случаев, зависала в ' + rec.stuck + '% (14 844 замера по монетам из этого же списка)' : '') +
             (x.spreadPct != null ? String.fromCharCode(10) + 'спред ' + x.spreadPct + '%' : '') +
             (x.dayFallPct == null && x.dayCoverH != null
-              ? String.fromCharCode(10) + 'за сутки не считано: истории всего ' + x.dayCoverH +
-                ' ч, суточный максимум по ней был бы занижен' : '') +
-            (x.runup ? String.fromCharCode(10) + 'выросла от суточного минимума на ' + x.runup.runup +
-              '% — разгон возврату помогает, а не мешает' : '') +
+              ? String.fromCharCode(10) + 'за сутки не считано: истории всего ' + x.dayCoverH + ' ч' : '') +
             (x.inListMin > 90 ? String.fromCharCode(10) +
               'висит в списке долго: это не новый сигнал, а одно затянувшееся движение' : '') + '"' +
             ' style="cursor:pointer;' + (pass ? 'background:rgba(0,229,160,0.10);' : '') + '">' +
-            '<td style="padding:4px 6px;"><span style="color:var(--blue);font-weight:700;font-size:11px;">' + x.coin +
-            '</span><br><span style="color:var(--t2);font-size:9px;">$' + price(x.price) + '</span></td>' +
+            // Откат, RSI и срок в списке — второй строкой под монетой: в
+            // отдельных колонках они уводили таблицу за край экрана.
+            '<td style="padding:4px 4px;"><span style="color:var(--blue);font-weight:700;font-size:11px;">' + x.coin +
+            '</span><br><span style="color:var(--t2);font-size:9px;">$' + price(x.price) + '</span>' +
+            '<br><span style="color:' + (x.inListMin > 90 ? '#f5843a' : 'var(--t2)') + ';font-size:9px;">' +
+            'откат ' + (x.pullbackPct == null ? '—' : x.pullbackPct + '%') +
+            ' · RSI ' + (x.rsi == null ? '—' : Math.round(x.rsi)) +
+            (held ? ' · ' + held : '') + '</span></td>' +
             num(rec ? '↩ ' + rec.hour + '%' : '—', recCol, true) +
             num(x.dayFallPct == null ? '—' : '−' + x.dayFallPct + '%', 'var(--t2)') +
-            num(x.pullbackPct == null ? '—' : x.pullbackPct + '%', 'var(--t2)') +
-            num(x.rsi == null ? '—' : Math.round(x.rsi), 'var(--t2)') +
-            num(e.pct + '%', col, true) +
-            num(held || '—', x.inListMin > 90 ? '#f5843a' : 'var(--t2)') + '</tr>';
+            num(e.pct + '%', col, true) + '</tr>';
         };
         box.innerHTML = head + mkLine +
           (good.length
-            ? '<table style="width:100%;border-collapse:collapse;"><thead>' + head2 + '</thead><tbody>' + good.slice(0, 8).map(cell).join('') + '</tbody></table>' +
+            ? '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;"><table style="width:100%;border-collapse:collapse;table-layout:fixed;"><thead>' + head2 + '</thead><tbody>' + good.slice(0, 8).map(cell).join('') + '</tbody></table></div>' +
             '<div id="entryPaperM" style="margin-top:6px;padding-top:5px;border-top:1px solid var(--b1);font-size:10px;color:var(--t2);"></div>'
-            : '<table style="width:100%;border-collapse:collapse;"><thead>' + head2 + '</thead><tbody>' + rows.slice(0, 3).map(cell).join('') + '</tbody></table>' +
+            : '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;"><table style="width:100%;border-collapse:collapse;table-layout:fixed;"><thead>' + head2 + '</thead><tbody>' + rows.slice(0, 3).map(cell).join('') + '</tbody></table></div>' +
               '<div style="color:var(--t2);font-size:10px;margin-top:5px;">Порог не взял никто — показаны ближайшие.</div>');
 
         // Форвардный журнал: обещанное панелью против случившегося. Пока
