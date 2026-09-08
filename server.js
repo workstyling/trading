@@ -5327,6 +5327,12 @@ function saveEntryPaper() {
 //
 // Контрольная берётся случайно из тех, кто НЕ прошёл порог, по одной за скан:
 // чаще незачем, а к неделе их накопится столько же, сколько основных.
+// Привязанные к доллару монеты. В журнале они не проверяют ничего: цена не
+// двигается по построению, и любая такая строка — это ноль, добавленный к
+// выборке. В контроле это вреднее всего: нули тянут его среднее к нулю и
+// сужают погрешность, отчего разница между группами выглядит точнее, чем есть.
+const ENTRY_PAPER_SKIP = new Set(['USDT', 'USDC', 'DAI', 'PYUSD', 'USDS', 'EURC', 'GUSD', 'RLUSD', 'LUSD', 'USDG']);
+
 function entryPaperOpen(rows) {
   const now = Date.now();
   // Два отдельных набора. Раньше был один, и контрольная запись по монете
@@ -5350,6 +5356,7 @@ function entryPaperOpen(rows) {
 
   let added = 0;
   for (const row of rows) {
+    if (ENTRY_PAPER_SKIP.has(row.coin)) continue;
     if (!row.entryValue || row.entryValue.pct < 40) continue;
     if (openMain.has(row.coin)) continue;
     // Только первое пересечение серии: inListMin считает, сколько монета уже
@@ -5362,7 +5369,8 @@ function entryPaperOpen(rows) {
   // Контроль: одна монета ниже порога, случайно. Условия входа у неё те же —
   // отличается только балл, а значит разница в исходе будет разницей порога.
   const below = rows.filter(r => r.entryValue && r.entryValue.pct < 40 &&
-    r.price > 0 && !openCtrl.has(r.coin) && !openMain.has(r.coin));
+    r.price > 0 && !ENTRY_PAPER_SKIP.has(r.coin) &&
+    !openCtrl.has(r.coin) && !openMain.has(r.coin));
   if (below.length) {
     add(below[Math.floor(Math.random() * below.length)], true);
     added++;
@@ -5463,7 +5471,9 @@ setInterval(entryPaperSettle, 3 * 60 * 1000);
 setTimeout(entryPaperSettle, 100_000);
 
 app.get('/api/entry-paper', (req, res) => {
-  const all = entryPaper.trades.filter(t => t.done60 === true);
+  // Записи стейблов, попавшие в журнал до того, как их стали пропускать,
+  // из мерки исключаем: в файле они остаются, но эталоном служить не могут.
+  const all = entryPaper.trades.filter(t => t.done60 === true && !ENTRY_PAPER_SKIP.has(t.coin));
   const done = all.filter(t => !t.control);
   const ctrl = all.filter(t => t.control);
   const avg = a => a.length ? Math.round(a.reduce((x, y) => x + y, 0) / a.length * 1000) / 1000 : null;
@@ -5511,13 +5521,29 @@ app.get('/api/entry-paper', (req, res) => {
       { label: '3-6%', ...(group(done.filter(t => (t.dayFall || 0) >= 3 && (t.dayFall || 0) < 6)) || { n: 0 }) },
       { label: '>6%', ...(group(done.filter(t => (t.dayFall || 0) >= 6)) || { n: 0 }) },
     ],
-    // Обещанное панелью против случившегося: главная проверка честности
-    promiseVsFact: [3, 6, 10].map(lo => {
-      const g = done.filter(t => (t.dayFall || 0) >= lo && (t.dayFall || 0) < (lo === 3 ? 6 : lo === 6 ? 10 : 1e9));
-      return { label: lo === 10 ? '>10%' : lo + '-' + (lo === 3 ? 6 : 10) + '%',
-        n: g.length, promised: g.length ? g[0].recHour : null, actual: share(g, t => t.hit60 != null) };
+    // Обещанное панелью против случившегося: главная проверка честности.
+    //
+    // Полосы те же, что в recoveryOdds, и обещание берётся ОТТУДА, а не из
+    // поля сделки. Раньше стояло g[0].recHour — значение, замороженное на
+    // момент расчёта первой сделки группы: после перемера таблицы отчёт
+    // сверялся с отменённым обещанием (показывал 67/72/75 против уже
+    // действующих 68/74/77).
+    //
+    // Мелкие падения раньше в проверку не попадали — полосы начинались с 3%.
+    // Между тем именно там расхождение самое большое, и получалось, что
+    // проверка честности прячет свой худший результат.
+    promiseVsFact: [[0, 1], [1, 3], [3, 6], [6, 10], [10, 1e9]].map(([lo, hi]) => {
+      const g = done.filter(t => (t.dayFall || 0) >= lo && (t.dayFall || 0) < hi);
+      const odds = recoveryOdds(lo);
+      return { label: hi > 1e8 ? '>' + lo + '%' : lo + '-' + hi + '%',
+        n: g.length, promised: odds ? odds.hour : null, actual: share(g, t => t.hit60 != null) };
     }),
-    recovered3d: long.length ? { n: long.length, share: share(long, t => t.hit3d != null) } : null,
+    // Пустой результат и «ещё рано» — разные вещи. Раньше отдавался null и в
+    // обоих случаях на экране было пусто.
+    recovered3d: long.length
+      ? { n: long.length, share: share(long, t => t.hit3d != null) }
+      : { n: 0, share: null, pending: entryPaper.trades.filter(t => t.done60 && !t.done3d).length,
+          readyAt: entryPaper.startedAt + 3 * 24 * 3600_000 },
     // Сами сделки: посчитанные и последние открытые. Раньше отдавались просто
     // последние двадцать по времени, и посчитанные в них не попадали — то есть
     // именно то, ради чего список и заводился, было не видно.
