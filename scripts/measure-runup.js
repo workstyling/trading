@@ -21,7 +21,7 @@ const band = (v, a, b, c, d) => v <= a || v >= d ? 0 : v < b ? (v - a) / (b - a)
 const rsi14 = c => { if (c.length < 15) return null; let u = 0, d = 0; for (let i = c.length - 14; i < c.length; i++) { const x = c[i] - c[i - 1]; if (x >= 0) u += x; else d -= x; } return d === 0 ? 100 : 100 - 100 / (1 + (u / 14) / (d / 14)); };
 
 const NEED = 0.30;
-const H1 = 12, H6 = 72, H24 = 288;       // час, шесть часов, сутки в 5м свечах
+const H24 = 288;                          // сутки в 5м свечах — только как запас на выборку
 const WINDOW = 864;                       // трое суток
 const BACK = Number(process.argv[2] || 288);   // окно разгона в 5м свечах
 
@@ -31,7 +31,13 @@ for (const coin in cache) {
   if (cs.length < BACK + WINDOW + 300) continue;
   for (let i = BACK; i < cs.length - WINDOW; i += 3) {
     const px = cs[i].cl; if (!(px > 0)) continue;
-    const hi30 = Math.max(...cs.slice(i - 6, i + 1).map(c => c.hi));
+    // Полчаса — тоже по времени: совокупность обязана совпадать с той, что
+    // отбирает measure-recovery.js и живой entrySignals, иначе два замера
+    // говорят об одном списке, а меряют разные.
+    const t0w = cs[i].t;
+    const w30 = cs.slice(Math.max(0, i - 40), i + 1).filter(c => t0w - c.t <= 30 * 60);
+    if (w30.length < 2) continue;
+    const hi30 = Math.max(...w30.map(c => c.hi));
     const pull = hi30 > 0 ? (hi30 - px) / hi30 * 100 : null;
     if (pull == null) continue;
     const rsi = rsi14(cs.slice(i - 14, i + 1).map(c => c.cl));
@@ -39,10 +45,15 @@ for (const coin in cache) {
     const score = 100 * band(pull, 0.15, 0.40, 0.80, 1.50) * band(rsi, 20, 28, 45, 58);
     if (score < 40) continue;
 
-    const back = cs.slice(i - BACK, i + 1);
+    // Окна назад по времени: «288 свечей» это сутки только пока идут
+    // сделки, а на трети окон выходит больше 25 часов.
+    const back = cs.slice(Math.max(0, i - BACK * 3), i + 1).filter(c => t0w - c.t <= BACK * 300);
+    if (back.length < 30) continue;
     const loBack = Math.min(...back.map(c => c.lo));
     const runup = loBack > 0 ? (px / loBack - 1) * 100 : null;
-    const hiDay = Math.max(...cs.slice(i - H24, i + 1).map(c => c.hi));
+    const wDay = cs.slice(Math.max(0, i - H24 * 3), i + 1).filter(c => t0w - c.t <= 24 * 3600);
+    if (wDay.length < 30) continue;
+    const hiDay = Math.max(...wDay.map(c => c.hi));
     const fall = hiDay > 0 ? (hiDay - px) / hiDay * 100 : null;
 
     // ПО ВРЕМЕНИ, а не по числу свечей: ряд рвётся, когда нет сделок, и

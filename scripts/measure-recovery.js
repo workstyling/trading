@@ -97,14 +97,19 @@ async function candles(pair, fromMs, toMs) {
     for (let i = DAY; i < cs.length - WINDOW; i += 3) {
       const px = cs[i].cl;
       if (!(px > 0)) continue;
-      const hi30 = Math.max(...cs.slice(i - 6, i + 1).map(c => c.hi));
+      // Окна назад по времени, а не по числу свечей — как в entrySignals.
+      const t0w = cs[i].t;
+      const w30 = cs.slice(Math.max(0, i - 40), i + 1).filter(c => t0w - c.t <= 30 * 60);
+      const wDay = cs.slice(Math.max(0, i - DAY * 3), i + 1).filter(c => t0w - c.t <= 24 * 3600);
+      if (w30.length < 2 || wDay.length < 30) continue;
+      const hi30 = Math.max(...w30.map(c => c.hi));
       if (!(hi30 > 0)) continue;
       const pull = fallPct(hi30, px);
       const rsi = rsi14(cs.slice(i - 14, i + 1).map(c => c.cl));
       if (rsi == null) continue;
       if (100 * band(pull, 0.15, 0.40, 0.80, 1.50) * band(rsi, 20, 28, 45, 58) < 40) continue;
 
-      const hiDay = Math.max(...cs.slice(i - DAY, i + 1).map(c => c.hi));
+      const hiDay = Math.max(...wDay.map(c => c.hi));
       if (!(hiDay > 0)) continue;
       const fall = fallPct(hiDay, px);
 

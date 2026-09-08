@@ -5014,12 +5014,20 @@ async function entrySignals(coin) {
     rsi = dn === 0 ? 100 : Math.round((100 - 100 / (1 + (up / 14) / (dn / 14))) * 10) / 10;
   }
 
-  const high30 = Math.max(...rows.slice(0, 7).map(x => x.hi));
-  const highDay = Math.max(...rows.map(x => x.hi));
-  // Разгон: на сколько монета выше своего минимума за то же окно. Свечей
-  // хватает примерно на сутки, поэтому это суточный разгон, а не трёхсуточный —
-  // направление то же, величина скромнее.
-  const lowDay = Math.min(...rows.map(x => x.lo));
+  // Окна назад — ПО ВРЕМЕНИ, а не по числу свечей. Ряд рвётся, когда по монете
+  // нет сделок: на 28 729 проверенных окон «288 свечей» 35.16% оказались
+  // длиннее 25 часов, 18.15% длиннее 30, худшее растянулось на 259. Суточный
+  // максимум выходил завышенным, падение от него — в среднем на 0.29 п.п., в
+  // худшем случае на 18, и в 6.50% случаев монета попадала в другую строку
+  // таблицы возвратов. Вперёд эта ошибка уже исправлена, это та же поправка
+  // назад.
+  const t0 = rows[0].t;
+  const win30 = rows.filter(x => t0 - x.t <= 30 * 60_000);
+  const winDay = rows.filter(x => t0 - x.t <= 24 * 3600_000);
+  const high30 = Math.max(...(win30.length ? win30 : rows.slice(0, 7)).map(x => x.hi));
+  const highDay = Math.max(...winDay.map(x => x.hi));
+  // Разгон: на сколько монета выше своего суточного минимума.
+  const lowDay = Math.min(...winDay.map(x => x.lo));
   return {
     price,
     chg24Pct: chg24,
@@ -5079,7 +5087,8 @@ const RUNUP_MEASURED_AT = '2026-09-07';
 function runupOdds(runupPct) {
   const r = Number(runupPct);
   if (!Number.isFinite(r)) return null;
-  const hour = r >= 20 ? 86 : r >= 10 ? 77 : r >= 5 ? 71 : 63;
+  // Перемерено 2026-09-08 на тех же исправленных окнах; было 86/77/71/63.
+  const hour = r >= 20 ? 89 : r >= 10 ? 78 : r >= 5 ? 72 : 64;
   return { runup: Math.round(r * 10) / 10, hour };
 }
 
@@ -5120,16 +5129,19 @@ function runupOdds(runupPct) {
 //
 // Порядок и разрыв между группами устояли — вывод не изменился, изменились
 // величины. Считать надо по отметкам времени: node scripts/measure-recovery.js
-const RECOVERY_MEASURED_AT = '2026-09-07';
-const RECOVERY_SAMPLE = 15215;
+const RECOVERY_MEASURED_AT = '2026-09-08';
+const RECOVERY_SAMPLE = 14844;
 function recoveryOdds(dayFallPct) {
   const d = Number(dayFallPct);
   if (!Number.isFinite(d)) return null;
-  if (d >= 10) return { hour: 75, stuck: 0.5 };
-  if (d >= 6) return { hour: 72, stuck: 1.8 };
-  if (d >= 3) return { hour: 67, stuck: 3.0 };
-  if (d >= 1) return { hour: 59, stuck: 3.6 };
-  return { hour: 57, stuck: 4.1 };
+  // Перемерено 2026-09-08 после исправления окон назад: они брались по числу
+  // свечей, и на 35% случаев «сутки» оказывались длиннее 25 часов. Прежние
+  // значения были 57/59/67/72/75 при долях зависания 4.1/3.6/3.0/1.8/0.5.
+  if (d >= 10) return { hour: 77, stuck: 0.5 };
+  if (d >= 6) return { hour: 74, stuck: 1.7 };
+  if (d >= 3) return { hour: 68, stuck: 2.6 };
+  if (d >= 1) return { hour: 60, stuck: 3.5 };
+  return { hour: 56, stuck: 4.4 };
 }
 
 async function runEntryScan() {
@@ -5654,8 +5666,14 @@ function markoutTrades() {
   let state;
   try { state = JSON.parse(fs.readFileSync(MICRO_SCALP_FILE, 'utf8')); } catch { return []; }
   const cohortId = (state && state.cohortId) || null;
+  // Сделка закрывается по стопу и через двенадцать минут, а последний горизонт
+  // markout — шестьдесят. Раньше отбор шёл по closedAt, и у такой сделки час
+  // ещё не наступил: свечи за него не существовало, в h60 писался null, и
+  // кеш сохранял его НАВСЕГДА — пересчёт не шёл, потому что запись уже есть.
+  // Ждём, пока пройдёт самый дальний горизонт с запасом.
+  const ready = Date.now() - (MARKOUT_HORIZONS[MARKOUT_HORIZONS.length - 1] + 2) * 60_000;
   return ((state && state.trades) || []).filter(t =>
-    t && t.closedAt && t.ctx && t.entry > 0 && t.openedAt > 0 &&
+    t && t.closedAt && t.ctx && t.entry > 0 && t.openedAt > 0 && t.openedAt <= ready &&
     (!cohortId || t.cohortId === cohortId));
 }
 
@@ -5685,6 +5703,7 @@ async function markoutFor(trade) {
       ? Math.round((best.px / trade.entry - 1) * 10000) / 100
       : null;
   }
+  out.v2 = true;        // посчитано после того, как горизонт наверняка наступил
   return out;
 }
 
@@ -5692,7 +5711,13 @@ app.get('/api/micro-scalp-markout', async (req, res) => {
   try {
     const trades = markoutTrades();
     // Считаем только то, чего ещё нет: markout сделки не меняется никогда.
-    const todo = trades.filter(t => !markoutCache[t.id]).slice(0, MARKOUT_MAX_PER_CALL);
+    // Записи, посчитанные до этой правки, могли лечь с пустым часом раньше
+    // срока. Отличаем их по метке и считаем заново — один раз.
+    const stale = (id) => {
+      const m = markoutCache[id];
+      return m && !m.v2 && MARKOUT_HORIZONS.some(h => m['h' + h] == null);
+    };
+    const todo = trades.filter(t => !markoutCache[t.id] || stale(t.id)).slice(0, MARKOUT_MAX_PER_CALL);
     let added = 0;
     for (const t of todo) {
       try {
@@ -5739,7 +5764,7 @@ app.get('/api/micro-scalp-markout', async (req, res) => {
       success: true,
       horizons: MARKOUT_HORIZONS,
       n: rows.length,
-      pending: trades.filter(t => !markoutCache[t.id]).length,
+      pending: trades.filter(t => !markoutCache[t.id] || stale(t.id)).length,
       overall: agg(rows),
       byEntry: bucket('entry', [['0–39', 0, 40], ['40–69', 40, 70], ['70–100', 70, 101]]),
       byStrength: bucket('strength', [['<80', 0, 80], ['80–89', 80, 90], ['90–100', 90, 101]]),

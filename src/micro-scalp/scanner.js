@@ -47,6 +47,12 @@ async function fetchMicroSignals(coin) {
       Number.isFinite(row.close) && Number.isFinite(row.vol))
     .sort((left, right) => left.t - right.t);
   if (candles.length < 30) return null;
+  // Свежесть ряда. Свечи приходят пачкой за последние сутки, и если по монете
+  // давно не было сделок, верхняя окажется вчерашней — а считалась бы текущей
+  // ценой, RSI и откат брались бы из вчерашнего дня. Тот же изъян уже закрыт
+  // в панели входа.
+  const newestMs = candles[candles.length - 1].t * 1000;
+  if (!(newestMs > 0) || Date.now() - newestMs > 20 * 60 * 1000) return null;
 
   const closes = candles.map(row => row.close);
   const last = candles.length - 1;
