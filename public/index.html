@@ -9811,8 +9811,11 @@
     function sellDepthsFix(sd, ld) {
       sd = Number.isFinite(+sd) ? Math.round(+sd) : -1;
       ld = Number.isFinite(+ld) ? Math.round(+ld) : -2;
-      sd = Math.max(SELL_DEPTH_MIN + 1, Math.min(0, sd));
-      ld = Math.max(SELL_DEPTH_MIN, Math.min(-1, ld));
+      // Стоп не мельче −1. Уровень 0 — это лучший ASK, то есть выше рынка:
+      // стоп продажи срабатывает при движении последней цены ВНИЗ к нему, и
+      // стоп выше рынка сработал бы мгновенно — биржа такой ордер отклоняет.
+      sd = Math.max(SELL_DEPTH_MIN + 1, Math.min(-1, sd));
+      ld = Math.max(SELL_DEPTH_MIN, Math.min(-2, ld));
       if (ld > sd - 1) ld = sd - 1;
       return { sd, ld };
     }
@@ -9827,6 +9830,55 @@
       const all = sellStepsAll();
       all[coin] = { ...(all[coin] || {}), ...patch };
       try { safeStorage.setItem(SELL_STEPS_KEY, JSON.stringify(all)); } catch { }
+    }
+
+
+    // Цены по глубинам и подпись под полями. Общая для всех, кто её пишет:
+    // пересчёт по кнопке, обновление позиций по стакану и первая отрисовка
+    // строки. Раньше подпись собиралась только в пересчёте, и перерисовка
+    // списка каждые несколько секунд затирала посчитанную прибыль.
+    function sellStepPrices(ladder, sd, ld) {
+      if (!ladder || !ladder.length) return null;
+      const iStop = Math.min(-sd, ladder.length - 1);
+      const iLim = Math.min(-ld, ladder.length - 1);
+      return { stop: ladder[iStop], limit: ladder[iLim], stuck: iStop === iLim };
+    }
+
+    function sellStepInfoHtml(stop, limit, size, cost, stuck) {
+      // Чистая прибыль по ЭТИМ числам. Комиссия рыночная, а не лимитная:
+      // сработавший стоп ставит лимитку по цене, которая уже прошла, то есть
+      // она забирает встречную заявку и платит как тейкер.
+      const qty = parseFloat(size) || 0;
+      const spent = parseFloat(cost) || 0;
+      const pnl = qty > 0 && spent > 0 ? qty * limit * (1 - getFeeMarket()) - spent : null;
+      return 'стоп <b style="color:var(--yellow);">$' + fmtPrice(stop) + '</b> · лимит <b>$' + fmtPrice(limit) + '</b>' +
+        (pnl != null
+          ? ' · <span title="Чистая прибыль, если стоп сработает и лимитка исполнится по этой цене. Комиссия взята рыночная: сработавший стоп забирает встречную заявку и платит как тейкер.">' +
+            'чистыми <b style="color:' + (pnl >= 0 ? 'var(--green)' : '#ff6b6b') + ';font-size:12px;">' +
+            (pnl >= 0 ? '+' : '−') + '$' + Math.abs(pnl).toFixed(2) + '</b>' +
+            ' <span style="color:var(--t2);">(' + (pnl >= 0 ? '+' : '') + (pnl / spent * 100).toFixed(2) + '%)</span></span>'
+          : '') +
+        (stuck ? ' <span style="color:#ff6b6b;">стакан короче запроса: стоп и лимит упёрлись в один уровень</span>' : '');
+    }
+
+    // Перерисовать подпись по уже полученному стакану. Своих запросов не делает:
+    // зовётся оттуда, где стакан уже в руках.
+    function sellStepPaintFromBook(pair, book) {
+      const coin = pair.replace('-USD', '');
+      const info = document.getElementById('sellStepInfo_' + coin);
+      if (!info) return;
+      const asks = (book.asks || []).map(a => parseFloat(a[0])).filter(x => x > 0);
+      const bids = (book.bids || []).map(b => parseFloat(b[0])).filter(x => x > 0);
+      if (!asks.length || !bids.length) return;
+      const ladder = [asks[0], ...bids];
+      const st = sellSteps(coin);
+      const px = sellStepPrices(ladder, st.sd, st.ld);
+      if (!px) return;
+      sellStepsSave(coin, { limit: px.limit, stop: px.stop });
+      const tbl = document.querySelector('.profit-table[data-pair="' + pair + '"]');
+      const size = tbl ? tbl.dataset.filled : null;
+      const cost = tbl ? tbl.dataset.usd : null;
+      info.innerHTML = sellStepInfoHtml(px.stop, px.limit, size, cost, px.stuck);
     }
 
     // Лестница цен вниз от лучшего ask
@@ -9864,26 +9916,9 @@
         sellStepsSave(coin, { limit, stop });
         const pi = document.getElementById('limitSellPrice_' + coin);
         if (pi) pi.value = String(limit);
-        if (info) {
-          // Чистая прибыль по ЭТИМ числам. Комиссия рыночная, а не лимитная:
-          // сработавший стоп ставит лимитку по цене, которая уже прошла, то
-          // есть она забирает встречную заявку и платит как тейкер.
-          const qty = parseFloat(size) || 0;
-          const spent = parseFloat(cost) || 0;
-          const net = qty > 0 ? qty * limit * (1 - getFeeMarket()) : null;
-          const pnl = net != null && spent > 0 ? net - spent : null;
-          // Стакан короче запроса — оба уровня упёрлись в дно и цены совпали.
-          // Молчать нельзя: ордер тогда не то, что задумано.
-          const stuck = iStop === iLim;
-          info.innerHTML = 'стоп <b style="color:var(--yellow);">$' + fmtPrice(stop) + '</b> · лимит <b>$' + fmtPrice(limit) + '</b>' +
-            (pnl != null
-              ? ' · <span title="Чистая прибыль, если стоп сработает и лимитка исполнится по этой цене. Комиссия взята рыночная: сработавший стоп забирает встречную заявку и платит как тейкер.">' +
-                'чистыми <b style="color:' + (pnl >= 0 ? 'var(--green)' : '#ff6b6b') + ';font-size:12px;">' +
-                (pnl >= 0 ? '+' : '−') + '$' + Math.abs(pnl).toFixed(2) + '</b>' +
-                ' <span style="color:var(--t2);">(' + (pnl >= 0 ? '+' : '') + (pnl / spent * 100).toFixed(2) + '%)</span></span>'
-              : '') +
-            (stuck ? ' <span style="color:#ff6b6b;">стакан короче запроса: стоп и лимит упёрлись в один уровень</span>' : '');
-        }
+        // Стакан короче запроса — оба уровня упёрлись в дно и цены совпали.
+        // Молчать нельзя: ордер тогда не то, что задумано.
+        if (info) info.innerHTML = sellStepInfoHtml(stop, limit, size, cost, iStop === iLim);
       } catch (e) {
         if (info) info.textContent = 'стакан недоступен';
       }
@@ -12533,21 +12568,21 @@ Requirements:
             <button onclick="sellAllLimit('${pair}','${totalFilled}','${coin}')" style="padding:3px 10px;border:1px solid var(--yellow);border-radius:5px;background:transparent;color:var(--yellow);font-size:10px;font-weight:600;cursor:pointer;">Sell Limit</button>
           </span>
           <div style="margin-top:7px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-            <span class="step-group" title="Глубина стопа в стакане. 0 — лучший ask, −1 первый бид, −2 второй. Стоп срабатывает при падении цены к нему, и только тогда в стакан уходит лимитка.">
+            <span class="step-group" title="Глубина стопа в стакане: −1 это лучший бид, −2 второй и так далее. Мельче −1 нельзя: уровень 0 — лучший ask, то есть выше рынка, а стоп продажи срабатывает при движении цены ВНИЗ к нему — такой ордер биржа отклонит. Срабатывание идёт по последней цене сделки, и только после него в стакан уходит лимитка.">
               <span class="step-lbl">стоп</span>
               <button class="step-btn" onclick="bumpSellStep('${coin}','${pair}','stop',-1,'${totalFilled}',${totalUSD})" title="глубже в биды">−</button>
-              <input type="number" id="sellStepStop_${coin}" value="${_st.sd}" min="-49" max="0" step="1" onchange="recalcSellSteps('${coin}','${pair}','${totalFilled}',${totalUSD})" class="step-inp">
+              <input type="number" id="sellStepStop_${coin}" value="${_st.sd}" min="-49" max="-1" step="1" onchange="recalcSellSteps('${coin}','${pair}','${totalFilled}',${totalUSD})" class="step-inp">
               <button class="step-btn" onclick="bumpSellStep('${coin}','${pair}','stop',1,'${totalFilled}',${totalUSD})" title="ближе к лучшему ask">+</button>
             </span>
             <span class="step-group" title="Глубина лимитной цены. Всегда минимум на шаг глубже стопа: стоп обязан сработать раньше, чем цена дойдёт до лимитной, иначе лимитка уйдёт в стакан по цене, которой там уже нет. Меняешь стоп — лимит подстраивается сам.">
               <span class="step-lbl">ask</span>
               <button class="step-btn" onclick="bumpSellStep('${coin}','${pair}','ask',-1,'${totalFilled}',${totalUSD})" title="глубже в биды">−</button>
-              <input type="number" id="sellStepAsk_${coin}" value="${_st.ld}" min="-50" max="-1" step="1" onchange="recalcSellSteps('${coin}','${pair}','${totalFilled}',${totalUSD})" class="step-inp">
+              <input type="number" id="sellStepAsk_${coin}" value="${_st.ld}" min="-50" max="-2" step="1" onchange="recalcSellSteps('${coin}','${pair}','${totalFilled}',${totalUSD})" class="step-inp">
               <button class="step-btn" onclick="bumpSellStep('${coin}','${pair}','ask',1,'${totalFilled}',${totalUSD})" title="ближе к лучшему ask">+</button>
             </span>
             <button onclick="recalcSellSteps('${coin}','${pair}','${totalFilled}',${totalUSD})" title="Пересчитать по текущему стакану" style="padding:5px 10px;border:1px solid var(--b1);border-radius:6px;background:transparent;color:var(--t2);font-size:13px;cursor:pointer;">⟳</button>
             <button onclick="sellStopInline('${pair}','${totalFilled}','${coin}')" title="Поставить стоп-лимит на весь объём по этим числам" style="padding:5px 14px;border:1px solid #f5c518;border-radius:6px;background:rgba(245,197,24,0.12);color:#f5c518;font-size:12px;font-weight:700;cursor:pointer;">Sell Stop</button>
-            <span id="sellStepInfo_${coin}" style="font-size:11px;color:var(--t2);" title="0 — лучший ask, дальше уровни bid вниз">${_st.stop != null && _st.limit != null ? `стоп $${fmtPrice(_st.stop)} · лимит $${fmtPrice(_st.limit)}` : '0 = лучший ask · нажми ⟳'}</span>
+            <span id="sellStepInfo_${coin}" style="font-size:11px;color:var(--t2);" title="Глубина в стакане: −1 лучший бид, дальше вниз. Стоп срабатывает по последней цене сделки, и только тогда выставляется лимитка.">${_st.stop != null && _st.limit != null ? sellStepInfoHtml(_st.stop, _st.limit, totalFilled, totalUSD, false) : '0 = лучший ask · нажми ⟳'}</span>
           </div>` ; })() : ''}</div>
 
           <table class="profit-table" data-pair="${pair}" data-filled="${totalFilled}" data-usd="${totalUSD}" data-avgbuy="${avgBuyPrice}">
@@ -13304,6 +13339,10 @@ Requirements:
         if (!book) return; // keep cached values; do not clear DOM
         const asks = book.asks || [];
         const bids = book.bids || [];
+        // Стакан уже получен для позиций в очереди — считаем по нему и цены
+        // стоп-лимита. Своего запроса это не стоит, а подпись перестаёт
+        // мелькать: перерисовка списка больше не затирает посчитанное.
+        try { sellStepPaintFromBook(pair, book); } catch { }
         pairGroups[pair].forEach(el => {
           const limitPrice = parseFloat(el.dataset.limit);
           const side = el.dataset.side;
