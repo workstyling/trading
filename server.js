@@ -5496,6 +5496,58 @@ async function entryPaperSettle() {
     await new Promise(r => setTimeout(r, 220));
   }
 
+  // Пересчёт старых сделок под исправленный отсчёт минут. Отметка «через 5
+  // минут» раньше брала свечу, начинающуюся на пятой, то есть цену шестой.
+  // Сдвиг не имеет направления — это шум, а не смещение, — но смешанная
+  // выборка хуже однородной, и проверить, что он ничего не менял, можно
+  // только пересчитав.
+  //
+  // Идёт после основной очереди и по шесть за такт: свежие сделки важнее
+  // старых, лимит биржи делится в их пользу.
+  const remeasure = entryPaper.trades
+    .filter(t => t.done60 === true && !t.v3 && t.pair && t.entry > 0 && (t.tries3 || 0) < 3)
+    .slice(0, 6);
+  for (const t of remeasure) {
+    try {
+      const start = new Date(t.at).toISOString();
+      const end = new Date(t.at + 65 * 60_000).toISOString();
+      const r = await fetch(`${DIP_CB}/products/${t.pair}/candles?granularity=60&start=${start}&end=${end}`, DIP_H);
+      if (!r.ok) { t.tries3 = (t.tries3 || 0) + 1; changed = true; continue; }
+      const raw = await r.json();
+      const cs = (Array.isArray(raw) ? raw : [])
+        .map(x => ({ t: Number(x[0]) * 1000, lo: Number(x[1]), hi: Number(x[2]), cl: Number(x[4]) }))
+        .filter(c => c.t >= t.at).sort((a, b) => a.t - b.t);
+      if (!cs.length) { t.tries3 = (t.tries3 || 0) + 1; changed = true; continue; }
+      const at = (min) => {
+        const want = t.at + (min - 1) * 60_000;
+        let best = null;
+        for (const c of cs) { const d = Math.abs(c.t - want); if (d <= 90_000 && (!best || d < best.d)) best = { d, cl: c.cl }; }
+        return best ? Math.round((best.cl / t.entry - 1) * 10000) / 100 : null;
+      };
+      // Сохраняем прежние значения: без них нельзя сказать, изменил ли
+      // пересчёт выводы или только цифры в четвёртом знаке.
+      if (t.m60was === undefined) { t.m5was = t.m5; t.m15was = t.m15; t.m60was = t.m60; }
+      t.m5 = at(5); t.m15 = at(15); t.m60 = at(60);
+      const tp = t.entry * (1 + ENTRY_PAPER_NEED / 100);
+      let hit = null, worst = 0;
+      for (const c of cs) {
+        const mins = (c.t - t.at) / 60_000;
+        if (mins + 1 > 60) break;
+        const d = (c.lo / t.entry - 1) * 100; if (d < worst) worst = d;
+        if (c.hi >= tp) { hit = Math.round(mins); break; }
+      }
+      t.hit60 = hit;
+      t.mae60 = Math.round(worst * 100) / 100;
+      t.v3 = true;
+      changed = true;
+    } catch (e) { console.error('[entry-paper] пересчёт ' + t.coin + ': ' + e.message); }
+    await new Promise(r => setTimeout(r, 220));
+  }
+  if (remeasure.length) {
+    const left = entryPaper.trades.filter(t => t.done60 === true && !t.v3 && (t.tries3 || 0) < 3).length;
+    console.log('[entry-paper] пересчитано ' + remeasure.length + ', осталось ' + left);
+  }
+
   if (changed) saveEntryPaper();
 }
 setInterval(entryPaperSettle, 3 * 60 * 1000);
@@ -5539,6 +5591,16 @@ app.get('/api/entry-paper', (req, res) => {
     openControl: entryPaper.trades.filter(t => !t.done60 && t.control).length,
     // Порог окупаемости: цель +0.30% при круге маркет+лимитка 0.225%.
     needPct: ENTRY_PAPER_NEED,
+    // Пересчёт старых сделок под исправленный отсчёт минут: сколько осталось
+    // и сдвинул ли он средний результат. Пока идёт, выборка смешанная, и
+    // об этом надо знать, а не догадываться.
+    remeasure: (() => {
+      const old = entryPaper.trades.filter(t => t.done60 === true && !t.v3 && (t.tries3 || 0) < 3).length;
+      const moved = all.filter(t => t.m60was !== undefined && t.m60 != null && t.m60was != null);
+      const shift = moved.length
+        ? Math.round(moved.reduce((a, t) => a + (t.m60 - t.m60was), 0) / moved.length * 1000) / 1000 : null;
+      return { left: old, done: all.filter(t => t.v3).length, checked: moved.length, avgShift: shift };
+    })(),
     overall: group(done),
     // Контроль: те же условия, балл ниже порога. Разница между этими двумя
     // строками и есть ответ на вопрос, стоит ли порог хоть чего-нибудь.
