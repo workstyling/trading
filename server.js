@@ -2405,6 +2405,31 @@ let fillBaselineDone = notifiedFills.length > 0;
 function fmtNumTg(n, d = 2) { return Number(n).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }); }
 function fmtPxTg(p) { p = parseFloat(p) || 0; return p < 0.001 ? p.toFixed(8) : p < 1 ? p.toFixed(6) : p < 100 ? p.toFixed(4) : p.toFixed(2); }
 
+// Позиция, сверенная с кошельком.
+//
+// Список ордеров — это ОКНО последних: покупка может попасть в него, а
+// продажа остаться за краем, и монета будет выглядеть купленной и не
+// проданной. Сверка сторожей на этом обожглась — поставила их на монеты,
+// которых в кошельке нет, они сработали по безубытку и прислали сообщения о
+// давно закрытых сделках.
+//
+// Кошелёк — истина. Нет монеты — нет позиции. Расходится количество — история
+// неполная, и порог безубытка считался бы по чужим числам.
+function positionAgainstWallet(orders, productId, balances) {
+  const { filled, usd } = positionFromOrders(orders, productId);
+  if (!(filled > 0) || !(usd > 0)) return null;
+  const coin = productId.replace('-USD', '');
+  const row = (balances || []).find(b => b.currency === coin);
+  const real = row ? Number(row.total) : null;
+  if (real == null || !Number.isFinite(real) || real <= 0) {
+    return { skip: 'монеты нет в кошельке' };
+  }
+  if (Math.abs(real - filled) / filled > 0.05) {
+    return { skip: 'кошелёк говорит ' + real + ', ордера ' + filled + ' — история неполная' };
+  }
+  return { filled, usd };
+}
+
 // Монеты, которым сторож безубытка ставить НЕ надо.
 //
 // Два случая: пользователь снял его руками, и сторож уже сработал по этой
@@ -2440,20 +2465,42 @@ async function reconcileBeWatches() {
     if (ordersCache.data && (now - ordersCache.ts) < ORDERS_CACHE_TTL) orders = ordersCache.data;
     else { orders = await getLatestOrders(); ordersCache = { data: orders, ts: now }; }
 
+    // Кошелёк — истина о том, чем мы владеем. Без него ордера подсказывают
+    // позиции, которых давно нет.
+    let balances = [];
+    try { balances = await fetchAccountBalances(); } catch (e) {
+      console.error('[be-watch] сверка: баланс не получен, пропускаю проход');
+      return;
+    }
+
     const pairs = [...new Set(orders.filter(o => o.status === 'FILLED' && o.product_id).map(o => o.product_id))];
-    let added = 0;
+    let added = 0, dropped = 0;
     for (const productId of pairs) {
       const coin = productId.replace('-USD', '');
       if (beOptOut.includes(coin)) continue;
       if (beWatches.some(w => w.coin === coin)) continue;
-      const { filled, usd } = positionFromOrders(orders, productId);
+      const pos = positionAgainstWallet(orders, productId, balances);
+      if (!pos) continue;
+      if (pos.skip) continue;
       // Пыль позицией не считаем: сторожить остаток на копейки незачем.
-      if (!(filled > 0) || !(usd > 1)) continue;
-      beWatches.push({ coin, pair: productId, filled, usd, t: Date.now(), auto: true });
+      if (!(pos.usd > 1)) continue;
+      beWatches.push({ coin, pair: productId, filled: pos.filled, usd: pos.usd, t: Date.now(), auto: true });
       added++;
-      console.log('[be-watch] сверка: ' + coin + ' без сторожа при позиции ' + filled + ' на $' + usd.toFixed(2) + ' — поставлен');
+      console.log('[be-watch] сверка: ' + coin + ' без сторожа при позиции ' + pos.filled + ' на $' + pos.usd.toFixed(2) + ' — поставлен');
     }
-    if (added) saveBeWatches();
+
+    // Сторож на монету, которой в кошельке нет, — прямая дорога к сообщению о
+    // давно закрытой сделке. Снимаем такие, даже поставленные руками.
+    for (const w of [...beWatches]) {
+      const row = balances.find(b => b.currency === w.coin);
+      const real = row ? Number(row.total) : 0;
+      if (!(real > 0)) {
+        beWatches = beWatches.filter(x => x.coin !== w.coin);
+        dropped++;
+        console.log('[be-watch] сверка: ' + w.coin + ' снят — монеты нет в кошельке');
+      }
+    }
+    if (added || dropped) saveBeWatches();
   } catch (e) { console.error('[be-watch] сверка:', e.message); }
 }
 setInterval(reconcileBeWatches, 2 * 60 * 1000);
