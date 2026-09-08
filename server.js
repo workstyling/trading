@@ -2405,6 +2405,60 @@ let fillBaselineDone = notifiedFills.length > 0;
 function fmtNumTg(n, d = 2) { return Number(n).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }); }
 function fmtPxTg(p) { p = parseFloat(p) || 0; return p < 0.001 ? p.toFixed(8) : p < 1 ? p.toFixed(6) : p < 100 ? p.toFixed(4) : p.toFixed(2); }
 
+// Монеты, которым сторож безубытка ставить НЕ надо.
+//
+// Два случая: пользователь снял его руками, и сторож уже сработал по этой
+// позиции (он одноразовый — иначе слал бы сообщение каждую минуту). Оба
+// снимаются новой покупкой: купил ещё — значит позиция другая, и сторожить
+// её снова уместно.
+const BE_OPTOUT_FILE = path.join(__dirname, 'be-optout.json');
+let beOptOut = [];
+try { beOptOut = JSON.parse(fs.readFileSync(BE_OPTOUT_FILE, 'utf8')) || []; } catch { }
+if (!Array.isArray(beOptOut)) beOptOut = [];
+function saveBeOptOut() {
+  try { fs.writeFileSync(BE_OPTOUT_FILE, JSON.stringify(beOptOut)); } catch (e) { console.error('[be-watch] optout', e.message); }
+}
+function beOptOutSet(coin, off) {
+  const had = beOptOut.includes(coin);
+  if (off && !had) { beOptOut.push(coin); saveBeOptOut(); }
+  else if (!off && had) { beOptOut = beOptOut.filter(c => c !== coin); saveBeOptOut(); }
+}
+
+// Сверка состояния: у каждой открытой позиции должен стоять сторож.
+//
+// Ловля одного события ненадёжна. Исполнение может прийти в момент
+// перезапуска, потеряться в кеше ордеров или разойтись с опросом — и тогда
+// позиция остаётся без сторожа, а кнопка на экране этого не показывает.
+// Проверка идёт от состояния, а не от события: есть позиция и нет отказа —
+// значит сторож должен быть.
+async function reconcileBeWatches() {
+  try {
+    const s = loadSettings();
+    if (!(s.telegramToken && s.telegramChat)) return;
+    let orders;
+    const now = Date.now();
+    if (ordersCache.data && (now - ordersCache.ts) < ORDERS_CACHE_TTL) orders = ordersCache.data;
+    else { orders = await getLatestOrders(); ordersCache = { data: orders, ts: now }; }
+
+    const pairs = [...new Set(orders.filter(o => o.status === 'FILLED' && o.product_id).map(o => o.product_id))];
+    let added = 0;
+    for (const productId of pairs) {
+      const coin = productId.replace('-USD', '');
+      if (beOptOut.includes(coin)) continue;
+      if (beWatches.some(w => w.coin === coin)) continue;
+      const { filled, usd } = positionFromOrders(orders, productId);
+      // Пыль позицией не считаем: сторожить остаток на копейки незачем.
+      if (!(filled > 0) || !(usd > 1)) continue;
+      beWatches.push({ coin, pair: productId, filled, usd, t: Date.now(), auto: true });
+      added++;
+      console.log('[be-watch] сверка: ' + coin + ' без сторожа при позиции ' + filled + ' на $' + usd.toFixed(2) + ' — поставлен');
+    }
+    if (added) saveBeWatches();
+  } catch (e) { console.error('[be-watch] сверка:', e.message); }
+}
+setInterval(reconcileBeWatches, 2 * 60 * 1000);
+setTimeout(reconcileBeWatches, 45_000);
+
 // BE-сторож включается сам, когда покупка исполнилась.
 //
 // Почему на сервере, а не в браузере при выставлении ордера: безубыток
@@ -2458,6 +2512,7 @@ function autoBeWatch(coin, productId, orders) {
   }
   // Ставим заново даже если сторож уже был: докупка меняет и объём, и
   // потраченное, а старый сторож считал бы безубыток по прежней позиции.
+  beOptOutSet(coin, false);
   beWatches = beWatches.filter(w => w.coin !== coin);
   beWatches.push({ coin, pair: productId, filled, usd, t: Date.now(), auto: true });
   saveBeWatches();
@@ -2545,9 +2600,13 @@ app.post('/api/be-watch', (req, res) => {
   if (enable) {
     const s = loadSettings();
     if (!(s.telegramToken && s.telegramChat)) return res.json({ success: false, error: 'Telegram не настроен: укажи Bot Token и Chat ID в настройках' });
+    beOptOutSet(coin, false);
     beWatches = beWatches.filter(w => w.coin !== coin);
     beWatches.push({ coin, pair: pair || coin + '-USD', filled: parseFloat(filled) || 0, usd: parseFloat(usd) || 0, t: Date.now() });
   } else {
+    // Снятие руками — это отказ: без отметки сверка вернула бы сторож через
+    // две минуты, и снять его было бы нельзя.
+    beOptOutSet(coin, true);
     beWatches = beWatches.filter(w => w.coin !== coin);
   }
   saveBeWatches();
@@ -2574,6 +2633,9 @@ setInterval(async () => {
         // кнопка гаснет, сообщения нет. Как у сторожа просадки.
         if (!sent) { console.error('[be-watch] ' + w.pair + ': Telegram не принял, сторож оставлен'); continue; }
         beWatches = beWatches.filter(x => x.coin !== w.coin);
+        // Сработавший сторож одноразовый: без отметки сверка поставила бы его
+        // заново через две минуты, и сообщение уходило бы снова и снова.
+        beOptOutSet(w.coin, true);
         saveBeWatches();
         console.log(`[be-watch] ${w.pair} fired at ask=${ask}, pnl=${pnl.toFixed(2)}, telegram=${sent}`);
       }
