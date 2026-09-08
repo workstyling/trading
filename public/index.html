@@ -6962,6 +6962,30 @@
       if (st === 'CANCELLED' || st === 'EXPIRED' || st === 'FAILED') return true;
       return parseFloat(o.filled_size || 0) > 0 && parseFloat(o.total_value || 0) > 0;
     }
+
+    // Шаг цены пары. Биржа принимает только кратные ему цены: у CP и CRO это
+    // 0.00001, а полоса отдавала шесть знаков — такую цену не выставить.
+    // Спрашиваем один раз на пару и держим в памяти.
+    const _tickCache = {};
+    async function priceTick(pair) {
+      if (_tickCache[pair] != null) return _tickCache[pair];
+      try {
+        const p = await cbGet('https://api.exchange.coinbase.com/products/' + pair, 600000);
+        const inc = p && p.quote_increment;
+        if (inc) {
+          const dec = String(inc).includes('.') ? (String(inc).split('.')[1].replace(/0+$/, '').length || 0) : 0;
+          _tickCache[pair] = dec;
+          return dec;
+        }
+      } catch { }
+      return null;
+    }
+    // Пока шаг не спросили — прежнее правило, чтобы полоса работала сразу.
+    function roundToTick(price, dec) {
+      const d = dec == null ? (price < 1 ? 6 : 2) : dec;
+      return Number(price.toFixed(d));
+    }
+
     function refreshAfterTrade(orderId) {
       try { loadUsdBalance(); } catch { }
       try { loadVolume30d(true); } catch { }
@@ -10681,7 +10705,7 @@ Requirements:
               <tr>
                 <th>Buy</th>
                 <th>Amount</th>
-                <th>Limit</th>
+                <th title="Что выйдет, если продать весь остаток ПО ТЕКУЩЕМУ ask, посчитано по комиссии рынка — худший случай. Полоса ниже показывает другое число, потому что считает по цене, на которую вы навели, а не по текущей.">Limit</th>
                 <th>Ask</th>
                 <th>Bid</th>
               </tr>
@@ -12950,7 +12974,7 @@ Requirements:
 
             const currentLabelPos = Math.max(14, currentPos);
             h += `
-            <div class="price-progress-container" id="progress_${coin}_${idx}" data-buy-price="${buyPrice}" data-target-price="${targetSellPrice}" data-breakeven-pct="${breakevenPct}" data-order-id="${buyOrder.order_id}" data-filled="${filledSize}" data-spent="${actualCost.toFixed(2)}" data-fee="${buyFeeP}" data-sell-fee="${sellFeeP}" data-left-max="${leftMax}" data-right-max="${rightMax}">
+            <div class="price-progress-container" id="progress_${coin}_${idx}" data-pair="${coin}-USD" data-buy-price="${buyPrice}" data-target-price="${targetSellPrice}" data-breakeven-pct="${breakevenPct}" data-order-id="${buyOrder.order_id}" data-filled="${filledSize}" data-spent="${actualCost.toFixed(2)}" data-fee="${buyFeeP}" data-sell-fee="${sellFeeP}" data-left-max="${leftMax}" data-right-max="${rightMax}">
               <div class="price-progress-top">
                 <span class="info-order" style="left:0;color:#888;font-size:9px;">#${orderIdShort}</span>
                 <span class="info-current ${isProfit ? 'profit' : 'loss'}" style="left:${currentLabelPos}%">${currentPct >= 0 ? '+' : ''}${currentPct.toFixed(2)}%</span>
@@ -13048,24 +13072,36 @@ Requirements:
         const tooltip = bar.querySelector('.price-hover-tooltip');
         const hoverLine = bar.querySelector('.price-hover-line');
 
+        // Шаг цены спрашиваем заранее и держим рядом: обработчик движения мыши
+        // не должен ждать сеть.
+        let tickDec = null;
+        if (container.dataset.pair) priceTick(container.dataset.pair).then(d => { tickDec = d; });
+
         function calcHover(e) {
           const rect = bar.getBoundingClientRect();
           const x = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
           const pct = x / rect.width;
           const changePct = leftMax + pct * (rightMax - leftMax);
-          const hoverPrice = buyPrice * (1 + changePct / 100);
-          const revenue = filled * hoverPrice * (1 - fee);
-          const profit = revenue - spent;
-          return { pct, hoverPrice, profit };
+          // Округляем ДО расчёта: иначе показанная прибыль относится к цене с
+          // лишними знаками, а копируется другая — и числа расходятся ровно
+          // там, где на них смотрят перед выставлением ордера.
+          const hoverPrice = roundToTick(buyPrice * (1 + changePct / 100), tickDec);
+          // Лимитка, стоящая в стакане, платит комиссию мейкера; та же цена,
+          // взятая по рынку, — тейкера. Разница на этом объёме под доллар, но
+          // выставляют-то лимитку.
+          const profit = filled * hoverPrice * (1 - getFeeLimit()) - spent;
+          const profitTaker = filled * hoverPrice * (1 - fee) - spent;
+          return { pct, hoverPrice, profit, profitTaker };
         }
 
         container.addEventListener('mousemove', (e) => {
-          const { pct, hoverPrice, profit } = calcHover(e);
+          const { pct, hoverPrice, profit, profitTaker } = calcHover(e);
           const profitColor = profit >= 0 ? '#30d158' : '#ff453a';
-          const priceStr = hoverPrice < 1 ? hoverPrice.toFixed(6) : hoverPrice.toFixed(2);
+          const priceStr = String(hoverPrice);
           tooltip.style.display = 'block';
           tooltip.style.left = (pct * 100) + '%';
-          tooltip.innerHTML = `<span style="color:${profitColor};font-weight:700;">${profit >= 0 ? '+' : ''}$${profit.toFixed(2)}</span> <span style="color:#888;">@ $${priceStr}</span>`;
+          tooltip.innerHTML = `<span style="color:${profitColor};font-weight:700;">${profit >= 0 ? '+' : ''}$${profit.toFixed(2)}</span>` +
+            ` <span style="color:#888;">лимиткой · ${profitTaker >= 0 ? '+' : ''}$${profitTaker.toFixed(2)} по рынку @ $${priceStr}</span>`;
           hoverLine.style.display = 'block';
           hoverLine.style.left = (pct * 100) + '%';
         });
@@ -13077,7 +13113,7 @@ Requirements:
 
         container.addEventListener('click', (e) => {
           const { hoverPrice, profit } = calcHover(e);
-          const priceStr = hoverPrice < 1 ? hoverPrice.toFixed(6) : hoverPrice.toFixed(2);
+          const priceStr = String(hoverPrice);
           // Copy with fallback for HTTP
           try {
             const ta = document.createElement('textarea');
@@ -13088,7 +13124,7 @@ Requirements:
             document.execCommand('copy');
             document.body.removeChild(ta);
           } catch {}
-          showCustomAlert(`Copied: $${priceStr} (profit: ${profit >= 0 ? '+' : ''}$${profit.toFixed(2)})`);
+          showCustomAlert(`Скопировано: $${priceStr} — лимиткой ${profit >= 0 ? '+' : ''}$${profit.toFixed(2)}`);
         });
       });
       // Show real balances from cache, or fetch if not ready
