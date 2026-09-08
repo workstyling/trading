@@ -12600,7 +12600,7 @@ Requirements:
               <button class="step-btn" onclick="bumpSellStep('${coin}','${pair}','ask',-1,'${totalFilled}',${totalUSD})" title="глубже в биды">−</button>
             </span>
             <button onclick="recalcSellSteps('${coin}','${pair}','${totalFilled}',${totalUSD})" title="Пересчитать по текущему стакану" style="padding:5px 10px;border:1px solid var(--b1);border-radius:6px;background:transparent;color:var(--t2);font-size:13px;cursor:pointer;">⟳</button>
-            <button onclick="sellStopInline('${pair}','${totalFilled}','${coin}')" title="Поставить стоп-лимит на весь объём по этим числам" style="padding:5px 14px;border:1px solid #f5c518;border-radius:6px;background:rgba(245,197,24,0.12);color:#f5c518;font-size:12px;font-weight:700;cursor:pointer;">Sell Stop</button>
+            <button onclick="sellStopInline('${pair}','${totalFilled}','${coin}')" title="Поставить стоп-лимит на весь объём по этим числам" style="padding:6px 14px;border:none;border-radius:6px;background:linear-gradient(135deg,#f5c518,#d99e00);color:#1a1a1a;font-size:12px;font-weight:700;cursor:pointer;">Sell Stop</button>
             <span id="sellStepInfo_${coin}" style="font-size:11px;color:var(--t2);" title="Глубина в стакане: −1 лучший бид, дальше вниз. Стоп срабатывает по последней цене сделки, и только тогда выставляется лимитка.">${_st.stop != null && _st.limit != null ? sellStepInfoHtml(_st.stop, _st.limit, totalFilled, totalUSD, false, false, 0, 0) : '0 = лучший ask · нажми ⟳'}</span>
           </div>` ; })() : ''}</div>
 
