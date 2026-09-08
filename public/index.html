@@ -6986,6 +6986,62 @@
       return Number(price.toFixed(d));
     }
 
+
+    // Обновление списка без пересборки разметки.
+    //
+    // Список перерисовывался целиком каждые десять секунд: innerHTML менялся,
+    // потому что в нём живут цены и прибыль, а они меняются всегда. Дерево
+    // уничтожалось и создавалось заново — отсюда моргание и «подгрузка» шкалы,
+    // у которой в стилях стоит переход 0.3 с.
+    //
+    // Если каркас тот же — а он тот же, пока не появилась и не исчезла монета
+    // или ордер, — правим на месте только то, что действительно изменилось.
+    // Заодно переживают наведение мыши, выделение текста и уже навешанные
+    // обработчики.
+    function sameSkeleton(a, b) {
+      const ta = a.getElementsByTagName('*'), tb = b.getElementsByTagName('*');
+      if (ta.length !== tb.length) return false;
+      for (let i = 0; i < ta.length; i++) {
+        if (ta[i].tagName !== tb[i].tagName) return false;
+        if (ta[i].id !== tb[i].id) return false;
+      }
+      return true;
+    }
+
+    function patchNode(oldEl, newEl) {
+      // Значения атрибутов: стили полосы, цвета, подсказки
+      const seen = new Set();
+      for (const at of newEl.attributes) {
+        seen.add(at.name);
+        if (oldEl.getAttribute(at.name) !== at.value) oldEl.setAttribute(at.name, at.value);
+      }
+      for (const at of [...oldEl.attributes]) {
+        if (!seen.has(at.name)) oldEl.removeAttribute(at.name);
+      }
+      // Текст: числа, которые и меняются
+      const on = oldEl.childNodes, nn = newEl.childNodes;
+      for (let i = 0; i < nn.length && i < on.length; i++) {
+        if (nn[i].nodeType === 3 && on[i].nodeType === 3 && on[i].nodeValue !== nn[i].nodeValue) {
+          on[i].nodeValue = nn[i].nodeValue;
+        }
+      }
+    }
+
+    // Возвращает true, если обошлись правкой на месте.
+    function patchList(container, html) {
+      const tmp = document.createElement('div');
+      tmp.innerHTML = html;
+      if (!sameSkeleton(container, tmp)) return false;
+      const ta = container.getElementsByTagName('*'), tb = tmp.getElementsByTagName('*');
+      for (let i = 0; i < ta.length; i++) patchNode(ta[i], tb[i]);
+      // Текстовые узлы верхнего уровня тоже
+      for (let i = 0; i < tmp.childNodes.length && i < container.childNodes.length; i++) {
+        const a = container.childNodes[i], b = tmp.childNodes[i];
+        if (a.nodeType === 3 && b.nodeType === 3 && a.nodeValue !== b.nodeValue) a.nodeValue = b.nodeValue;
+      }
+      return true;
+    }
+
     function refreshAfterTrade(orderId) {
       try { loadUsdBalance(); } catch { }
       try { loadVolume30d(true); } catch { }
@@ -13034,7 +13090,10 @@ Requirements:
 
       // Only update if content changed (reduces flickering)
       if (container.innerHTML !== h) {
-        container.innerHTML = h;
+        // Сперва пробуем поправить на месте: полная замена уничтожает дерево,
+        // и полоса каждые десять секунд перерисовывалась заново.
+        const patched = (() => { try { return patchList(container, h); } catch { return false; } })();
+        if (!patched) container.innerHTML = h;
         // Кнопки алерта нарисованы из _beWatches на момент сборки строки.
         // Сторож мог включиться сервером за это время — переспрашиваем.
         try { beRefreshSoon(); } catch {}
@@ -13054,6 +13113,9 @@ Requirements:
         setTimeout(() => { try { updateOrderPositions(); } catch {} }, 50);
         // Add click handlers for order selectors
         container.querySelectorAll('.order-selector').forEach(sel => {
+          // Элемент мог пережить обновление: тогда обработчик уже на нём.
+          if (sel.dataset.wired) return;
+          sel.dataset.wired = '1';
           sel.addEventListener('click', () => {
             const orderId = sel.dataset.orderId;
             const isNowSelected = sel.classList.toggle('selected');
@@ -13067,6 +13129,8 @@ Requirements:
         });
         // Add click handlers for bar selectors (checkbox-style, multiple per coin)
         container.querySelectorAll('.bar-selector').forEach(sel => {
+          if (sel.dataset.wired) return;
+          sel.dataset.wired = '1';
           sel.addEventListener('click', () => {
             const orderId = sel.dataset.orderId;
             const coin = sel.dataset.coin;
@@ -13119,6 +13183,15 @@ Requirements:
         if (container.dataset.pair) priceTick(container.dataset.pair).then(d => { tickDec = d; });
 
         function calcHover(e) {
+          // Читаем из атрибутов КАЖДЫЙ раз: элемент теперь переживает
+          // обновления списка, и захваченные при навешивании числа устарели бы
+          // после первой же частичной продажи.
+          const filled = parseFloat(container.dataset.filled) || 0;
+          const spent = parseFloat(container.dataset.spent) || 0;
+          const buyPrice = parseFloat(container.dataset.buyPrice) || 0;
+          const fee = parseFloat(container.dataset.sellFee) || parseFloat(container.dataset.fee) || 0;
+          const leftMax = parseFloat(container.dataset.leftMax) || -5;
+          const rightMax = parseFloat(container.dataset.rightMax) || 5;
           const rect = bar.getBoundingClientRect();
           const x = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
           const pct = x / rect.width;
@@ -13134,6 +13207,10 @@ Requirements:
           const profitTaker = filled * hoverPrice * (1 - fee) - spent;
           return { pct, hoverPrice, profit, profitTaker };
         }
+
+        // Полоса переживает обновление на месте — обработчики уже висят.
+        if (container.dataset.wired) return;
+        container.dataset.wired = '1';
 
         container.addEventListener('mousemove', (e) => {
           const { pct, hoverPrice, profit, profitTaker } = calcHover(e);
