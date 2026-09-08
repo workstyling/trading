@@ -810,6 +810,16 @@ app.get('/get-latest-orders', async (req, res) => {
   }
 });
 
+// Стоимость ИСПОЛНЕННОЙ части ордера с учётом комиссии. Знак комиссии зависит
+// от стороны: за покупку платишь сверх, с продажи удерживают.
+function partialValue(order) {
+  const filled = parseFloat(order.filled_value || 0);
+  if (!Number.isFinite(filled) || filled <= 0) return 0;
+  const fees = parseFloat(order.total_fees || 0) || 0;
+  const net = order.side === 'BUY' ? filled + fees : filled - fees;
+  return Math.round(Math.max(0, net) * 100000000) / 100000000;
+}
+
 async function getLatestOrders() {
   console.log('Fetching latest orders...');
 
@@ -850,7 +860,21 @@ async function getLatestOrders() {
       filled_value: order.filled_value || '0',
       average_filled_price: order.average_filled_price || '0',
       total_fees: order.total_fees || '0',
-      total_value: order.total_value_after_fees || order.filled_value || '0',
+      // Деньги, реально прошедшие по ордеру.
+      //
+      // У ЧАСТИЧНО исполненного ордера total_value_after_fees отдаёт стоимость
+      // ВСЕГО ордера, а не исполненной части. На стоп-лимите по CRO это дало
+      // $2494.82 вместо настоящих $1200.33: приложение решило, что за
+      // проданную половину получено вдвое больше, потраченное по монете вышло
+      // отрицательным (−$3.79), и прибыль показалась как +$1297 при реальных
+      // трёх долларах.
+      //
+      // Для завершённых ордеров ничего не меняем: там обе величины совпадают,
+      // и на них построена вся история прибыли. Считаем сами только там, где
+      // ордер ещё не закрыт полностью.
+      total_value: order.status === 'FILLED'
+        ? (order.total_value_after_fees || order.filled_value || '0')
+        : String(partialValue(order)),
       limit_price: limitConfig?.limit_price || null,
       order_configuration: order.order_configuration
     };
