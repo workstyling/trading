@@ -4934,7 +4934,7 @@ function microScalpEntryValue(row) {
 // минуты дают 0.54 — треть устаревания снимается почти даром.
 const ENTRY_SCAN_INTERVAL_MS = 2 * 60 * 1000;
 const ENTRY_SCAN_MAX_COINS = 60;
-const entryScan = { results: [], at: 0, total: 0, running: false, failedAt: 0 };
+const entryScan = { results: [], at: 0, total: 0, running: false, failedAt: 0, market: null };
 
 // Сколько монета уже висит в списке. TAO попал в него 51 раз за 35 часов, и
 // каждое попадание выглядело новым сигналом — хотя это было одно непрерывное
@@ -4984,10 +4984,26 @@ async function entrySignals(coin) {
   // сегодняшним нельзя.
   const newest = Number(raw[0] && raw[0][0]) * 1000;
   if (!(newest > 0) || Date.now() - newest > 20 * 60_000) return null;
-  const rows = raw.slice(0, 288).map(x => ({ lo: Number(x[1]), hi: Number(x[2]), cl: Number(x[4]) }))
+  const rows = raw.slice(0, 288).map(x => ({ t: Number(x[0]) * 1000, lo: Number(x[1]), hi: Number(x[2]), cl: Number(x[4]) }))
     .filter(x => x.lo > 0 && x.hi > 0 && x.cl > 0);
   if (rows.length < 30) return null;
   const price = rows[0].cl;
+
+  // Суточный ход монеты — для общего направления рынка. Опорную свечу ищем по
+  // ВРЕМЕНИ: ряд рвётся, когда по монете нет сделок, и «288-я свеча назад»
+  // легко оказывается позавчерашней. Если подходящей ближе полутора часов к
+  // сутками назад нет, честнее не считать вовсе, чем считать не тот интервал.
+  let chg24 = null;
+  {
+    const want = rows[0].t - 24 * 3600_000;
+    let best = null;
+    for (const r of rows) {
+      if (best == null || Math.abs(r.t - want) < Math.abs(best.t - want)) best = r;
+    }
+    if (best && Math.abs(best.t - want) <= 90 * 60_000 && best.cl > 0) {
+      chg24 = Math.round((price / best.cl - 1) * 10000) / 100;
+    }
+  }
 
   // RSI(14) по 5-минутным закрытиям
   const closes = rows.slice(0, 15).map(x => x.cl).reverse();
@@ -5006,6 +5022,7 @@ async function entrySignals(coin) {
   const lowDay = Math.min(...rows.map(x => x.lo));
   return {
     price,
+    chg24Pct: chg24,
     runupPct: lowDay > 0 ? Math.round((price / lowDay - 1) * 10000) / 100 : null,
     rsi5: rsi,
     pullbackPct: high30 > 0 ? Math.round((high30 / price - 1) * 10000) / 100 : null,
@@ -5147,7 +5164,7 @@ async function runEntryScan() {
           });
           if (!value) return;
           rows.push({
-            coin, pair: coin + '-USD', price: sig.price, vol24: volume,
+            coin, pair: coin + '-USD', price: sig.price, vol24: volume, chg24Pct: sig.chg24Pct,
             rsi: sig.rsi5, pullbackPct: sig.pullbackPct, spreadPct: sp,
             dayFallPct: sig.dayFallPct, recovery: recoveryOdds(sig.dayFallPct),
             runupPct: sig.runupPct, runup: runupOdds(sig.runupPct),
@@ -5207,6 +5224,29 @@ async function runEntryScan() {
       entryScan.failedAt = Date.now();
       console.error('[entry-scan] ни одной монеты из ' + universe.length + ' — прежний результат сохранён');
       return;
+    }
+    // Общее направление рынка. Считается по тем же монетам, что и скан, из
+    // тех же свечей — ни одного лишнего обращения к бирже.
+    //
+    // Это ОПИСАНИЕ обстановки, а не сигнал. Проверял, меняет ли направление
+    // то, что обещает панель: на всей выборке (25 785 точек, 25 дней) при
+    // BTC выше +2% за сутки возвраты за час шли 72.7% против 64.8% — разница
+    // +8.0 п.п. при погрешности ±0.8, значимо. Но разделение по ВРЕМЕНИ её не
+    // подтвердило: первая половина периода +13.9 ±1.0, вторая +0.1 ±1.4. То
+    // есть признак не воспроизвёлся, и продавать его как «рынок растёт —
+    // покупай смелее» нельзя. Ширина рынка за ЧАС не дала ничего и на всей
+    // выборке: +0.6 п.п. при погрешности ±0.7.
+    //
+    // Поэтому индикатор говорит, где мы находимся, и молчит о том, что делать.
+    {
+      const moved = rows.filter(r => r.chg24Pct != null);
+      const btc = rows.find(r => r.coin === 'BTC');
+      entryScan.market = moved.length >= 10 ? {
+        coins: moved.length,
+        up: moved.filter(r => r.chg24Pct > 0).length,
+        avgChg24: Math.round(moved.reduce((a, r) => a + r.chg24Pct, 0) / moved.length * 100) / 100,
+        btcChg24: btc && btc.chg24Pct != null ? btc.chg24Pct : null,
+      } : null;
     }
     entryScan.results = rows;
     entryScan.total = universe.length;
@@ -5493,6 +5533,7 @@ app.get('/api/entry-scan', (req, res) => {
     staleSince: entryScan.failedAt || 0,
     intervalMs: ENTRY_SCAN_INTERVAL_MS,
     serverNow: Date.now(),
+    market: entryScan.market,
     results: entryScan.results.slice(0, 15),
   });
 });

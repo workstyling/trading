@@ -6173,6 +6173,38 @@
           box.innerHTML = head + '<div style="color:var(--t2);font-size:11px;">Первый скан после запуска…</div>';
           return;
         }
+        // Общее направление рынка — строка над таблицей.
+        //
+        // Это описание обстановки, а не сигнал. Проверял, меняет ли
+        // направление то, что обещает панель: на всей выборке при BTC выше
+        // +2% за сутки возвраты шли 72.7% против 64.8% (+8.0 ±0.8, значимо),
+        // но разделение по времени эффект не подтвердило — первая половина
+        // периода +13.9 ±1.0, вторая +0.1 ±1.4. Признак не воспроизвёлся,
+        // поэтому строка говорит, где мы, и молчит о том, что делать.
+        const mk = j.market;
+        const mkLine = !mk ? '' : (() => {
+          const share = mk.up / mk.coins * 100;
+          const dir = share >= 65 ? ['растёт', '#00e5a0', String.fromCharCode(9650)]
+            : share <= 35 ? ['падает', '#ff6b6b', String.fromCharCode(9660)]
+              : ['боком', '#f5c518', String.fromCharCode(9644)];
+          const sgn = v => (v >= 0 ? '+' : '') + v + '%';
+          const tip = 'Направление рынка за сутки по тем же ' + mk.coins + ' монетам, что и в скане.' + String.fromCharCode(10) +
+            'Это обстановка, а не подсказка к покупке: проверял, меняет ли направление доли возврата — ' +
+            'на всей выборке при BTC выше +2% выходило 72.7% против 64.8% (+8.0 при погрешности 0.8), ' +
+            'но по половинам периода +13.9 и +0.1. Признак не воспроизвёлся, поэтому строка ничего не советует.' + String.fromCharCode(10) +
+            'Ширина рынка за час не дала ничего и на всей выборке: +0.6 при погрешности 0.7.';
+          return '<div title="' + tip + '" style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;' +
+            'margin-bottom:6px;padding:4px 7px;border-radius:6px;background:rgba(255,255,255,0.03);font-size:10px;">' +
+            '<span style="color:' + dir[1] + ';font-weight:800;">' + dir[2] + ' Рынок ' + dir[0] + '</span>' +
+            '<span style="color:var(--t2);">' + mk.up + ' из ' + mk.coins + ' монет в плюсе за сутки</span>' +
+            (mk.btcChg24 != null
+              ? '<span style="color:var(--t2);">BTC <b style="color:' +
+                (mk.btcChg24 >= 0 ? 'var(--green)' : '#ff6b6b') + ';">' + sgn(mk.btcChg24) + '</b></span>'
+              : '') +
+            '<span style="color:var(--t2);">рынок <b style="color:' +
+            (mk.avgChg24 >= 0 ? 'var(--green)' : '#ff6b6b') + ';">' + sgn(mk.avgChg24) + '</b> в среднем</span>' +
+            '</div>';
+        })();
         // Таблица с постоянными колонками, а не список строк переменной формы.
         // Прежде подпись «откат 0.44%, RSI 41» занимала столько места, сколько
         // занимала, и числа при каждом обновлении оказывались в новом месте.
@@ -6218,7 +6250,7 @@
             num(e.pct + '%', col, true) +
             num(held || '—', x.inListMin > 90 ? '#f5843a' : 'var(--t2)') + '</tr>';
         };
-        box.innerHTML = head +
+        box.innerHTML = head + mkLine +
           (good.length
             ? '<table style="width:100%;border-collapse:collapse;"><thead>' + head2 + '</thead><tbody>' + good.slice(0, 8).map(cell).join('') + '</tbody></table>' +
             '<div id="entryPaperM" style="margin-top:6px;padding-top:5px;border-top:1px solid var(--b1);font-size:10px;color:var(--t2);"></div>'
