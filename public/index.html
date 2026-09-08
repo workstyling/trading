@@ -9970,7 +9970,9 @@
         if (!px) { if (info) info.textContent = 'стакан пуст'; return; }
         sellStepsSave(coin, { limit: px.limit, stop: px.stop });
         const pi = document.getElementById('limitSellPrice_' + coin);
-        if (pi) pi.value = String(px.limit);
+        // Цена подставляется в поле обычной лимитки — значит и её результат
+        // надо пересчитать, иначе рядом останется число от прежней цены.
+        if (pi) { pi.value = String(px.limit); previewLimitSell(coin, size, cost); }
         if (info) info.innerHTML = sellStepInfoHtml(px.stop, px.limit, size, cost, px.stuck, px.short, px.levels, ladder[1]);
       } catch (e) {
         if (info) info.textContent = 'стакан недоступен';
@@ -10039,6 +10041,34 @@
       if (!el) return;
       el.value = (parseInt(el.value, 10) || 0) + delta;
       recalcSellSteps(coin, pair, size, cost);
+    }
+
+
+    // Что даст обычная лимитка по цене из поля.
+    //
+    // Рядом стояли четыре числа — колонка LIMIT, строка стоп-лимита и два на
+    // полосе, — и все относились к другим ценам. У самого поля Limit price
+    // результата не было ни одного, хотя цена в нём уже стоит: глаз брал
+    // ближайшее число (строку стоп-лимита) и считал его ответом. А это ответ
+    // на другой вопрос: там тейкер, потому что сработавший стоп забирает
+    // встречную заявку, а простая лимитка стоит в стакане и платит мейкера.
+    function previewLimitSell(coin, size, cost) {
+      const el = document.getElementById('limitSellPnl_' + coin);
+      const input = document.getElementById('limitSellPrice_' + coin);
+      if (!el || !input) return;
+      const price = parseFloat(String(input.value).replace(',', '.'));
+      const qty = parseFloat(size) || 0;
+      const spent = parseFloat(cost) || 0;
+      if (!(price > 0) || !(qty > 0) || !(spent > 0)) { el.innerHTML = ''; return; }
+      const maker = qty * price * (1 - getFeeLimit()) - spent;
+      const taker = qty * price * (1 - getFeeMarket()) - spent;
+      const col = maker >= 0 ? 'var(--green)' : '#ff6b6b';
+      el.innerHTML = '<b style="color:' + col + ';">' + (maker >= 0 ? '+' : '−') + '$' + Math.abs(maker).toFixed(2) + '</b>' +
+        '<span style="color:var(--t2);"> если постоит · ' + (taker >= 0 ? '+' : '−') + '$' + Math.abs(taker).toFixed(2) +
+        ' если заберёт сразу</span>';
+      el.title = 'Ордер, стоящий в стакане, платит комиссию мейкера ' + (getFeeLimit() * 100).toFixed(3) +
+        '%. Если поставить цену так, что он сразу заберёт встречную заявку, комиссия будет тейкера ' +
+        (getFeeMarket() * 100).toFixed(3) + '%.';
     }
 
     async function sellAllLimit(productId, size, coin) {
@@ -12661,8 +12691,9 @@ Requirements:
           <h4><span onclick="selectCoinForTrade('${coin}')" title="Выбрать ${coin} и открыть график 15m здесь" style="cursor:pointer;color:var(--blue);">${pair}</span>${todayBadge} <span onclick="toggleFavoriteCoin('${coin}')" title="${isFav ? 'Remove from favorites' : 'Add to favorites'}" style="cursor:pointer;font-size:16px;opacity:${isFav ? '1' : '0.25'};padding:0 6px;color:${isFav ? '#f5c518' : 'inherit'};">★</span><button class="select-coin-btn" onclick="selectCoinForBuy('${coin}')" title="Set for Buy">⬆</button></h4>
           <div class="balance">Selected: ${fmtSize(totalFilled)} ${coin} <span id="realBal_${coin}" style="color:var(--t2);font-size:10px;">(loading real balance...)</span> ${totalFilled > 0 ? `<button class="sell-all-btn" onclick="sellAllCoin('${pair}', '${totalFilled}', ${avgBuyPrice}, ${totalUSD})">SELL ALL</button> <button class="sell-all-btn mkt" onclick="sellAllMarket('${pair}', '${totalFilled}', '${coin}', ${totalUSD})" title="Продать всё ПО РЫНКУ. Диалог покажет реальную цену исполнения по стакану и прибыль, обновляя их каждую секунду.">SELL MKT</button> <button id="bew_${coin}" onclick="toggleBeWatch('${coin}','${pair}',${totalFilled},${totalUSD})" title="Telegram-алерт, когда Limit P&L дойдёт до 0 (сработает один раз и выключится)" style="padding:3px 8px;border:1px solid ${_beWatches[coin] ? 'var(--yellow)' : 'rgba(255,255,255,0.25)'};border-radius:5px;background:${_beWatches[coin] ? 'rgba(245,197,24,0.15)' : 'transparent'};color:${_beWatches[coin] ? 'var(--yellow)' : '#889'};font-size:10px;font-weight:600;cursor:pointer;">🔔 BE${_beWatches[coin] ? ' ON' : ''}</button>` : ''} <button class="${btnClass}" title="${openTitle}" onclick="saveGroupProfit('${coin}', ${groupProfit.toFixed(2)}, '${filledBuys.map(o => o.order_id).join(',')}', '${filledSells.map(o => o.order_id).join(',')}', ${buyCreatedDate ? `'${buyCreatedDate}'` : 'null'})" ${btnDisabled ? 'disabled' : ''}>${btnText}</button>
           ${totalFilled > 0 ? (() => { const _st = sellSteps(coin); return `<span style="margin-left:10px;display:inline-flex;align-items:center;gap:4px;">
-            <input type="text" id="limitSellPrice_${coin}" placeholder="Limit price" value="${_st.limit != null ? _st.limit : ''}" style="width:90px;padding:3px 6px;background:var(--s3);border:1px solid var(--b1);border-radius:5px;color:var(--t0);font-family:'JetBrains Mono',monospace;font-size:11px;outline:none;" autocomplete="off">
+            <input type="text" id="limitSellPrice_${coin}" placeholder="Limit price" value="${_st.limit != null ? _st.limit : ''}" oninput="previewLimitSell('${coin}','${totalFilled}',${totalUSD})" style="width:90px;padding:3px 6px;background:var(--s3);border:1px solid var(--b1);border-radius:5px;color:var(--t0);font-family:'JetBrains Mono',monospace;font-size:11px;outline:none;" autocomplete="off">
             <button onclick="sellAllLimit('${pair}','${totalFilled}','${coin}')" style="padding:3px 10px;border:1px solid var(--yellow);border-radius:5px;background:transparent;color:var(--yellow);font-size:10px;font-weight:600;cursor:pointer;">Sell Limit</button>
+            <span id="limitSellPnl_${coin}" style="font-size:10px;"></span>
           </span>
           <div style="margin-top:7px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
             <span class="step-group" title="Глубина стопа в стакане: −1 это лучший бид, −2 второй и так далее. Мельче −1 нельзя: уровень 0 — лучший ask, то есть выше рынка, а стоп продажи срабатывает при движении цены ВНИЗ к нему — такой ордер биржа отклонит. Срабатывание идёт по последней цене сделки, и только после него в стакан уходит лимитка.">
@@ -13007,6 +13038,16 @@ Requirements:
         // Кнопки алерта нарисованы из _beWatches на момент сборки строки.
         // Сторож мог включиться сервером за это время — переспрашиваем.
         try { beRefreshSoon(); } catch {}
+        // Результат лимитки считается по введённой цене, а поле только что
+        // отрисовано заново: без этого число появлялось лишь после того, как
+        // поле тронут руками.
+        try {
+          container.querySelectorAll('[id^="limitSellPnl_"]').forEach(el => {
+            const coin = el.id.slice('limitSellPnl_'.length);
+            const tbl = container.querySelector('.profit-table[data-pair="' + coin + '-USD"]');
+            if (tbl) previewLimitSell(coin, tbl.dataset.filled, tbl.dataset.usd);
+          });
+        } catch {}
         // After re-render: paint last-known positions from cache, then refresh in background
         try { rehydratePositionsFromCache(); } catch {}
         // Trigger an immediate refresh so positions stay current after render
