@@ -3143,7 +3143,7 @@
               <button class="step-btn" onclick="bumpSellStepM('${coin}','${pair}','ask',-1,'${totalFilledStr}',${totalUSD})">−</button>
             </span>
             <button class="step-btn wide" onclick="recalcSellStepsM('${coin}','${pair}','${totalFilledStr}',${totalUSD})" title="Пересчитать по стакану">⟳</button>
-            <button class="mon-sell-btn stop" onclick="sellStopInlineM('${pair}','${totalFilledStr}','${coin}')">SELL STOP</button>
+            <button class="mon-sell-btn stop" onclick="sellStopInlineM('${pair}','${totalFilledStr}','${coin}',${totalUSD})">SELL STOP</button>
           </div>
           <div id="sellStepInfoM_${coin}" class="step-info" data-size="${totalFilledStr}" data-cost="${totalUSD}">${_st.stop != null && _st.limit != null ? sellStepInfoHtmlM(_st.stop, _st.limit, totalFilledStr, totalUSD, false, false, 0, 0) : 'нажми ⟳'}</div>`;
         }
@@ -3873,14 +3873,29 @@
       recalcSellStepsM(coin, pair, size, cost);
     }
 
-    async function sellStopInlineM(pair, size, coin) {
+    async function sellStopInlineM(pair, size, coin, cost) {
       const st = sellStepsM(coin);
       if (!(st.limit > 0) || !(st.stop > 0)) { toast('Сначала задай глубины — цены ещё не посчитаны', 'error'); return; }
       if (st.stop < st.limit) {
         showOrderError('Стоп ниже лимита', 'Стоп должен быть ВЫШЕ лимитной цены, иначе ордер сработает уже после того, как цена прошла лимитную, и не исполнится.');
         return;
       }
-      const okGo = await confirmTrade('СТОП-ЛИМИТ ' + coin + '<br>стоп $' + fmt(st.stop) + ' · лимит $' + fmt(st.limit) +
+      // Убыток называется словом: цены сами по себе не говорят, что это минус.
+      const qty = parseFloat(size) || 0;
+      const spent = parseFloat(cost) || 0;
+      const feeM = (parseFloat(tradingSettings.marketFee) || 0.25) / 100;
+      const pnl = qty > 0 && spent > 0 ? qty * st.limit * (1 - feeM) - spent : null;
+      const loss = pnl != null && pnl < 0;
+      const okGo = await confirmTrade(
+        (loss
+          ? '<div style="background:rgba(255,107,107,0.14);border:1px solid #ff6b6b;border-radius:8px;padding:8px;margin-bottom:8px;">' +
+            '<b style="color:#ff6b6b;">Зафиксирует убыток −$' + Math.abs(pnl).toFixed(2) +
+            ' (' + (pnl / spent * 100).toFixed(2) + '%)</b></div>'
+          : pnl != null
+            ? '<div style="margin-bottom:8px;"><b style="color:var(--green);">Прибыль +$' + pnl.toFixed(2) +
+              ' (+' + (pnl / spent * 100).toFixed(2) + '%)</b></div>'
+            : '') +
+        'СТОП-ЛИМИТ ' + coin + '<br>стоп $' + fmt(st.stop) + ' · лимит $' + fmt(st.limit) +
         '<br><span style="font-size:11px;color:#888;">Стоп-лимит не гарантирует исполнения: если цена проскочит мимо лимитной, ордер останется висеть.</span>');
       if (!okGo) return;
       try {

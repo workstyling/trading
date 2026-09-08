@@ -9944,7 +9944,7 @@
     }
 
     // Стоп-лимит по этим же числам, без окна: значения уже видны в строке.
-    async function sellStopInline(pair, size, coin) {
+    async function sellStopInline(pair, size, coin, cost) {
       const st = sellSteps(coin);
       if (!(st.limit > 0) || !(st.stop > 0)) {
         showCustomAlert('Сначала задай шаги — цены ещё не посчитаны', true);
@@ -9954,9 +9954,27 @@
         showOrderError('Стоп ниже лимита', 'Стоп должен быть ВЫШЕ лимитной цены, иначе ордер сработает уже после того, как цена прошла лимитную, и не исполнится.');
         return;
       }
-      showConfirmModal('Стоп-лимит на всё: ' + coin,
+      // Убыток в окне подтверждения обязан быть назван словом. Стоп-лимит
+      // часто и ставят ради выхода в минус — это законное намерение, — но
+      // нажать его случайно, глядя на одни цены, слишком легко: числа
+      // $0.05965 и $0.05963 сами по себе не говорят, что это минус десять
+      // долларов.
+      const qty = parseFloat(size) || 0;
+      const spent = parseFloat(cost) || 0;
+      const pnl = qty > 0 && spent > 0 ? qty * st.limit * (1 - getFeeMarket()) - spent : null;
+      const loss = pnl != null && pnl < 0;
+      showConfirmModal((loss ? 'Продажа в убыток: ' : 'Стоп-лимит на всё: ') + coin,
+        (loss
+          ? '<div style="background:rgba(255,107,107,0.12);border:1px solid #ff6b6b;border-radius:8px;padding:9px 11px;margin-bottom:10px;">' +
+            '<b style="color:#ff6b6b;font-size:15px;">Зафиксирует убыток −$' + Math.abs(pnl).toFixed(2) +
+            ' (' + (pnl / spent * 100).toFixed(2) + '%)</b><br>' +
+            '<span style="color:var(--t2);font-size:11px;">Если стоп сработает и лимитка исполнится по этой цене.</span></div>'
+          : pnl != null
+            ? '<div style="margin-bottom:10px;"><b style="color:var(--green);font-size:15px;">Прибыль +$' + pnl.toFixed(2) +
+              ' (+' + (pnl / spent * 100).toFixed(2) + '%)</b></div>'
+            : '') +
         'Стоп <strong>$' + fmtPrice(st.stop) + '</strong>, лимитка <strong>$' + fmtPrice(st.limit) + '</strong><br>' +
-        'Объём: <strong>' + fmtSize(parseFloat(size)) + ' ' + coin + '</strong><br>' +
+        'Объём: <strong>' + fmtSize(qty) + ' ' + coin + '</strong><br>' +
         '<span style="color:var(--t2);font-size:11px;">Стоп-лимит не гарантирует исполнения: если цена проскочит мимо лимитной, ордер останется висеть.</span>',
         async () => {
           try {
@@ -12621,7 +12639,7 @@ Requirements:
               <button class="step-btn" onclick="bumpSellStep('${coin}','${pair}','ask',-1,'${totalFilled}',${totalUSD})" title="глубже в биды">−</button>
             </span>
             <button onclick="recalcSellSteps('${coin}','${pair}','${totalFilled}',${totalUSD})" title="Пересчитать по текущему стакану" style="padding:5px 10px;border:1px solid var(--b1);border-radius:6px;background:transparent;color:var(--t2);font-size:13px;cursor:pointer;">⟳</button>
-            <button onclick="sellStopInline('${pair}','${totalFilled}','${coin}')" title="Поставить стоп-лимит на весь объём по этим числам" style="padding:6px 14px;border:none;border-radius:6px;background:linear-gradient(135deg,#f5c518,#d99e00);color:#1a1a1a;font-size:12px;font-weight:700;cursor:pointer;">Sell Stop</button>
+            <button onclick="sellStopInline('${pair}','${totalFilled}','${coin}',${totalUSD})" title="Поставить стоп-лимит на весь объём по этим числам" style="padding:6px 14px;border:none;border-radius:6px;background:linear-gradient(135deg,#f5c518,#d99e00);color:#1a1a1a;font-size:12px;font-weight:700;cursor:pointer;">Sell Stop</button>
             <span id="sellStepInfo_${coin}" style="font-size:11px;color:var(--t2);" title="Глубина в стакане: −1 лучший бид, дальше вниз. Стоп срабатывает по последней цене сделки, и только тогда выставляется лимитка.">${_st.stop != null && _st.limit != null ? sellStepInfoHtml(_st.stop, _st.limit, totalFilled, totalUSD, false, false, 0, 0) : '0 = лучший ask · нажми ⟳'}</span>
           </div>` ; })() : ''}</div>
 
