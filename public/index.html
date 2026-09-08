@@ -13329,7 +13329,10 @@ Requirements:
     // values on re-renders + on transient API failures.
     async function updateOrderPositions() {
       const posElements = document.querySelectorAll('.order-pos[data-pair]');
-      if (!posElements.length) return;
+      const stepElements = document.querySelectorAll('[id^="sellStepInfo_"]');
+      // Раньше выходили сразу, если нет ни одного открытого лимитного ордера.
+      // Но строка стоп-лимита есть и без них, и ей нужен тот же стакан.
+      if (!posElements.length && !stepElements.length) return;
       const pairGroups = {};
       posElements.forEach(el => {
         const pair = el.dataset.pair;
@@ -13340,6 +13343,15 @@ Requirements:
       // Fire all pair requests in parallel — each pair takes 100-400ms and there can be
       // a dozen unique pairs in the orders list. Sequential await was the main reason
       // positions appeared to "drop out" during a re-render.
+      // Пары, у которых есть строка стоп-лимита, но нет открытых лимиток.
+      // Элемент позиции в стакане рисуется только у открытого лимитного
+      // ордера, поэтому позиция, купленная по рынку, в опрос не попадала —
+      // и её «чистыми» застывало на последнем ручном пересчёте.
+      stepElements.forEach(el => {
+        const pair = el.id.slice('sellStepInfo_'.length) + '-USD';
+        if (!pairGroups[pair]) pairGroups[pair] = [];
+      });
+
       const pairs = Object.keys(pairGroups);
       await Promise.all(pairs.map(async (pair) => {
         let book = null;
