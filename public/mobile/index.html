@@ -6236,6 +6236,9 @@
             (rec ? String.fromCharCode(10) + 'на такой глубине цена возвращалась к входу за час в ' + rec.hour +
               '% случаев, зависала в ' + rec.stuck + '% (14 844 замера, только монеты из списка)' : '') +
             (x.spreadPct != null ? String.fromCharCode(10) + 'спред ' + x.spreadPct + '%' : '') +
+            (x.dayFallPct == null && x.dayCoverH != null
+              ? String.fromCharCode(10) + 'за сутки не считано: истории всего ' + x.dayCoverH +
+                ' ч, суточный максимум по ней был бы занижен' : '') +
             (x.runup ? String.fromCharCode(10) + 'выросла от суточного минимума на ' + x.runup.runup +
               '% — разгон возврату помогает, а не мешает' : '') +
             (x.inListMin > 90 ? String.fromCharCode(10) +

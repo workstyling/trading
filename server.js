@@ -5025,13 +5025,26 @@ async function entrySignals(coin) {
   const win30 = rows.filter(x => t0 - x.t <= 30 * 60_000);
   const winDay = rows.filter(x => t0 - x.t <= 24 * 3600_000);
   const high30 = Math.max(...(win30.length ? win30 : rows.slice(0, 7)).map(x => x.hi));
-  const highDay = Math.max(...winDay.map(x => x.hi));
+  // Резать окно по времени мало: если по монете были простои, в сутки попадёт
+  // мало свечей, и «суточный максимум» посчитается по часу торговли. Тогда
+  // падение занижено, а монета сядет в более мелкую строку таблицы возвратов —
+  // зеркало той самой ошибки, ради которой окно и переводили на время.
+  //
+  // На ликвидной полусотне это почти не встречается: из 28 676 проверенных
+  // окон меньше 23 часов покрыли 0.07%, минимум составил 21.5 часа. Но скан
+  // берёт шире этого замера, и молча показать час вместо суток нельзя.
+  const dayCoverH = (t0 - winDay[winDay.length - 1].t) / 3600_000;
+  const dayOk = dayCoverH >= 20 && winDay.length >= 30;
+  const highDay = dayOk ? Math.max(...winDay.map(x => x.hi)) : null;
   // Разгон: на сколько монета выше своего суточного минимума.
-  const lowDay = Math.min(...winDay.map(x => x.lo));
+  const lowDay = dayOk ? Math.min(...winDay.map(x => x.lo)) : null;
   return {
     price,
     chg24Pct: chg24,
     runupPct: lowDay > 0 ? Math.round((price / lowDay - 1) * 10000) / 100 : null,
+    // Сколько часов реально покрыто — чтобы отказ был виден, а не выглядел
+    // как «данных нет».
+    dayCoverH: Math.round(dayCoverH * 10) / 10,
     rsi5: rsi,
     pullbackPct: high30 > 0 ? Math.round((high30 / price - 1) * 10000) / 100 : null,
     // Падение считается долей САМОГО максимума, а не «на сколько цене надо
@@ -5177,6 +5190,7 @@ async function runEntryScan() {
           if (!value) return;
           rows.push({
             coin, pair: coin + '-USD', price: sig.price, vol24: volume, chg24Pct: sig.chg24Pct,
+            dayCoverH: sig.dayCoverH,
             rsi: sig.rsi5, pullbackPct: sig.pullbackPct, spreadPct: sp,
             dayFallPct: sig.dayFallPct, recovery: recoveryOdds(sig.dayFallPct),
             runupPct: sig.runupPct, runup: runupOdds(sig.runupPct),
