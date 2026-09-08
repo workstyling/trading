@@ -5338,10 +5338,19 @@ async function runEntryScan() {
     {
       const moved = rows.filter(r => r.chg24Pct != null);
       const btc = rows.find(r => r.coin === 'BTC');
+      // Ход рынка берём МЕДИАНОЙ, а не средним. Среднее тянет на себя одна
+      // разогнавшаяся монета: при 30 монетах из 48 в плюсе и BTC на −0.26%
+      // строка показывала «+3.05% в среднем», тогда как обычная монета
+      // прибавила 0.80% — в выдаче стояла одна на +37.4%. Медиана описывает
+      // то, что строка и обещает: где находится типичная монета.
+      const chg = moved.map(r => r.chg24Pct).sort((a, b) => a - b);
+      const mid = chg.length
+        ? (chg.length % 2 ? chg[(chg.length - 1) / 2] : (chg[chg.length / 2 - 1] + chg[chg.length / 2]) / 2)
+        : null;
       entryScan.market = moved.length >= 10 ? {
         coins: moved.length,
         up: moved.filter(r => r.chg24Pct > 0).length,
-        avgChg24: Math.round(moved.reduce((a, r) => a + r.chg24Pct, 0) / moved.length * 100) / 100,
+        medChg24: mid == null ? null : Math.round(mid * 100) / 100,
         btcChg24: btc && btc.chg24Pct != null ? btc.chg24Pct : null,
       } : null;
     }
