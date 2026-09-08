@@ -12675,7 +12675,17 @@ Requirements:
           let sellBtn = '';
           if (isBuy && filledVal > 0) {
             const checkMark = existingSellOrder ? `<span class="sell-exists" title="Sell order exists">✓</span>` : '';
-            sellBtn = `<button class="sell-target-btn" onclick="createSellOrder('${pair}', '${o.filled_size}', '${targetPrice}')">+${tradingSettings.sellMarkup}%</button><button class="sell-ask-btn" onclick="sellAtCurrentAsk('${pair}', '${o.filled_size}', ${parseFloat(o.average_filled_price) || 0}, ${parseFloat(o.total_value) || 0})" title="Sell at Best Ask">Sell Ask</button>${checkMark}`;
+            // Продавать можно только то, что осталось: часть могла уже уйти
+            // другим ордером, и биржа отклоняет продажу целиком, если
+            // запрошено больше свободного. Стоимость делим в той же доле —
+            // иначе прибыль считалась бы против денег, которых в этой части
+            // сделки нет.
+            const _ordFilled = parseFloat(o.filled_size) || 0;
+            const _sellNow = Math.max(0, Math.min(_ordFilled, totalFilled));
+            const _sellCost = _ordFilled > 0 ? (parseFloat(o.total_value) || 0) * (_sellNow / _ordFilled) : 0;
+            const _sellStr = _sellNow.toFixed(_sellNow < 1 ? 8 : 6);
+            const _partial = _sellNow + 1e-9 < _ordFilled;
+            sellBtn = `<button class="sell-target-btn" onclick="createSellOrder('${pair}', '${_sellStr}', '${targetPrice}')">+${tradingSettings.sellMarkup}%</button><button class="sell-ask-btn" onclick="sellAtCurrentAsk('${pair}', '${_sellStr}', ${parseFloat(o.average_filled_price) || 0}, ${_sellCost})" title="${_partial ? `Продать остаток: ${fmtSize(_sellNow)} из ${fmtSize(_ordFilled)} — остальное уже продано` : 'Sell at Best Ask'}">Sell Ask${_partial ? ' ⤵' : ''}</button>${checkMark}`;
           }
           // Cancel button for OPEN orders (both buy and sell)
           if (o.status === 'OPEN') {

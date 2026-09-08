@@ -3066,7 +3066,15 @@
           const targetPrice = isBuy && avgP > 0 ? avgP * (1 + tradingSettings.sellMarkup / 100) : 0;
           const tpDecimals = targetPrice < 0.001 ? 8 : targetPrice < 1 ? 6 : 2;
           // Use exact filled_size string from API to avoid float precision issues
-          const exactSize = o.filled_size || '0';
+          // Продавать можно только то, что осталось: часть могла уже уйти
+          // другим ордером, и биржа отклоняет продажу целиком, если запрошено
+          // больше свободного. Стоимость делим в той же доле — иначе прибыль
+          // считалась бы против денег, которых в этой части сделки нет.
+          const _ordFilled = parseFloat(o.filled_size) || 0;
+          const _sellNow = Math.max(0, Math.min(_ordFilled, totalFilled));
+          const _sellCost = _ordFilled > 0 ? (parseFloat(o.total_value) || 0) * (_sellNow / _ordFilled) : 0;
+          const _partial = _sellNow + 1e-9 < _ordFilled;
+          const exactSize = _sellNow.toFixed(_sellNow < 1 ? 8 : 6);
           const exactTarget = targetPrice > 0 ? targetPrice.toFixed(tpDecimals) : '0';
 
           html += `<div class="monitor-order">
@@ -3078,7 +3086,7 @@
             </div>
             <div class="monitor-actions">
               ${isBuy ? `<button class="mon-sell-btn" onclick="createSellAt('${pair}','${exactSize}','${exactTarget}')">+${tradingSettings.sellMarkup}%</button>` : ''}
-              ${isBuy ? `<button class="mon-sell-btn ask" onclick="sellAtAsk('${pair}','${exactSize}',${avgP},${parseFloat(o.total_value) || 0})">Ask</button>` : ''}
+              ${isBuy ? `<button class="mon-sell-btn ask" onclick="sellAtAsk('${pair}','${exactSize}',${avgP},${_sellCost})" title="${_partial ? 'Продать остаток — остальное уже продано' : 'Продать по лучшему ask'}">Ask${_partial ? ' ⤵' : ''}</button>` : ''}
               <button class="mon-deselect" onclick="deselectOrder('${o.order_id}')">✕</button>
             </div>
           </div>`;
@@ -4029,6 +4037,25 @@
       } catch {}
       if (!askPrice) askPrice = monitorPriceCache[pair]?.ask;
       if (!askPrice) { toast('No ask price', 'error'); return; }
+
+      // Свободный остаток, а не то, что показано в строке. Часть монеты могла
+      // повиснуть в открытом ордере продажи — тогда биржа отклоняет продажу
+      // ЦЕЛИКОМ, и без этой проверки ордер уходил и падал без объяснения:
+      // на десктопе сторож есть, здесь его не было.
+      try {
+        const bj = await (await fetch('/get-balances')).json();
+        const bal = ((bj && bj.balances) || []).find(b => b.currency === coin);
+        const avail = bal ? parseFloat(bal.available) : null;
+        if (avail != null && Number.isFinite(avail) && avail + 1e-9 < sz) {
+          const hold = bal && parseFloat(bal.hold) > 0 ? parseFloat(bal.hold) : 0;
+          showOrderError('Продавать нечего',
+            'Выбрано <b>' + fmt(sz) + ' ' + coin + '</b>, свободно только <b>' + fmt(avail) + '</b>' +
+            (hold > 0 ? ' — ещё <b>' + fmt(hold) + '</b> заморожено в открытом ордере' : '') +
+            '.<br><br>Биржа отклоняет такой ордер целиком, поэтому он даже не отправлен. ' +
+            (hold > 0 ? 'Сними открытый ордер продажи и повтори.' : 'Обнови страницу — остаток мог измениться.'));
+          return;
+        }
+      } catch { /* баланс не отдали — идём дальше, отказ биржи покажем как есть */ }
 
       const effectiveReceived = sz * askPrice * (1 - sellFee);
       // Приоритет — фактические затраты с уплаченной комиссией (total_value_after_fees), как в мониторе
