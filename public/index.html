@@ -12580,15 +12580,15 @@ Requirements:
           <div style="margin-top:7px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
             <span class="step-group" title="Глубина стопа в стакане: −1 это лучший бид, −2 второй и так далее. Мельче −1 нельзя: уровень 0 — лучший ask, то есть выше рынка, а стоп продажи срабатывает при движении цены ВНИЗ к нему — такой ордер биржа отклонит. Срабатывание идёт по последней цене сделки, и только после него в стакан уходит лимитка.">
               <span class="step-lbl">стоп</span>
-              <button class="step-btn" onclick="bumpSellStep('${coin}','${pair}','stop',-1,'${totalFilled}',${totalUSD})" title="глубже в биды">−</button>
-              <input type="number" id="sellStepStop_${coin}" value="${_st.sd}" min="-49" max="-1" step="1" onchange="recalcSellSteps('${coin}','${pair}','${totalFilled}',${totalUSD})" class="step-inp">
               <button class="step-btn" onclick="bumpSellStep('${coin}','${pair}','stop',1,'${totalFilled}',${totalUSD})" title="ближе к лучшему ask">+</button>
+              <input type="number" id="sellStepStop_${coin}" value="${_st.sd}" min="-49" max="-1" step="1" onchange="recalcSellSteps('${coin}','${pair}','${totalFilled}',${totalUSD})" class="step-inp">
+              <button class="step-btn" onclick="bumpSellStep('${coin}','${pair}','stop',-1,'${totalFilled}',${totalUSD})" title="глубже в биды">−</button>
             </span>
             <span class="step-group" title="Глубина лимитной цены. Всегда минимум на шаг глубже стопа: стоп обязан сработать раньше, чем цена дойдёт до лимитной, иначе лимитка уйдёт в стакан по цене, которой там уже нет. Меняешь стоп — лимит подстраивается сам.">
               <span class="step-lbl">ask</span>
-              <button class="step-btn" onclick="bumpSellStep('${coin}','${pair}','ask',-1,'${totalFilled}',${totalUSD})" title="глубже в биды">−</button>
-              <input type="number" id="sellStepAsk_${coin}" value="${_st.ld}" min="-50" max="-2" step="1" onchange="recalcSellSteps('${coin}','${pair}','${totalFilled}',${totalUSD})" class="step-inp">
               <button class="step-btn" onclick="bumpSellStep('${coin}','${pair}','ask',1,'${totalFilled}',${totalUSD})" title="ближе к лучшему ask">+</button>
+              <input type="number" id="sellStepAsk_${coin}" value="${_st.ld}" min="-50" max="-2" step="1" onchange="recalcSellSteps('${coin}','${pair}','${totalFilled}',${totalUSD})" class="step-inp">
+              <button class="step-btn" onclick="bumpSellStep('${coin}','${pair}','ask',-1,'${totalFilled}',${totalUSD})" title="глубже в биды">−</button>
             </span>
             <button onclick="recalcSellSteps('${coin}','${pair}','${totalFilled}',${totalUSD})" title="Пересчитать по текущему стакану" style="padding:5px 10px;border:1px solid var(--b1);border-radius:6px;background:transparent;color:var(--t2);font-size:13px;cursor:pointer;">⟳</button>
             <button onclick="sellStopInline('${pair}','${totalFilled}','${coin}')" title="Поставить стоп-лимит на весь объём по этим числам" style="padding:5px 14px;border:1px solid #f5c518;border-radius:6px;background:rgba(245,197,24,0.12);color:#f5c518;font-size:12px;font-weight:700;cursor:pointer;">Sell Stop</button>
