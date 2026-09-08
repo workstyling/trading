@@ -5381,9 +5381,9 @@ function runupOdds(runupPct) {
 //
 // Порядок и разрыв между группами устояли — вывод не изменился, изменились
 // величины. Считать надо по отметкам времени: node scripts/measure-recovery.js
-const RECOVERY_MEASURED_AT = '2026-09-08';
-const RECOVERY_SAMPLE = 14844;
-function recoveryOdds(dayFallPct) {
+const RECOVERY_MEASURED_AT = '2026-09-09';
+const RECOVERY_SAMPLE = 58107;
+function recoveryOdds(dayFallPct, pullbackPct) {
   // Number(null) === 0, а не NaN: без явной проверки отсутствие данных
   // проходило как «падение 0%» и превращалось в 56% возврата. Сторож
   // покрытия суток как раз и отдаёт null, когда истории не хватило —
@@ -5391,14 +5391,36 @@ function recoveryOdds(dayFallPct) {
   if (dayFallPct == null || dayFallPct === '') return null;
   const d = Number(dayFallPct);
   if (!Number.isFinite(d)) return null;
-  // Перемерено 2026-09-08 после исправления окон назад: они брались по числу
-  // свечей, и на 35% случаев «сутки» оказывались длиннее 25 часов. Прежние
-  // значения были 57/59/67/72/75 при долях зависания 4.1/3.6/3.0/1.8/0.5.
-  if (d >= 10) return { hour: 77, stuck: 0.5 };
-  if (d >= 6) return { hour: 74, stuck: 1.7 };
-  if (d >= 3) return { hour: 68, stuck: 2.6 };
-  if (d >= 1) return { hour: 60, stuck: 3.5 };
-  return { hour: 56, stuck: 4.4 };
+
+  // ГЛУБИНА ЗА СУТКИ И ОТКАТ СКЛАДЫВАЮТСЯ.
+  //
+  // Прежняя таблица знала только суточную глубину. Оказалось, что откат от
+  // получасового максимума добавляет столько же, а иногда больше — и внутри
+  // КАЖДОЙ полосы глубины:
+  //
+  //   падение 3-6%:   откат <1.5% -> 66%,  >=1.5% -> 84%   (+18.5 ±0.8)
+  //   падение 6-10%:  откат <1.5% -> 73%,  >=1.5% -> 87%   (+13.1 ±0.8)
+  //   падение 10%+:   откат <1.5% -> 78%,  >=1.5% -> 89%   (+10.8 ±0.7)
+  //
+  // Разделение по времени признак подтвердило: лучшая клетка даёт 89.6% в
+  // первой половине периода и 89.0% во второй против 71-72% у остального.
+  // Это не совпадение и не подгонка — в отличие от балла ВХОД, который на
+  // тех же данных оказался ровным от 1 до 100 и вперёд себя не подтвердил.
+  //
+  // Откат неизвестен — берём столбец «мельче 1.5%»: это осторожная оценка,
+  // и «нет данных» не должно выглядеть как хорошая новость.
+  const pRaw = pullbackPct == null || pullbackPct === '' ? NaN : Number(pullbackPct);
+  const deep = Number.isFinite(pRaw) && pRaw >= 1.5;
+
+  // Замер 2026-09-09, 58 107 точек по 30 монетам за 25 дней.
+  // [доля возврата за час, доля зависших дольше трёх суток]
+  if (d >= 10) return deep ? { hour: 89, stuck: 0.9, deep } : { hour: 78, stuck: 0.5, deep };
+  if (d >= 6) return deep ? { hour: 87, stuck: 1.1, deep } : { hour: 73, stuck: 2.0, deep };
+  if (d >= 3) return deep ? { hour: 84, stuck: 1.8, deep } : { hour: 66, stuck: 3.0, deep };
+  if (d >= 1) return deep ? { hour: 84, stuck: 2.7, deep } : { hour: 57, stuck: 4.3, deep };
+  // При падении меньше процента откат глубже 1.5% почти не встречается —
+  // такой клетки в замере нет, и выдумывать её нельзя.
+  return { hour: 56, stuck: 4.7, deep: false };
 }
 
 // Порог входа: ГЛУБИНА ПАДЕНИЯ, а не балл ВХОД.
@@ -5473,7 +5495,7 @@ async function runEntryScan() {
             coin, pair: coin + '-USD', price: sig.price, vol24: volume, chg24Pct: sig.chg24Pct,
             dayCoverH: sig.dayCoverH,
             rsi: sig.rsi5, pullbackPct: sig.pullbackPct, spreadPct: sp,
-            dayFallPct: sig.dayFallPct, recovery: recoveryOdds(sig.dayFallPct),
+            dayFallPct: sig.dayFallPct, recovery: recoveryOdds(sig.dayFallPct, sig.pullbackPct),
             runupPct: sig.runupPct, runup: runupOdds(sig.runupPct),
             entryValue: value,
           });
@@ -5499,10 +5521,17 @@ async function runEntryScan() {
     // такой: сначала прошедшие порог по возврату, следом остальные.
     const recHour = r => (r.recovery && r.recovery.hour) || 0;
     const passes = r => entryPasses(r) ? 1 : 0;
+    const pull = r => Number(r.pullbackPct) || 0;
+    const fall = r => Number(r.dayFallPct) || 0;
+    // При равной доле возврата добивка шла по баллу ВХОД — а он на 45 тысячах
+    // точек оказался ровным от 1 до 100 и вперёд себя не подтвердил, то есть
+    // наверх поднималось наугад. Добиваем откатом и глубиной: это те же
+    // признаки, из которых доля и сложена, только точнее полос.
     rows.sort((a, b) =>
       passes(b) - passes(a) ||
       recHour(b) - recHour(a) ||
-      b.entryValue.pct - a.entryValue.pct);
+      pull(b) - pull(a) ||
+      fall(b) - fall(a));
 
     // Отметки серий: монета остаётся «в списке», пока держит порог; выпала
     // больше чем на полчаса — следующее попадание считается новым.
@@ -5660,7 +5689,7 @@ function entryPaperOpen(rows) {
     entryPaper.trades.push({
       id: row.coin + '_' + now,
       coin: row.coin, pair: row.pair, at: now, entry: row.price,
-      score: row.entryValue.pct, dayFall: row.dayFallPct, rule: ENTRY_RULE,
+      score: row.entryValue.pct, dayFall: row.dayFallPct, pullback: row.pullbackPct, rule: ENTRY_RULE,
       recHour: row.recovery ? row.recovery.hour : null,
       spreadPct: row.spreadPct,
       control: control || undefined,
@@ -5751,7 +5780,7 @@ async function entryPaperSettle() {
       // открытые до исправления часа, несут завышенные 58/61/70/75/79, а
       // открытые после — верные 57/59/67/72/75. Проверять надо ту таблицу,
       // что показывается сейчас; прежняя остаётся для истории.
-      const fresh = recoveryOdds(t.dayFall);
+      const fresh = recoveryOdds(t.dayFall, t.pullback);
       if (fresh) {
         if (t.recHour !== fresh.hour) t.recHourAtOpen = t.recHour;
         t.recHour = fresh.hour;
@@ -5958,7 +5987,10 @@ app.get('/api/entry-paper', (req, res) => {
     // проверка честности прячет свой худший результат.
     promiseVsFact: [[0, 1], [1, 3], [3, 6], [6, 10], [10, 1e9]].map(([lo, hi]) => {
       const g = done.filter(t => (t.dayFall || 0) >= lo && (t.dayFall || 0) < hi);
-      const odds = recoveryOdds(lo);
+      // Обещание полосы берём осторожным столбцом: внутри полосы есть и
+      // мелкие, и глубокие откаты, а сравнивать надо с тем, что панель
+      // обещает по умолчанию.
+      const odds = recoveryOdds(lo, null);
       return { label: hi > 1e8 ? '>' + lo + '%' : lo + '-' + hi + '%',
         n: g.length, promised: odds ? odds.hour : null, actual: share(g, t => t.hit60 != null) };
     }),
