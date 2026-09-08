@@ -14724,7 +14724,7 @@ Requirements:
         const rows = j.results || [];
         const good = rows.filter(x => x.entryValue && x.entryValue.pct >= ENTRY_MIN);
         const head = '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:6px;">' +
-          '<span style="color:var(--t1);font-weight:700;font-size:12px;">Рейтинг отката</span>' +
+          '<span style="color:var(--t1);font-weight:700;font-size:12px;" title="' + 'Порядок — по вероятности возврата, а не по баллу: внутри списка сам ВХОД возврат не предсказывает (66.9% против 68.4%, разница неотличима), а глубина падения даёт разброс в 18 пунктов.' + String.fromCharCode(10) + 'Список ранжирует откаты, а не обещает прибыль.' + String.fromCharCode(10) + 'Возврат — доля случаев, когда цена возвращалась к входу за час, по глубине падения от суточного максимума (15 215 замеров по монетам из этого же списка): ниже 1% — 57%, глубже 10% — 75%.' + String.fromCharCode(10) + 'ВХОД прибыльной сделку не делает — обе группы журнала в минусе, — но убыток сокращает: вперёд +0.274 п.п. против контроля при погрешности ±0.127, это больше круга в 0.200%.' + String.fromCharCode(10) + 'Замер ' + (j.recoveryMeasuredAt || '—') + ' на растущем рынке; на затяжном падении доли надо перемерять.' + '">Рейтинг отката</span>' +
           '<span style="color:var(--t2);font-size:10px;">' + (j.total || 0) + ' монет · порог ' + ENTRY_MIN + '%+' +
           (j.scanning ? ' · сканирую…' : '') + ' · <span id="entryAgo"></span>' +
           // Отвалившийся скан обязан быть видимым: устаревший список выглядит
@@ -14783,16 +14783,6 @@ Requirements:
         box.innerHTML = head +
           (good.length
             ? '<table style="width:100%;border-collapse:collapse;"><thead>' + head2 + '</thead><tbody>' + good.slice(0, 8).map(cell).join('') + '</tbody></table>' +
-              '<div style="color:var(--t2);font-size:10px;margin-top:5px;line-height:1.4;">' +
-              'Порядок — по вероятности ВОЗВРАТА (↩), а не по баллу: измерено, что внутри списка сам ВХОД возврат не предсказывает ' +
-              '(66.9% против 68.4%, разница неотличима), а глубина падения даёт разброс в 18 пунктов. ' +
-              'Список ранжирует ОТКАТЫ, а не обещает прибыль. Строгая лаборатория проверяет другую стратегию; у этого списка есть свой журнал — строка ниже. ' +
-              'Слева ↩ — доля случаев, когда цена возвращалась к входу за час, ' +
-              'по глубине падения от суточного максимума (15 215 замеров по монетам из этого же списка). Справа — ВХОД: где откат глубже и свежее. Чем глубже упала, тем надёжнее возврат: ' +
-              'ниже 1% — 57%, глубже 10% — 75%. ' +
-              'ВХОД прибыльной сделку не делает — обе группы журнала в минусе, — но убыток сокращает: ' +
-              'вперёд измерено +0.274 п.п. против контроля при погрешности ±0.127, это больше круга в 0.200%. ' +
-              'Замер сделан ' + (j.recoveryMeasuredAt || '—') + ' на растущем рынке; на затяжном падении эти доли надо перемерять.</div>' +
             '<div id="entryPaper" style="margin-top:6px;padding-top:5px;border-top:1px solid var(--b1);font-size:10px;color:var(--t2);"></div>'
             : '<table style="width:100%;border-collapse:collapse;"><thead>' + head2 + '</thead><tbody>' + rows.slice(0, 3).map(cell).join('') + '</tbody></table>' +
               '<div style="color:var(--t2);font-size:10px;margin-top:5px;">Порог не взял никто — показаны ближайшие.</div>');
@@ -14829,7 +14819,8 @@ Requirements:
               const se = c && c.m60se != null && o.m60se != null
                 ? Math.sqrt(o.m60se * o.m60se + c.m60se * c.m60se) : null;
               const solid = diff != null && se != null && Math.abs(diff) > 2 * se;
-              el.innerHTML = '<b style="color:var(--t1);">Проверка вперёд:</b> ' + o.n + ' сделок' +
+              el.innerHTML = '<span title="' + 'Обе группы в минусе: порог делает сделку менее убыточной, а не прибыльной.' + (pf.length ? String.fromCharCode(10) + 'обещано/вышло: ' + pf.map(x => x.label + ' ' + x.promised + String.fromCharCode(8594) + x.actual + '%').join(', ') : '') + '">' +
+                '<b style="color:var(--t1);">Проверка вперёд:</b> ' + o.n + ' сделок' +
                 (c && c.n ? ' и ' + c.n + ' контрольных' : '') + ' · ' +
                 'через час <b style="color:' + col(o.m60) + ';">' + num(o.m60) + '</b>' +
                 (c && c.n >= 10 ? ' против <b style="color:' + col(c.m60) + ';">' + num(c.m60) + '</b> у контроля' : '') +
@@ -14839,9 +14830,7 @@ Requirements:
                     (solid ? '' : ' <span style="color:var(--t2);">(в пределах погрешности)</span>')
                   : '') +
                 ' · до цели дошли ' + o.hitHour + '%' +
-                (c && c.n >= 10 ? ' против ' + c.hitHour + '%' : '') +
-                (pf.length ? ' · обещано/вышло: ' + pf.map(x => x.label + ' ' + x.promised + '→' + x.actual + '%').join(', ') : '') +
-                '<div style="color:var(--t2);margin-top:3px;">Обе группы в минусе: порог делает сделку менее убыточной, а не прибыльной.</div>';
+                (c && c.n >= 10 ? ' против ' + c.hitHour + '%' : '') + '</span>';
             }
           }
         } catch { }
