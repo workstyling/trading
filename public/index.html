@@ -7065,6 +7065,27 @@
       return true;
     }
 
+
+    // Заказанный объём ордера, каким бы он ни был.
+    //
+    // Читали только у limit_limit_gtc и market_market_ioc. У стоп-лимита ключ
+    // третий — stop_limit_stop_limit_gtc, — и размер не находился: подставлялся
+    // исполненный, отчего DONE выходил ровно 100% у ордера, исполненного
+    // наполовину. На экране это противоречило само себе: «100%» и рядом живая
+    // кнопка Cancel.
+    //
+    // Берём base_size из ЛЮБОЙ конфигурации, а не из перечисленных руками.
+    // У рыночной покупки по сумме base_size нет вовсе — там исполненное и есть
+    // заказанное.
+    function orderBaseSize(o) {
+      const cfg = (o && o.order_configuration) || {};
+      for (const k of Object.keys(cfg)) {
+        const v = cfg[k] && cfg[k].base_size;
+        if (v != null && v !== '' && parseFloat(v) > 0) return String(v);
+      }
+      return null;
+    }
+
     function refreshAfterTrade(orderId) {
       try { loadUsdBalance(); } catch { }
       try { loadVolume30d(true); } catch { }
@@ -12821,7 +12842,7 @@ Requirements:
           const avgPriceVal = parseFloat(o.average_filled_price) || 0;
           const avgPrice = avgPriceVal ? fmtPrice(avgPriceVal) : '-';
           const usd = o.total_value ? fmtUSD(o.total_value) : '-';
-          const size = o.order_configuration?.limit_limit_gtc?.base_size || o.filled_size || '1';
+          const size = orderBaseSize(o) || o.filled_size || '1';
           const pct = parseFloat(size) > 0 ? ((parseFloat(o.filled_size || 0) / parseFloat(size)) * 100).toFixed(0) : '0';
           const pctClass = pct === '100' ? 'completion-100' : '';
           const status = o.status || '-';
@@ -12844,7 +12865,7 @@ Requirements:
             profitVal = usdAtTarget - usdSpent;
           } else if (isSellOrder && costPerCoin > 0) {
             // SELL order: expected or actual profit
-            const sellSize = parseFloat(o.filled_size) || parseFloat(o.order_configuration?.limit_limit_gtc?.base_size) || 0;
+            const sellSize = parseFloat(o.filled_size) || parseFloat(orderBaseSize(o)) || 0;
             const sellPrice = parseFloat(o.average_filled_price) || parseFloat(o.limit_price) || 0;
             const usdRevenue = sellSize * sellPrice * (1 - sellFeeD);  // revenue after sell fee
             const usdCost = sellSize * costPerCoin;  // actual cost
@@ -12857,7 +12878,7 @@ Requirements:
             ord.product_id === pair &&
             ord.side === 'SELL' &&
             ord.status === 'OPEN' &&
-            Math.abs(parseFloat(ord.order_configuration?.limit_limit_gtc?.base_size || 0) - filledVal) < 0.00000001
+            Math.abs(parseFloat(orderBaseSize(ord) || 0) - filledVal) < 0.00000001
           );
 
           let sellBtn = '';
@@ -13702,7 +13723,7 @@ Requirements:
         const status = o.status || '-';
         const statusClass = status === 'FILLED' ? 'status-filled' : status === 'CANCELLED' ? 'status-cancelled' : status === 'OPEN' ? 'status-open' : '';
         const date = o.created_time ? new Date(o.created_time).toLocaleDateString() : '-';
-        const size = o.order_configuration?.limit_limit_gtc?.base_size || o.order_configuration?.market_market_ioc?.base_size || o.filled_size || '-';
+        const size = orderBaseSize(o) || o.filled_size || '-';
         const filled = o.filled_size || '0';
         const limitPrice = o.limit_price || o.order_configuration?.limit_limit_gtc?.limit_price || '-';
         const avgPrice = o.average_filled_price || '-';

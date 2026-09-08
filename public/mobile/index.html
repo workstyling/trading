@@ -2924,7 +2924,7 @@
         const priceVal = parseFloat(o.average_filled_price) || parseFloat(o.limit_price) || 0;
         const priceStr = priceVal > 0 ? '$' + fmt(priceVal) : '—';
         // Fill %
-        const baseSize = parseFloat(o.order_configuration?.limit_limit_gtc?.base_size || o.filled_size || '0');
+        const baseSize = parseFloat(orderBaseSize(o) || o.filled_size || '0');
         const filledSize = parseFloat(o.filled_size || '0');
         const fillPct = baseSize > 0 ? Math.round((filledSize / baseSize) * 100) : 0;
         const fillClass = fillPct === 100 ? 'color:var(--green)' : fillPct > 0 ? 'color:var(--yellow)' : 'color:var(--t2)';
@@ -3914,6 +3914,21 @@
         if (id && !selectedOrders.includes(id)) { selectedOrders.push(id); saveSelectedToServer(); }
         if (typeof loadOrders === 'function') loadOrders();
       } catch (e) { showOrderError('Стоп не поставлен', e.message); }
+    }
+
+    // Заказанный объём ордера, каким бы он ни был.
+    //
+    // Читали только у limit_limit_gtc. У стоп-лимита ключ другой —
+    // stop_limit_stop_limit_gtc, — и размер не находился: подставлялся
+    // исполненный, отчего доля исполнения выходила ровно 100% у ордера,
+    // исполненного наполовину.
+    function orderBaseSize(o) {
+      const cfg = (o && o.order_configuration) || {};
+      for (const k of Object.keys(cfg)) {
+        const v = cfg[k] && cfg[k].base_size;
+        if (v != null && v !== '' && parseFloat(v) > 0) return String(v);
+      }
+      return null;
     }
 
     async function sellAllMarketM(pair, size, coin, actualCost) {
