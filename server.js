@@ -5098,6 +5098,7 @@ async function entrySpread(coin) {
 // падение предсказывает точнее, чем оба вместе.
 const RUNUP_MEASURED_AT = '2026-09-07';
 function runupOdds(runupPct) {
+  if (runupPct == null || runupPct === '') return null;   // тот же капкан
   const r = Number(runupPct);
   if (!Number.isFinite(r)) return null;
   // Перемерено 2026-09-08 на тех же исправленных окнах; было 86/77/71/63.
@@ -5145,6 +5146,11 @@ function runupOdds(runupPct) {
 const RECOVERY_MEASURED_AT = '2026-09-08';
 const RECOVERY_SAMPLE = 14844;
 function recoveryOdds(dayFallPct) {
+  // Number(null) === 0, а не NaN: без явной проверки отсутствие данных
+  // проходило как «падение 0%» и превращалось в 56% возврата. Сторож
+  // покрытия суток как раз и отдаёт null, когда истории не хватило —
+  // отказ обязан оставаться отказом.
+  if (dayFallPct == null || dayFallPct === '') return null;
   const d = Number(dayFallPct);
   if (!Number.isFinite(d)) return null;
   // Перемерено 2026-09-08 после исправления окон назад: они брались по числу
@@ -5422,7 +5428,11 @@ async function entryPaperSettle() {
       // Отметка на минуте N — закрытие свечи, которая эту минуту покрывает.
       // Допуск полторы минуты: минутный ряд рвётся, когда сделок нет.
       const at = (min) => {
-        const want = t.at + min * 60_000;
+        // Метка свечи — её НАЧАЛО, закрытие приходится на минуту позже.
+        // Ищем свечу, которая на нужной минуте ЗАКРЫВАЕТСЯ, то есть
+        // начинается минутой раньше: прежний поиск брал цену на минуту позже
+        // заявленной отметки.
+        const want = t.at + (min - 1) * 60_000;
         let best = null;
         for (const c of cs) { const d = Math.abs(c.t - want); if (d <= 90_000 && (!best || d < best.d)) best = { d, cl: c.cl }; }
         return best ? Math.round((best.cl / t.entry - 1) * 10000) / 100 : null;
@@ -5472,7 +5482,14 @@ async function entryPaperSettle() {
         .filter(c => c.t >= t.at);
       const tp = t.entry * (1 + ENTRY_PAPER_NEED / 100);
       const hit = cs.filter(c => c.hi >= tp).sort((a, b) => a.t - b.t)[0];
-      t.hit3d = hit ? Math.round((hit.t - t.at) / 60_000) : null;
+      const found = hit ? Math.round((hit.t - t.at) / 60_000) : null;
+      // Часовой расчёт точнее трёхдневного: он идёт по минутным свечам, а
+      // здесь свеча, начавшаяся ДО входа, отбрасывается вместе с первыми
+      // минутами сделки. Если за час возврат уже подтверждён, потерять его
+      // на более грубой сетке нельзя — берём раннее из двух.
+      t.hit3d = t.hit60 != null
+        ? (found != null ? Math.min(found, t.hit60) : t.hit60)
+        : found;
       t.done3d = true;
       changed = true;
     } catch (e) { console.error('[entry-paper]', t.coin, e.message); }
@@ -5743,7 +5760,11 @@ async function markoutFor(trade) {
       ? Math.round((best.px / trade.entry - 1) * 10000) / 100
       : null;
   }
-  out.v2 = true;        // посчитано после того, как горизонт наверняка наступил
+  // Окончательным считаем только полный расчёт. Раньше метка ставилась всегда,
+  // и запись с пропущенной свечой закреплялась навсегда — даже когда свеча
+  // на бирже потом появлялась.
+  out.v2 = MARKOUT_HORIZONS.every(m => out['h' + m] != null);
+  out.tries = 1;
   return out;
 }
 
@@ -5753,15 +5774,20 @@ app.get('/api/micro-scalp-markout', async (req, res) => {
     // Считаем только то, чего ещё нет: markout сделки не меняется никогда.
     // Записи, посчитанные до этой правки, могли лечь с пустым часом раньше
     // срока. Отличаем их по метке и считаем заново — один раз.
+    // Пересчитываем неполные записи, но не бесконечно: свеча может и правда
+    // отсутствовать, если по монете в ту минуту не было сделок.
     const stale = (id) => {
       const m = markoutCache[id];
-      return m && !m.v2 && MARKOUT_HORIZONS.some(h => m['h' + h] == null);
+      return m && !m.v2 && (m.tries || 0) < 4;
     };
     const todo = trades.filter(t => !markoutCache[t.id] || stale(t.id)).slice(0, MARKOUT_MAX_PER_CALL);
     let added = 0;
     for (const t of todo) {
       try {
-        markoutCache[t.id] = await markoutFor(t);
+        const prev = markoutCache[t.id];
+        const fresh = await markoutFor(t);
+        fresh.tries = ((prev && prev.tries) || 0) + 1;
+        markoutCache[t.id] = fresh;
         added++;
       } catch (e) {
         console.error('[markout] ' + t.coin + ': ' + e.message);
@@ -7176,6 +7202,15 @@ function microScalpAlertPool() {
   return [...best.values()].sort((left, right) => right.score - left.score || left.coin.localeCompare(right.coin));
 }
 
+// Подпись собирается из действующих настроек, а не набирается руками: набранная
+// разошлась с ними, как только цель и стоп поменяли — заголовок уже говорил
+// «до 8 ч», а подпись под ним «максимум 60 минут».
+function microScalpTerms() {
+  const h = MICRO_EXECUTION.maxHoldMin;
+  const hold = h >= 120 ? 'до ' + Math.round(h / 60) + ' ч' : 'максимум ' + h + ' мин';
+  return 'цель +' + MICRO_EXECUTION.targetPct + '%, стоп −' + MICRO_EXECUTION.slPct + '%, ' + hold;
+}
+
 function microScalpAlertText(candidate) {
   const checks = Array.isArray(candidate.checks) ? candidate.checks : [];
   return '⚡ <b>БЫСТРЫЙ СКАЛЬП · ДО 8 Ч · PAPER</b> — <b>' + escTg(candidate.pair) + '</b>' + NL +
@@ -7185,7 +7220,7 @@ function microScalpAlertText(candidate) {
     '💵 Цена: $' + fmtPxAe(candidate.price) +
     (candidate.spreadPct != null ? ' · спред ' + candidate.spreadPct + '%' : '') +
     (candidate.vol24 ? ' · объём $' + Math.round(candidate.vol24 / 1e3) + 'K' : '') + NL + NL +
-    '<i>Исследовательский Paper-сетап: цель +1%, стоп −1%, максимум 60 минут.' + NL +
+    '<i>Исследовательский Paper-сетап: ' + microScalpTerms() + '.' + NL +
     'Реальный ордер не выставлен; это не команда на покупку.</i>';
 }
 
@@ -7202,7 +7237,7 @@ function microScalpLoopText(list, total) {
   }).join(NL);
   const more = total > list.length ? NL + '<i>…и ещё ' + (total - list.length) + '</i>' : '';
   return head + NL + '━━━━━━━━━━━━━━━━━━' + NL + rows + more + NL + NL +
-    '<i>Paper-исследование: цель +1%, стоп −1%, максимум 60 минут.' + NL +
+    '<i>Paper-исследование: ' + microScalpTerms() + '.' + NL +
     'Реальные ордера не выставляются; это не команда на покупку.</i>';
 }
 
