@@ -3036,7 +3036,7 @@
         //
         // Пыль после продажи остаётся почти всегда, поэтому закрытой считаем
         // позицию, остаток которой стоит меньше доллара.
-        const restUsd = totalFilled * (avgBuyPrice || 0);
+        const restUsd = totalFilled * (avgBuy || 0);
         const positionClosed = totalFilled <= 0 || restUsd < 1;
         const canSaveProfit = filledBuys.length > 0 && filledSells.length > 0 && positionClosed;
         const groupProfit = canSaveProfit ? -totalUSD : 0;
