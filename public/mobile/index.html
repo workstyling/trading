@@ -1588,10 +1588,10 @@
 
   <!-- Top Gainers Panel -->
   <div class="panel" id="panelVolume" data-tab="volume">
-    <div id="tlPaperStripM" style="display:none;margin-bottom:10px;"></div>
+    <div style="display:none;"><div id="tlPaperStripM" style="display:none;margin-bottom:10px;"></div></div>
 
     <div id="entryScanBoxM" style="margin-bottom:14px;padding:8px 9px;border:1px solid rgba(0,229,160,0.30);border-radius:8px;background:rgba(0,229,160,0.04);"></div>
-    <div style="margin:4px 0 16px;border-bottom:1px solid var(--b1);padding-bottom:12px;">
+    <div id="microScalpPanelM" style="display:none;">
     <div style="display:flex;align-items:center;gap:7px;margin-bottom:7px;">
       <span style="font-weight:700;color:#bf5af2;font-size:13px;">⚡ Быстрый скальп</span>
       <span style="font-size:10px;color:var(--t2);">Paper · до 8 ч · +2%/−2%</span>
@@ -1601,7 +1601,6 @@
       <button class="tl-btn" id="msWatchBtnM" onclick="toggleMicroScalpWatchM()" title="Одноразовый Telegram-алерт быстрого Paper-скальпа">⚡ Алерт</button>
       <button class="tl-btn" id="msLoopBtnM" onclick="toggleMicroScalpLoopM()" title="Непрерывный поток быстрых Paper-сетапов">🔁 Поток</button>
       <button class="tl-btn tl-refresh" id="msRefreshBtnM" onclick="refreshMicroScalpM()" title="Запустить новый быстрый скан">⟳ Скан</button>
-      <button class="tl-btn" id="msFoldBtnM" onclick="labFold('msFoldM', this)" title="Стенд, а не список для покупки: во всех перебранных настройках он измерен как убыточный. Покупать — из «Рейтинга отката» выше. Свёрнутый блок продолжает считаться на сервере.">развернуть</button>
     </div>
     <div id="msFoldM">
       <div style="font-size:10px;color:#d8b4fe;background:rgba(191,90,242,.07);border:1px solid rgba(191,90,242,.24);border-radius:6px;padding:5px 7px;margin-bottom:7px;">Paper-исследование: нажатие на монету только подставляет её в поле покупки, ордер не создаётся. Telegram помечает его «до 8 ч · Paper».</div>
@@ -1609,6 +1608,7 @@
     </div>
     </div>
     <!-- ⚡ Скальп по всему рынку -->
+    <div id="scalpScanPanelM" style="display:none;">
     <div class="tl-head">
       <div class="tl-head-top">
         <span class="tl-name" style="color:#4cc9f0;">⚡ Скальп</span>
@@ -1632,39 +1632,11 @@
         <button class="tl-btn" id="tlScalpWatchBtnM" onclick="toggleScalpWatchM()" title="Одноразовый Telegram-алерт: одно сообщение при входе, потом выключится">⚡ Алерт</button>
         <button class="tl-btn" id="tlScalpLoopBtnM" onclick="toggleScalpLoopM()" title="Непрерывный алерт: шлёт каждый новый вход, пока не выключишь. По одной монете повторно — только после падения на 1% и нового прохода гейта.">🔁 Поток</button>
         <button class="tl-btn tl-refresh" id="ssRefreshBtnM" onclick="loadScalpScanM(true)">⟳ Скан</button>
-        <button class="tl-btn" id="ssFoldBtnM" onclick="labFold('ssBodyM', this)" title="Стенд, а не список для покупки: во всех перебранных настройках он измерен как убыточный. Покупать — из «Рейтинга отката» выше. Свёрнутый блок продолжает считаться на сервере.">развернуть</button>
       </div>
     </div>
     <div id="ssBodyM" style="margin-bottom:16px;"><div style="color:var(--t2);font-size:11px;text-align:center;padding:10px;">Первый скан через минуту…</div></div>
-    <!-- Свёрнутые лаборатории. Обе таблицы ниже измерены как убыточные во
-         всех перебранных настройках: это стенды, а не списки для покупки.
-         Держать их раскрытыми рядом с «Рейтингом отката» значит предлагать
-         выбор там, где выбора нет. Расчёты продолжают идти на сервере
-         независимо от того, свёрнут блок или нет. -->
-    <script>
-      function labFold(bodyId, btn) {
-        var body = document.getElementById(bodyId);
-        if (!body) return;
-        var open = body.style.display !== 'none';
-        open = !open;
-        body.style.display = open ? '' : 'none';
-        btn.textContent = open ? 'свернуть' : 'развернуть';
-        try { localStorage.setItem('fold_' + bodyId, open ? 'open' : 'shut'); } catch (e) { }
-      }
-      (function () {
-        var pairs = [['msBody', 'msFoldBtn'], ['ssBody', 'ssFoldBtn'],
-             ['msFoldM', 'msFoldBtnM'], ['ssBodyM', 'ssFoldBtnM']];
-        for (var i = 0; i < pairs.length; i++) {
-          var body = document.getElementById(pairs[i][0]), btn = document.getElementById(pairs[i][1]);
-          if (!body || !btn) continue;
-          var open = false;
-          try { open = localStorage.getItem('fold_' + pairs[i][0]) === 'open'; } catch (e) { }
-          body.style.display = open ? '' : 'none';
-          btn.textContent = open ? 'свернуть' : 'развернуть';
-        }
-      })();
-    </script>
-
+    </div>
+    
   </div>
 
   <!-- Profit Panel -->
