@@ -12527,7 +12527,20 @@ Requirements:
         // Check if group has BUY and SELL orders with fills for profit calculation
         const filledBuys = orders.filter(o => o.side === 'BUY' && parseFloat(o.filled_size) > 0);
         const filledSells = orders.filter(o => o.side === 'SELL' && parseFloat(o.filled_size) > 0);
-        const canSaveProfit = filledBuys.length > 0 && filledSells.length > 0;
+        // Записывать прибыль можно только по ЗАКРЫТОЙ позиции.
+        //
+        // Прежде хватало одной исполненной продажи, а прибылью считалось
+        // «сколько денег вышло минус сколько вошло». Пока часть монет ещё
+        // твоя, это не прибыль, а вложенные деньги: по CRO после продажи
+        // половины кнопка предлагала записать −$1291.91 убытка, тогда как
+        // оставшиеся 21 516 монет стоили примерно столько же. Один клик — и в
+        // историю уходит ложная запись, на которой потом строятся выводы.
+        //
+        // Пыль после продажи остаётся почти всегда, поэтому закрытой считаем
+        // позицию, остаток которой стоит меньше доллара.
+        const restUsd = totalFilled * (avgBuyPrice || 0);
+        const positionClosed = totalFilled <= 0 || restUsd < 1;
+        const canSaveProfit = filledBuys.length > 0 && filledSells.length > 0 && positionClosed;
 
         // Calculate group profit: same logic as USD column (negated totalUSD)
         const groupProfit = canSaveProfit ? -totalUSD : 0;
@@ -12546,7 +12559,15 @@ Requirements:
         const savedProfitText = alreadySaved
           ? `${alreadySaved.profit >= 0 ? '+' : '-'}$${Math.abs(alreadySaved.profit).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
           : '';
-        const btnText = alreadySaved ? `Update Profit (was ${savedProfitText}) → ${profitText}` : `Save Profit ${profitText}`;
+        // Кнопка обязана объяснить, почему она недоступна: пустая серая
+        // кнопка неотличима от сломанной.
+        const openNote = !positionClosed && filledSells.length > 0
+          ? ` · осталось ${fmtSize(totalFilled)} ${coin}` : '';
+        const btnText = alreadySaved
+          ? `Update Profit (was ${savedProfitText}) → ${profitText}`
+          : (!positionClosed && filledSells.length > 0
+            ? `Save Profit — позиция ещё открыта${openNote}`
+            : `Save Profit ${profitText}`);
         const btnClass = `save-profit-btn ${groupProfit >= 0 ? 'profit-positive' : 'profit-negative'}`;
 
         // Check if any order was created today

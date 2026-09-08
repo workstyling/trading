@@ -3025,7 +3025,20 @@
         const mktColor = marketPnL >= 0 ? 'var(--green)' : 'var(--loss)';
         const filledBuys = orders.filter(order => order.side === 'BUY' && parseFloat(order.filled_size) > 0);
         const filledSells = orders.filter(order => order.side === 'SELL' && parseFloat(order.filled_size) > 0);
-        const canSaveProfit = filledBuys.length > 0 && filledSells.length > 0;
+        // Записывать прибыль можно только по ЗАКРЫТОЙ позиции.
+        //
+        // Прежде хватало одной исполненной продажи, а прибылью считалось
+        // «сколько денег вышло минус сколько вошло». Пока часть монет ещё
+        // твоя, это не прибыль, а вложенные деньги: по CRO после продажи
+        // половины кнопка предлагала записать −$1291.91 убытка, тогда как
+        // оставшиеся 21 516 монет стоили примерно столько же. Один клик — и в
+        // историю уходит ложная запись, на которой потом строятся выводы.
+        //
+        // Пыль после продажи остаётся почти всегда, поэтому закрытой считаем
+        // позицию, остаток которой стоит меньше доллара.
+        const restUsd = totalFilled * (avgBuyPrice || 0);
+        const positionClosed = totalFilled <= 0 || restUsd < 1;
+        const canSaveProfit = filledBuys.length > 0 && filledSells.length > 0 && positionClosed;
         const groupProfit = canSaveProfit ? -totalUSD : 0;
         const profitOrderIds = [...filledBuys, ...filledSells].map(order => order.order_id);
         const savedProfit = profitHistory.find(entry => {
@@ -3034,7 +3047,10 @@
         });
         const profitButton = canSaveProfit
           ? `<button class="mon-profit-btn ${groupProfit >= 0 ? 'profit-positive' : 'profit-negative'}" onclick="saveGroupProfitM('${coin}',${groupProfit.toFixed(2)},'${filledBuys.map(order => order.order_id).join(',')}','${filledSells.map(order => order.order_id).join(',')}')">${savedProfit ? `Update Profit (was ${formatProfitM(savedProfit.profit)}) → ${formatProfitM(groupProfit)}` : `Save Profit ${formatProfitM(groupProfit)}`}</button>`
-          : '';
+          // Пропавшая кнопка неотличима от сломанной: говорим, почему её нет.
+          : (!positionClosed && filledSells.length > 0
+            ? `<div style="font-size:11px;color:var(--t2);margin:6px 0;">Прибыль записывать рано: позиция ещё открыта, осталось ${fmt(totalFilled)} ${coin}</div>`
+            : '');
 
         const isFav = favoriteCoins.has(coin);
         html += `<div class="monitor-group" data-coin="${coin}">
