@@ -5393,13 +5393,27 @@ app.get('/api/entry-paper', (req, res) => {
   const ctrl = all.filter(t => t.control);
   const avg = a => a.length ? Math.round(a.reduce((x, y) => x + y, 0) / a.length * 1000) / 1000 : null;
   const share = (a, f) => a.length ? Math.round(a.filter(f).length / a.length * 100) : null;
-  const group = (list) => !list.length ? null : {
-    n: list.length,
-    m5: avg(list.map(t => t.m5).filter(v => v != null)),
-    m15: avg(list.map(t => t.m15).filter(v => v != null)),
-    m60: avg(list.map(t => t.m60).filter(v => v != null)),
-    hitHour: share(list, t => t.hit60 != null),
-    mae: avg(list.map(t => t.mae60).filter(v => v != null)),
+  // Разброс нужен не меньше среднего: без него нельзя сказать, отличается ли
+  // основная группа от контрольной, а именно на это журнал и заводился.
+  const sd = (a) => {
+    if (a.length < 2) return null;
+    const m = a.reduce((x, y) => x + y, 0) / a.length;
+    return Math.sqrt(a.reduce((s, x) => s + (x - m) ** 2, 0) / (a.length - 1));
+  };
+  const group = (list) => {
+    if (!list.length) return null;
+    const m60s = list.map(t => t.m60).filter(v => v != null);
+    const d = sd(m60s);
+    return {
+      n: list.length,
+      m5: avg(list.map(t => t.m5).filter(v => v != null)),
+      m15: avg(list.map(t => t.m15).filter(v => v != null)),
+      m60: avg(m60s),
+      m60sd: d == null ? null : Math.round(d * 1000) / 1000,
+      m60se: d == null ? null : Math.round(d / Math.sqrt(m60s.length) * 1000) / 1000,
+      hitHour: share(list, t => t.hit60 != null),
+      mae: avg(list.map(t => t.mae60).filter(v => v != null)),
+    };
   };
   const long = entryPaper.trades.filter(t => t.done3d === true);
   res.json({
