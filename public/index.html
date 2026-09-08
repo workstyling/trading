@@ -6440,6 +6440,15 @@
 
   <script>
     // Safe localStorage wrapper (handles incognito/restricted contexts)
+    // Знак ставится только у числа. `null >= 0` это true, из-за чего пустое
+    // значение печаталось как зелёное «+null%» — трижды в разных местах.
+    function pctSigned(v, suffix) {
+      // Пустая строка тоже становится нулём: Number('') === 0. Это тот же
+      // капкан, что и с null, и отсекать его надо отдельно.
+      if (v == null || v === '' || !Number.isFinite(Number(v))) return '—';
+      return (v >= 0 ? '+' : '') + v + (suffix === undefined ? '%' : suffix);
+    }
+
     const safeStorage = {
       getItem: (key) => { try { return localStorage.getItem(key); } catch { return null; } },
       setItem: (key, val) => { try { localStorage.setItem(key, val); } catch { } },
@@ -14749,7 +14758,9 @@ Requirements:
           const dir = share >= 65 ? ['растёт', '#00e5a0', String.fromCharCode(9650)]
             : share <= 35 ? ['падает', '#ff6b6b', String.fromCharCode(9660)]
               : ['боком', '#f5c518', String.fromCharCode(9644)];
-          const sgn = v => (v >= 0 ? '+' : '') + v + '%';
+          // Проверка на месте, а не через общего помощника: панель входа
+          // не должна зависеть от кода, объявленного в другом конце файла.
+          const sgn = v => v == null || v === '' ? '—' : (v >= 0 ? '+' : '') + v + '%';
           const tip = 'Направление рынка за сутки по тем же ' + mk.coins + ' монетам, что и в скане.' + String.fromCharCode(10) +
             'Это обстановка, а не подсказка к покупке: проверял, меняет ли направление доли возврата — ' +
             'на всей выборке при BTC выше +2% выходило 72.7% против 64.8% (+8.0 при погрешности 0.8), ' +
@@ -14999,7 +15010,7 @@ Requirements:
       if (k.includes('BTC')) return 'BTC';
       return k.slice(0, 12);
     }
-    function _sgn(v) { return (v >= 0 ? '+' : '') + v + '%'; }
+    function _sgn(v) { return pctSigned(v); }
     // Монета, поднявшаяся с 37 до 44, и монета, сползшая с 52 до 44 — это
     // разные ситуации, а число одно и то же
     function _scoreTrend(d) {
@@ -16230,7 +16241,7 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
         const archivedClosed = j.staleClosedCount || 0;
         const currentShadows = j.currentShadowCount != null ? j.currentShadowCount : j.shadowCount;
         const histWin = historical ? `история n=${historical.n}: ${historical.winRate}%` : 'история: не проверена';
-        const histAvg = historical ? `история: ${historical.avgPct >= 0 ? '+' : ''}${historical.avgPct}%` : 'история: не проверена';
+        const histAvg = historical ? `история: ${pctSigned(historical.avgPct)}` : 'история: не проверена';
         const labStatus = _labRuntimeBlocked
           ? '<span style="color:#fbbf24;">НУЖЕН ПЕРЕЗАПУСК</span>'
           : (_labEnabled ? '<span style="color:var(--green);">РАБОТАЕТ</span>' : '<span style="color:var(--t2);">СТОП</span>');
@@ -16244,7 +16255,7 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
             ${_jStatCard('Открыто', currentOpenRows.length, currentOpenShadows ? `${currentOpenGate} по гейту + ${currentOpenShadows} контроль` : '')}
             ${_jStatCard('Закрыто (текущий)', currentClosed, `${archivedClosed ? `+ ${archivedClosed} до правки` : ''}${currentShadows ? `${archivedClosed ? ' · ' : ''}+ ${currentShadows} контрольных` : ''}`)}
             ${_jStatCard('Winrate', st ? st.winRate + '%' : '—', histWin)}
-            ${_jStatCard('На сделку', st ? (st.avgPct >= 0 ? '+' : '') + st.avgPct + '%' : '—', histAvg)}
+            ${_jStatCard('На сделку', st ? pctSigned(st.avgPct) : '—', histAvg)}
             ${_jStatCard('Итого', st ? _jPnlCell(st.totalUsd) : '—', st && st.avgHoldH != null ? `среднее ${st.avgHoldH} ч` : '')}
           </div>`;
         }
@@ -16262,8 +16273,8 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
                 // в задание для Claude Code, а кириллица там ломалась в кодировке
                 const col = c.verdict === 'earns its place' ? 'var(--green)' : c.verdict === 'hurts' ? '#f87171' : 'var(--yellow)';
                 return `<tr><td style="text-align:left;">${c.cond}</td><td>${c.n}</td><td>${c.winRate}%</td>
-                  <td class="${c.avgPct >= 0 ? 'profit-pos' : 'profit-neg'}">${c.avgPct >= 0 ? '+' : ''}${c.avgPct}%</td>
-                  <td class="${c.delta >= 0 ? 'profit-pos' : 'profit-neg'}" style="font-weight:700;">${c.delta >= 0 ? '+' : ''}${c.delta} п.п.</td>
+                  <td class="${(c.avgPct || 0) >= 0 ? 'profit-pos' : 'profit-neg'}">${pctSigned(c.avgPct)}</td>
+                  <td class="${(c.delta || 0) >= 0 ? 'profit-pos' : 'profit-neg'}" style="font-weight:700;">${pctSigned(c.delta, ' п.п.')}</td>
                   <td style="color:${col};font-weight:600;">${c.verdict}</td></tr>`;
               }).join('')}</tbody></table>`;
           } else if ((j.conditions || []).length) {
