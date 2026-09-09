@@ -1317,7 +1317,7 @@
 
     .price-hover-tooltip {
       position: absolute;
-      top: -42px;
+      bottom: calc(100% + 5px);
       transform: translateX(-50%);
       background: rgba(0,0,0,0.9);
       border: 1px solid var(--b2);
@@ -12879,7 +12879,7 @@ Requirements:
           </div>` ; })() : ''}</div>
 
           <table class="profit-table" data-pair="${pair}" data-filled="${totalFilled}" data-usd="${totalUSD}" data-avgbuy="${avgBuyPrice}">
-            <thead><tr><th>Num</th><th>Best Bid</th><th>Best Ask</th><th>Filled Size</th><th title="Чисто вложено: потрачено на покупки минус получено с продаж. Пока продаж не было, это и есть потраченное.">USD</th><th>Avg Buy</th><th title="По текущему Ask с комиссией taker ${(getFeeMarket() * 100).toFixed(3)}%. Если ордер постоит в стакане, комиссия maker ниже.">Limit · taker</th><th>Market</th></tr></thead>
+            <thead><tr><th>Num</th><th>Best Bid</th><th>Best Ask</th><th>Filled Size</th><th title="Чисто вложено: потрачено на покупки минус получено с продаж. Пока продаж не было, это и есть потраченное.">USD</th><th>Avg Buy</th><th title="Вся выбранная позиция по текущему Ask с комиссией taker ${(getFeeMarket() * 100).toFixed(3)}%. В подсказке шкалы есть результат отдельного ордера и всей позиции по цене наведения; maker — если лимитка постоит в стакане.">Limit · taker</th><th>Market</th></tr></thead>
             <tbody><tr>
               <td>1</td>
               <td id="bid_${coin}">$${fmtPrice(bestBid)}</td>
@@ -13171,7 +13171,7 @@ Requirements:
 
             const currentLabelPos = Math.max(14, currentPos);
             h += `
-            <div class="price-progress-container" id="progress_${coin}_${idx}" data-pair="${coin}-USD" data-buy-price="${buyPrice}" data-target-price="${targetSellPrice}" data-breakeven-pct="${breakevenPct}" data-order-id="${buyOrder.order_id}" data-filled="${filledSize}" data-spent="${actualCost}" data-fee="${buyFeeP}" data-sell-fee="${sellFeeP}" data-left-max="${leftMax}" data-right-max="${rightMax}">
+            <div class="price-progress-container" id="progress_${coin}_${idx}" data-pair="${pair}" data-buy-price="${buyPrice}" data-target-price="${targetSellPrice}" data-breakeven-pct="${breakevenPct}" data-order-id="${buyOrder.order_id}" data-filled="${filledSize}" data-spent="${actualCost}" data-fee="${buyFeeP}" data-sell-fee="${sellFeeP}" data-left-max="${leftMax}" data-right-max="${rightMax}">
               <div class="price-progress-top">
                 <span class="info-order" style="left:0;color:#888;font-size:9px;">#${orderIdShort}</span>
                 <span class="info-current ${isProfit ? 'profit' : 'loss'}" style="left:${currentLabelPos}%" title="Изменение цены от покупки. Результат с комиссиями — при наведении на шкалу.">${currentPct >= 0 ? '+' : ''}${currentPct.toFixed(2)}%</span>
@@ -13301,7 +13301,16 @@ Requirements:
           // Maker — отдельный вариант, если лимитка постоит в стакане.
           const profit = filled * hoverPrice * (1 - fee) - spent;
           const profitMaker = filled * hoverPrice * (1 - getFeeLimit()) - spent;
-          return { pct, hoverPrice, profit, profitMaker };
+          // Общий результат берём из той же позиции, что верхний LIMIT.
+          // Сумма видимых шкал не подходит: их можно скрыть независимо от
+          // выбора ордеров, а продажи уже уменьшают остаток и чистые затраты.
+          const table = container.closest('.coin-group')?.querySelector('.profit-table');
+          const groupFilled = parseFloat(table?.dataset.filled);
+          const groupSpent = parseFloat(table?.dataset.usd);
+          const groupKnown = Number.isFinite(groupFilled) && Number.isFinite(groupSpent);
+          const groupProfit = groupKnown ? groupFilled * hoverPrice * (1 - fee) - groupSpent : null;
+          const groupProfitMaker = groupKnown ? groupFilled * hoverPrice * (1 - getFeeLimit()) - groupSpent : null;
+          return { pct, hoverPrice, profit, profitMaker, groupProfit, groupProfitMaker };
         }
 
         // Полоса переживает обновление на месте — обработчики уже висят.
@@ -13309,14 +13318,20 @@ Requirements:
         container.dataset.wired = '1';
 
         container.addEventListener('mousemove', (e) => {
-          const { pct, hoverPrice, profit, profitMaker } = calcHover(e);
+          const { pct, hoverPrice, profit, profitMaker, groupProfit, groupProfitMaker } = calcHover(e);
           const profitColor = profit >= 0 ? '#30d158' : '#ff453a';
           const priceStr = String(hoverPrice);
+          const money = value => (value >= 0 ? '+$' : '−$') + Math.abs(value).toFixed(2);
+          const orderIdShort = (container.dataset.orderId || '').slice(0, 6);
           tooltip.style.display = 'block';
-          tooltip.style.left = (pct * 100) + '%';
-          tooltip.innerHTML = `<div><span style="color:${profitColor};font-weight:700;">${profit >= 0 ? '+' : ''}$${profit.toFixed(2)}</span>` +
-            ` <span style="color:#aaa;">Limit · taker ${(getFeeMarket() * 100).toFixed(3)}% @ $${priceStr}</span></div>` +
-            `<div style="color:#aaa;">${profitMaker >= 0 ? '+' : ''}$${profitMaker.toFixed(2)} · maker ${(getFeeLimit() * 100).toFixed(3)}%, если постоит</div>`;
+          tooltip.innerHTML = `<div style="color:#aaa;">@ $${priceStr} · taker ${(getFeeMarket() * 100).toFixed(3)}% / maker ${(getFeeLimit() * 100).toFixed(3)}%</div>` +
+            `<div>Ордер #${orderIdShort}: <span style="color:${profitColor};font-weight:700;">${money(profit)}</span>` +
+            ` <span style="color:#aaa;">· maker ${money(profitMaker)}</span></div>` +
+            (groupProfit == null ? '' : `<div>Вся выбранная позиция · Limit: <span style="color:${groupProfit >= 0 ? '#30d158' : '#ff453a'};font-weight:700;">${money(groupProfit)}</span>` +
+              ` <span style="color:#aaa;">· maker ${money(groupProfitMaker)}</span></div>`);
+          const halfTooltip = tooltip.offsetWidth / 2;
+          const barWidth = bar.getBoundingClientRect().width;
+          tooltip.style.left = Math.max(halfTooltip, Math.min(barWidth - halfTooltip, pct * barWidth)) + 'px';
           hoverLine.style.display = 'block';
           hoverLine.style.left = (pct * 100) + '%';
         });
@@ -13327,7 +13342,7 @@ Requirements:
         });
 
         container.addEventListener('click', (e) => {
-          const { hoverPrice, profit } = calcHover(e);
+          const { hoverPrice, profit, groupProfit } = calcHover(e);
           const priceStr = String(hoverPrice);
           // Copy with fallback for HTTP
           try {
@@ -13339,7 +13354,9 @@ Requirements:
             document.execCommand('copy');
             document.body.removeChild(ta);
           } catch {}
-          showCustomAlert(`Скопировано: $${priceStr} — Limit · taker ${(getFeeMarket() * 100).toFixed(3)}%: ${profit >= 0 ? '+' : ''}$${profit.toFixed(2)}`);
+          const money = value => (value >= 0 ? '+$' : '−$') + Math.abs(value).toFixed(2);
+          showCustomAlert(`Скопировано: $${priceStr} — taker ${(getFeeMarket() * 100).toFixed(3)}% · этот ордер: ${money(profit)}` +
+            (groupProfit == null ? '' : ` · вся выбранная позиция: ${money(groupProfit)}`));
         });
       });
       // Show real balances from cache, or fetch if not ready
@@ -13556,7 +13573,7 @@ Requirements:
         }
 
         // Update all progress bars for this coin (multiple bars supported)
-        const progressBars = document.querySelectorAll(`[id^="progress_${coin}"]`);
+        const progressBars = document.querySelectorAll(`.price-progress-container[data-pair="${pair}"]`);
         progressBars.forEach(progressEl => {
           if (bestAsk > 0) {
             const buyPrice = parseFloat(progressEl.dataset.buyPrice) || 0;

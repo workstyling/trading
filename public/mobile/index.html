@@ -3072,8 +3072,8 @@
             <span style="display:flex;align-items:center;gap:8px;">
               <button id="bewM_${coin}" onclick="toggleBeWatchM('${coin}','${pair}',${totalFilled},${totalUSD})" title="Telegram-алерт при выходе в безубыток (одноразовый)" style="padding:3px 8px;border:1px solid ${_beWatches[coin] ? 'var(--yellow)' : 'rgba(255,255,255,0.25)'};border-radius:5px;background:${_beWatches[coin] ? 'rgba(245,197,24,0.15)' : 'transparent'};color:${_beWatches[coin] ? 'var(--yellow)' : '#889'};font-size:11px;font-weight:600;">🔔${_beWatches[coin] ? ' ON' : ''}</button>
               <span data-fav-coin="${coin}" onclick="toggleFavoriteCoin('${coin}')" title="${isFav ? 'Remove from favorites' : 'Add to favorites'}" style="cursor:pointer;font-size:22px;opacity:${isFav ? '1' : '0.25'};padding:0 8px;line-height:1;color:${isFav ? '#f5c518' : 'inherit'};">★</span>
-              <span class="monitor-pnl" style="color:${pnlColor};text-align:right;" title="Продажа по текущему Ask с комиссией taker ${tradingSettings.marketFee}%">
-                <span style="display:block;font-size:9px;font-weight:500;color:var(--t2);white-space:nowrap;">Limit · taker</span>${formatProfitM(limitPnL)}
+              <span class="monitor-pnl" style="color:${pnlColor};text-align:right;" title="Вся выбранная позиция: остаток по текущему Ask с комиссией taker ${tradingSettings.marketFee}%, с учётом выбранных покупок и продаж">
+                <span style="display:block;font-size:9px;font-weight:500;color:var(--t2);white-space:nowrap;">Итого Limit · taker</span>${formatProfitM(limitPnL)}
               </span>
             </span>
           </div>
