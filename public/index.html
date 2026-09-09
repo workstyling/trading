@@ -6679,10 +6679,15 @@
 
     function _paintBeBtn(el, coin) {
       const on = !!_beWatches[coin];
-      el.textContent = on ? '🔔 BE ON' : '🔔 BE';
-      el.style.borderColor = on ? 'var(--yellow)' : 'rgba(255,255,255,0.25)';
-      el.style.background = on ? 'rgba(245,197,24,0.15)' : 'transparent';
-      el.style.color = on ? 'var(--yellow)' : '#889';
+      // Опрос идёт каждые двадцать секунд, а состояние меняется редко.
+      // Писать текст и стили безусловно значит заменять узел на каждом опросе.
+      setText(el, on ? '🔔 BE ON' : '🔔 BE');
+      const bc = on ? 'var(--yellow)' : 'rgba(255,255,255,0.25)';
+      const bg = on ? 'rgba(245,197,24,0.15)' : 'transparent';
+      const fg = on ? 'var(--yellow)' : '#889';
+      if (el.style.borderColor !== bc) el.style.borderColor = bc;
+      if (el.style.background !== bg) el.style.background = bg;
+      if (el.style.color !== fg) el.style.color = fg;
     }
 
     // Кнопок столько, сколько монет в таблице, и перерисовывать надо все:
@@ -7249,7 +7254,7 @@
           _buyBook = { coin, bids: b.bids || [], asks: b.asks || [], t: Date.now() };
         }
         const bids = _buyBook.bids, asks = _buyBook.asks;
-        if (!asks.length || !bids.length) { el.innerHTML = ''; return; }
+        if (!asks.length || !bids.length) { setLiveHtml(el, ''); return; }
         const ba = parseFloat(asks[0][0]);
         const mid = (parseFloat(bids[0][0]) + ba) / 2;
         let dBuy = 0, dSell = 0;
@@ -7298,12 +7303,12 @@
             }
           }
         }
-        el.innerHTML = `<span title="Глубина стакана в ±2% от цены: биды/аски">стакан ±2%: <span style="color:var(--green);font-weight:600;">${fmtVolShort(dBuy)}</span><span style="color:#555;">/</span><span style="color:#f55;font-weight:600;">${fmtVolShort(dSell)}</span></span>`
+        setLiveHtml(el, `<span title="Глубина стакана в ±2% от цены: биды/аски">стакан ±2%: <span style="color:var(--green);font-weight:600;">${fmtVolShort(dBuy)}</span><span style="color:#555;">/</span><span style="color:#f55;font-weight:600;">${fmtVolShort(dSell)}</span></span>`
           + `<span class="tv-depthbar" style="width:70px;"><i style="width:${bp}%"></i></span>`
           // Куски рисуем ВСЕГДА: пустые они держат ширину, и строка не
           // перестраивается на каждом пересчёте.
           + `<span style="color:#8b93a7;">${impact || ''}</span>`
-          + `<span style="color:#8b93a7;">${cmp || ''}</span>`;
+          + `<span style="color:#8b93a7;">${cmp || ''}</span>`);
       } catch { }
     }
     document.getElementById('buyUsdAmount')?.addEventListener('input', () => updateBuyDepth());
@@ -7321,14 +7326,14 @@
         if (data.bids && data.bids[0]) {
           buyPanelPrices.bid = parseFloat(data.bids[0][0]);
           if (bidEl) {
-            bidEl.textContent = '$' + formatPrice(buyPanelPrices.bid);
+            setText(bidEl, '$' + formatPrice(buyPanelPrices.bid));
             bidEl.classList.remove('loading');
           }
         }
         if (data.asks && data.asks[0]) {
           buyPanelPrices.ask = parseFloat(data.asks[0][0]);
           if (askEl) {
-            askEl.textContent = '$' + formatPrice(buyPanelPrices.ask);
+            setText(askEl, '$' + formatPrice(buyPanelPrices.ask));
             askEl.classList.remove('loading');
           }
         }
