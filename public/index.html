@@ -11074,14 +11074,6 @@ Requirements:
       }
     }
 
-    async function toggleSentToAccount(id) {
-      const entry = profitHistory.find(e => e.id === id);
-      if (!entry) return;
-      entry.sentToAccount = !entry.sentToAccount;
-      await saveProfitHistoryToServer();
-      updateProfitPanel();
-    }
-
     async function saveGroupProfit(coin, profit, buyOrderIds, sellOrderIds, createdDate) {
       // Check if these specific orders are already saved in profitHistory
       const buyIds = buyOrderIds.split(',').filter(Boolean);
@@ -11127,7 +11119,6 @@ Requirements:
         createdDate: createdDate || null,
         soldAt,
         date: new Date().toISOString(),   // когда запись сохранена — оставляем для истории
-        sentToAccount: false
       };
       profitHistory.push(entry);
       await saveProfitHistoryToServer();
@@ -11146,9 +11137,25 @@ Requirements:
     }
 
     async function deleteProfitEntry(id) {
-      profitHistory = profitHistory.filter(e => e.id !== id);
-      await saveProfitHistoryToServer();
-      updateProfitPanel();
+      // Крестик стирал запись сразу, без вопроса. Вернуть её неоткуда:
+      // история прибыли — единственное место, где живёт результат закрытой
+      // сделки, и промах мышью стоил бы целой сделки.
+      const e = profitHistory.find(x => x.id === id);
+      if (!e) return;
+      const sum = (e.profit >= 0 ? '+' : '−') + '$' + Math.abs(e.profit).toFixed(2);
+      const when = e.sellDate || e.date || '';
+      showConfirmModal('Удалить запись из истории?',
+        '<b style="font-size:15px;">' + (e.coin || '—') + ' ' +
+        '<span style="color:' + (e.profit >= 0 ? 'var(--green)' : '#ff6b6b') + ';">' + sum + '</span></b>' +
+        (when ? '<br><span style="color:var(--t2);font-size:11px;">' + when + '</span>' : '') +
+        '<br><br><span style="color:var(--t2);font-size:11px;">Запись пропадёт из истории прибыли и из общего итога. ' +
+        'Вернуть её нельзя — сделка на бирже останется, а её результат здесь больше нигде не хранится.</span>',
+        async () => {
+          profitHistory = profitHistory.filter(x => x.id !== id);
+          await saveProfitHistoryToServer();
+          updateProfitPanel();
+          showCustomAlert('Запись удалена: ' + (e.coin || '—') + ' ' + sum);
+        });
     }
 
     // Telegram integration
@@ -12577,8 +12584,6 @@ Requirements:
         const buyDate = e.createdDate ? new Date(e.createdDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : null;
         const profitClass = e.profit >= 0 ? 'pos' : 'neg';
         const profitFmt = e.profit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-        const sent = !!e.sentToAccount;
-        const sentBtn = `<span onclick="toggleSentToAccount(${e.id})" title="${sent ? 'Sent to account' : 'Not sent yet'}" style="cursor:pointer;margin-left:4px;font-size:13px;opacity:${sent ? '1' : '0.35'};" >💰</span>`;
         const datesHtml = buyDate
           ? `<span class="profit-item-date" title="Bought">${buyDate}</span><span style="color:#555;margin:0 3px;">→</span><span class="profit-item-date" title="Sold">${sellDate}</span>`
           : `<span class="profit-item-date">${sellDate}</span>`;
@@ -12590,7 +12595,7 @@ Requirements:
         h += `<div class="profit-item" style="flex-direction:column;align-items:stretch;">
           <div style="display:flex;justify-content:space-between;align-items:center;">
             <span><span class="profit-item-coin">${e.coin}</span> ${datesHtml}</span>
-            <span><span class="profit-item-value ${profitClass}">${e.profit >= 0 ? '+' : ''}$${profitFmt}</span>${sentBtn}<span class="profit-item-delete" onclick="deleteProfitEntry(${e.id})">×</span></span>
+            <span><span class="profit-item-value ${profitClass}">${e.profit >= 0 ? '+' : ''}$${profitFmt}</span><span class="profit-item-delete" onclick="deleteProfitEntry(${e.id})" title="Удалить запись из истории прибыли">×</span></span>
           </div>
           ${orderIdsHtml}
         </div>`;
@@ -12814,7 +12819,7 @@ Requirements:
           </div>` ; })() : ''}</div>
 
           <table class="profit-table" data-pair="${pair}" data-filled="${totalFilled}" data-usd="${totalUSD}" data-avgbuy="${avgBuyPrice}">
-            <thead><tr><th>Num</th><th>Best Bid</th><th>Best Ask</th><th>Filled Size</th><th title="Чисто вложено: потрачено на покупки минус получено с продаж. Пока продаж не было, это и есть потраченное.">USD</th><th>Avg Buy</th><th>Limit</th><th>Market</th></tr></thead>
+            <thead><tr><th>Num</th><th>Best Bid</th><th>Best Ask</th><th>Filled Size</th><th title="Чисто вложено: потрачено на покупки минус получено с продаж. Пока продаж не было, это и есть потраченное.">USD</th><th>Avg Buy</th><th title="По текущему Ask с комиссией taker ${(getFeeMarket() * 100).toFixed(3)}%. Если ордер постоит в стакане, комиссия maker ниже.">Limit · taker</th><th>Market</th></tr></thead>
             <tbody><tr>
               <td>1</td>
               <td id="bid_${coin}">$${fmtPrice(bestBid)}</td>
@@ -13072,19 +13077,20 @@ Requirements:
           const filledSize = parseFloat(buyOrder.filled_size) || 0;
           const orderIdShort = buyOrder.order_id ? buyOrder.order_id.slice(0, 6) : '';
           const targetSellPrice = pendingSell ? parseFloat(pendingSell.limit_price) : (buyPrice * (1 + tradingSettings.sellMarkup / 100));
-          const buyFeeP = tradingSettings.tradeFee / 100;
-          const sellFeeP = tradingSettings.marketFee / 100;
+          const buyFeeP = getFeeLimit();
+          const sellFeeP = getFeeMarket();
           // Безубыток по фактическим затратам (total_value_after_fees) — та же точка, где колонка LIMIT = 0
           const actualCost = parseFloat(buyOrder.total_value) || (filledSize * buyPrice * (1 + buyFeeP));
-          const breakevenPrice = filledSize > 0 ? actualCost / (filledSize * (1 - sellFeeP)) : buyPrice * (1 + buyFeeP) / (1 - sellFeeP);
+          const costBasis = filledSize > 0 ? actualCost / filledSize : buyPrice * (1 + buyFeeP);
+          const breakevenPrice = costBasis / (1 - sellFeeP);
           const breakevenPct = ((breakevenPrice - buyPrice) / buyPrice * 100);
 
           if (buyPrice > 0) {
             const currentAsk = bestAsk > 0 ? bestAsk : buyPrice;
-            const effectivePrice = currentAsk * (1 - sellFeeP); // net received after sell fee
-            const costBasis = buyPrice * (1 + buyFeeP); // actual cost including buy fee
             const targetPct = ((targetSellPrice - buyPrice) / buyPrice * 100);
-            const currentPct = ((effectivePrice - costBasis) / costBasis * 100);
+            // Вся ось — изменение ЦЕНЫ от покупки: маркер, hover, цель и
+            // безубыток. Чистая доходность живёт только в суммах подсказки.
+            const currentPct = ((currentAsk - buyPrice) / buyPrice * 100);
 
             const rightMax = targetPct + 1;
             const baseLeft = -(targetPct + 1);
@@ -13096,7 +13102,7 @@ Requirements:
             const targetPos = (targetPct - leftMax) / totalRange * 100;
             const breakevenPos = (breakevenPct - leftMax) / totalRange * 100;
 
-            const isProfit = currentPct >= breakevenPct;
+            const isProfit = currentAsk >= breakevenPrice;
             const progressColor = isProfit
               ? 'rgba(48,209,88,0.85)'
               : 'rgba(255,80,40,0.75)';
@@ -13105,10 +13111,10 @@ Requirements:
 
             const currentLabelPos = Math.max(14, currentPos);
             h += `
-            <div class="price-progress-container" id="progress_${coin}_${idx}" data-pair="${coin}-USD" data-buy-price="${buyPrice}" data-target-price="${targetSellPrice}" data-breakeven-pct="${breakevenPct}" data-order-id="${buyOrder.order_id}" data-filled="${filledSize}" data-spent="${actualCost.toFixed(2)}" data-fee="${buyFeeP}" data-sell-fee="${sellFeeP}" data-left-max="${leftMax}" data-right-max="${rightMax}">
+            <div class="price-progress-container" id="progress_${coin}_${idx}" data-pair="${coin}-USD" data-buy-price="${buyPrice}" data-target-price="${targetSellPrice}" data-breakeven-pct="${breakevenPct}" data-order-id="${buyOrder.order_id}" data-filled="${filledSize}" data-spent="${actualCost}" data-fee="${buyFeeP}" data-sell-fee="${sellFeeP}" data-left-max="${leftMax}" data-right-max="${rightMax}">
               <div class="price-progress-top">
                 <span class="info-order" style="left:0;color:#888;font-size:9px;">#${orderIdShort}</span>
-                <span class="info-current ${isProfit ? 'profit' : 'loss'}" style="left:${currentLabelPos}%">${currentPct >= 0 ? '+' : ''}${currentPct.toFixed(2)}%</span>
+                <span class="info-current ${isProfit ? 'profit' : 'loss'}" style="left:${currentLabelPos}%" title="Изменение цены от покупки. Результат с комиссиями — при наведении на шкалу.">${currentPct >= 0 ? '+' : ''}${currentPct.toFixed(2)}%</span>
               </div>
               <div class="price-progress-bar" style="cursor:crosshair;">
                 <div class="price-hover-tooltip"></div>
@@ -13205,19 +13211,6 @@ Requirements:
       document.querySelectorAll('.price-progress-container').forEach(container => {
         const bar = container.querySelector('.price-progress-bar');
         if (!bar) return;
-        const buyPrice = parseFloat(container.dataset.buyPrice) || 0;
-        const filled = parseFloat(container.dataset.filled) || 0;
-        // spent — РЕАЛЬНО потраченное (total_value_after_fees с биржи), а не
-        // filled*price. Раньше комиссия покупки не учитывалась вовсе, и после
-        // покупки по рынку прибыль на шкале завышалась вдвое: рыночная
-        // комиссия 0.25% против лимитной 0.06%.
-        const spent = parseFloat(container.dataset.spent) || 0;
-        // На продаже нужна комиссия ПРОДАЖИ. Раньше сюда подставлялась
-        // комиссия покупки — та же точка безубытка на шкале считалась по
-        // marketFee, а подсказка по tradeFee, и они не совпадали.
-        const fee = parseFloat(container.dataset.sellFee) || parseFloat(container.dataset.fee) || 0;
-        const leftMax = parseFloat(container.dataset.leftMax) || -5;
-        const rightMax = parseFloat(container.dataset.rightMax) || 5;
         const tooltip = bar.querySelector('.price-hover-tooltip');
         const hoverLine = bar.querySelector('.price-hover-line');
 
@@ -13233,7 +13226,7 @@ Requirements:
           const filled = parseFloat(container.dataset.filled) || 0;
           const spent = parseFloat(container.dataset.spent) || 0;
           const buyPrice = parseFloat(container.dataset.buyPrice) || 0;
-          const fee = parseFloat(container.dataset.sellFee) || parseFloat(container.dataset.fee) || 0;
+          const fee = getFeeMarket();
           const leftMax = parseFloat(container.dataset.leftMax) || -5;
           const rightMax = parseFloat(container.dataset.rightMax) || 5;
           const rect = bar.getBoundingClientRect();
@@ -13244,12 +13237,11 @@ Requirements:
           // лишними знаками, а копируется другая — и числа расходятся ровно
           // там, где на них смотрят перед выставлением ордера.
           const hoverPrice = roundToTick(buyPrice * (1 + changePct / 100), tickDec);
-          // Лимитка, стоящая в стакане, платит комиссию мейкера; та же цена,
-          // взятая по рынку, — тейкера. Разница на этом объёме под доллар, но
-          // выставляют-то лимитку.
-          const profit = filled * hoverPrice * (1 - getFeeLimit()) - spent;
-          const profitTaker = filled * hoverPrice * (1 - fee) - spent;
-          return { pct, hoverPrice, profit, profitTaker };
+          // Основной результат — тот же консервативный taker, что в LIMIT.
+          // Maker — отдельный вариант, если лимитка постоит в стакане.
+          const profit = filled * hoverPrice * (1 - fee) - spent;
+          const profitMaker = filled * hoverPrice * (1 - getFeeLimit()) - spent;
+          return { pct, hoverPrice, profit, profitMaker };
         }
 
         // Полоса переживает обновление на месте — обработчики уже висят.
@@ -13257,13 +13249,14 @@ Requirements:
         container.dataset.wired = '1';
 
         container.addEventListener('mousemove', (e) => {
-          const { pct, hoverPrice, profit, profitTaker } = calcHover(e);
+          const { pct, hoverPrice, profit, profitMaker } = calcHover(e);
           const profitColor = profit >= 0 ? '#30d158' : '#ff453a';
           const priceStr = String(hoverPrice);
           tooltip.style.display = 'block';
           tooltip.style.left = (pct * 100) + '%';
-          tooltip.innerHTML = `<span style="color:${profitColor};font-weight:700;">${profit >= 0 ? '+' : ''}$${profit.toFixed(2)}</span>` +
-            ` <span style="color:#888;">лимиткой · ${profitTaker >= 0 ? '+' : ''}$${profitTaker.toFixed(2)} по рынку @ $${priceStr}</span>`;
+          tooltip.innerHTML = `<div><span style="color:${profitColor};font-weight:700;">${profit >= 0 ? '+' : ''}$${profit.toFixed(2)}</span>` +
+            ` <span style="color:#aaa;">Limit · taker ${(getFeeMarket() * 100).toFixed(3)}% @ $${priceStr}</span></div>` +
+            `<div style="color:#aaa;">${profitMaker >= 0 ? '+' : ''}$${profitMaker.toFixed(2)} · maker ${(getFeeLimit() * 100).toFixed(3)}%, если постоит</div>`;
           hoverLine.style.display = 'block';
           hoverLine.style.left = (pct * 100) + '%';
         });
@@ -13286,7 +13279,7 @@ Requirements:
             document.execCommand('copy');
             document.body.removeChild(ta);
           } catch {}
-          showCustomAlert(`Скопировано: $${priceStr} — лимиткой ${profit >= 0 ? '+' : ''}$${profit.toFixed(2)}`);
+          showCustomAlert(`Скопировано: $${priceStr} — Limit · taker ${(getFeeMarket() * 100).toFixed(3)}%: ${profit >= 0 ? '+' : ''}$${profit.toFixed(2)}`);
         });
       });
       // Show real balances from cache, or fetch if not ready
@@ -13506,21 +13499,21 @@ Requirements:
           if (bestAsk > 0) {
             const buyPrice = parseFloat(progressEl.dataset.buyPrice) || 0;
             const targetSellPrice = parseFloat(progressEl.dataset.targetPrice) || 0;
-            const buyFee = parseFloat(progressEl.dataset.fee) || getFeeLimit();
-            const sellFee = parseFloat(progressEl.dataset.sellFee) || getFeeMarket();
+            const buyFee = getFeeLimit();
+            const sellFee = getFeeMarket();
             const filledQty = parseFloat(progressEl.dataset.filled) || 0;
             const realCost = parseFloat(progressEl.dataset.spent) || 0;
 
             if (buyPrice > 0) {
-              const effectivePrice = bestAsk * (1 - sellFee);
               // Себестоимость единицы из ФАКТИЧЕСКИХ затрат: так неважно,
               // покупалось лимиткой или по рынку — комиссия уже внутри.
               const costBasis = (filledQty > 0 && realCost > 0)
                 ? realCost / filledQty
                 : buyPrice * (1 + buyFee);
               const targetPct = ((targetSellPrice - buyPrice) / buyPrice * 100);
-              const currentPct = ((effectivePrice - costBasis) / costBasis * 100);
-              const breakevenPct = parseFloat(progressEl.dataset.breakevenPct) || 0.12;
+              const currentPct = ((bestAsk - buyPrice) / buyPrice * 100);
+              const breakevenPrice = costBasis / (1 - sellFee);
+              const breakevenPct = ((breakevenPrice - buyPrice) / buyPrice * 100);
 
               const rightMax = targetPct + 1;
               const baseLeft = -(targetPct + 1);
@@ -13532,7 +13525,7 @@ Requirements:
               const targetPos = (targetPct - leftMax) / totalRange * 100;
               const breakevenPos = (breakevenPct - leftMax) / totalRange * 100;
 
-              const isProfit = currentPct >= breakevenPct;
+              const isProfit = bestAsk >= breakevenPrice;
               const progressColor = isProfit
                 ? 'rgba(48,209,88,0.85)'
                 : 'rgba(255,80,40,0.75)';
@@ -13560,12 +13553,21 @@ Requirements:
               }
               if (infoLoss) infoLoss.textContent = leftMax.toFixed(1) + '%';
               if (centerMarker) centerMarker.style.left = centerPos + '%';
-              if (breakevenMarker) breakevenMarker.style.left = breakevenPos + '%';
+              if (breakevenMarker) {
+                breakevenMarker.style.left = breakevenPos + '%';
+                breakevenMarker.title = 'Breakeven ' + (breakevenPct >= 0 ? '+' : '') + breakevenPct.toFixed(2) + '%';
+              }
               if (targetMarker) targetMarker.style.left = targetPos + '%';
               const infoBuy = progressEl.querySelector('.info-buy');
               const infoTarget = progressEl.querySelector('.info-target');
               if (infoBuy) infoBuy.style.left = centerPos + '%';
               if (infoTarget) infoTarget.style.left = targetPos + '%';
+              // Hover читает ту же область шкалы, что и обновлённый маркер,
+              // в том числе после расширения диапазона при падении цены.
+              progressEl.dataset.leftMax = leftMax;
+              progressEl.dataset.rightMax = rightMax;
+              progressEl.dataset.breakevenPct = breakevenPct;
+              progressEl.dataset.sellFee = sellFee;
             }
           }
         });

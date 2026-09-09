@@ -3072,7 +3072,9 @@
             <span style="display:flex;align-items:center;gap:8px;">
               <button id="bewM_${coin}" onclick="toggleBeWatchM('${coin}','${pair}',${totalFilled},${totalUSD})" title="Telegram-алерт при выходе в безубыток (одноразовый)" style="padding:3px 8px;border:1px solid ${_beWatches[coin] ? 'var(--yellow)' : 'rgba(255,255,255,0.25)'};border-radius:5px;background:${_beWatches[coin] ? 'rgba(245,197,24,0.15)' : 'transparent'};color:${_beWatches[coin] ? 'var(--yellow)' : '#889'};font-size:11px;font-weight:600;">🔔${_beWatches[coin] ? ' ON' : ''}</button>
               <span data-fav-coin="${coin}" onclick="toggleFavoriteCoin('${coin}')" title="${isFav ? 'Remove from favorites' : 'Add to favorites'}" style="cursor:pointer;font-size:22px;opacity:${isFav ? '1' : '0.25'};padding:0 8px;line-height:1;color:${isFav ? '#f5c518' : 'inherit'};">★</span>
-              <span class="monitor-pnl" style="color:${pnlColor}">${limitPnL >= 0 ? '+' : ''}$${Math.abs(limitPnL).toFixed(2)}</span>
+              <span class="monitor-pnl" style="color:${pnlColor};text-align:right;" title="Продажа по текущему Ask с комиссией taker ${tradingSettings.marketFee}%">
+                <span style="display:block;font-size:9px;font-weight:500;color:var(--t2);white-space:nowrap;">Limit · taker</span>${formatProfitM(limitPnL)}
+              </span>
             </span>
           </div>
           <div class="monitor-stats">
@@ -3083,7 +3085,7 @@
             <div class="monitor-stat" title="${buyUSD > totalUSD + 0.01
               ? `Куплено на $${buyUSD.toFixed(2)}, получено с продаж $${(buyUSD - totalUSD).toFixed(2)}. Остаётся вложено $${totalUSD.toFixed(2)}.`
               : `Потрачено на покупку. Продаж по этой монете ещё не было.`}"><span class="monitor-stat-label">${buyUSD > totalUSD + 0.01 ? 'Вложено' : 'Потрачено'}</span><span class="monitor-stat-val">$${totalUSD.toFixed(2)}</span></div>
-            <div class="monitor-stat"><span class="monitor-stat-label">Market</span><span class="monitor-stat-val" style="color:${mktColor}">${marketPnL >= 0 ? '+' : ''}$${Math.abs(marketPnL).toFixed(2)}</span></div>
+            <div class="monitor-stat"><span class="monitor-stat-label">Market</span><span class="monitor-stat-val" style="color:${mktColor}">${formatProfitM(marketPnL)}</span></div>
           </div>`;
 
         // Individual orders
@@ -4303,7 +4305,6 @@
           createdDate,
           soldAt: sellTimeM(sells) || now,
           date: now,
-          sentToAccount: false
         });
       }
 
