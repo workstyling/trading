@@ -15460,8 +15460,8 @@ Requirements:
           '<tr style="color:var(--t2);font-size:9px;text-transform:uppercase;letter-spacing:0.4px;">' +
           '<th style="text-align:left;padding:3px 6px;">монета</th>' +
           '<th style="text-align:right;padding:3px 6px;" title="Доля случаев, когда цена возвращалась к входу за час. Главный столбец: по нему список и упорядочен.">возврат</th>' +
-          '<th style="text-align:right;padding:3px 6px;" title="Насколько ниже суточного максимума. Именно эта глубина и определяет возврат.">за сутки</th>' +
           '<th style="text-align:right;padding:3px 6px;" title="Откат от получасового максимума. Второй по силе признак после глубины за сутки, и он с ней складывается: внутри любой глубины откат от 1.5% добавляет 11-18 пунктов к доле возврата. Проверено разделением по времени — держится в обеих половинах периода.">откат</th>' +
+          '<th style="text-align:right;padding:3px 6px;" title="Насколько ниже суточного максимума. Первый из двух признаков, из которых сложен возврат.">за сутки</th>' +
           '<th style="text-align:right;padding:3px 6px;">RSI</th>' +
           '<th style="text-align:right;padding:3px 6px;" title="Балл входа. Возврат он не предсказывает; сокращает ли убыток — проверяется вперёд, подтверждения пока нет.">вход</th>' +
           '<th style="text-align:right;padding:3px 6px;">в списке</th></tr>';
@@ -15496,12 +15496,13 @@ Requirements:
             '<td style="padding:4px 6px;"><span style="color:var(--blue);font-weight:700;font-size:11px;">' + x.coin +
             '</span><br><span style="color:var(--t2);font-size:9px;">$' + price(x.price) + '</span></td>' +
             num(rec ? '↩ ' + rec.hour + '%' : '—', recCol, true) +
-            num(x.dayFallPct == null ? '—' : '−' + x.dayFallPct + '%', 'var(--t2)') +
-            // Откат от получасового максимума. Порог 1.5% помечен цветом:
-            // внутри любой глубины падения он добавляет 11-18 пунктов к доле
+            // Откат сразу за возвратом: это два признака одной оценки, и
+            // смотреть на них надо вместе. Порог 1.5% помечен цветом — внутри
+            // любой глубины падения он добавляет 11-18 пунктов к доле
             // возврата, и проверка по времени это подтвердила.
             num(x.pullbackPct == null ? '—' : x.pullbackPct + '%',
               x.pullbackPct >= 1.5 ? '#00e5a0' : 'var(--t2)', x.pullbackPct >= 1.5) +
+            num(x.dayFallPct == null ? '—' : '−' + x.dayFallPct + '%', 'var(--t2)') +
             num(x.rsi == null ? '—' : Math.round(x.rsi), 'var(--t2)') +
             num(e.pct + '%', col, true) +
             num(held || '—', x.inListMin > 90 ? '#f5843a' : 'var(--t2)') + '</tr>';
