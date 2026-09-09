@@ -13365,8 +13365,10 @@ Requirements:
       balancesCache.forEach(h => {
         const el = document.getElementById('realBal_' + h.currency);
         if (el) {
-          el.textContent = `| Real: ${fmtSize(h.available)} (hold: ${fmtSize(h.hold)})`;
-          el.style.color = 'var(--t1)';
+          // Баланс опрашивается каждые пятнадцать секунд, а меняется только
+          // после сделки: без сравнения узел заменялся на каждом опросе.
+          setText(el, `| Real: ${fmtSize(h.available)} (hold: ${fmtSize(h.hold)})`);
+          if (el.style.color !== 'var(--t1)') el.style.color = 'var(--t1)';
         }
       });
     }
