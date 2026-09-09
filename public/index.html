@@ -7115,6 +7115,32 @@
       el.innerHTML = html;
     }
 
+
+    // Записать текст, не меняя узел.
+    //
+    // `el.textContent = x` выбрасывает существующие узлы и вставляет новый —
+    // каждый раз, даже если строка та же. Наблюдатель за DOM показал по семь
+    // таких замен на ячейку за двадцать пять секунд: цены, прибыль, отметки на
+    // полосе. Это и есть оставшееся мерцание.
+    //
+    // Здесь узел переиспользуется, а при совпадении не трогается вовсе.
+    function setText(el, str) {
+      if (!el) return;
+      const s = String(str);
+      const n = el.firstChild;
+      if (el.childNodes.length === 1 && n && n.nodeType === 3) {
+        if (n.nodeValue !== s) n.nodeValue = s;
+        return;
+      }
+      el.textContent = s;
+    }
+
+    // Класс тоже: присваивание того же значения браузер отрабатывает как
+    // изменение атрибута.
+    function setClass(el, cls) {
+      if (el && el.className !== cls) el.className = cls;
+    }
+
     function refreshAfterTrade(orderId) {
       try { loadUsdBalance(); } catch { }
       try { loadVolume30d(true); } catch { }
@@ -13498,8 +13524,8 @@ Requirements:
         const pnlEl = document.getElementById('pnl_' + coin);
 
         // Only update if we got valid prices (not 0)
-        if (bidEl && bestBid > 0) bidEl.textContent = '$' + fmtPrice(bestBid);
-        if (askEl && bestAsk > 0) askEl.textContent = '$' + fmtPrice(bestAsk);
+        if (bidEl && bestBid > 0) setText(bidEl, '$' + fmtPrice(bestBid));
+        if (askEl && bestAsk > 0) setText(askEl, '$' + fmtPrice(bestAsk));
 
         // Limit P&L: продажа лимиткой по Ask, worst-case комиссия taker — та же формула, что в диалоге продажи
         let limitPnL = 0;
@@ -13508,8 +13534,8 @@ Requirements:
           const afterFees = limitAmount * (1 - getFeeMarket());
           limitPnL = afterFees - totalUSD;
           if (limitPnlEl) {
-            limitPnlEl.className = limitPnL >= 0 ? 'profit-pos' : 'profit-neg';
-            limitPnlEl.textContent = `${limitPnL >= 0 ? '+' : ''}${fmtPnL(limitPnL)}`;
+            setClass(limitPnlEl, limitPnL >= 0 ? 'profit-pos' : 'profit-neg');
+            setText(limitPnlEl, `${limitPnL >= 0 ? '+' : ''}${fmtPnL(limitPnL)}`);
           }
         }
 
@@ -13518,8 +13544,8 @@ Requirements:
           const afterFees = totalAmount * (1 - getFeeMarket());
           const marketPnL = afterFees - totalUSD;
           const marketDiff = marketPnL - limitPnL;
-          pnlEl.className = marketPnL >= 0 ? 'profit-pos' : 'profit-neg';
-          pnlEl.innerHTML = `${marketPnL >= 0 ? '+' : ''}${fmtPnL(marketPnL)} <span style="color:#888">(${fmtPnL(marketDiff)})</span>`;
+          setClass(pnlEl, marketPnL >= 0 ? 'profit-pos' : 'profit-neg');
+          setLiveHtml(pnlEl, `${marketPnL >= 0 ? '+' : ''}${fmtPnL(marketPnL)} <span style="color:#888">(${fmtPnL(marketDiff)})</span>`);
         }
 
         // Update all progress bars for this coin (multiple bars supported)
@@ -13577,10 +13603,10 @@ Requirements:
               if (currentMarker) currentMarker.style.left = currentPos + '%';
               if (infoCurrent) {
                 infoCurrent.style.left = Math.max(14, currentPos) + '%';
-                infoCurrent.className = 'info-current ' + (isProfit ? 'profit' : 'loss');
-                infoCurrent.textContent = (currentPct >= 0 ? '+' : '') + currentPct.toFixed(2) + '%';
+                setClass(infoCurrent, 'info-current ' + (isProfit ? 'profit' : 'loss'));
+                setText(infoCurrent, (currentPct >= 0 ? '+' : '') + currentPct.toFixed(2) + '%');
               }
-              if (infoLoss) infoLoss.textContent = leftMax.toFixed(1) + '%';
+              if (infoLoss) setText(infoLoss, leftMax.toFixed(1) + '%');
               if (centerMarker) centerMarker.style.left = centerPos + '%';
               if (breakevenMarker) {
                 breakevenMarker.style.left = breakevenPos + '%';
@@ -13621,8 +13647,8 @@ Requirements:
         text = '-';
         cls = 'order-pos';
       }
-      el.textContent = text;
-      el.className = cls;
+      setText(el, text);
+      setClass(el, cls);
       const key = `${el.dataset.pair}|${el.dataset.limit}|${el.dataset.side}`;
       window.__orderPosCache[key] = { text, cls, ts: Date.now() };
     }
