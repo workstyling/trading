@@ -3845,7 +3845,45 @@
       // Объём и потраченное берём с самой строки: пересчёт зовётся из общего
       // цикла, который про монету ничего не знает.
       const size = info.dataset.size, cost = info.dataset.cost;
-      info.innerHTML = sellStepInfoHtmlM(px.stop, px.limit, size, cost, px.stuck, px.short, px.levels, ladder[1]);
+      setLiveHtmlM(info, sellStepInfoHtmlM(px.stop, px.limit, size, cost, px.stuck, px.short, px.levels, ladder[1]));
+    }
+
+    // Записать разметку в живое место, не пересобирая его. Каждое
+    // присваивание innerHTML уничтожает вложенные узлы и создаёт заново —
+    // глазом это видно как моргание, даже когда текст почти не изменился.
+    function sameSkeletonM(a, b) {
+      const ta = a.getElementsByTagName('*'), tb = b.getElementsByTagName('*');
+      if (ta.length !== tb.length) return false;
+      for (let i = 0; i < ta.length; i++) if (ta[i].tagName !== tb[i].tagName) return false;
+      return true;
+    }
+    function setLiveHtmlM(el, html) {
+      if (!el) return;
+      if (el.innerHTML === html) return;
+      const tmp = document.createElement('div');
+      tmp.innerHTML = html;
+      try {
+        if (sameSkeletonM(el, tmp)) {
+          const ta = el.getElementsByTagName('*'), tb = tmp.getElementsByTagName('*');
+          for (let i = 0; i < ta.length; i++) {
+            for (const at of tb[i].attributes) {
+              if (ta[i].getAttribute(at.name) !== at.value) ta[i].setAttribute(at.name, at.value);
+            }
+            const on = ta[i].childNodes, nn = tb[i].childNodes;
+            for (let j = 0; j < nn.length && j < on.length; j++) {
+              if (nn[j].nodeType === 3 && on[j].nodeType === 3 && on[j].nodeValue !== nn[j].nodeValue) {
+                on[j].nodeValue = nn[j].nodeValue;
+              }
+            }
+          }
+          for (let i = 0; i < tmp.childNodes.length && i < el.childNodes.length; i++) {
+            const a = el.childNodes[i], b = tmp.childNodes[i];
+            if (a.nodeType === 3 && b.nodeType === 3 && a.nodeValue !== b.nodeValue) a.nodeValue = b.nodeValue;
+          }
+          return;
+        }
+      } catch { }
+      el.innerHTML = html;
     }
 
     async function recalcSellStepsM(coin, pair, size, cost) {
@@ -3866,7 +3904,7 @@
         const px = sellStepPricesM(ladder, d.sd, d.ld);
         if (!px) return;
         sellStepsSaveM(coin, { limit: px.limit, stop: px.stop });
-        if (info) info.innerHTML = sellStepInfoHtmlM(px.stop, px.limit, size, cost, px.stuck, px.short, px.levels, ladder[1]);
+        if (info) setLiveHtmlM(info, sellStepInfoHtmlM(px.stop, px.limit, size, cost, px.stuck, px.short, px.levels, ladder[1]));
       } catch (e) {
         if (info) info.textContent = 'стакан недоступен';
       }

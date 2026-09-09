@@ -7086,6 +7086,35 @@
       return null;
     }
 
+
+    // Записать разметку в живое место, не пересобирая его.
+    //
+    // Наблюдение за DOM показало: строки стоп-лимита пересобирались шесть раз
+    // за двадцать пять секунд, счётчики свежести — каждую секунду. Каждое
+    // присваивание innerHTML уничтожает вложенные узлы и создаёт заново, и
+    // это видно глазом как моргание, даже когда текст почти не изменился.
+    //
+    // Здесь то же, что и для списка: совпал каркас — правим текст и атрибуты,
+    // не совпал — заменяем целиком.
+    function setLiveHtml(el, html) {
+      if (!el) return;
+      if (el.innerHTML === html) return;          // ничего не изменилось
+      const tmp = document.createElement('div');
+      tmp.innerHTML = html;
+      try {
+        if (sameSkeleton(el, tmp)) {
+          const ta = skeletonNodes(el), tb = skeletonNodes(tmp);
+          for (let i = 0; i < ta.length; i++) patchNode(ta[i], tb[i]);
+          for (let i = 0; i < tmp.childNodes.length && i < el.childNodes.length; i++) {
+            const a = el.childNodes[i], b = tmp.childNodes[i];
+            if (a.nodeType === 3 && b.nodeType === 3 && a.nodeValue !== b.nodeValue) a.nodeValue = b.nodeValue;
+          }
+          return;
+        }
+      } catch { }
+      el.innerHTML = html;
+    }
+
     function refreshAfterTrade(orderId) {
       try { loadUsdBalance(); } catch { }
       try { loadVolume30d(true); } catch { }
@@ -7775,7 +7804,7 @@
             ? ' · через ' + (left < 60 ? left + 'с' : Math.floor(left / 60) + 'м ' + (left % 60) + 'с')
             : ' · обновляется…';
         }
-        el.innerHTML = agoTxt + '<span style="color:#667;">' + nextTxt + '</span>';
+        setLiveHtml(el, agoTxt + '<span style="color:#667;">' + nextTxt + '</span>');
       }
     }
     setInterval(paintFreshness, 1000);
@@ -10035,7 +10064,7 @@
       const tbl = document.querySelector('.profit-table[data-pair="' + pair + '"]');
       const size = tbl ? tbl.dataset.filled : null;
       const cost = tbl ? tbl.dataset.usd : null;
-      info.innerHTML = sellStepInfoHtml(px.stop, px.limit, size, cost, px.stuck, px.short, px.levels, ladder[1]);
+      setLiveHtml(info, sellStepInfoHtml(px.stop, px.limit, size, cost, px.stuck, px.short, px.levels, ladder[1]));
     }
 
     // Лестница цен вниз от лучшего ask
@@ -10073,7 +10102,7 @@
         // Цена подставляется в поле обычной лимитки — значит и её результат
         // надо пересчитать, иначе рядом останется число от прежней цены.
         if (pi) { pi.value = String(px.limit); previewLimitSell(coin, size, cost); }
-        if (info) info.innerHTML = sellStepInfoHtml(px.stop, px.limit, size, cost, px.stuck, px.short, px.levels, ladder[1]);
+        if (info) setLiveHtml(info, sellStepInfoHtml(px.stop, px.limit, size, cost, px.stuck, px.short, px.levels, ladder[1]));
       } catch (e) {
         if (info) info.textContent = 'стакан недоступен';
       }
@@ -10159,13 +10188,13 @@
       const price = parseFloat(String(input.value).replace(',', '.'));
       const qty = parseFloat(size) || 0;
       const spent = parseFloat(cost) || 0;
-      if (!(price > 0) || !(qty > 0) || !(spent > 0)) { el.innerHTML = ''; return; }
+      if (!(price > 0) || !(qty > 0) || !(spent > 0)) { setLiveHtml(el, ''); return; }
       const maker = qty * price * (1 - getFeeLimit()) - spent;
       const taker = qty * price * (1 - getFeeMarket()) - spent;
       const col = maker >= 0 ? 'var(--green)' : '#ff6b6b';
-      el.innerHTML = '<b style="color:' + col + ';">' + (maker >= 0 ? '+' : '−') + '$' + Math.abs(maker).toFixed(2) + '</b>' +
+      setLiveHtml(el, '<b style="color:' + col + ';">' + (maker >= 0 ? '+' : '−') + '$' + Math.abs(maker).toFixed(2) + '</b>' +
         '<span style="color:var(--t2);"> если постоит · ' + (taker >= 0 ? '+' : '−') + '$' + Math.abs(taker).toFixed(2) +
-        ' если заберёт сразу</span>';
+        ' если заберёт сразу</span>');
       el.title = 'Ордер, стоящий в стакане, платит комиссию мейкера ' + (getFeeLimit() * 100).toFixed(3) +
         '%. Если поставить цену так, что он сразу заберёт встречную заявку, комиссия будет тейкера ' +
         (getFeeMarket() * 100).toFixed(3) + '%.';
