@@ -7044,6 +7044,8 @@
         if (oldEl.getAttribute(at.name) !== at.value) oldEl.setAttribute(at.name, at.value);
       }
       for (const at of [...oldEl.attributes]) {
+        // Признак уже подключённых обработчиков принадлежит DOM, а не шаблону.
+        if (at.name === 'data-wired') continue;
         if (!seen.has(at.name)) oldEl.removeAttribute(at.name);
       }
       // Текст: числа, которые и меняются
@@ -10031,7 +10033,16 @@
     function sellSteps(coin) {
       const v = sellStepsAll()[coin] || {};
       const d = sellDepthsFix(v.sd == null ? -1 : v.sd, v.ld == null ? -2 : v.ld);
-      return { sd: d.sd, ld: d.ld, limit: v.limit == null ? null : +v.limit, stop: v.stop == null ? null : +v.stop };
+      // Помним и то, из чего подпись была собрана: бид, упор в дно стакана,
+      // число уровней. Без этого перерисовка списка рисовала подпись без них,
+      // а следующий стакан дорисовывал обратно — строка мигала.
+      return {
+        sd: d.sd, ld: d.ld,
+        limit: v.limit == null ? null : +v.limit,
+        stop: v.stop == null ? null : +v.stop,
+        ref: v.ref == null ? 0 : +v.ref,
+        stuck: !!v.stuck, short: !!v.short, levels: v.levels == null ? 0 : +v.levels,
+      };
     }
 
     function sellStepsSave(coin, patch) {
@@ -10063,19 +10074,26 @@
       const qty = parseFloat(size) || 0;
       const spent = parseFloat(cost) || 0;
       const pnl = qty > 0 && spent > 0 ? qty * limit * (1 - getFeeMarket()) - spent : null;
+      // Набор узлов постоянный: та же разметка, есть прибыль или нет, известен
+      // бид или нет, упёрся стакан или нет. Пока куски строки то появлялись,
+      // то исчезали, подправить её на месте было нельзя — она пересобиралась
+      // целиком, и это было видно как мигание. Пусто здесь не отсутствие узла,
+      // а невидимый символ в нём: в исчезнувший узел текст потом не вернуть.
+      const Z = '​';
+      const warn = stuck ? ' стакан короче запроса: стоп и лимит упёрлись в один уровень'
+        : short ? ' в стакане всего ' + levels + ' уровней — глубже нет' : Z;
       return 'стоп <b style="color:var(--yellow);">$' + fmtPrice(stop) + '</b> · лимит <b>$' + fmtPrice(limit) + '</b>' +
-        (pnl != null
-          ? ' · <span title="Чистая прибыль, если стоп сработает и лимитка исполнится по этой цене. Комиссия взята рыночная: сработавший стоп забирает встречную заявку и платит как тейкер.">' +
-            'чистыми <b style="color:' + (pnl >= 0 ? 'var(--green)' : '#ff6b6b') + ';font-size:12px;">' +
-            (pnl >= 0 ? '+' : '−') + '$' + Math.abs(pnl).toFixed(2) + '</b>' +
-            ' <span style="color:var(--t2);">(' + (pnl >= 0 ? '+' : '') + (pnl / spent * 100).toFixed(2) + '%)</span></span>'
-          : '') +
+        '<span title="Чистая прибыль, если стоп сработает и лимитка исполнится по этой цене. Комиссия взята рыночная: сработавший стоп забирает встречную заявку и платит как тейкер.">' +
+        '<span>' + (pnl == null ? Z : ' · чистыми ') + '</span>' +
+        '<b style="color:' + (pnl != null && pnl < 0 ? '#ff6b6b' : 'var(--green)') + ';font-size:12px;">' +
+        (pnl == null ? Z : (pnl >= 0 ? '+' : '−') + '$' + Math.abs(pnl).toFixed(2)) + '</b>' +
+        '<span style="color:var(--t2);">' +
+        (pnl == null ? Z : ' (' + (pnl >= 0 ? '+' : '') + (pnl / spent * 100).toFixed(2) + '%)') + '</span></span>' +
         // Расстояние стопа от рынка — то, ради чего стоп и ставят. В уровнях
         // оно не читается: на плотной монете сорок уровней это доли процента.
-        (last > 0 ? ' <span style="color:var(--t2);" title="Насколько стоп ниже лучшего бида — цены, по которой позицию можно продать прямо сейчас. Именно это расстояние вы даёте цене, прежде чем ордер сработает. В уровнях стакана оно не читается: на плотной монете сорок уровней могут оказаться долей процента.">· стоп ниже бида на ' +
-          ((1 - stop / last) * 100).toFixed(2) + '%</span>' : '') +
-        (stuck ? ' <span style="color:#ff6b6b;">стакан короче запроса: стоп и лимит упёрлись в один уровень</span>'
-          : short ? ' <span style="color:var(--yellow);">в стакане всего ' + levels + ' уровней — глубже нет</span>' : '');
+        '<span style="color:var(--t2);" title="Насколько стоп ниже лучшего бида — цены, по которой позицию можно продать прямо сейчас. Именно это расстояние вы даёте цене, прежде чем ордер сработает. В уровнях стакана оно не читается: на плотной монете сорок уровней могут оказаться долей процента.">' +
+        (last > 0 ? ' · стоп ниже бида на ' + ((1 - stop / last) * 100).toFixed(2) + '%' : Z) + '</span>' +
+        '<span style="color:' + (stuck ? '#ff6b6b' : 'var(--yellow)') + ';">' + warn + '</span>';
     }
 
     // Перерисовать подпись по уже полученному стакану. Своих запросов не делает:
@@ -10091,10 +10109,15 @@
       const st = sellSteps(coin);
       const px = sellStepPrices(ladder, st.sd, st.ld);
       if (!px) return;
-      sellStepsSave(coin, { limit: px.limit, stop: px.stop });
+      sellStepsSave(coin, {
+        limit: px.limit, stop: px.stop, ref: ladder[1],
+        stuck: px.stuck, short: px.short, levels: px.levels,
+      });
+      // Объём и потраченное держим на самой подписи: таблица под ней в момент
+      // перерисовки может отсутствовать, и тогда прибыль пропадала из строки.
       const tbl = document.querySelector('.profit-table[data-pair="' + pair + '"]');
-      const size = tbl ? tbl.dataset.filled : null;
-      const cost = tbl ? tbl.dataset.usd : null;
+      const size = info.dataset.size || (tbl ? tbl.dataset.filled : null);
+      const cost = info.dataset.cost || (tbl ? tbl.dataset.usd : null);
       setLiveHtml(info, sellStepInfoHtml(px.stop, px.limit, size, cost, px.stuck, px.short, px.levels, ladder[1]));
     }
 
@@ -10128,7 +10151,10 @@
         if (!ladder) { if (info) info.textContent = 'стакан пуст'; return; }
         const px = sellStepPrices(ladder, d.sd, d.ld);
         if (!px) { if (info) info.textContent = 'стакан пуст'; return; }
-        sellStepsSave(coin, { limit: px.limit, stop: px.stop });
+        sellStepsSave(coin, {
+          limit: px.limit, stop: px.stop, ref: ladder[1],
+          stuck: px.stuck, short: px.short, levels: px.levels,
+        });
         const pi = document.getElementById('limitSellPrice_' + coin);
         // Цена подставляется в поле обычной лимитки — значит и её результат
         // надо пересчитать, иначе рядом останется число от прежней цены.
@@ -10989,12 +11015,12 @@ Requirements:
         const pnlColor = pnlUsd >= 0 ? '#4ade80' : '#f87171';
         const pnlSign = pnlUsd >= 0 ? '+' : '';
 
-        cell.innerHTML = `
+        setLiveHtml(cell, `
           <div style="font-size:10px;line-height:1.4;">
             <div style="color:#888;">Spent: <span style="color:#facc15;">$${spentUsd.toFixed(2)}</span></div>
             <div style="color:#888;">Ask: <span style="color:#4fc3f7;">$${currentVal.toFixed(2)}</span></div>
             <div style="color:${pnlColor};font-weight:600;">${pnlSign}$${pnlUsd.toFixed(2)} (${pnlSign}${pnlPct.toFixed(1)}%)</div>
-          </div>`;
+          </div>`);
       });
     }
     setInterval(updateAllValueCells, 5000);
@@ -12875,7 +12901,7 @@ Requirements:
             </span>
             <button onclick="recalcSellSteps('${coin}','${pair}','${totalFilled}',${totalUSD})" title="Пересчитать по текущему стакану" style="padding:5px 10px;border:1px solid var(--b1);border-radius:6px;background:transparent;color:var(--t2);font-size:13px;cursor:pointer;">⟳</button>
             <button onclick="sellStopInline('${pair}','${totalFilled}','${coin}',${totalUSD})" title="Поставить стоп-лимит на весь объём по этим числам" style="padding:6px 14px;border:none;border-radius:6px;background:linear-gradient(135deg,#f5c518,#d99e00);color:#1a1a1a;font-size:12px;font-weight:700;cursor:pointer;">Sell Stop</button>
-            <span id="sellStepInfo_${coin}" data-live="1" style="font-size:11px;color:var(--t2);" title="Глубина в стакане: −1 лучший бид, дальше вниз. Стоп срабатывает по последней цене сделки, и только тогда выставляется лимитка.">${_st.stop != null && _st.limit != null ? sellStepInfoHtml(_st.stop, _st.limit, totalFilled, totalUSD, false, false, 0, 0) : '0 = лучший ask · нажми ⟳'}</span>
+            <span id="sellStepInfo_${coin}" data-live="1" data-size="${totalFilled}" data-cost="${totalUSD}" style="font-size:11px;color:var(--t2);" title="Глубина в стакане: −1 лучший бид, дальше вниз. Стоп срабатывает по последней цене сделки, и только тогда выставляется лимитка.">${_st.stop != null && _st.limit != null ? sellStepInfoHtml(_st.stop, _st.limit, totalFilled, totalUSD, _st.stuck, _st.short, _st.levels, _st.ref) : '0 = лучший ask · нажми ⟳'}</span>
           </div>` ; })() : ''}</div>
 
           <table class="profit-table" data-pair="${pair}" data-filled="${totalFilled}" data-usd="${totalUSD}" data-avgbuy="${avgBuyPrice}">
@@ -12979,7 +13005,7 @@ Requirements:
               const cached = window.__orderPosCache && window.__orderPosCache[cacheKey];
               const initialText = cached ? cached.text : '<span style="color:#555;">…</span>';
               const initialCls = cached ? cached.cls : 'order-pos';
-              posCell = `<span id="${posId}" class="${initialCls}" data-pair="${pair}" data-limit="${limitPriceVal}" data-side="${side}">${initialText}</span>`;
+              posCell = `<span id="${posId}" data-live="1" class="${initialCls}" data-pair="${pair}" data-limit="${limitPriceVal}" data-side="${side}">${initialText}</span>`;
             }
           }
 
@@ -13177,8 +13203,8 @@ Requirements:
                 <span class="info-current ${isProfit ? 'profit' : 'loss'}" style="left:${currentLabelPos}%" title="Изменение цены от покупки. Результат с комиссиями — при наведении на шкалу.">${currentPct >= 0 ? '+' : ''}${currentPct.toFixed(2)}%</span>
               </div>
               <div class="price-progress-bar" style="cursor:crosshair;">
-                <div class="price-hover-tooltip"></div>
-                <div class="price-hover-line"></div>
+                <div class="price-hover-tooltip" data-live="1"></div>
+                <div class="price-hover-line" data-live="1"></div>
                 <div class="price-progress-track"></div>
                 <div class="price-progress-fill" style="left:${fillLeft}%;width:${fillWidth}%;background:${progressColor}"></div>
                 <div class="price-marker center-marker" style="left:${centerPos}%"></div>

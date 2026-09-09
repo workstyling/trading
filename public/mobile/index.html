@@ -2661,7 +2661,10 @@
               else if (Math.abs(p - lp) / lp < 1e-6) { pos++; break; }
               else break;
             }
-            el.textContent = pos > 0 ? '#' + (pos > 50 ? '50+' : pos) : '—';
+            const text = pos > 0 ? '#' + (pos > 50 ? '50+' : pos) : '—';
+            if (el.childNodes.length === 1 && el.firstChild.nodeType === 3) {
+              if (el.firstChild.nodeValue !== text) el.firstChild.nodeValue = text;
+            } else if (el.textContent !== text) el.textContent = text;
           });
         } catch { }
       }));
@@ -2906,7 +2909,7 @@
       }
 
       if (!filtered.length) {
-        document.getElementById('ordersList').innerHTML = '<div class="empty">No orders found</div>';
+        setLiveHtmlM(document.getElementById('ordersList'), '<div class="empty">No orders found</div>');
         return;
       }
 
@@ -2929,18 +2932,18 @@
         const fillPct = baseSize > 0 ? Math.round((filledSize / baseSize) * 100) : 0;
         const fillClass = fillPct === 100 ? 'color:var(--green)' : fillPct > 0 ? 'color:var(--yellow)' : 'color:var(--t2)';
 
-        html += `<tr>
+        html += `<tr data-order-id="${o.order_id}">
           <td><input type="checkbox" class="order-checkbox" data-id="${o.order_id}" ${isSelected ? 'checked' : ''} onchange="toggleSelectOrder(this)"></td>
           <td class="pair-col">${coin}</td>
           <td class="side-${side.toLowerCase()}">${side.toLowerCase()}</td>
-          <td style="font-size:10px">${priceStr}${st === 'open' && o.limit_price ? ` <span class="order-pos" data-pair="${o.product_id}" data-limit="${o.limit_price}" data-side="${side}" style="color:#f5c518;font-weight:700;font-size:10px;" title="позиция в стакане">…</span>` : ''}</td>
+          <td style="font-size:10px">${priceStr}${st === 'open' && o.limit_price ? ` <span class="order-pos" data-live="1" data-pair="${o.product_id}" data-limit="${o.limit_price}" data-side="${side}" style="color:#f5c518;font-weight:700;font-size:10px;" title="позиция в стакане">…</span>` : ''}</td>
           <td style="${fillClass};font-weight:600">${fillPct}%</td>
           <td>${st === 'open' ? `<button class="cancel-btn" onclick="cancelOrder('${o.order_id}')">Cancel</button>` : '<span style="color:var(--t3)">—</span>'}</td>
         </tr>`;
       });
 
       html += '</tbody></table></div>';
-      document.getElementById('ordersList').innerHTML = html;
+      setLiveHtmlM(document.getElementById('ordersList'), html);
     }
 
     function toggleSelectOrder(cb) {
@@ -2967,7 +2970,7 @@
     async function updateMonitor() {
       const selected = allOrders.filter(o => selectedOrders.includes(o.order_id));
       if (!selected.length) {
-        document.getElementById('monitorList').innerHTML = '';
+        setLiveHtmlM(document.getElementById('monitorList'), '');
         return;
       }
 
@@ -3110,12 +3113,12 @@
           const exactSize = _sellNow.toFixed(_sellNow < 1 ? 8 : 6);
           const exactTarget = targetPrice > 0 ? targetPrice.toFixed(tpDecimals) : '0';
 
-          html += `<div class="monitor-order">
+          html += `<div class="monitor-order" data-order-id="${o.order_id}">
             <div class="monitor-order-left">
               <span style="color:${sColor};font-weight:700;">${side}</span>
               <span>$${lp}</span>
               <span style="color:var(--t2)">${filled > 0 ? filled.toFixed(filled < 1 ? 6 : 2) : '—'}</span>
-              ${o.status === 'OPEN' && o.limit_price ? `<span class="order-pos" data-pair="${pair}" data-limit="${o.limit_price}" data-side="${side}" style="font-size:10px;color:#f5c518;font-weight:700;" title="позиция в стакане">…</span>` : ''}
+              ${o.status === 'OPEN' && o.limit_price ? `<span class="order-pos" data-live="1" data-pair="${pair}" data-limit="${o.limit_price}" data-side="${side}" style="font-size:10px;color:#f5c518;font-weight:700;" title="позиция в стакане">…</span>` : ''}
             </div>
             <div class="monitor-actions">
               ${isBuy ? `<button class="mon-sell-btn" onclick="createSellAt('${pair}','${exactSize}','${exactTarget}')">+${tradingSettings.sellMarkup}%</button>` : ''}
@@ -3131,11 +3134,11 @@
         if (totalFilled > 0) {
           const totalFilledStr = totalFilled.toFixed(totalFilled < 1 ? 8 : 6);
           const _st = sellStepsM(coin);
-          html += `<div style="margin-top:8px;display:flex;gap:6px;">
+          html += `<div data-render-key="monitor-sell" style="margin-top:8px;display:flex;gap:6px;">
             <button class="mon-sell-btn all" style="flex:1;padding:10px;" onclick="sellAtAsk('${pair}','${totalFilledStr}',${avgBuy},${totalUSD})">SELL ALL ${coin}</button>
             <button class="mon-sell-btn mkt" style="flex:0 0 96px;padding:10px;" onclick="sellAllMarketM('${pair}','${totalFilledStr}','${coin}',${totalUSD})">SELL MKT</button>
           </div>
-          <div class="step-row">
+          <div class="step-row" data-render-key="monitor-steps">
             <span class="step-group">
               <span class="step-lbl">стоп</span>
               <button class="step-btn" onclick="bumpSellStepM('${coin}','${pair}','stop',1,'${totalFilledStr}',${totalUSD})">+</button>
@@ -3151,13 +3154,13 @@
             <button class="step-btn wide" onclick="recalcSellStepsM('${coin}','${pair}','${totalFilledStr}',${totalUSD})" title="Пересчитать по стакану">⟳</button>
             <button class="mon-sell-btn stop" onclick="sellStopInlineM('${pair}','${totalFilledStr}','${coin}',${totalUSD})">SELL STOP</button>
           </div>
-          <div id="sellStepInfoM_${coin}" class="step-info" data-size="${totalFilledStr}" data-cost="${totalUSD}">${_st.stop != null && _st.limit != null ? sellStepInfoHtmlM(_st.stop, _st.limit, totalFilledStr, totalUSD, false, false, 0, 0) : 'нажми ⟳'}</div>`;
+          <div id="sellStepInfoM_${coin}" class="step-info" data-live="1" data-size="${totalFilledStr}" data-cost="${totalUSD}">${_st.stop != null && _st.limit != null ? sellStepInfoHtmlM(_st.stop, _st.limit, totalFilledStr, totalUSD, _st.stuck, _st.short, _st.levels, _st.ref) : 'нажми ⟳'}</div>`;
         }
 
         html += `</div>`;
       }
 
-      document.getElementById('monitorList').innerHTML = html;
+      setLiveHtmlM(document.getElementById('monitorList'), html);
     }
 
     function fmtPriceForOrder(p) {
@@ -3782,7 +3785,16 @@
     function sellStepsM(coin) {
       const v = sellStepsAllM()[coin] || {};
       const d = sellDepthsFixM(v.sd == null ? -1 : v.sd, v.ld == null ? -2 : v.ld);
-      return { sd: d.sd, ld: d.ld, limit: v.limit == null ? null : +v.limit, stop: v.stop == null ? null : +v.stop };
+      // Помним и то, из чего подпись была собрана: бид, упор в дно стакана,
+      // число уровней. Без этого перерисовка списка рисовала подпись без них,
+      // а следующий стакан дорисовывал обратно — строка мигала.
+      return {
+        sd: d.sd, ld: d.ld,
+        limit: v.limit == null ? null : +v.limit,
+        stop: v.stop == null ? null : +v.stop,
+        ref: v.ref == null ? 0 : +v.ref,
+        stuck: !!v.stuck, short: !!v.short, levels: v.levels == null ? 0 : +v.levels,
+      };
     }
     function sellStepsSaveM(coin, patch) {
       const all = sellStepsAllM();
@@ -3805,17 +3817,25 @@
       const spent = parseFloat(cost) || 0;
       const fee = (parseFloat(tradingSettings.marketFee) || 0.25) / 100;
       const pnl = qty > 0 && spent > 0 ? qty * limit * (1 - fee) - spent : null;
-      return 'стоп <b style="color:var(--yellow);">$' + fmt(stop) + '</b> · лимит <b>$' + fmt(limit) + '</b>' +
-        (pnl != null
-          ? '<br>чистыми <b style="color:' + (pnl >= 0 ? 'var(--green)' : '#ff6b6b') + ';">' +
-            (pnl >= 0 ? '+' : '−') + '$' + Math.abs(pnl).toFixed(2) + '</b> <span style="color:var(--t2);">(' +
-            (pnl >= 0 ? '+' : '') + (pnl / spent * 100).toFixed(2) + '%)</span>'
-          : '') +
+      // Набор узлов постоянный: та же разметка, есть прибыль или нет, известен
+      // бид или нет, упёрся стакан или нет. Пока куски строки то появлялись,
+      // то исчезали, подправить её на месте было нельзя — она пересобиралась
+      // целиком, и это было видно как мигание. Пусто здесь не отсутствие узла,
+      // а невидимый символ в нём: в исчезнувший узел текст потом не вернуть.
+      const Z = '​';
+      const warn = stuck ? ' стакан короче запроса: стоп и лимит на одном уровне'
+        : short ? ' в стакане всего ' + levels + ' уровней' : Z;
+      return 'стоп <b style="color:var(--yellow);">$' + fmt(stop) + '</b> · лимит <b>$' + fmt(limit) + '</b><br>' +
+        '<span>' + (pnl == null ? Z : 'чистыми ') + '</span>' +
+        '<b style="color:' + (pnl != null && pnl < 0 ? '#ff6b6b' : 'var(--green)') + ';">' +
+        (pnl == null ? Z : (pnl >= 0 ? '+' : '−') + '$' + Math.abs(pnl).toFixed(2)) + '</b>' +
+        '<span style="color:var(--t2);">' +
+        (pnl == null ? Z : ' (' + (pnl >= 0 ? '+' : '') + (pnl / spent * 100).toFixed(2) + '%)') + '</span>' +
         // Расстояние в уровнях не читается: на плотной монете сорок уровней
         // могут оказаться долей процента.
-        (ref > 0 ? ' <span style="color:var(--t2);">· ниже бида на ' + ((1 - stop / ref) * 100).toFixed(2) + '%</span>' : '') +
-        (stuck ? '<br><span style="color:#ff6b6b;">стакан короче запроса: стоп и лимит на одном уровне</span>'
-          : short ? '<br><span style="color:var(--yellow);">в стакане всего ' + levels + ' уровней</span>' : '');
+        '<span style="color:var(--t2);">' +
+        (ref > 0 ? ' · ниже бида на ' + ((1 - stop / ref) * 100).toFixed(2) + '%' : Z) + '</span>' +
+        '<span style="color:' + (stuck ? '#ff6b6b' : 'var(--yellow)') + ';">' + warn + '</span>';
     }
 
     async function sellLadderM(pair) {
@@ -3841,49 +3861,89 @@
       const st = sellStepsM(coin);
       const px = sellStepPricesM(ladder, st.sd, st.ld);
       if (!px) return;
-      sellStepsSaveM(coin, { limit: px.limit, stop: px.stop });
+      sellStepsSaveM(coin, {
+        limit: px.limit, stop: px.stop, ref: ladder[1],
+        stuck: px.stuck, short: px.short, levels: px.levels,
+      });
       // Объём и потраченное берём с самой строки: пересчёт зовётся из общего
       // цикла, который про монету ничего не знает.
       const size = info.dataset.size, cost = info.dataset.cost;
       setLiveHtmlM(info, sellStepInfoHtmlM(px.stop, px.limit, size, cost, px.stuck, px.short, px.levels, ladder[1]));
     }
 
-    // Записать разметку в живое место, не пересобирая его. Каждое
-    // присваивание innerHTML уничтожает вложенные узлы и создаёт заново —
-    // глазом это видно как моргание, даже когда текст почти не изменился.
-    function sameSkeletonM(a, b) {
-      const ta = a.getElementsByTagName('*'), tb = b.getElementsByTagName('*');
-      if (ta.length !== tb.length) return false;
-      for (let i = 0; i < ta.length; i++) if (ta[i].tagName !== tb[i].tagName) return false;
-      return true;
+    // Обновляем только изменившиеся узлы. Монеты и ордера сопоставляем по
+    // идентификатору: сортировка не должна переносить поля и кнопки к соседу.
+    function liveNodeKeyM(node) {
+      if (node.nodeType !== 1) return '';
+      for (const name of ['id', 'data-coin', 'data-order-id', 'data-render-key']) {
+        const value = node.getAttribute(name);
+        if (value) return name + ':' + value;
+      }
+      return '';
     }
+
+    function patchLiveNodeM(oldNode, newNode, active) {
+      if (oldNode.nodeType !== 1) {
+        if (oldNode.nodeValue !== newNode.nodeValue) oldNode.nodeValue = newNode.nodeValue;
+        return;
+      }
+      const isInput = oldNode.tagName === 'INPUT';
+      const isCheck = isInput && ['checkbox', 'radio'].includes(oldNode.type);
+      const isEditable = (isInput && !isCheck) || oldNode.tagName === 'TEXTAREA';
+      const keepValue = isEditable && oldNode === active;
+      const editedValue = keepValue ? oldNode.value : null;
+      // Стакан обновляет эти места отдельно. Сохраняем последнее значение,
+      // пока речь о том же ордере, цене и объёме, вместо возврата к «…».
+      const keepLive = oldNode.hasAttribute('data-live') && newNode.hasAttribute('data-live') &&
+        ['data-pair', 'data-limit', 'data-side', 'data-size', 'data-cost'].every(name =>
+          oldNode.getAttribute(name) === newNode.getAttribute(name));
+      for (const at of [...oldNode.attributes]) {
+        if (!newNode.hasAttribute(at.name)) oldNode.removeAttribute(at.name);
+      }
+      for (const at of newNode.attributes) {
+        if (oldNode.getAttribute(at.name) !== at.value) oldNode.setAttribute(at.name, at.value);
+      }
+      if (!keepLive) patchLiveChildrenM(oldNode, newNode, active);
+      if (isEditable) {
+        const value = keepValue ? editedValue : newNode.value;
+        if (oldNode.value !== value) oldNode.value = value;
+      }
+      if (isCheck && oldNode.checked !== newNode.checked) oldNode.checked = newNode.checked;
+    }
+
+    function patchLiveChildrenM(oldParent, newParent, active) {
+      const remaining = new Set(oldParent.childNodes);
+      const keyed = new Map([...remaining].filter(node => liveNodeKeyM(node)).map(node => [liveNodeKeyM(node), node]));
+      let cursor = oldParent.firstChild;
+      for (const next of [...newParent.childNodes]) {
+        const key = liveNodeKeyM(next);
+        const compatible = node => node.nodeType === next.nodeType && node.nodeName === next.nodeName;
+        const current = key ? keyed.get(key) : [...remaining].find(node => !liveNodeKeyM(node) && compatible(node));
+        if (current && remaining.has(current) && compatible(current)) {
+          remaining.delete(current);
+          if (current !== cursor) oldParent.insertBefore(current, cursor);
+          patchLiveNodeM(current, next, active);
+          cursor = current.nextSibling;
+        } else {
+          oldParent.insertBefore(next.cloneNode(true), cursor);
+        }
+      }
+      for (const stale of remaining) stale.remove();
+    }
+
     function setLiveHtmlM(el, html) {
       if (!el) return;
-      if (el.innerHTML === html) return;
+      const active = el.contains(document.activeElement) ? document.activeElement : null;
+      const selection = active && typeof active.selectionStart === 'number'
+        ? [active.selectionStart, active.selectionEnd, active.selectionDirection] : null;
       const tmp = document.createElement('div');
       tmp.innerHTML = html;
-      try {
-        if (sameSkeletonM(el, tmp)) {
-          const ta = el.getElementsByTagName('*'), tb = tmp.getElementsByTagName('*');
-          for (let i = 0; i < ta.length; i++) {
-            for (const at of tb[i].attributes) {
-              if (ta[i].getAttribute(at.name) !== at.value) ta[i].setAttribute(at.name, at.value);
-            }
-            const on = ta[i].childNodes, nn = tb[i].childNodes;
-            for (let j = 0; j < nn.length && j < on.length; j++) {
-              if (nn[j].nodeType === 3 && on[j].nodeType === 3 && on[j].nodeValue !== nn[j].nodeValue) {
-                on[j].nodeValue = nn[j].nodeValue;
-              }
-            }
-          }
-          for (let i = 0; i < tmp.childNodes.length && i < el.childNodes.length; i++) {
-            const a = el.childNodes[i], b = tmp.childNodes[i];
-            if (a.nodeType === 3 && b.nodeType === 3 && a.nodeValue !== b.nodeValue) a.nodeValue = b.nodeValue;
-          }
-          return;
-        }
-      } catch { }
-      el.innerHTML = html;
+      patchLiveChildrenM(el, tmp, active);
+      // Перестановка избранных может переместить родителя редактируемого поля.
+      if (active && active.isConnected) {
+        if (document.activeElement !== active) active.focus({ preventScroll: true });
+        if (selection) active.setSelectionRange(...selection);
+      }
     }
 
     async function recalcSellStepsM(coin, pair, size, cost) {
@@ -3903,7 +3963,10 @@
         if (!ladder) { if (info) info.textContent = 'стакан пуст'; return; }
         const px = sellStepPricesM(ladder, d.sd, d.ld);
         if (!px) return;
-        sellStepsSaveM(coin, { limit: px.limit, stop: px.stop });
+        sellStepsSaveM(coin, {
+          limit: px.limit, stop: px.stop, ref: ladder[1],
+          stuck: px.stuck, short: px.short, levels: px.levels,
+        });
         if (info) setLiveHtmlM(info, sellStepInfoHtmlM(px.stop, px.limit, size, cost, px.stuck, px.short, px.levels, ladder[1]));
       } catch (e) {
         if (info) info.textContent = 'стакан недоступен';
