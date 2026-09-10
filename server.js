@@ -5383,7 +5383,7 @@ function microScalpEntryValue(row) {
 // минуты дают 0.54 — треть устаревания снимается почти даром.
 const ENTRY_SCAN_INTERVAL_MS = 2 * 60 * 1000;
 const ENTRY_SCAN_MAX_COINS = 60;
-const entryScan = { results: [], at: 0, total: 0, running: false, failedAt: 0, market: null };
+const entryScan = { results: [], at: 0, total: 0, running: false, failedAt: 0, market: null, missed: [] };
 
 // Сколько монета уже висит в списке. TAO попал в него 51 раз за 35 часов, и
 // каждое попадание выглядело новым сигналом — хотя это было одно непрерывное
@@ -5420,9 +5420,27 @@ function saveEntrySince() {
 // за 12 дней: упавшие от суточного максимума более чем на 10% возвращались к
 // цене входа плюс комиссия в течение часа в 86% случаев и ни разу не зависли
 // за трое суток. Упавшие менее чем на 1% — 52% за час и 2.4% зависших.
+// Запрос к бирже с одним повтором.
+//
+// Скан делает около ста двадцати обращений каждые две минуты, и часть их
+// биржа отклоняет. Одного отказа хватало, чтобы монета молча исчезла из
+// списка: ZEC стоял первым с пометкой «брать», а через две минуты пропал —
+// притом что падение, спред и объём у него не менялись вовсе. Для панели,
+// которая говорит, что покупать, исчезнувший кандидат это не мелочь.
+async function cbTry(url) {
+  for (let a = 0; a < 2; a++) {
+    try {
+      const r = await fetch(url, DIP_H);
+      if (r.ok) return r;
+    } catch { }
+    if (a === 0) await new Promise(s => setTimeout(s, 400));
+  }
+  return null;
+}
+
 async function entrySignals(coin) {
-  const r = await fetch(`${DIP_CB}/products/${coin}-USD/candles?granularity=300`, DIP_H);
-  if (!r.ok) return null;
+  const r = await cbTry(`${DIP_CB}/products/${coin}-USD/candles?granularity=300`);
+  if (!r) return null;
   const raw = await r.json();
   if (!Array.isArray(raw) || raw.length < 30) return null;
   // [time, low, high, open, close, volume], новые вперёд
@@ -5508,8 +5526,8 @@ async function entrySignals(coin) {
 // прежняя формула трактовала как «неизвестно» и штрафовала.
 async function entrySpread(coin) {
   try {
-    const r = await fetch(`${DIP_CB}/products/${coin}-USD/ticker`, DIP_H);
-    if (!r.ok) return null;
+    const r = await cbTry(`${DIP_CB}/products/${coin}-USD/ticker`);
+    if (!r) return null;
     const t = await r.json();
     const bid = Number(t.bid), ask = Number(t.ask);
     if (!(bid > 0) || !(ask > 0) || ask < bid) return null;
@@ -5705,6 +5723,10 @@ async function runEntryScan() {
       .slice(0, ENTRY_SCAN_MAX_COINS);
 
     const rows = [];
+    // Кого не удалось посчитать в этот проход. Молчаливая потеря хуже пустого
+    // места: монета исчезает из списка, и отличить «условия перестали
+    // выполняться» от «биржа не ответила» нельзя ни с экрана, ни из логов.
+    const missed = [];
     for (let i = 0; i < universe.length; i += 3) {
       const batch = universe.slice(i, i + 3);
       await Promise.all(batch.map(async ({ coin, volume }) => {
@@ -5716,7 +5738,7 @@ async function runEntryScan() {
           // в принципе. Цена честности — второй запрос на монету: 100 обращений
           // на скан вместо 50, около 0.83 в секунду при лимите биржи в 10.
           const [sig, sp] = await Promise.all([entrySignals(coin), entrySpread(coin)]);
-          if (!sig) return;
+          if (!sig) { missed.push(coin); return; }
           // Спред пока неизвестен — считаем ядро балла. Полный балл добираем
           // только для прошедших порог: тикер на все шестьдесят монет удвоил
           // бы нагрузку на биржу ради строк, которые всё равно не показать.
@@ -5724,7 +5746,7 @@ async function runEntryScan() {
             pullbackPct: sig.pullbackPct, rsi: sig.rsi5,
             spreadPct: sp, vol24: volume, checks: [],
           });
-          if (!value) return;
+          if (!value) { missed.push(coin); return; }
           rows.push({
             coin, pair: coin + '-USD', price: sig.price, vol24: volume, chg24Pct: sig.chg24Pct,
             dayCoverH: sig.dayCoverH,
@@ -5733,7 +5755,7 @@ async function runEntryScan() {
             runupPct: sig.runupPct, runup: runupOdds(sig.runupPct),
             entryValue: value,
           });
-        } catch { /* одна монета не должна ронять весь скан */ }
+        } catch { missed.push(coin); /* одна монета не должна ронять весь скан */ }
       }));
       await new Promise(r => setTimeout(r, 250));
     }
@@ -5829,10 +5851,12 @@ async function runEntryScan() {
     }
     entryScan.results = rows;
     entryScan.total = universe.length;
+    entryScan.missed = missed;
     entryScan.at = Date.now();
     entryScan.failedAt = 0;
     const good = rows.filter(entryPasses).length;
-    console.log('[entry-scan] ' + rows.length + '/' + universe.length + ' монет, 40+: ' + good);
+    console.log('[entry-scan] ' + rows.length + '/' + universe.length + ' монет, прошли вход: ' + good +
+      (missed.length ? ', не посчитаны: ' + missed.join(',') : ''));
   } catch (e) {
     console.error('[entry-scan]', e.message);
   } finally {
@@ -6319,6 +6343,10 @@ app.get('/api/entry-scan', (req, res) => {
     success: true,
     at: entryScan.at,
     total: entryScan.total,
+    // Кого не удалось посчитать в этот проход: биржа отклонила запрос или
+    // истории не хватило. Без этого монета просто исчезает из списка, и
+    // отличить «условия перестали выполняться» от «данных не пришло» нельзя.
+    missed: entryScan.missed || [],
     recoveryMeasuredAt: RECOVERY_MEASURED_AT,
     recoverySample: RECOVERY_SAMPLE,
     // Когда числа последний раз подтверждались на другой выборке
