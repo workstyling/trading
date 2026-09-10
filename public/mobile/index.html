@@ -4343,8 +4343,15 @@
       const money = (v) => (v >= 0 ? '+$' : '−$') + Math.abs(v).toFixed(2);
       const col = (v) => v >= 0 ? 'var(--green)' : '#ff6b6b';
       const both = _realizedTotal + o.unrealized;
-      el.innerHTML = 'в открытых <b style="color:' + col(o.unrealized) + ';">' + money(o.unrealized) +
-        '</b> · вместе <b style="color:' + col(both) + ';">' + money(both) + '</b>';
+      // Журнал строит позиции из окна последних ордеров: продажа за краем окна
+      // оставляет позицию «открытой» навсегда. Такие кошелёк не подтверждает,
+      // в сумму они не идут — и об этом надо сказать, а не молчать.
+      const un = o.unconfirmed || [];
+      const cnt = o.counted == null ? o.n : o.counted;
+      el.innerHTML = 'в открытых <b style="color:' + col(o.unrealized) + ';">' + money(o.unrealized) + '</b>' +
+        (un.length ? ' <span style="color:#f5843a;" title="Кошелёк не подтвердил: ' +
+          un.map(x => x.coin + ' — ' + x.why).join('; ') + '">(' + cnt + ' из ' + o.n + ')</span>' : '') +
+        ' · вместе <b style="color:' + col(both) + ';">' + money(both) + '</b>';
     }
 
     async function loadProfit() {

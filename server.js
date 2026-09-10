@@ -4215,14 +4215,50 @@ async function journalOpenLive() {
 app.get('/api/journal', async (req, res) => {
   const open = await journalOpenLive();
   const stats = journalStats();
-  // Считаем только те позиции, чью цену удалось получить: подставлять ноль
-  // вместо неизвестной оценки значило бы завышать итог ровно так же, как это
-  // делало полное умолчание об открытых.
+
+  // КОШЕЛЁК — ИСТИНА О ТОМ, ЧЕМ МЫ ВЛАДЕЕМ.
+  //
+  // Журнал строит позиции из окна последних ордеров. Продажа, уехавшая за
+  // край окна, оставляет позицию «открытой» навсегда: PUMP на $1163, CRO на
+  // $1197 и AVAX числились открытыми, хотя в кошельке их нет вовсе, а по CP
+  // журнал считал 67 935 монет против 32 705 настоящих. Итог «незакрыто
+  // −$1197» складывался в том числе из них — и это число стоит на главном
+  // экране рядом с прибылью.
+  //
+  // Та же ошибка уже ловилась на сторожах безубытка: они срабатывали по
+  // давно закрытым сделкам. Лечится тем же — сверкой с кошельком.
+  let balances = null;
+  try {
+    const now = Date.now();
+    if (balancesCache.data && (now - balancesCache.ts) < 60_000) balances = balancesCache.data;
+    else { balances = await fetchAccountBalances(); balancesCache = { data: balances, ts: now }; }
+  } catch { /* без баланса сверять нечем — тогда считаем как раньше */ }
+
+  for (const p of open) {
+    if (!balances) { p.wallet = null; continue; }
+    const row = balances.find(b => b.currency === p.coin);
+    const real = row ? Number(row.total) : 0;
+    if (!(real > 0)) p.wallet = 'нет в кошельке';
+    else if (p.totalSize > 0 && Math.abs(real - p.totalSize) / p.totalSize > 0.05) {
+      p.wallet = 'расходится: в кошельке ' + real;
+    } else p.wallet = 'ok';
+  }
+
+  // Считаем только те позиции, чью цену удалось получить И которые
+  // подтверждает кошелёк. Подставлять ноль вместо неизвестной оценки значило
+  // бы завышать итог ровно так же, как это делало полное умолчание об
+  // открытых, а считать несуществующие позиции — так же, только наоборот.
   const priced = open.filter(p => p.unrealized != null);
-  const unrealized = Math.round(priced.reduce((s, p) => s + p.unrealized, 0) * 100) / 100;
+  const counted = priced.filter(p => p.wallet == null || p.wallet === 'ok');
+  const unrealized = Math.round(counted.reduce((s, p) => s + p.unrealized, 0) * 100) / 100;
   stats.openTotal = {
     n: open.length,
     priced: priced.length,
+    counted: counted.length,
+    // Кого кошелёк не подтвердил и почему — чтобы расхождение было видно,
+    // а не пряталось в округлении итога.
+    unconfirmed: open.filter(p => p.wallet && p.wallet !== 'ok')
+      .map(p => ({ coin: p.coin, why: p.wallet, cost: Math.round((p.restCost || 0) * 100) / 100 })),
     unrealized,
     withOpen: Math.round((((stats.overall && stats.overall.totalPnl) || 0) + unrealized) * 100) / 100,
   };

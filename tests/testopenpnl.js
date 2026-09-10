@@ -43,12 +43,44 @@ console.log('\nДесктоп');
   const t2 = ctx._out.replace(/<[^>]+>/g, '');
   ok(/в открытых \+\$40\.00/.test(t2) && /вместе −\$60\.00/.test(t2), 'знаки в обе стороны', t2);
 
+  // Журнал строит позиции из окна последних ордеров: продажа за краем окна
+  // оставляет позицию «открытой» навсегда. PUMP на $1163 и CRO на $1197
+  // числились открытыми, хотя в кошельке их нет — и входили в это число.
+  ctx._openUnrealized = { n: 8, counted: 5, unrealized: -700,
+    unconfirmed: [{ coin: 'PUMP', why: 'нет в кошельке', cost: 1163 }] };
+  ctx.paint(1000);
+  const t3 = ctx._out.replace(/<[^>]+>/g, '');
+  ok(/\(5 из 8\)/.test(t3), 'видно, сколько позиций вошло в число', t3);
+  ok(/PUMP — нет в кошельке/.test(ctx._out), 'и кого кошелёк не подтвердил');
+  ok(/#f5843a/.test(ctx._out), 'расхождение помечено цветом');
+  ctx._openUnrealized = { n: 5, counted: 5, unrealized: -700, unconfirmed: [] };
+  ctx.paint(1000);
+  ok(!/из 5/.test(ctx._out.replace(/<[^>]+>/g, '')), 'когда всё сходится — лишней приписки нет');
+
   // Источники разные, и молчать об этом нельзя
   ok(/Источники разные/.test(src), 'в подсказке сказано, что источники разные');
   ok(/Убыток не реализуется сам/.test(src), 'и почему без этой строки его не видно');
   // Цена ходит — значит и число должно
   ok(/setInterval\(loadOpenUnrealized, 60000\)/.test(h), 'обновляется само раз в минуту');
   ok(/paintOpenUnrealized\(total\)/.test(h), 'и перерисовывается вместе с итогом');
+}
+
+console.log('\nСервер сверяет открытые позиции с кошельком');
+{
+  const src = read('server.js');
+  const ep = src.slice(src.indexOf("app.get('/api/journal'"), src.indexOf("app.delete('/api/journal/closed'"));
+  ok(/fetchAccountBalances\(\)/.test(ep), 'баланс запрашивается');
+  ok(/p\.wallet = 'нет в кошельке'/.test(ep), 'монета не в кошельке — позиция помечена');
+  ok(/Math\.abs\(real - p\.totalSize\) \/ p\.totalSize > 0\.05/.test(ep), 'и расхождение по размеру тоже');
+  ok(/counted = priced\.filter\(p => p\.wallet == null \|\| p\.wallet === 'ok'\)/.test(ep),
+    'в сумму идут только подтверждённые');
+  // Без баланса сверять нечем — тогда считаем как раньше, а не выкидываем всё
+  ok(/p\.wallet = null; continue;/.test(ep), 'без баланса позиции не выбрасываются');
+  ok(/unconfirmed:/.test(ep), 'и список неподтверждённых уходит наружу');
+
+  const d = read('public/index.html');
+  ok(/Кошелёк не подтверждает эту позицию/.test(d), 'в таблице журнала такие строки помечены');
+  ok(/opacity:0\.55/.test(d), 'и приглушены');
 }
 
 console.log('\nМобильная');

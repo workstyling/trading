@@ -12631,12 +12631,23 @@ Requirements:
         { minimumFractionDigits: 2, maximumFractionDigits: 2 });
       const col = (v) => v >= 0 ? 'var(--green)' : '#ff6b6b';
       const both = realized + o.unrealized;
+      // Сколько позиций реально вошло в число. Журнал строит их из окна
+      // последних ордеров, и продажа за краем окна оставляет позицию
+      // «открытой» навсегда — такие кошелёк не подтверждает, и в сумму они
+      // не идут. Молчать об этом нельзя: иначе непонятно, что число покрывает.
+      const un = o.unconfirmed || [];
+      const cnt = o.counted == null ? o.n : o.counted;
       setLiveHtml(el, '<span title="' +
         'Открытые позиции по текущему Ask с комиссией: столько сейчас стоит то, что ещё не продано, против затрат на него. ' +
-        'Считает журнал сделок по ордерам биржи — ' + o.n + ' позиций.' + String.fromCharCode(10) +
+        'Считает журнал сделок по ордерам биржи: ' + cnt + ' из ' + o.n + ' позиций подтверждены кошельком.' +
+        (un.length ? String.fromCharCode(10) + 'Не в счёт: ' +
+          un.map(x => x.coin + ' — ' + x.why + ' (затраты $' + x.cost + ')').join('; ') +
+          '. Журнал видит только окно последних ордеров: продажа, уехавшая за край окна, оставляет позицию открытой навсегда.' : '') +
+        String.fromCharCode(10) +
         'Реализованное берётся из истории прибыли, которую вы сохраняете кнопкой. Источники разные, поэтому числа стоят рядом, а не складываются молча.' + String.fromCharCode(10) +
         'Убыток не реализуется сам: он остаётся в кошельке и ждёт возврата, и без этой строки его на экране не видно.">' +
         'в открытых <b style="color:' + col(o.unrealized) + ';">' + money(o.unrealized) + '</b>' +
+        (un.length ? ' <span style="color:#f5843a;">(' + cnt + ' из ' + o.n + ')</span>' : '') +
         ' · вместе <b style="color:' + col(both) + ';">' + money(both) + '</b></span>');
     }
 
@@ -17230,8 +17241,9 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
         oEl.innerHTML = open.length ? `
           <div style="font-size:11px;color:var(--t2);font-weight:700;margin-bottom:6px;">ОТКРЫТЫЕ ПОЗИЦИИ (${open.length})</div>
           <table class="pred-table"><thead><tr><th>Coin</th><th>Size</th><th>Cost</th><th>Сейчас</th><th title="Сколько позиция стоит сейчас против вложенного, по bid и с учётом комиссии продажи">Нереализовано</th><th>Дней</th><th title="Доля случаев, когда цена возвращалась к безубытку за месяц с такой же просадки. Замер: 45 монет, 200 суток, 15 219 точек входа по правилу панели. Отсчёт от момента, когда просадка достигла этой глубины, а не от покупки. Это не прогноз по вашей монете, а доля случаев в прошлом.">Шанс к 0</th><th>Realized</th><th>Score</th><th>Rebound</th><th>Вердикт</th><th>Куплено</th></tr></thead><tbody>
-          ${open.map(p => `<tr>
-            <td><strong>${p.coin}</strong></td>
+          ${open.map(p => `<tr${p.wallet && p.wallet !== 'ok' ? ' style="opacity:0.55;"' : ''}>
+            <td><strong>${p.coin}</strong>${p.wallet && p.wallet !== 'ok'
+              ? `<span title="Кошелёк не подтверждает эту позицию: ${p.wallet}. Журнал видит только окно последних ордеров — продажа, уехавшая за край окна, оставляет позицию открытой навсегда. В итог «нереализовано» такая строка не входит." style="color:#f5843a;font-size:10px;margin-left:4px;">?</span>` : ''}</td>
             <td>${fmtSize(p.totalSize)}</td>
             <td>$${(p.restCost || 0).toFixed(2)}</td>
             <td>${p.nowUsd == null ? '<span style="color:var(--t2);">цена недоступна</span>' : '$' + p.nowUsd.toFixed(2)}</td>
