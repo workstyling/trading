@@ -889,11 +889,6 @@
       font-weight: 600;
     }
 
-    .selected-table td:nth-child(14) {
-      white-space: normal;
-      min-width: 120px;
-    }
-
     .track-checkbox-wrap {
       display: inline-block;
       position: relative;
@@ -10968,63 +10963,6 @@ Requirements:
     }
     setInterval(updateAllLevelsCells, 5000);
 
-    // Update all value cells with current prices
-    function updateAllValueCells() {
-      const valueCells = document.querySelectorAll('[id^="value_"]');
-      valueCells.forEach(cell => {
-        const orderId = cell.id.replace('value_', '');
-        // Find the row data
-        const row = cell.closest('tr');
-        if (!row) return;
-
-        const sideCell = row.querySelector('td:nth-child(2)');
-        if (!sideCell || sideCell.textContent.trim() !== 'buy') return;
-
-        // Get coin from the table
-        const table = cell.closest('.profit-table');
-        if (!table) return;
-        const pair = table.dataset.pair;
-        if (!pair) return;
-        const coin = pair.split('-')[0];
-
-        // Get filled and avg price from row
-        const filledCell = row.querySelector('td:nth-child(4)');
-        const avgPriceCell = row.querySelector('td:nth-child(6)');
-        const usdCell = row.querySelector('td:nth-child(7)');
-
-        if (!filledCell || !avgPriceCell || !usdCell) return;
-
-        const filledVal = parseFloat(filledCell.textContent) || 0;
-        const avgPriceVal = parseFloat(avgPriceCell.textContent.replace(/[$,]/g, '')) || 0;
-        const spentUsd = parseFloat(usdCell.textContent.replace(/[$,]/g, '')) || 0;
-
-        if (filledVal <= 0 || spentUsd <= 0) return;
-
-        // Get current ask price from globalTopList (sell at ask)
-        const coinItem = globalTopList.find(x => x.coin === coin);
-        // Only update if we have real prices
-        if (!coinItem || !coinItem.bestAsk) return;
-
-        const currentAskPrice = coinItem.bestAsk;
-        // Calculate what you'd get selling at Ask (minus fee)
-        const sellFee = tradingSettings.tradeFee / 100;
-        const grossValue = filledVal * currentAskPrice;
-        const currentVal = grossValue * (1 - sellFee);
-        const pnlUsd = currentVal - spentUsd;
-        const pnlPct = spentUsd > 0 ? ((currentVal - spentUsd) / spentUsd * 100) : 0;
-        const pnlColor = pnlUsd >= 0 ? '#4ade80' : '#f87171';
-        const pnlSign = pnlUsd >= 0 ? '+' : '';
-
-        setLiveHtml(cell, `
-          <div style="font-size:10px;line-height:1.4;">
-            <div style="color:#888;">Spent: <span style="color:#facc15;">$${spentUsd.toFixed(2)}</span></div>
-            <div style="color:#888;">Ask: <span style="color:#4fc3f7;">$${currentVal.toFixed(2)}</span></div>
-            <div style="color:${pnlColor};font-weight:600;">${pnlSign}$${pnlUsd.toFixed(2)} (${pnlSign}${pnlPct.toFixed(1)}%)</div>
-          </div>`);
-      });
-    }
-    setInterval(updateAllValueCells, 5000);
-
     // Simple click sound using Web Audio API
     function playClickSound() {
       try {
@@ -12924,7 +12862,7 @@ Requirements:
           </div>
 
           <table class="selected-table">
-            <thead><tr><th></th><th>Bar</th><th>Order ID</th><th>Side</th><th>Type</th><th>Filled</th><th>Limit</th><th>Avg Price</th><th>USD</th><th>Done</th><th>Target</th><th>Sell</th><th>Pos</th><th>Value</th></tr></thead>
+            <thead><tr><th></th><th>Bar</th><th>Order ID</th><th>Side</th><th>Type</th><th>Filled</th><th>Limit</th><th>Avg Price</th><th>USD</th><th>Done</th><th>Target</th><th>Sell</th><th>Pos</th></tr></thead>
             <tbody>`;
 
         orders.forEach(o => {
@@ -13071,40 +13009,6 @@ Requirements:
             }
           }
 
-          // Value cell: Spent, Current Value at Ask (with fee), PnL (only for BUY orders)
-          // Show loading placeholder - will be updated by updateAllValueCells with real prices
-          let valueCell = '<span style="color:#555;">—</span>';
-          if (isBuy && filledVal > 0) {
-            const spentUsd = parseFloat(o.total_value) || (filledVal * avgPriceVal);
-            // Check if we have real prices in globalTopList
-            const coinItem = globalTopList.find(x => x.coin === coin);
-            if (coinItem && coinItem.bestAsk) {
-              // We have real prices - show actual values
-              const currentAskPrice = coinItem.bestAsk;
-              const sellFee = tradingSettings.tradeFee / 100;
-              const grossValue = filledVal * currentAskPrice;
-              const currentVal = grossValue * (1 - sellFee);
-              const pnlUsd = currentVal - spentUsd;
-              const pnlPct = spentUsd > 0 ? ((currentVal - spentUsd) / spentUsd * 100) : 0;
-              const pnlColor = pnlUsd >= 0 ? '#4ade80' : '#f87171';
-              const pnlSign = pnlUsd >= 0 ? '+' : '';
-              valueCell = `
-                <div style="font-size:10px;line-height:1.4;">
-                  <div style="color:#888;">Spent: <span style="color:#facc15;">$${spentUsd.toFixed(2)}</span></div>
-                  <div style="color:#888;">Ask: <span style="color:#4fc3f7;">$${currentVal.toFixed(2)}</span></div>
-                  <div style="color:${pnlColor};font-weight:600;">${pnlSign}$${pnlUsd.toFixed(2)} (${pnlSign}${pnlPct.toFixed(1)}%)</div>
-                </div>`;
-            } else {
-              // No real prices yet - show loading with spent amount
-              valueCell = `
-                <div style="font-size:10px;line-height:1.4;">
-                  <div style="color:#888;">Spent: <span style="color:#facc15;">$${spentUsd.toFixed(2)}</span></div>
-                  <div style="color:#888;">Ask: <span style="color:#666;">...</span></div>
-                  <div style="color:#666;">loading...</div>
-                </div>`;
-            }
-          }
-
           const isSelected = selectedOrders.includes(o.order_id);
           // Bar selector - only for BUY orders, multiple selection allowed
           let barCell = '';
@@ -13144,7 +13048,6 @@ Requirements:
             <td class="target-price">${targetPriceFmt}</td>
             <td>${sellBtn}</td>
             <td>${posCell}</td>
-            <td id="value_${o.order_id ? o.order_id.slice(0, 8) : ''}">${valueCell}</td>
           </tr>`;
         });
 
@@ -13682,8 +13585,6 @@ Requirements:
           }
         });
       }
-      // Also update value cells with fresh prices
-      updateAllValueCells();
     }
 
     // Cache positions by `${pair}|${limitPrice}|${side}` so re-renders show last known
