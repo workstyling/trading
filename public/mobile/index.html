@@ -6743,11 +6743,30 @@
               // против −0.367% при погрешности ±0.127. Показывать надо ту
               // величину, где разница есть, иначе панель уверяет в обратном.
               const diff = c && c.n >= 10 && o.m60 != null && c.m60 != null ? o.m60 - c.m60 : null;
-              const se = c && c.m60se != null && o.m60se != null
-                ? Math.sqrt(o.m60se * o.m60se + c.m60se * c.m60se) : null;
+              // Ошибка берётся по СКАНАМ, а не по сделкам.
+              //
+              // Один проход открывает сразу пачку сделок, и целый час они
+              // плывут по одному и тому же рынку. Считать их отдельными
+              // наблюдениями значит завышать выборку в разы: полторы сотни
+              // сделок могут оказаться двумя десятками рыночных моментов. У
+              // контроля скан даёт одну сделку, и обе оценки совпадают.
+              const seOf = (g) => (g && g.m60seScan != null ? g.m60seScan : (g ? g.m60se : null));
+              const se = c && seOf(c) != null && seOf(o) != null
+                ? Math.sqrt(seOf(o) * seOf(o) + seOf(c) * seOf(c)) : null;
               const solid = diff != null && se != null && Math.abs(diff) > 2 * se;
-              el.innerHTML = '<span title="' + 'Обе группы в минусе: порог делает сделку менее убыточной, а не прибыльной.' + (pf.length ? String.fromCharCode(10) + 'обещано/вышло: ' + pf.map(x => x.label + ' ' + x.promised + String.fromCharCode(8594) + x.actual + '%').join(', ') : '') + '">' +
+              // Доля дошедших до цели — тоже с ошибкой: без неё «80% против
+              // 61%» читается как доказанное, хотя может быть тем же шумом.
+              const hitDiff = c && c.n >= 10 && o.hitHour != null && c.hitHour != null ? o.hitHour - c.hitHour : null;
+              const hitSe = c && o.hitHourSeScan != null && c.hitHourSeScan != null
+                ? Math.sqrt(o.hitHourSeScan * o.hitHourSeScan + c.hitHourSeScan * c.hitHourSeScan) : null;
+              const hitSolid = hitDiff != null && hitSe != null && Math.abs(hitDiff) > 2 * hitSe;
+              const NL = String.fromCharCode(10);
+              el.innerHTML = '<span title="' + 'Обе группы в минусе: порог делает сделку менее убыточной, а не прибыльной.' +
+                (o.scans ? NL + 'Ошибка считается по сканам, а не по сделкам: один проход открывает пачку, и час они плывут по одному рынку. Сделок ' + o.n + ', рыночных моментов ' + o.scans + '.' : '') +
+                (pj.controlBasis ? NL + 'Контроль: ' + pj.controlBasis + '.' : '') +
+                (pf.length ? NL + 'обещано/вышло: ' + pf.map(x => x.label + ' ' + x.promised + String.fromCharCode(8594) + x.actual + '%').join(', ') : '') + '">' +
                 '<b style="color:var(--t1);">Проверка вперёд:</b> ' + o.n + ' сделок' +
+                (o.scans && o.scans < o.n ? ' в ' + o.scans + ' моментах' : '') +
                 (c && c.n ? ' и ' + c.n + ' контрольных' : '') + ' · ' +
                 'через час <b style="color:' + col(o.m60) + ';">' + num(o.m60) + '</b>' +
                 (c && c.n >= 10 ? ' против <b style="color:' + col(c.m60) + ';">' + num(c.m60) + '</b> у контроля' : '') +
@@ -6757,7 +6776,9 @@
                     (solid ? '' : ' <span style="color:var(--t2);">(в пределах погрешности)</span>')
                   : '') +
                 ' · до цели дошли ' + o.hitHour + '%' +
-                (c && c.n >= 10 ? ' против ' + c.hitHour + '%' : '') + '</span>';
+                (c && c.n >= 10 ? ' против ' + c.hitHour + '%' +
+                  (hitSe != null ? ' (±' + Math.round(hitSe * 10) / 10 +
+                    (hitSolid ? '' : ', в пределах погрешности') + ')' : '') : '') + '</span>';
             }
           }
         } catch { }

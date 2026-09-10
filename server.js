@@ -5927,6 +5927,10 @@ function entryPaperOpen(rows) {
       recHour: row.recovery ? row.recovery.hour : null,
       spreadPct: row.spreadPct,
       control: control || undefined,
+      // Пометка на контрольных: со второй версии они отбираются теми же
+      // условиями свежести, что и основные. Прежние остаются в файле, но
+      // подмешивать их к новым нельзя — это разные наборы.
+      cv: control ? 2 : undefined,
     });
     (control ? openCtrl : openMain).add(row.coin);
   };
@@ -5943,10 +5947,17 @@ function entryPaperOpen(rows) {
     added++;
   }
 
-  // Контроль: одна монета ниже порога, случайно. Условия входа у неё те же —
-  // отличается только балл, а значит разница в исходе будет разницей порога.
+  // Контроль: одна монета мимо входа, случайно. Условия отбора обязаны быть
+  // ТЕ ЖЕ, иначе разница в исходе будет разницей условий, а не правила.
+  //
+  // Свежесть сюда не переносилась: основная группа брала только первое
+  // пересечение серии (inListMin <= 4), а в контроль попадала любая монета, в
+  // том числе висящая в списке часами. Это разные вещи — панель и сама
+  // предупреждает, что долго висящая монета не новый сигнал, а одно
+  // затянувшееся движение. Сравнение выходило смещённым.
   const below = rows.filter(r => !entryPasses(r) &&
     r.price > 0 && !ENTRY_PAPER_SKIP.has(r.coin) &&
+    !(r.inListMin != null && r.inListMin > 4) &&
     !openCtrl.has(r.coin) && !openMain.has(r.coin));
   if (below.length) {
     add(below[Math.floor(Math.random() * below.length)], true);
@@ -6120,7 +6131,13 @@ app.get('/api/entry-paper', (req, res) => {
   const cur = all.filter(t => t.rule === ENTRY_RULE);
   const old = all.filter(t => t.rule !== ENTRY_RULE);
   const done = cur.filter(t => !t.control);
-  const ctrl = cur.filter(t => t.control);
+  // Контроль второй версии отбирается теми же условиями свежести, что и
+  // основная группа. Пока таких мало, сравнивать не с чем — берём весь
+  // контроль и честно говорим, на чём сравнение построено.
+  const ctrlAll = cur.filter(t => t.control);
+  const ctrlFresh = ctrlAll.filter(t => t.cv === 2);
+  const ctrl = ctrlFresh.length >= 30 ? ctrlFresh : ctrlAll;
+  const ctrlBasis = ctrlFresh.length >= 30 ? 'сопоставимый' : 'весь, включая отобранный прежним способом';
   const avg = a => a.length ? Math.round(a.reduce((x, y) => x + y, 0) / a.length * 1000) / 1000 : null;
   const share = (a, f) => a.length ? Math.round(a.filter(f).length / a.length * 100) : null;
   // Разброс нужен не меньше среднего: без него нельзя сказать, отличается ли
@@ -6130,18 +6147,55 @@ app.get('/api/entry-paper', (req, res) => {
     const m = a.reduce((x, y) => x + y, 0) / a.length;
     return Math.sqrt(a.reduce((s, x) => s + (x - m) ** 2, 0) / (a.length - 1));
   };
+  // ОШИБКА СЧИТАЕТСЯ ПО СКАНАМ, А НЕ ПО СДЕЛКАМ.
+  //
+  // Сделки не независимы. Один скан открывает сразу пачку — все монеты,
+  // прошедшие вход в эту минуту, — и целый час они плывут по одному и тому же
+  // рынку. Считать их отдельными наблюдениями значит завышать выборку в разы:
+  // 158 сделок могут оказаться двумя десятками рыночных моментов.
+  //
+  // Клетка скана — точное время открытия: все сделки одного прохода получают
+  // один и тот же `at`. Сначала среднее внутри скана, потом разброс между
+  // сканами. У контроля скан даёт одну сделку, и обе оценки совпадают — это и
+  // показывает, насколько велика разница для основной группы.
+  const byScan = (list, pick) => {
+    const m = new Map();
+    for (const t of list) {
+      const v = pick(t);
+      if (v == null) continue;
+      const key = t.at;
+      if (!m.has(key)) m.set(key, []);
+      m.get(key).push(v);
+    }
+    return [...m.values()].map(a => a.reduce((s, x) => s + x, 0) / a.length);
+  };
+  const seOf = (values) => {
+    if (values.length < 2) return null;
+    const d = sd(values);
+    return d == null ? null : d / Math.sqrt(values.length);
+  };
   const group = (list) => {
     if (!list.length) return null;
     const m60s = list.map(t => t.m60).filter(v => v != null);
     const d = sd(m60s);
+    const scans = byScan(list, t => t.m60);
+    // Сюда приходят только посчитанные сделки, поэтому «дошло» известно у всех
+    const hitScans = byScan(list, t => (t.hit60 != null ? 100 : 0));
+    const seCl = seOf(scans);
+    const hitSeCl = seOf(hitScans);
     return {
       n: list.length,
       m5: avg(list.map(t => t.m5).filter(v => v != null)),
       m15: avg(list.map(t => t.m15).filter(v => v != null)),
       m60: avg(m60s),
       m60sd: d == null ? null : Math.round(d * 1000) / 1000,
+      // Оставляем и наивную ошибку: по разнице между ней и честной сразу
+      // видно, насколько сделки слиплись.
       m60se: d == null ? null : Math.round(d / Math.sqrt(m60s.length) * 1000) / 1000,
+      m60seScan: seCl == null ? null : Math.round(seCl * 1000) / 1000,
+      scans: scans.length,
       hitHour: share(list, t => t.hit60 != null),
+      hitHourSeScan: hitSeCl == null ? null : Math.round(hitSeCl * 10) / 10,
       mae: avg(list.map(t => t.mae60).filter(v => v != null)),
     };
   };
@@ -6180,6 +6234,9 @@ app.get('/api/entry-paper', (req, res) => {
     // Контроль: те же условия, балл ниже порога. Разница между этими двумя
     // строками и есть ответ на вопрос, стоит ли порог хоть чего-нибудь.
     control: group(ctrl),
+    // На чём построено сравнение и сколько уже набрано сопоставимого контроля
+    controlBasis: ctrlBasis,
+    controlFreshN: ctrlFresh.length,
     byScore: [
       { label: '40-69', ...(group(done.filter(t => t.score < 70)) || { n: 0 }) },
       { label: '70-100', ...(group(done.filter(t => t.score >= 70)) || { n: 0 }) },
