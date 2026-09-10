@@ -191,7 +191,12 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(publicDir, 'index.html'));
 });
 app.use(express.static(publicDir, { etag: false, lastModified: false }));
-app.use(express.json({ limit: '100kb' }));
+// История прибыли уезжает на сервер целиком, одним телом, и она растёт с
+// каждой закрытой сделкой. На 125 записях она весила 102 289 байт — при
+// лимите в 102 400. Следующая запись упиралась в потолок, сервер отвечал 413,
+// а страница этого не проверяла: на экране «Saved +$23.36», в файле ничего.
+// Запас на годы вперёд, при примерно восьмистах байтах на запись.
+app.use(express.json({ limit: '4mb' }));
 
 const SPOT_USD_PRODUCT_RE = /^[A-Z0-9]{2,20}-USD$/;
 function normalizeSpotUsdProduct(value) {
@@ -310,8 +315,23 @@ app.get('/get-profit-history', (req, res) => {
 app.post('/save-profit-history', (req, res) => {
   try {
     const { history } = req.body;
+    // Не массив — значит тело не дошло целиком или пришло не то. Записывать
+    // такое поверх истории нельзя: это единственное место, где живут
+    // результаты закрытых сделок, восстановить их неоткуда.
+    if (!Array.isArray(history)) {
+      return res.status(400).json({ success: false, error: 'история должна быть массивом' });
+    }
+    const had = loadProfitHistory();
+    if (Array.isArray(had) && history.length < had.length - 1) {
+      // Удаление по одной записи законно, а обвал списка — нет: так выглядит
+      // страница, отправившая недогруженную историю.
+      return res.status(409).json({
+        success: false,
+        error: 'записей стало ' + history.length + ' вместо ' + had.length + ' — похоже на потерю, не записываю',
+      });
+    }
     saveProfitHistory(history);
-    res.json({ success: true });
+    res.json({ success: true, count: history.length });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }

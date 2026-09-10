@@ -11086,15 +11086,34 @@ Requirements:
       }
     }
 
-    async function saveProfitHistoryToServer() {
+    // Отправка истории прибыли. Возвращает, дошло ли.
+    //
+    // Раньше ответ не проверялся вовсе: сохранение молча упиралось в предел
+    // размера тела запроса, сервер отвечал 413, а на экране было «Saved
+    // +$23.36» и число в общем итоге. До первой перезагрузки — потом запись
+    // пропадала, и заметить это можно было только случайно, зайдя с телефона.
+    //
+    // `before` — снимок истории до правки: не дошло, значит на экране должно
+    // остаться то же, что на сервере, а не выдуманное.
+    async function saveProfitHistoryToServer(before) {
+      const fail = (why) => {
+        if (before) profitHistory = before;
+        try { updateProfitPanel(); } catch { }
+        showCustomAlert('Не удалось сохранить историю прибыли: ' + why + '. Запись НЕ сохранена.', true);
+        return false;
+      };
       try {
-        await fetch('/save-profit-history', {
+        const res = await fetch('/save-profit-history', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ history: profitHistory })
         });
+        const j = await res.json().catch(() => ({}));
+        if (!res.ok || !j.success) return fail(j.error || 'сервер ответил ' + res.status);
+        return true;
       } catch (e) {
         console.error('Error saving profit history:', e);
+        return fail(e.message);
       }
     }
 
@@ -11116,6 +11135,9 @@ Requirements:
       // исполнения среди продаж; если биржа его не отдала — время создания
       // ордера продажи; и только если продаж нет вовсе — текущий момент.
       const soldAt = sellTimeOf(_details.sells) || new Date().toISOString();
+      // Снимок до правки: если сервер не примет, на экране должно остаться то,
+      // что у него, а не то, что мы нарисовали в надежде.
+      const before = JSON.parse(JSON.stringify(profitHistory));
       if (existingEntry) {
         existingEntry.coin = coin;
         existingEntry.profit = profit;
@@ -11126,7 +11148,7 @@ Requirements:
         existingEntry.createdDate = createdDate || null;
         existingEntry.soldAt = soldAt;
         existingEntry.date = new Date().toISOString();
-        await saveProfitHistoryToServer();
+        if (!await saveProfitHistoryToServer(before)) return;
         updateProfitPanel();
         const updatedProfitFmt = Math.abs(profit).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         showCustomAlert(`Updated ${coin} profit: ${profit >= 0 ? '+' : '-'}$${updatedProfitFmt}`);
@@ -11145,7 +11167,9 @@ Requirements:
         date: new Date().toISOString(),   // когда запись сохранена — оставляем для истории
       };
       profitHistory.push(entry);
-      await saveProfitHistoryToServer();
+      // Не сохранилось — не считаем ордера закрытыми и не снимаем их с выбора:
+      // иначе сделка исчезнет и из истории, и из списка выбранных.
+      if (!await saveProfitHistoryToServer(before)) return;
 
       // Remove saved orders from selected
       const allOrderIds = [...entry.buyOrders, ...entry.sellOrders];
@@ -11175,8 +11199,9 @@ Requirements:
         '<br><br><span style="color:var(--t2);font-size:11px;">Запись пропадёт из истории прибыли и из общего итога. ' +
         'Вернуть её нельзя — сделка на бирже останется, а её результат здесь больше нигде не хранится.</span>',
         async () => {
+          const before = JSON.parse(JSON.stringify(profitHistory));
           profitHistory = profitHistory.filter(x => x.id !== id);
-          await saveProfitHistoryToServer();
+          if (!await saveProfitHistoryToServer(before)) return;
           updateProfitPanel();
           showCustomAlert('Запись удалена: ' + (e.coin || '—') + ' ' + sum);
         });
