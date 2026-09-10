@@ -1912,6 +1912,34 @@
       });
     });
 
+    // ШАНС ВЕРНУТЬСЯ К БЕЗУБЫТКУ С ТЕКУЩЕЙ ПРОСАДКИ.
+    //
+    // Убыток здесь не режут, а ждут возврата. Сколько ждать и чем это обычно
+    // кончается — решалось ощущением, пока не померили.
+    //
+    // Замер: 45 монет, 200 суток часовых свечей, 15 219 точек входа по тому же
+    // правилу, что у панели. Отсчёт от момента, когда просадка достигла
+    // порога, а не от покупки. Безубыток с кругом комиссии (+0.225%).
+    //
+    //   −10%: за месяц вернулись 67%, медиана ожидания 7 суток
+    //   −20%: 40%, 11.3 суток
+    //   −30%: 24%, 14.3 суток
+    //   −45%: 25%, 15.6 суток (всего 27 монет — число шаткое)
+    const _RECOVER_M = [
+      { at: 45, w30: 25, med: 15.6, thin: true },
+      { at: 30, w30: 24, med: 14.3 },
+      { at: 20, w30: 40, med: 11.3 },
+      { at: 10, w30: 67, med: 7.0 },
+    ];
+    function _recoverNote(pct) {
+      // Ровно −10% это уже полоса −10%
+      if (pct == null || !(pct <= -10)) return '';
+      const r = _RECOVER_M.find(x => Math.abs(pct) >= x.at);
+      if (!r) return '';
+      const col = r.w30 >= 60 ? 'var(--green)' : r.w30 >= 35 ? '#f5c518' : '#ff6b6b';
+      return ' · <span style="color:' + col + ';">к 0 за месяц ' + r.w30 + '%' + (r.thin ? '?' : '') + '</span>';
+    }
+
     // ── Journal + Paper Bot: компактные сводки на вкладке Profit ──
     let _mpEnabled = false;
     async function loadJournalPaperMobile() {
@@ -1939,7 +1967,7 @@
             </div>
             ${ot.n ? `<div style="font-size:10.5px;color:var(--t2);line-height:1.45;margin-bottom:8px;">Winrate считает только закрытые: прибыльные продаются и попадают в статистику, убыточные висят открытыми и в неё не входят.</div>
             ${openList.map(pos => `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px dashed var(--b0);">
-              <span style="color:var(--t1);font-weight:600;font-size:11px;">${pos.coin} <span style="color:var(--t2);font-weight:400;">открыта${pos.daysHeld != null ? ' ' + pos.daysHeld + ' дн' : ''}</span></span>
+              <span style="color:var(--t1);font-weight:600;font-size:11px;">${pos.coin} <span style="color:var(--t2);font-weight:400;">открыта${pos.daysHeld != null ? ' ' + pos.daysHeld + ' дн' : ''}${_recoverNote(pos.unrealizedPct)}</span></span>
               <span style="color:${pos.unrealized == null ? 'var(--t2)' : pnlCol(pos.unrealized)};font-weight:700;font-size:11px;">${pos.unrealized == null ? '—' : money(pos.unrealized) + ' (' + (pos.unrealizedPct >= 0 ? '+' : '') + pos.unrealizedPct + '%)'}</span>
             </div>`).join('')}` : ''}
             ${closed.map(c => `<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--b0);">

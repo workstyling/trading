@@ -17120,6 +17120,55 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
     }
 
     /* ═══════════════════ TRADE JOURNAL (вкладка Journal) ═══════════════════ */
+    // ШАНС ВЕРНУТЬСЯ К БЕЗУБЫТКУ С ТЕКУЩЕЙ ПРОСАДКИ.
+    //
+    // Убыток здесь не режут, а ждут возврата. Сколько ждать и чем это обычно
+    // кончается — решалось ощущением, пока не померили.
+    //
+    // Замер: 45 самых ликвидных монет, 200 суток часовых свечей, 15 219 точек
+    // входа по тому же правилу, что у панели (падение от суточного максимума
+    // 3%+). Отсчёт идёт НЕ от покупки, а от момента, когда просадка впервые
+    // достигла порога, — то есть вопрос ставится так, как он стоит в жизни:
+    // «я уже в минусе на столько-то, что дальше». Безубыток считается с кругом
+    // комиссии (+0.225%): продать по цене входа значит остаться в минусе.
+    //
+    //   просадка   вернулись за 7 сут / 14 / 30    медиана ожидания
+    //     −10%            33% / 52% / 67%               7.0 сут
+    //     −20%            11% / 24% / 40%              11.3 сут
+    //     −30%             3% / 12% / 24%              14.3 сут
+    //     −45%             0% /  9% / 25%              15.6 сут
+    //
+    // Глубже −45% замер держится на 27 монетах, а глубже −60% — на пяти:
+    // там число показывается, но с оговоркой, что оно шаткое.
+    const _RECOVER = [
+      { at: 45, w7: 0, w14: 9, w30: 25, med: 15.6, coins: 27, thin: true },
+      { at: 30, w7: 3, w14: 12, w30: 24, med: 14.3, coins: 42 },
+      { at: 20, w7: 11, w14: 24, w30: 40, med: 11.3, coins: 44 },
+      { at: 10, w7: 33, w14: 52, w30: 67, med: 7.0, coins: 44 },
+    ];
+    function _jRecoverOdds(pct) {
+      // Ровно −10% это уже полоса −10%, а не «ещё нет»
+      if (pct == null || !(pct <= -10)) return null;
+      const d = Math.abs(pct);
+      return _RECOVER.find(r => d >= r.at) || null;
+    }
+    function _jRecoverCell(pct) {
+      const r = _jRecoverOdds(pct);
+      if (!r) return '<td style="color:var(--t2);">—</td>';
+      const col = r.w30 >= 60 ? 'var(--green)' : r.w30 >= 35 ? '#f5c518' : '#ff6b6b';
+      const tip = 'Просадка от −' + r.at + '%: к безубытку возвращались ' + r.w7 + '% за неделю, ' +
+        r.w14 + '% за две и ' + r.w30 + '% за месяц. Те, кто вернулся, ждали в среднем ' + r.med + ' суток.' +
+        String.fromCharCode(10) +
+        'Отсчёт от момента, когда просадка достигла этой глубины, а не от покупки. Безубыток с кругом комиссии (+0.225%).' +
+        String.fromCharCode(10) +
+        'Замер: 45 монет, 200 суток, 15 219 точек входа по правилу панели' +
+        (r.thin ? '. На такой глубине это всего ' + r.coins + ' монет — число шаткое.' : '. ' + r.coins + ' монет.') +
+        String.fromCharCode(10) +
+        'Это не прогноз по вашей монете, а доля случаев в прошлом.';
+      return '<td title="' + tip + '" style="color:' + col + ';font-weight:700;">' + r.w30 + '%' +
+        (r.thin ? '<span style="color:var(--t2);font-weight:400;"> ?</span>' : '') + '</td>';
+    }
+
     function _jPnlCell(v) {
       const cls = v >= 0 ? 'profit-pos' : 'profit-neg';
       return `<span class="${cls}">${v >= 0 ? '+' : '−'}$${Math.abs(v).toFixed(2)}</span>`;
@@ -17174,7 +17223,7 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
         const open = Object.values(j.open || {});
         oEl.innerHTML = open.length ? `
           <div style="font-size:11px;color:var(--t2);font-weight:700;margin-bottom:6px;">ОТКРЫТЫЕ ПОЗИЦИИ (${open.length})</div>
-          <table class="pred-table"><thead><tr><th>Coin</th><th>Size</th><th>Cost</th><th>Сейчас</th><th title="Сколько позиция стоит сейчас против вложенного, по bid и с учётом комиссии продажи">Нереализовано</th><th>Дней</th><th>Realized</th><th>Score</th><th>Rebound</th><th>Вердикт</th><th>Куплено</th></tr></thead><tbody>
+          <table class="pred-table"><thead><tr><th>Coin</th><th>Size</th><th>Cost</th><th>Сейчас</th><th title="Сколько позиция стоит сейчас против вложенного, по bid и с учётом комиссии продажи">Нереализовано</th><th>Дней</th><th title="Доля случаев, когда цена возвращалась к безубытку за месяц с такой же просадки. Замер: 45 монет, 200 суток, 15 219 точек входа по правилу панели. Отсчёт от момента, когда просадка достигла этой глубины, а не от покупки. Это не прогноз по вашей монете, а доля случаев в прошлом.">Шанс к 0</th><th>Realized</th><th>Score</th><th>Rebound</th><th>Вердикт</th><th>Куплено</th></tr></thead><tbody>
           ${open.map(p => `<tr>
             <td><strong>${p.coin}</strong></td>
             <td>${fmtSize(p.totalSize)}</td>
@@ -17182,6 +17231,7 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
             <td>${p.nowUsd == null ? '<span style="color:var(--t2);">цена недоступна</span>' : '$' + p.nowUsd.toFixed(2)}</td>
             <td>${p.unrealized == null ? '—' : _jPnlCell(p.unrealized) + ' <span style="color:var(--t2);font-size:10px;">(' + (p.unrealizedPct >= 0 ? '+' : '') + p.unrealizedPct + '%)</span>'}</td>
             <td style="color:${p.daysHeld > 2 && p.unrealized < 0 ? 'var(--yellow)' : 'var(--t2)'};">${p.daysHeld == null ? '—' : p.daysHeld}</td>
+            ${_jRecoverCell(p.unrealizedPct)}
             <td>${p.realized ? _jPnlCell(Math.round(p.realized * 100) / 100) : '—'}</td>
             <td>${p.ctx && p.ctx.score != null ? p.ctx.score : '—'}</td>
             <td>${p.ctx && p.ctx.rb != null ? p.ctx.rb + '/10' : '—'}</td>
