@@ -6196,6 +6196,15 @@ app.get('/api/entry-paper', (req, res) => {
       scans: scans.length,
       hitHour: share(list, t => t.hit60 != null),
       hitHourSeScan: hitSeCl == null ? null : Math.round(hitSeCl * 10) / 10,
+      // Чем кончился час у дошедших до цели и у недошедших ПОРОЗНЬ.
+      //
+      // «Дошли 80%» само по себе ничего не решает: цель всего +0.30%, и почти
+      // всё это съедает круг комиссии. Ответ на вопрос «стоит ли овчинка» —
+      // в том, чем оборачиваются оставшиеся 20%. Без этих двух чисел доля
+      // дошедших читается как прибыль, хотя средний исход часа может быть
+      // (и здесь остаётся) отрицательным.
+      m60Hit: avg(list.filter(t => t.hit60 != null).map(t => t.m60).filter(v => v != null)),
+      m60NoHit: avg(list.filter(t => t.hit60 == null).map(t => t.m60).filter(v => v != null)),
       mae: avg(list.map(t => t.mae60).filter(v => v != null)),
     };
   };

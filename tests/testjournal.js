@@ -100,6 +100,10 @@ const t = (at, m60, hit, control) => ({
     ok(r.overall.hitHour === 50, 'доля посчитана', String(r.overall.hitHour));
     ok(r.overall.hitHourSeScan >= 35, 'и ошибка у неё огромная, как и должно быть',
       '±' + r.overall.hitHourSeScan);
+    // Цель всего +0.30%, и почти всё съедает круг комиссии: доля дошедших
+    // ничего не решает, пока не видно, чем кончился час у остальных.
+    ok(r.overall.m60Hit === 0.5, 'видно, чем час кончился у дошедших', String(r.overall.m60Hit));
+    ok(r.overall.m60NoHit === -0.5, 'и у недошедших', String(r.overall.m60NoHit));
   }
 
   console.log('\nКонтроль отбирается теми же условиями');
@@ -163,6 +167,7 @@ const t = (at, m60, hit, control) => ({
     ok(/в пределах погрешности/.test(h), name + ': и незначимое названо незначимым');
     ok(/рыночных моментов/.test(h), name + ': в подсказке видно, сколько было моментов');
     ok(/controlBasis/.test(h), name + ': и на чём построен контроль');
+    ok(/m60NoHit/.test(h), name + ': и чем платят за долю дошедших');
   }
 
   fs.rmSync(dir, { recursive: true, force: true });
