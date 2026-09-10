@@ -45,3 +45,6 @@ for (const [name, hist, mode] of cases) {
 console.log('\n  различных раскладок: ' + sizes.size + (sizes.size === 1 ? '  (высота постоянна)' : '  РАЗЛИЧАЮТСЯ: ' + [...sizes].join(', ')));
 if (sizes.size !== 1) bad++;
 console.log(bad ? 'ПРОБЛЕМ: ' + bad : 'ok');
+// Без этого запускатор считает набор зелёным: он смотрит на код выхода,
+// а не на печать. Три провала так и ехали мимо ворот выкатки.
+process.exit(bad ? 1 : 0);

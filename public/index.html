@@ -15420,7 +15420,15 @@ Requirements:
           '<th style="text-align:right;padding:3px 6px;" title="Откат от получасового максимума. Второй по силе признак после глубины за сутки, и он с ней складывается: внутри любой глубины откат от 1.5% добавляет 11-18 пунктов к доле возврата. Проверено разделением по времени — держится в обеих половинах периода.">откат</th>' +
           '<th style="text-align:right;padding:3px 6px;" title="Насколько ниже суточного максимума. Первый из двух признаков, из которых сложен возврат.">за сутки</th>' +
           '<th style="text-align:right;padding:3px 6px;">RSI</th>' +
-          '<th style="text-align:right;padding:3px 6px;" title="Балл входа. Возврат он не предсказывает; сокращает ли убыток — проверяется вперёд, подтверждения пока нет.">вход</th>' +
+          // Колонка «вход» уступила место ответу. Балл измерен ровным от 1 до
+          // 100 и вперёд себя не подтвердил — держать под него столько же
+          // места, сколько под работающий признак, значит звать смотреть не
+          // туда. Сам балл остался в подсказке строки.
+          '<th style="text-align:center;padding:3px 6px;" title="Сводит в один ответ всё, что измерено.' + String.fromCharCode(10) +
+          'БРАТЬ — прошла порог входа (падение 3%+, спред до 0.30%), откат взял 1.5% (внутри любой глубины это +11-18 пунктов к доле возврата) и ход за сутки в пределах ±10%.' + String.fromCharCode(10) +
+          'МОЖНО — вход пройден, но откат мельче 1.5%: возврат 66-78% вместо 84-89%.' + String.fromCharCode(10) +
+          'РИСК — за сутки монета прошла больше ±10%: цена уходит ниже −3% в течение часа в 20-24% случаев против 2.7% у спокойных.' + String.fromCharCode(10) +
+          'Ни один уровень не обещает прибыли: форвардная проверка внизу говорит, что правило делает сделку менее убыточной, а не прибыльной.">брать?</th>' +
           '<th style="text-align:right;padding:3px 6px;">в списке</th></tr>';
         // РАЗМАХ ЗА СУТКИ: одно и то же падение бывает разного происхождения.
         //
@@ -15457,8 +15465,58 @@ Requirements:
           return '<span title="' + tip + '" style="margin-left:4px;font-size:9px;font-weight:700;color:' +
             (up ? '#f5843a' : '#ff6b6b') + ';">' + (up ? '↑' : '↓') + Math.abs(Math.round(v)) + '%</span>';
         };
+        // ОТВЕТ НА ВОПРОС «БРАТЬ?» — из того, что измерено, и только.
+        //
+        // В условие входят три вещи, каждая с числом за спиной:
+        //
+        //   падение от суточного максимума 3%+ и спред не шире 0.30% — порог
+        //     самой панели;
+        //   откат от получасового максимума 1.5%+ — внутри любой глубины
+        //     добавляет 11-18 пунктов к доле возврата, держится в обеих
+        //     половинах периода;
+        //   ход за сутки в пределах ±10% — за этой чертой цена уходит ниже
+        //     −3% в течение часа в 20-24% случаев против 2.7% у спокойных.
+        //
+        // Чего в условии НЕТ и почему:
+        //
+        //   балл ВХОД — измерен ровным от 1 до 100 (70.8-72.4%), вперёд себя
+        //     не подтвердил, из отбора убран;
+        //   сколько монета уже висит в списке — померено, разницы почти нет:
+        //     доля дошедших 75% у свежих против 70-74% у висящих сутками, а с
+        //     откатом от 1.5% и вовсе 85% против 87%. Предупреждение про
+        //     «висит долго» осталось как справка, но покупке не мешает.
+        //
+        // Три уровня, а не «да/нет»: у среднего доля возврата 66-78%, это не
+        // запрет, а более слабый сигнал. И ни один уровень не обещает прибыли
+        // — форвардная проверка внизу панели говорит, что правило делает
+        // сделку менее убыточной, а не прибыльной.
+        const verdict = (x) => {
+          const pass = entryPassesUi(x, gate);
+          const sw = x.chg24Pct != null && Math.abs(x.chg24Pct) >= 10;
+          const deep = x.pullbackPct != null && x.pullbackPct >= 1.5;
+          if (!pass) {
+            return { tier: 0, label: '—', color: 'var(--t2)', bg: '',
+              why: x.dayFallPct != null && x.dayFallPct < gate.fallPct
+                ? 'падение всего ' + x.dayFallPct + '%, нужно от ' + gate.fallPct + '%'
+                : 'спред ' + (x.spreadPct == null ? 'неизвестен' : x.spreadPct + '%, шире ' + gate.spreadPct + '%') };
+          }
+          if (sw) {
+            return { tier: 1, label: 'риск', color: '#ff6b6b', bg: 'background:rgba(255,107,107,0.08);',
+              why: (x.chg24Pct > 0 ? 'разгон +' : 'обвал ') + Math.round(x.chg24Pct) +
+                '% за сутки: ниже −3% за час в 20-24% случаев против 2.7% у спокойных' };
+          }
+          if (deep) {
+            return { tier: 3, label: 'брать', color: '#00e5a0', bg: 'background:rgba(0,229,160,0.16);',
+              why: 'откат ' + x.pullbackPct + '% взял порог 1.5%, ход за сутки спокойный — всё, что измерено, за' };
+          }
+          return { tier: 2, label: 'можно', color: '#f5c518', bg: 'background:rgba(245,197,24,0.07);',
+            why: 'вход пройден, но откат ' + (x.pullbackPct == null ? '—' : x.pullbackPct + '%') +
+              ' не дотянул до 1.5%: возврат ' + (x.recovery ? x.recovery.hour : '—') +
+              '% вместо 84-89% у взявших порог' };
+        };
         const cell = (x) => {
           const e = x.entryValue;
+          const v = verdict(x);
           const pass = entryPassesUi(x, gate);
           // Балл остаётся на экране, но больше ничего не решает: цвет и
           // подсветка идут от того, прошла ли монета порог по глубине.
@@ -15482,9 +15540,13 @@ Requirements:
                 ' ч, суточный максимум по ней был бы занижен' : '') +
             (x.runup ? String.fromCharCode(10) + 'выросла от суточного минимума на ' + x.runup.runup +
               '% — разгон возврату помогает, а не мешает' : '') +
+            // Померено: висящие сутками дают 70-74% дошедших против 75% у
+            // свежих, а с откатом от 1.5% — 87% против 85%. Разницы нет, и
+            // строка это теперь говорит, а не пугает.
             (x.inListMin > 90 ? String.fromCharCode(10) +
-              'висит в списке долго: это не новый сигнал, а одно затянувшееся движение' : '') + '"' +
-            ' style="cursor:pointer;' + (pass ? 'background:rgba(0,229,160,0.10);' : '') + '">' +
+              'висит в списке долго — на исход это почти не влияет: дошедших 70-74% против 75% у свежих' : '') +
+            String.fromCharCode(10) + v.label.toUpperCase() + ': ' + v.why + '"' +
+            ' style="cursor:pointer;' + v.bg + '">' +
             '<td style="padding:4px 6px;"><span style="color:var(--blue);font-weight:700;font-size:11px;">' + x.coin +
             '</span>' + swingMark(x) +
             '<br><span style="color:var(--t2);font-size:9px;">$' + price(x.price) + '</span></td>' +
@@ -15497,12 +15559,17 @@ Requirements:
               x.pullbackPct >= 1.5 ? '#00e5a0' : 'var(--t2)', x.pullbackPct >= 1.5) +
             num(x.dayFallPct == null ? '—' : '−' + x.dayFallPct + '%', 'var(--t2)') +
             num(x.rsi == null ? '—' : Math.round(x.rsi), 'var(--t2)') +
-            num(e.pct + '%', col, true) +
-            num(held || '—', x.inListMin > 90 ? '#f5843a' : 'var(--t2)') + '</tr>';
+            '<td style="text-align:center;padding:4px 6px;font-size:10px;font-weight:800;color:' + v.color + ';">' +
+            v.label + '</td>' +
+            num(held || '—', 'var(--t2)') + '</tr>';
         };
         box.innerHTML = head + mkLine +
           (good.length
-            ? '<table style="width:100%;border-collapse:collapse;"><thead>' + head2 + '</thead><tbody>' + good.slice(0, 8).map(cell).join('') + '</tbody></table>' +
+            // Сперва те, что брать, потом «можно», в конце рискованные. Внутри
+            // уровня порядок прежний — по возврату и откату. Сортировка
+            // устойчивая, поэтому он сохраняется.
+            ? '<table style="width:100%;border-collapse:collapse;"><thead>' + head2 + '</thead><tbody>' +
+              good.slice().sort((a, b) => verdict(b).tier - verdict(a).tier).slice(0, 8).map(cell).join('') + '</tbody></table>' +
             '<div id="entryPaper" style="margin-top:6px;padding-top:5px;border-top:1px solid var(--b1);font-size:10px;color:var(--t2);"></div>'
             : '<table style="width:100%;border-collapse:collapse;"><thead>' + head2 + '</thead><tbody>' + rows.slice(0, 3).map(cell).join('') + '</tbody></table>' +
               '<div style="color:var(--t2);font-size:10px;margin-top:5px;">Порог не взял никто — показаны ближайшие.</div>');

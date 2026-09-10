@@ -31,6 +31,7 @@ for (const [name, lo, hi, now] of [
 
 const t0 = Date.now();
 const mk = arr => arr.map((v, i) => ({ t: t0 + i * 1000, p: v, v }));
+let problems = 0;
 console.log('\n  режимы целиком:');
 for (const [name, hist, mode] of [
   ['покупка, падает', mk([0.7817, 0.78165, 0.7816, 0.78150, 0.78143]), 'buy'],
@@ -38,9 +39,15 @@ for (const [name, hist, mode] of [
   ['пусто', [], 'buy'],
 ]) {
   let out;
-  try { out = R(hist, mode); } catch (e) { console.log('    ПАДЕНИЕ ' + name + ': ' + e.message); continue; }
+  try { out = R(hist, mode); } catch (e) { console.log('    ПАДЕНИЕ ' + name + ': ' + e.message); problems++; continue; }
   const bad = /NaN|undefined|Infinity/.test(out);
+  if (bad) problems++;
   const hasBar = out.includes('top:-4px');
   const where = (out.match(/Сейчас [^<]*/) || ['—'])[0];
   console.log('    ' + name.padEnd(18) + (bad ? 'ПЛОХО NaN' : 'ok') + ' | полоса ' + (hasBar ? 'есть' : 'нет') + ' | ' + where);
 }
+
+// Без кода выхода запускатор считает набор зелёным: он смотрит на код, а не
+// на печать. Набор, который печатает «ПЛОХО» и выходит нулём, хуже отсутствия.
+console.log(problems ? '\nПРОБЛЕМ: ' + problems : '\nвсе случаи чистые');
+process.exit(problems ? 1 : 0);

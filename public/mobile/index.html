@@ -6695,8 +6695,29 @@
             ? 'за сутки выросла на +' + v + '%: падение от максимума здесь — откат после разгона, просадка за час в среднем −2.26% против −0.77% у спокойных, ниже −3% в 23.7% случаев против 2.7%'
             : 'за сутки упала на ' + v + '%: это не откат, а продолжающееся падение, просадка −2.01%, ниже −3% в 20.5% случаев, и средний исход часа отрицательный');
         };
+        // ОТВЕТ НА ВОПРОС «БРАТЬ?» — из того, что измерено, и только.
+        //
+        //   падение 3%+ и спред до 0.30% — порог самой панели;
+        //   откат от 1.5% — внутри любой глубины это +11-18 пунктов к доле
+        //     возврата, держится в обеих половинах периода;
+        //   ход за сутки в пределах ±10% — за этой чертой цена уходит ниже
+        //     −3% за час в 20-24% случаев против 2.7% у спокойных.
+        //
+        // Свежести в условии нет намеренно: померено, разницы почти нет —
+        // дошедших 75% у свежих против 70-74% у висящих сутками, а с откатом
+        // от 1.5% и вовсе 85% против 87%.
+        const verdict = (x) => {
+          const pass = entryPassesUi(x, gate);
+          const sw = x.chg24Pct != null && Math.abs(x.chg24Pct) >= 10;
+          const deep = x.pullbackPct != null && x.pullbackPct >= 1.5;
+          if (!pass) return { tier: 0, label: '—', color: 'var(--t2)', bg: '' };
+          if (sw) return { tier: 1, label: 'риск', color: '#ff6b6b', bg: 'background:rgba(255,107,107,0.08);' };
+          if (deep) return { tier: 3, label: 'брать', color: '#00e5a0', bg: 'background:rgba(0,229,160,0.16);' };
+          return { tier: 2, label: 'можно', color: '#f5c518', bg: 'background:rgba(245,197,24,0.07);' };
+        };
         const cell = (x) => {
           const e = x.entryValue;
+          const vd = verdict(x);
           const rec = x.recovery;
           const recCol = !rec ? 'var(--t2)' : rec.hour >= 76 ? '#00e5a0' : rec.hour >= 63 ? '#f5c518' : '#f5843a';
           const deep = x.pullbackPct != null && x.pullbackPct >= 1.5;
@@ -6722,16 +6743,23 @@
             (x.spreadPct != null ? String.fromCharCode(10) + 'спред ' + x.spreadPct + '%' : '') +
             (x.dayFallPct == null && x.dayCoverH != null
               ? String.fromCharCode(10) + 'за сутки не считано: истории всего ' + x.dayCoverH + ' ч' : '') +
+            // Померено: висящие сутками дают 70-74% дошедших против 75% у
+            // свежих. Разницы нет, и строка это теперь говорит, а не пугает.
             (x.inListMin > 90 ? String.fromCharCode(10) +
-              'висит в списке долго: это не новый сигнал, а одно затянувшееся движение' : '') +
-            swingTip(x) + '"' +
-            ' style="cursor:pointer;' + (pass ? 'background:rgba(0,229,160,0.10);' : '') + '">' +
+              'висит долго — на исход почти не влияет: дошедших 70-74% против 75% у свежих' : '') +
+            swingTip(x) +
+            String.fromCharCode(10) + vd.label.toUpperCase() + (vd.tier === 3
+              ? ': откат взял порог 1.5%, ход за сутки спокойный'
+              : vd.tier === 2 ? ': вход пройден, но откат мельче 1.5% — возврат 66-78% вместо 84-89%'
+                : vd.tier === 1 ? ': за сутки монета прошла больше ±10%, просадка ниже −3% в 20-24% случаев'
+                  : '') + '"' +
+            ' style="cursor:pointer;' + vd.bg + '">' +
             '<td style="padding:6px 4px;">' +
+            '<span style="color:' + vd.color + ';font-weight:800;font-size:9px;">' + vd.label + '</span> ' +
             '<span style="color:var(--blue);font-weight:700;font-size:12px;">' + x.coin + '</span>' +
             swingMark(x) +
             '<span style="color:var(--t2);font-size:9px;margin-left:5px;">$' + price(x.price) + '</span>' +
-            '<br><span style="color:' + (x.inListMin > 90 ? '#f5843a' : 'var(--t2)') +
-            ';font-size:9px;white-space:nowrap;">' + sub + '</span></td>' +
+            '<br><span style="color:var(--t2);font-size:9px;white-space:nowrap;">' + sub + '</span></td>' +
             // Возврат и откат стоят рядом: это два признака одной оценки, и
             // смотреть на них надо вместе.
             num(rec ? '↩' + rec.hour + '%' : '—', recCol, true, 3) +
@@ -6741,7 +6769,7 @@
         };
         box.innerHTML = head + mkLine +
           (good.length
-            ? '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;"><table style="width:100%;border-collapse:collapse;table-layout:fixed;"><thead>' + head2 + '</thead><tbody>' + good.slice(0, 8).map(cell).join('') + '</tbody></table></div>' +
+            ? '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;"><table style="width:100%;border-collapse:collapse;table-layout:fixed;"><thead>' + head2 + '</thead><tbody>' + good.slice().sort((a, b) => verdict(b).tier - verdict(a).tier).slice(0, 8).map(cell).join('') + '</tbody></table></div>' +
             '<div id="entryPaperM" style="margin-top:6px;padding-top:5px;border-top:1px solid var(--b1);font-size:10px;color:var(--t2);"></div>'
             : '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;"><table style="width:100%;border-collapse:collapse;table-layout:fixed;"><thead>' + head2 + '</thead><tbody>' + rows.slice(0, 3).map(cell).join('') + '</tbody></table></div>' +
               '<div style="color:var(--t2);font-size:10px;margin-top:5px;">Порог не взял никто — показаны ближайшие.</div>');
