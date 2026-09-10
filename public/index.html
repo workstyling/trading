@@ -12905,18 +12905,23 @@ Requirements:
           </div>` ; })() : ''}</div>
 
           <table class="profit-table" data-pair="${pair}" data-filled="${totalFilled}" data-usd="${totalUSD}" data-avgbuy="${avgBuyPrice}">
-            <thead><tr><th>Num</th><th>Best Bid</th><th>Best Ask</th><th>Filled Size</th><th title="Чисто вложено: потрачено на покупки минус получено с продаж. Пока продаж не было, это и есть потраченное.">USD</th><th>Avg Buy</th><th title="Вся выбранная позиция по текущему Ask с комиссией taker ${(getFeeMarket() * 100).toFixed(3)}%. В подсказке шкалы есть результат отдельного ордера и всей позиции по цене наведения; maker — если лимитка постоит в стакане.">Limit · taker</th><th>Market</th></tr></thead>
+            <thead><tr><th>Num</th><th>Best Bid</th><th>Best Ask</th><th>Filled Size</th><th title="Сумма выбранных покупок с комиссией, до вычета продаж.">Вложено</th><th>Avg Buy</th><th title="Вся выбранная позиция по текущему Ask с комиссией taker ${(getFeeMarket() * 100).toFixed(3)}%. В подсказке шкалы есть результат отдельного ордера и всей позиции по цене наведения; maker — если лимитка постоит в стакане.">Limit · taker</th><th>Market</th></tr></thead>
             <tbody><tr>
               <td>1</td>
               <td id="bid_${coin}">$${fmtPrice(bestBid)}</td>
               <td id="ask_${coin}">$${fmtPrice(bestAsk)}</td>
               <td>${fmtSize(totalFilled)}</td>
-              <td>${fmtUSD(totalUSD)}</td>
+              <td>$${fmtUSD(buyUSD)}</td>
               <td>${fmtPrice(avgBuyPrice)}</td>
               <td id="limitpnl_${coin}" class="${initLimitPnL >= 0 ? 'profit-pos' : 'profit-neg'}">${initLimitPnL >= 0 ? '+' : ''}${fmtPnL(initLimitPnL)}</td>
               <td id="pnl_${coin}" class="${initMarketPnL >= 0 ? 'profit-pos' : 'profit-neg'}">${initMarketPnL >= 0 ? '+' : ''}${fmtPnL(initMarketPnL)} <span style="color:#888">(${fmtPnL(initMarketDiff)})</span></td>
             </tr></tbody>
           </table>
+
+          <div class="position-cashflow" style="display:flex;flex-wrap:wrap;gap:4px 16px;margin:0 0 8px;font-size:10px;color:var(--t2);">
+            <span title="Получено по выбранным исполненным продажам после комиссии.">Получено с продаж: <b>$${fmtUSD(buyUSD - totalUSD)}</b></span>
+            <span title="Покупки минус полученное с продаж. Эта сумма используется в расчёте прибыли позиции.">Остаток затрат: <b>$${fmtUSD(totalUSD)}</b></span>
+          </div>
 
           <table class="selected-table">
             <thead><tr><th></th><th>Bar</th><th>Order ID</th><th>Side</th><th>Type</th><th>Filled</th><th>Limit</th><th>Avg Price</th><th>USD</th><th>Done</th><th>Target</th><th>Sell</th><th>Pos</th><th>Value</th></tr></thead>

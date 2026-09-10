@@ -2436,17 +2436,50 @@ function positionAgainstWallet(orders, productId, balances) {
 // позиции (он одноразовый — иначе слал бы сообщение каждую минуту). Оба
 // снимаются новой покупкой: купил ещё — значит позиция другая, и сторожить
 // её снова уместно.
+//
+// Поэтому отказ помнит ВРЕМЯ. Раньше это был просто список монет, и снять
+// отказ умел единственный путь — ловля исполнения на лету. Стоило этому
+// событию пройти мимо (перезапуск, окно кеша, разошедшийся опрос), и монета
+// оставалась в отказе навсегда: сверка её пропускала, сторож не вставал уже
+// ни при какой новой покупке, и включать его приходилось руками.
 const BE_OPTOUT_FILE = path.join(__dirname, 'be-optout.json');
 let beOptOut = [];
 try { beOptOut = JSON.parse(fs.readFileSync(BE_OPTOUT_FILE, 'utf8')) || []; } catch { }
 if (!Array.isArray(beOptOut)) beOptOut = [];
+// Старая запись — голое имя монеты, времени в ней нет. Считать его давним
+// нельзя: тогда любая прошлая покупка сняла бы отказ, и уже сработавший
+// сторож выстрелил бы снова. Считаем, что отказ сделан сейчас.
+beOptOut = beOptOut
+  .map(x => (typeof x === 'string' ? { coin: x, t: Date.now() } : x))
+  .filter(x => x && x.coin);
 function saveBeOptOut() {
   try { fs.writeFileSync(BE_OPTOUT_FILE, JSON.stringify(beOptOut)); } catch (e) { console.error('[be-watch] optout', e.message); }
 }
+function beOptOutAt(coin) {
+  const row = beOptOut.find(x => x.coin === coin);
+  return row ? row.t : null;
+}
 function beOptOutSet(coin, off) {
-  const had = beOptOut.includes(coin);
-  if (off && !had) { beOptOut.push(coin); saveBeOptOut(); }
-  else if (!off && had) { beOptOut = beOptOut.filter(c => c !== coin); saveBeOptOut(); }
+  const i = beOptOut.findIndex(x => x.coin === coin);
+  if (off) {
+    if (i < 0) beOptOut.push({ coin, t: Date.now() }); else beOptOut[i].t = Date.now();
+    saveBeOptOut();
+  } else if (i >= 0) {
+    beOptOut.splice(i, 1);
+    saveBeOptOut();
+  }
+}
+
+// Время последней исполненной ПОКУПКИ монеты. По нему видно, относится ли
+// отказ к нынешней позиции или к прежней, которой уже нет.
+function lastFilledBuyAt(orders, productId) {
+  let t = 0;
+  for (const o of orders) {
+    if (o.product_id !== productId || o.status !== 'FILLED' || o.side !== 'BUY') continue;
+    const ts = Date.parse(o.created_time || 0);
+    if (Number.isFinite(ts) && ts > t) t = ts;
+  }
+  return t;
 }
 
 // Сверка состояния: у каждой открытой позиции должен стоять сторож.
@@ -2477,8 +2510,15 @@ async function reconcileBeWatches() {
     let added = 0, dropped = 0;
     for (const productId of pairs) {
       const coin = productId.replace('-USD', '');
-      if (beOptOut.includes(coin)) continue;
       if (beWatches.some(w => w.coin === coin)) continue;
+      const off = beOptOutAt(coin);
+      if (off != null) {
+        // Отказ относится к той позиции, что была на тот момент. Если после
+        // него была покупка, позиция другая — отказ снимаем и сторожим снова.
+        if (!(lastFilledBuyAt(orders, productId) > off)) continue;
+        beOptOutSet(coin, false);
+        console.log('[be-watch] сверка: ' + coin + ' куплена после отказа — отказ снят');
+      }
       const pos = positionAgainstWallet(orders, productId, balances);
       if (!pos) continue;
       if (pos.skip) continue;
@@ -2566,11 +2606,14 @@ function autoBeWatch(coin, productId, orders) {
   console.log('[auto-watch] ' + coin + ': сторож безубытка поставлен (' + filled + ' на $' + usd.toFixed(2) + ')');
 }
 
-async function checkFilledOrders() {
+// fresh обходит кеш ордеров. Клиент дёргает проверку сразу после сделки, а
+// восьмисекундный снимок сделан ДО неё: нового ордера в нём нет, и проверять
+// нечего — сторож встал бы только следующим циклом, через полминуты.
+async function checkFilledOrders(fresh) {
   try {
     let orders;
     const now = Date.now();
-    if (ordersCache.data && (now - ordersCache.ts) < ORDERS_CACHE_TTL) orders = ordersCache.data;
+    if (!fresh && ordersCache.data && (now - ordersCache.ts) < ORDERS_CACHE_TTL) orders = ordersCache.data;
     else { orders = await getLatestOrders(); ordersCache = { data: orders, ts: now }; }
     const filled = orders.filter(o => o.status === 'FILLED');
     if (!fillBaselineDone) {
@@ -2579,6 +2622,12 @@ async function checkFilledOrders() {
       notifiedFills = notifiedFills.slice(-800);
       try { fs.writeFileSync(NOTIFIED_FILE, JSON.stringify(notifiedFills)); } catch { }
       fillBaselineDone = true;
+      // Первый проход после старта молчит про исполнения — историей не спамим.
+      // Но и сторожей он раньше не ставил, а покупка, случившаяся перед самым
+      // перезапуском, попадает именно сюда: сообщения нет, сторожа нет, и
+      // узнать об этом было неоткуда. Сверка смотрит на состояние, а не на
+      // событие, и ставит что нужно.
+      reconcileBeWatches().catch(() => { });
       return;
     }
     let changed = false;
@@ -2624,7 +2673,9 @@ let beWatches = [];
 try { beWatches = JSON.parse(fs.readFileSync(BE_WATCH_FILE, 'utf8')); } catch { }
 function saveBeWatches() { try { fs.writeFileSync(BE_WATCH_FILE, JSON.stringify(beWatches)); } catch (e) { console.error('[be-watch] save', e.message); } }
 
-app.get('/api/be-watch', (req, res) => res.json({ success: true, watches: beWatches }));
+// Отдаём и отказы: без них было не понять, почему у монеты в кошельке нет
+// сторожа — сверка молча её пропускала.
+app.get('/api/be-watch', (req, res) => res.json({ success: true, watches: beWatches, optOut: beOptOut }));
 
 // Проверить исполнения немедленно, не дожидаясь тридцатисекундного цикла.
 //
@@ -2634,7 +2685,7 @@ app.get('/api/be-watch', (req, res) => res.json({ success: true, watches: beWatc
 // после сделки, и состояние сходится за секунду, а не за полминуты.
 app.post('/api/check-fills', async (req, res) => {
   try {
-    await checkFilledOrders();
+    await checkFilledOrders(true);
     res.json({ success: true, watches: beWatches });
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });

@@ -3085,10 +3085,12 @@
             <div class="monitor-stat"><span class="monitor-stat-label">Ask</span><span class="monitor-stat-val" style="color:var(--loss)">$${fmt(ask)}</span></div>
             <div class="monitor-stat"><span class="monitor-stat-label">Avg Buy</span><span class="monitor-stat-val">$${fmt(avgBuy)}</span></div>
             <div class="monitor-stat"><span class="monitor-stat-label">Filled</span><span class="monitor-stat-val">${totalFilled.toFixed(totalFilled < 1 ? 6 : 2)}</span></div>
-            <div class="monitor-stat" title="${buyUSD > totalUSD + 0.01
-              ? `Куплено на $${buyUSD.toFixed(2)}, получено с продаж $${(buyUSD - totalUSD).toFixed(2)}. Остаётся вложено $${totalUSD.toFixed(2)}.`
-              : `Потрачено на покупку. Продаж по этой монете ещё не было.`}"><span class="monitor-stat-label">${buyUSD > totalUSD + 0.01 ? 'Вложено' : 'Потрачено'}</span><span class="monitor-stat-val">$${totalUSD.toFixed(2)}</span></div>
+            <div class="monitor-stat" title="Сумма выбранных покупок с комиссией, до вычета продаж."><span class="monitor-stat-label">Вложено</span><span class="monitor-stat-val">$${buyUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
             <div class="monitor-stat"><span class="monitor-stat-label">Market</span><span class="monitor-stat-val" style="color:${mktColor}">${formatProfitM(marketPnL)}</span></div>
+          </div>
+          <div class="position-cashflow" style="display:flex;flex-wrap:wrap;gap:4px 16px;margin:0 0 8px;font-size:10px;color:var(--t2);">
+            <span title="Получено по выбранным исполненным продажам после комиссии.">Получено с продаж: <b>$${(buyUSD - totalUSD).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b></span>
+            <span title="Покупки минус полученное с продаж. Эта сумма используется в расчёте прибыли позиции.">Остаток затрат: <b>$${totalUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b></span>
           </div>`;
 
         // Individual orders
@@ -5524,6 +5526,14 @@
     function refreshAfterTradeM(orderId) {
       try { loadBalance(); } catch { }
       try { loadVol30dMobile(true); } catch { }
+      // Сторож безубытка и избранное ставит сервер по факту исполнения, а его
+      // цикл ходит раз в полминуты. Рыночный ордер исполняется мгновенно, и
+      // всё это время кнопка показывала «выключено», хотя сторож уже нужен.
+      // На десктопе это давно так; здесь запроса не было вовсе.
+      (async () => {
+        try { await api('/api/check-fills', { method: 'POST' }); } catch { }
+        try { await loadBeWatchesM(); } catch { }
+      })();
       let i = 0;
       const tick = async () => {
         try { await loadOrders(true); updateMonitor(); } catch { }
