@@ -6306,6 +6306,10 @@
             <span class="profit-title">Total Profit <span id="todayProfit" style="margin-left:8px;font-size:11px;font-weight:700;color:#00e5a0;background:rgba(0,229,160,0.1);padding:2px 8px;border-radius:8px;" title="Прибыль за сегодня — по времени фактического исполнения продажи, а не по моменту сохранения записи. Купил вчера, продал сегодня — считается сюда. Продал вчера, а кнопку нажал сегодня — не считается.">today: $0.00</span></span>
             <span class="profit-total" id="totalProfit">$0.00</span>
           </div>
+          <!-- Закрытое и незакрытое рядом. По отдельности оба числа вводят в
+               заблуждение: заголовок говорил +$1202, пока в открытых позициях
+               лежало −$1022, и половина картины была не видна. -->
+          <div id="profitOpen" data-live="1" style="font-size:10px;color:var(--t2);margin:-4px 0 6px;"></div>
           <div class="profit-list" id="profitList"></div>
         </div>
         <div id="holdingsPanel">
@@ -12600,6 +12604,42 @@ Requirements:
       return e.soldAt || sellTimeOf(e.sellOrderDetails) || e.date;
     }
 
+    // НЕЗАКРЫТОЕ РЯДОМ С ЗАКРЫТЫМ.
+    //
+    // Заголовок показывал только реализованное — записи, сохранённые кнопкой.
+    // Убыток же не реализуется: он остаётся в кошельке и ждёт возврата. В
+    // итоге на экране стояло +$1202, пока в открытых позициях лежало −$1022, и
+    // оба числа были верными по отдельности и лживыми вместе.
+    //
+    // Источники у них разные, и это сказано в подсказке: реализованное ведётся
+    // руками через «Save Profit», открытое считает журнал по ордерам.
+    let _openUnrealized = null;
+    async function loadOpenUnrealized() {
+      try {
+        const j = await (await fetch('/api/journal')).json();
+        if (!j.success || !j.stats || !j.stats.openTotal) return;
+        _openUnrealized = j.stats.openTotal;
+        updateProfitPanel();
+      } catch { }
+    }
+    function paintOpenUnrealized(realized) {
+      const el = document.getElementById('profitOpen');
+      if (!el) return;
+      const o = _openUnrealized;
+      if (!o || !o.n) { setLiveHtml(el, ''); return; }
+      const money = (v) => (v >= 0 ? '+$' : '−$') + Math.abs(v).toLocaleString('en-US',
+        { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      const col = (v) => v >= 0 ? 'var(--green)' : '#ff6b6b';
+      const both = realized + o.unrealized;
+      setLiveHtml(el, '<span title="' +
+        'Открытые позиции по текущему Ask с комиссией: столько сейчас стоит то, что ещё не продано, против затрат на него. ' +
+        'Считает журнал сделок по ордерам биржи — ' + o.n + ' позиций.' + String.fromCharCode(10) +
+        'Реализованное берётся из истории прибыли, которую вы сохраняете кнопкой. Источники разные, поэтому числа стоят рядом, а не складываются молча.' + String.fromCharCode(10) +
+        'Убыток не реализуется сам: он остаётся в кошельке и ждёт возврата, и без этой строки его на экране не видно.">' +
+        'в открытых <b style="color:' + col(o.unrealized) + ';">' + money(o.unrealized) + '</b>' +
+        ' · вместе <b style="color:' + col(both) + ';">' + money(both) + '</b></span>');
+    }
+
     function updateProfitPanel() {
       const totalEl = document.getElementById('totalProfit');
       const listEl = document.getElementById('profitList');
@@ -12607,6 +12647,7 @@ Requirements:
       const total = Math.round(profitHistory.reduce((sum, e) => sum + e.profit, 0) * 100) / 100;
       totalEl.textContent = (total >= 0 ? '+' : '') + '$' + total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
       totalEl.className = 'profit-total ' + (total >= 0 ? 'positive' : 'negative');
+      paintOpenUnrealized(total);
 
       // Прибыль за сегодня — по времени ФАКТИЧЕСКОЙ продажи, а не по моменту
       // сохранения записи. «Купил вчера, продал сегодня» входит; «продал
@@ -12654,6 +12695,9 @@ Requirements:
 
     // Initialize profit panel
     loadProfitHistory();
+    // Незакрытое считается по ордерам и меняется вместе с ценой — раз в минуту
+    loadOpenUnrealized();
+    setInterval(loadOpenUnrealized, 60000);
 
     async function updateSelectedOrdersView() {
       const container = document.querySelector('#selectedOrders .selected-scroll');

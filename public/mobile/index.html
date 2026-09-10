@@ -1685,6 +1685,10 @@
       <div class="profit-label">Total Profit <span id="profitToday" style="margin-left:6px;font-size:12px;font-weight:700;color:#00e5a0;background:rgba(0,229,160,0.1);padding:2px 8px;border-radius:8px;">today: $0.00</span></div>
       <div class="profit-value profit-positive" id="profitTotal">$0.00</div>
     </div>
+    <!-- Закрытое и незакрытое рядом: по отдельности оба числа вводят в
+         заблуждение. Заголовок говорил +$1202, пока в открытых позициях
+         лежало −$1022. -->
+    <div id="profitOpenM" style="font-size:10px;color:var(--t2);margin:-2px 0 8px;"></div>
     <div id="profitList"><div class="loading"><div class="spinner"></div>Loading...</div></div>
 
     <!-- Trade Journal summary -->
@@ -4288,6 +4292,33 @@
     }
 
     // ── Profit ──
+    // НЕЗАКРЫТОЕ РЯДОМ С ЗАКРЫТЫМ.
+    //
+    // Заголовок показывал только реализованное — записи, сохранённые кнопкой.
+    // Убыток же не реализуется: он остаётся в кошельке и ждёт возврата. На
+    // экране стояло +$1202, пока в открытых позициях лежало −$1022, и оба
+    // числа были верными по отдельности и лживыми вместе.
+    let _openUnrealizedM = null, _realizedTotal = 0;
+    async function loadOpenUnrealizedM() {
+      try {
+        const j = await api('/api/journal');
+        if (!j.success || !j.stats || !j.stats.openTotal) return;
+        _openUnrealizedM = j.stats.openTotal;
+        paintOpenUnrealizedM();
+      } catch { }
+    }
+    function paintOpenUnrealizedM() {
+      const el = document.getElementById('profitOpenM');
+      if (!el) return;
+      const o = _openUnrealizedM;
+      if (!o || !o.n) { el.innerHTML = ''; return; }
+      const money = (v) => (v >= 0 ? '+$' : '−$') + Math.abs(v).toFixed(2);
+      const col = (v) => v >= 0 ? 'var(--green)' : '#ff6b6b';
+      const both = _realizedTotal + o.unrealized;
+      el.innerHTML = 'в открытых <b style="color:' + col(o.unrealized) + ';">' + money(o.unrealized) +
+        '</b> · вместе <b style="color:' + col(both) + ';">' + money(both) + '</b>';
+    }
+
     async function loadProfit() {
       const r = await api('/get-profit-history');
       if (r.success) {
@@ -4300,6 +4331,8 @@
         const el = document.getElementById('profitTotal');
         el.textContent = (total >= 0 ? '+$' : '-$') + Math.abs(total).toFixed(2);
         el.className = 'profit-value ' + (total >= 0 ? 'profit-positive' : 'profit-negative');
+        _realizedTotal = total;
+        paintOpenUnrealizedM();
 
         // Прибыль за сегодня — по дате продажи (купил вчера, продал сегодня → тоже сюда)
         const tEl = document.getElementById('profitToday');
@@ -4481,6 +4514,9 @@
         loadOrders().then(updateMonitor);
       });
       loadProfit();
+      // Незакрытое считается по ордерам и ходит вместе с ценой
+      loadOpenUnrealizedM();
+      setInterval(loadOpenUnrealizedM, 60000);
       loadHoldings();
     }
 
