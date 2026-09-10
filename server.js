@@ -2728,12 +2728,19 @@ setTimeout(checkFilledOrders, 20_000); // baseline вскоре после ст�
 // торгового цикла значит подвесить его на несколько минут.
 const RECHECK_STAMP = path.join(__dirname, 'recovery-check.json');
 const RECHECK_EVERY_H = 22;
+function recheckStamp() {
+  try { return JSON.parse(fs.readFileSync(RECHECK_STAMP, 'utf8')) || {}; } catch { return {}; }
+}
 function recoveryRecheck(force) {
-  let last = 0;
-  try { last = JSON.parse(fs.readFileSync(RECHECK_STAMP, 'utf8')).at || 0; } catch { }
+  const st = recheckStamp();
   // Перезапусков за день бывает много (каждая выкатка), а замер тяжёлый
-  if (!force && Date.now() - last < RECHECK_EVERY_H * 3600 * 1000) return;
+  if (!force && Date.now() - (st.at || 0) < RECHECK_EVERY_H * 3600 * 1000) return;
+  // Замер идёт минутами и умирает вместе с процессом при выкатке. Без отметки
+  // о НАЧАЛЕ череда перезапусков запускала бы его снова и снова, и он не
+  // доходил бы до конца ни разу.
+  if (!force && Date.now() - (st.startedAt || 0) < 40 * 60 * 1000) return;
   const started = Date.now();
+  try { fs.writeFileSync(RECHECK_STAMP, JSON.stringify({ ...st, startedAt: started })); } catch { }
   const p = require('child_process').spawn(process.execPath, ['scripts/recheck-recovery.js'],
     { cwd: __dirname });
   let out = '';
@@ -2742,7 +2749,7 @@ function recoveryRecheck(force) {
   p.on('error', (e) => console.error('[recovery-check] не запустился:', e.message));
   p.on('close', async (code) => {
     const mins = Math.round((Date.now() - started) / 60000);
-    try { fs.writeFileSync(RECHECK_STAMP, JSON.stringify({ at: Date.now(), code, mins })); } catch { }
+    try { fs.writeFileSync(RECHECK_STAMP, JSON.stringify({ at: Date.now(), startedAt: started, code, mins })); } catch { }
     const tail = out.trim().split('\n').slice(-16).join('\n');
     console.log('[recovery-check] код ' + code + ', ' + mins + ' мин\n' + tail);
     // Молчим, когда сетка держится: сообщение раз в сутки «всё как было»
@@ -2753,8 +2760,15 @@ function recoveryRecheck(force) {
     }
   });
 }
-setInterval(() => recoveryRecheck(false), 3 * 3600 * 1000);
-setTimeout(() => recoveryRecheck(false), 12 * 60 * 1000);
+// Проверяем часто, а работу делает отметка времени: сверка идёт, если с
+// прошлой прошло больше RECHECK_EVERY_H часов.
+//
+// Раньше стояло «через 12 минут после запуска и дальше раз в три часа», и оба
+// таймера обнулялись при каждом перезапуске. В день с частыми выкатками сверка
+// не запускалась НИ РАЗУ — а молчащий сторож неотличим от сторожа, у которого
+// всё в порядке. Теперь достаточно, чтобы процесс прожил десять минут.
+setInterval(() => recoveryRecheck(false), 10 * 60 * 1000);
+setTimeout(() => recoveryRecheck(false), 3 * 60 * 1000);
 
 const BE_WATCH_FILE = path.join(__dirname, 'be-watches.json');
 let beWatches = [];
@@ -5719,6 +5733,11 @@ async function runEntryScan() {
     const universe = [...cbVolumeCache.entries()]
       .map(([coin, volume]) => ({ coin, volume: Number(volume) || 0 }))
       .filter(x => x.volume >= microScalpScanner.MIN_VOLUME_USD)
+      // Стейблкоины скану не нужны: падать от суточного максимума им нечем, а
+      // место в корзине они занимают и в каждом проходе висят в «не
+      // посчитано» — вечная ложная тревога на экране. Остальные списки биржи
+      // их и так исключают, этот один не исключал.
+      .filter(x => !STABLECOINS.has(x.coin))
       .sort((a, b) => b.volume - a.volume)
       .slice(0, ENTRY_SCAN_MAX_COINS);
 
@@ -6368,6 +6387,10 @@ app.get('/api/entry-scan', (req, res) => {
     recoverySample: RECOVERY_SAMPLE,
     // Когда числа последний раз подтверждались на другой выборке
     recoveryConfirmedAt: RECOVERY_CONFIRMED_AT,
+    // Когда ночная сверка последний раз доходила до конца и с каким исходом.
+    // Молчащий сторож неотличим от сторожа, у которого всё в порядке, — пусть
+    // его работа будет видна снаружи.
+    recheck: (() => { const s = recheckStamp(); return s.at ? { at: s.at, code: s.code, mins: s.mins } : null; })(),
     gate: { fallPct: ENTRY_GATE_FALL, spreadPct: ENTRY_GATE_SPREAD },
     scanning: entryScan.running,
     // Если последний скан провалился, панель обязана сказать об этом, а не
