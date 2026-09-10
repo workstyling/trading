@@ -2845,6 +2845,22 @@ setInterval(async () => {
 }, 15_000); // каждые 15с — алерт приходит практически сразу после пересечения нуля
 
 // Удалённый деплой: git pull + рестарт процесса (pm2 поднимет заново с новым кодом)
+// Прогнать сверку сетки сейчас, не дожидаясь суток.
+//
+// Нужно, чтобы убедиться, что сторож вообще работает: его последняя запись
+// может быть сделана кодом, который с тех пор переписан, и отличить «сверка
+// исправна и молчит» от «сверка не запускалась» иначе нельзя. Ключ тот же,
+// что у выкатки, — это операция на машине, а не чтение.
+app.post('/api/recheck', (req, res) => {
+  const deployKey = DEPLOY_KEY || 'trading-deploy-2026';
+  if (!constantTimeTokenEquals(String(req.query.key || req.headers['x-deploy-key'] || ''), deployKey)) {
+    return res.status(403).json({ success: false, error: 'bad key' });
+  }
+  const was = recheckStamp();
+  recoveryRecheck(true);
+  res.json({ success: true, started: true, previous: was.at ? { at: was.at, code: was.code } : null });
+});
+
 // Хвост журнала по ключу. Тем же ключом, что и выкатка: другого способа
 // доказать право на доступ к машине у нас нет, а строки журнала — это её
 // внутренности.

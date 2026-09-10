@@ -167,6 +167,14 @@ console.log('\nСверка сетки возврата');
     'а начатый и убитый выкаткой замер не перезапускается бесконечно');
   ok(/recheck: \(\(\) => \{ const s = recheckStamp\(\)/.test(src),
     'и снаружи видно, когда сверка последний раз доходила до конца');
+  // Последняя запись сторожа могла быть сделана кодом, который с тех пор
+  // переписан. Отличить «исправен и молчит» от «не запускался» иначе нельзя.
+  {
+    const ep = src.slice(src.indexOf("app.post('/api/recheck'"), src.indexOf("app.get('/api/logs'"));
+    ok(/constantTimeTokenEquals/.test(ep) && /status\(403\)/.test(ep), 'прогнать сверку вручную можно только по ключу');
+    ok(/recoveryRecheck\(true\)/.test(ep), 'и это обходит суточную отметку');
+    ok(/previous:/.test(ep), 'а в ответе видно, что было записано до неё');
+  }
   ok(/spawn\(process\.execPath, \['scripts\/recheck-recovery\.js'\]/.test(src),
     'считает отдельный процесс, а не торговый цикл');
   ok(/if \(code !== 0\) \{[\s\S]{0,200}sendTelegram/.test(src), 'разошлось — приходит сообщение');
