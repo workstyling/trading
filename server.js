@@ -7,6 +7,35 @@ const crypto = require('crypto');
 const { RESTClient } = require('./cb/dist/rest/index.js');
 const predictor = require('./src/predictor');
 
+// ХВОСТ ЖУРНАЛА В ПАМЯТИ.
+//
+// SSH к боевой машине нет, pm2-логи оттуда не достать, и ошибка, случившаяся
+// час назад, не оставляет следа: остаётся гадать по состоянию. Так разбирался
+// баг со сторожем безубытка — причину удалось только предположить.
+//
+// Держим последние строки прямо в процессе и отдаём по ключу. Кольцо, потому
+// что память не резиновая; в файл не пишем — диск сервера трогать незачем.
+const LOG_RING_MAX = 600;
+const logRing = [];
+function logRingPush(level, args) {
+  let text;
+  try {
+    text = args.map(a => {
+      if (typeof a === 'string') return a;
+      if (a instanceof Error) return a.message + (a.stack ? '\n' + a.stack : '');
+      try { return JSON.stringify(a); } catch { return String(a); }
+    }).join(' ');
+  } catch { text = '<не удалось записать строку журнала>'; }
+  // Одна строка не должна съесть кольцо целиком
+  if (text.length > 4000) text = text.slice(0, 4000) + '…';
+  logRing.push({ t: Date.now(), level, text });
+  if (logRing.length > LOG_RING_MAX) logRing.splice(0, logRing.length - LOG_RING_MAX);
+}
+for (const level of ['log', 'warn', 'error']) {
+  const orig = console[level].bind(console);
+  console[level] = (...a) => { logRingPush(level, a); orig(...a); };
+}
+
 // Prevent server from crashing on unhandled errors
 process.on('uncaughtException', (err) => {
   console.error('[CRASH PREVENTED] Uncaught Exception:', err.message);
@@ -2668,6 +2697,45 @@ async function checkFilledOrders(fresh) {
 setInterval(checkFilledOrders, 30_000);
 setTimeout(checkFilledOrders, 20_000); // baseline вскоре после старта
 
+// ЕЖЕСУТОЧНАЯ СВЕРКА СЕТКИ ВОЗВРАТА.
+//
+// В recoveryOdds() зашита таблица и дата замера. Это фотография: рынок съедет,
+// а числа останутся, и заметить это неоткуда — панель продолжит обещать 89%
+// там, где их давно нет. Скрипт меряет заново по свечам и сравнивает с тем,
+// что зашито; расходится — приходит сообщение.
+//
+// Считает отдельный процесс: качать месяц свечей по три десятка монет внутри
+// торгового цикла значит подвесить его на несколько минут.
+const RECHECK_STAMP = path.join(__dirname, 'recovery-check.json');
+const RECHECK_EVERY_H = 22;
+function recoveryRecheck(force) {
+  let last = 0;
+  try { last = JSON.parse(fs.readFileSync(RECHECK_STAMP, 'utf8')).at || 0; } catch { }
+  // Перезапусков за день бывает много (каждая выкатка), а замер тяжёлый
+  if (!force && Date.now() - last < RECHECK_EVERY_H * 3600 * 1000) return;
+  const started = Date.now();
+  const p = require('child_process').spawn(process.execPath, ['scripts/recheck-recovery.js'],
+    { cwd: __dirname });
+  let out = '';
+  p.stdout.on('data', d => { out += d; });
+  p.stderr.on('data', d => { out += d; });
+  p.on('error', (e) => console.error('[recovery-check] не запустился:', e.message));
+  p.on('close', async (code) => {
+    const mins = Math.round((Date.now() - started) / 60000);
+    try { fs.writeFileSync(RECHECK_STAMP, JSON.stringify({ at: Date.now(), code, mins })); } catch { }
+    const tail = out.trim().split('\n').slice(-16).join('\n');
+    console.log('[recovery-check] код ' + code + ', ' + mins + ' мин\n' + tail);
+    // Молчим, когда сетка держится: сообщение раз в сутки «всё как было»
+    // перестают читать, и настоящее пройдёт мимо вместе с ним.
+    if (code !== 0) {
+      await sendTelegram('⚠️ Сетка возврата разошлась с рынком.\n' +
+        'Панель обещает не то, что происходит. Числа ниже — зашито против измеренного.\n\n' + tail);
+    }
+  });
+}
+setInterval(() => recoveryRecheck(false), 3 * 3600 * 1000);
+setTimeout(() => recoveryRecheck(false), 12 * 60 * 1000);
+
 const BE_WATCH_FILE = path.join(__dirname, 'be-watches.json');
 let beWatches = [];
 try { beWatches = JSON.parse(fs.readFileSync(BE_WATCH_FILE, 'utf8')); } catch { }
@@ -2743,6 +2811,35 @@ setInterval(async () => {
 }, 15_000); // каждые 15с — алерт приходит практически сразу после пересечения нуля
 
 // Удалённый деплой: git pull + рестарт процесса (pm2 поднимет заново с новым кодом)
+// Хвост журнала по ключу. Тем же ключом, что и выкатка: другого способа
+// доказать право на доступ к машине у нас нет, а строки журнала — это её
+// внутренности.
+//
+//   /api/logs?key=...&n=200          последние 200 строк
+//   /api/logs?key=...&level=error    только ошибки
+//   /api/logs?key=...&q=be-watch     только строки с этим текстом
+app.get('/api/logs', (req, res) => {
+  const deployKey = DEPLOY_KEY || 'trading-deploy-2026';
+  if (!constantTimeTokenEquals(String(req.query.key || req.headers['x-deploy-key'] || ''), deployKey)) {
+    return res.status(403).json({ success: false, error: 'bad key' });
+  }
+  const n = Math.min(Math.max(Number(req.query.n) || 200, 1), LOG_RING_MAX);
+  const level = String(req.query.level || '').trim();
+  const q = String(req.query.q || '').trim().toLowerCase();
+  let lines = logRing;
+  if (level) lines = lines.filter(l => l.level === level);
+  if (q) lines = lines.filter(l => l.text.toLowerCase().includes(q));
+  res.json({
+    success: true,
+    kept: logRing.length, max: LOG_RING_MAX,
+    // С какого момента копится: перезапуск обнуляет кольцо, и без этой отметки
+    // пустой ответ не отличить от «всё тихо».
+    since: logRing.length ? new Date(logRing[0].t).toISOString() : null,
+    lines: lines.slice(-n).map(l => new Date(l.t).toISOString().slice(0, 19).replace('T', ' ') +
+      ' ' + l.level.toUpperCase().padEnd(5) + ' ' + l.text),
+  });
+});
+
 app.post('/api/deploy', (req, res) => {
   // НЕ УБИРАТЬ запасное значение, пока DEPLOY_KEY не появится в .env НА
   // СЕРВЕРЕ. Это уже вторая попытка: выглядит как дыра, но выкатка такого
@@ -2792,6 +2889,8 @@ app.post('/api/deploy', (req, res) => {
 
   try {
     const { execSync } = require('child_process');
+    // Куда откатываться, если приехавший код не пройдёт проверки
+    const head0 = execSync('git rev-parse HEAD', { cwd: __dirname, timeout: 20000 }).toString().trim();
     let out;
     try {
       out = execSync('git pull', { cwd: __dirname, timeout: 60000 }).toString();
@@ -2815,7 +2914,48 @@ app.post('/api/deploy', (req, res) => {
     }
     restore();
     const changed = !/Already up to date/i.test(out);
-    res.json({ success: true, out, restarting: changed, protectedRestored: [...backup.keys()] });
+
+    // ПРОВЕРКИ ДО ПЕРЕЗАПУСКА.
+    //
+    // Раньше выкатка была просто «git pull и рестарт»: что приехало, то и
+    // поехало в работу. Один раз так уехал код с пятью красными проверками —
+    // узнали об этом уже на боевой машине. Теперь набор гоняется здесь, и
+    // красный откатывает pull обратно, не доводя до перезапуска.
+    //
+    // Если папки с проверками ещё нет (первая выкатка, которая её и привозит),
+    // ворота не срабатывают — иначе доставить их было бы нечем.
+    // Запасной выход: ?skiptests=1. Нужен на случай, когда сломан сам набор —
+    // иначе выкатка перестала бы работать, а чинить её было бы нечем: другого
+    // способа доставить код на машину нет.
+    const skipTests = String(req.query.skiptests || '') === '1';
+    let tests = skipTests ? 'пропущены по требованию' : null;
+    if (changed && !skipTests && fs.existsSync(path.join(__dirname, 'tests', 'run.js'))) {
+      const r = require('child_process').spawnSync(process.execPath, ['tests/run.js'],
+        { cwd: __dirname, encoding: 'utf8', timeout: 180000 });
+      const log = ((r.stdout || '') + (r.stderr || '')).split('\n').slice(-30).join('\n');
+      if (r.error) {
+        // Набор не удалось ЗАПУСТИТЬ — это не «код плохой». Откатывать из-за
+        // сломанного окружения значит рубить единственный канал доставки.
+        console.error('[deploy] проверки не запустились:', r.error.message);
+        tests = 'не запустились: ' + r.error.message;
+      } else if (r.status !== 0) {
+        // Откат ровно туда, где были. Иначе на сервере остался бы код, который
+        // сам себя признал сломанным, и следующий pull лёг бы поверх него.
+        try { execSync('git reset --hard ' + head0, { cwd: __dirname, timeout: 60000 }); } catch (e) {
+          console.error('[deploy] откат не удался:', e.message);
+        }
+        restore();
+        console.error('[deploy] проверки не прошли, код откачен на ' + head0.slice(0, 8));
+        return res.status(409).json({
+          success: false, error: 'проверки не прошли — код откачен, перезапуска не было',
+          rolledBackTo: head0.slice(0, 8), tests: log, out,
+        });
+      } else {
+        tests = log.trim().split('\n').pop();
+      }
+    }
+
+    res.json({ success: true, out, tests, restarting: changed, protectedRestored: [...backup.keys()] });
     if (changed) setTimeout(() => process.exit(0), 500); // pm2 перезапустит процесс с новым кодом
   } catch (e) {
     restore();

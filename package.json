@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "node start.js",
+    "test": "node tests/run.js",
     "validate:scalp": "node src/scalp/validate-gate.js",
     "verify:micro-scalp": "node scripts/verify-micro-scalp.js",
     "start": "node start.js"
