@@ -77,6 +77,44 @@ for (const [name, file] of [['десктоп', 'public/index.html'], ['моби�
   ok(/менее убыточной, а не прибыльной/.test(src), 'и что прибыли ни один уровень не обещает');
 }
 
+console.log('\nСервер режет список уже по уровню, а не по одному возврату');
+{
+  // Наружу уходит пятнадцать строк. Пока сортировка шла по возврату, в
+  // падающем рынке все пятнадцать занимали монеты с 89% и пометкой обвала, а
+  // единственная «брать» с 87% оказывалась шестнадцатой и до экрана не
+  // доезжала. Панель переупорядочивает полученное, но отрезанное не вернёт.
+  const src = read('server.js');
+  const i = src.indexOf('    const swing = r => r.chg24Pct != null');
+  const j = src.indexOf('fall(b) - fall(a));', i) + 20;
+  ok(i > 0 && j > i, 'сортировка с уровнем найдена');
+  const head = src.slice(src.indexOf('const recHour = r =>'), i);
+
+  const ctx = {
+    Number, Math,
+    entryPasses: (r) => r.dayFallPct >= 3 && r.spreadPct != null && r.spreadPct <= 0.30,
+  };
+  vm.createContext(ctx);
+  vm.runInContext('var rows = [];\n' + head + src.slice(i, j) + ';this.sort = (a) => { rows = a; ' +
+    src.slice(src.indexOf('rows.sort((a, b) =>', i), j) + ' return rows; };', ctx);
+
+  const r = (coin, o) => ({ coin, dayFallPct: 12, spreadPct: 0.1, pullbackPct: 0.5,
+    chg24Pct: -4, recovery: { hour: 78 }, ...o });
+  const out = ctx.sort([
+    r('CRASH1', { chg24Pct: -22, pullbackPct: 5, recovery: { hour: 89 } }),
+    r('CRASH2', { chg24Pct: -14, pullbackPct: 3, recovery: { hour: 89 } }),
+    r('PUMP1', { chg24Pct: 44, pullbackPct: 8, recovery: { hour: 89 } }),
+    r('TAKE', { dayFallPct: 6.7, pullbackPct: 2.1, chg24Pct: -4.7, recovery: { hour: 87 } }),
+    r('MAYBE', { pullbackPct: 0.4, recovery: { hour: 78 } }),
+    r('OUT', { spreadPct: 0.9, pullbackPct: 9, recovery: { hour: 89 } }),
+  ]).map(x => x.coin);
+
+  ok(out[0] === 'TAKE', 'спокойная монета с взятым порогом отката идёт первой', out.join(' '));
+  ok(out.indexOf('MAYBE') < out.indexOf('CRASH1'), '«можно» выше «риска», хотя возврат у него ниже');
+  ok(out.indexOf('CRASH1') < out.indexOf('OUT'), 'а не прошедшие вход — в самом конце');
+  ok(out.indexOf('CRASH1') < out.indexOf('CRASH2'), 'внутри уровня порядок прежний — по возврату и откату');
+  ok(/tier\(b\) - tier\(a\) \|\|/.test(src), 'уровень — старший ключ сортировки');
+}
+
 console.log('\nКолонка «вход» уступила место ответу');
 {
   const d = read('public/index.html');
