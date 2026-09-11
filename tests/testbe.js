@@ -17,10 +17,27 @@ console.log('\nКлиент спрашивает состояние сразу �
 {
   const i = h.indexOf('function refreshAfterTrade');
   const body = h.slice(i, i + 900);
-  ok(/\/api\/check-fills/.test(body), 'после сделки просит проверить исполнения сейчас');
-  ok(/loadBeWatches\(\)/.test(body), 'и сразу забирает состояние сторожей');
-  ok(body.indexOf('/api/check-fills') < body.indexOf('loadBeWatches'),
+  ok(/beCatchUp\(\)/.test(body), 'после сделки состояние сторожей догоняется');
+
+  // ОДНОГО ЗАПРОСА МАЛО.
+  //
+  // Ордер только что отправлен, биржа ещё не пометила его исполненным — и
+  // первый же запрос возвращает «ничего не случилось». Сторож появляется
+  // секунд через тридцать, а кнопка до этого показывает «выключено»:
+  // выглядит так, будто оповещение не поставилось, и помогает только
+  // перезагрузка страницы.
+  const cu = h.slice(h.indexOf('const BE_CATCHUP_AT = ['), h.indexOf('async function loadBeWatches'));
+  ok(/\[1500, 6000, 15000, 35000, 70000\]/.test(cu), 'заходов несколько, с растущими промежутками');
+  ok(cu.indexOf('/api/check-fills') < cu.indexOf('loadBeWatches'),
     'сначала проверка, потом чтение — иначе прочитает старое');
+  ok(/if \(Object\.keys\(_beWatches\)\.length !== before\) return;/.test(cu),
+    'и прекращаются, как только сторож появился');
+  ok(/clearTimeout\(_beCatchUpTimer\)/.test(cu), 'две сделки подряд не плодят параллельные опросы');
+
+  // Обе вёрстки: однажды они разошлись, и на телефоне запроса не было вовсе
+  const m = fs.readFileSync('public/mobile/index.html', 'utf8');
+  ok(/beCatchUpM\(\)/.test(m), 'на телефоне то же самое');
+  ok(/\[1500, 6000, 15000, 35000, 70000\]/.test(m), 'и с теми же промежутками');
 }
 
 console.log('\nПерерисовка списка не возвращает старое состояние');

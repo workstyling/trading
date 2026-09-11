@@ -6706,6 +6706,29 @@
       loadBeWatches();
     }
 
+    // Догнать состояние сторожей после сделки.
+    //
+    // Биржа помечает ордер исполненным не мгновенно, поэтому один запрос
+    // сразу после покупки почти всегда попадает в пустоту. Ходим несколько
+    // раз и прекращаем, как только число сторожей изменилось.
+    const BE_CATCHUP_AT = [1500, 6000, 15000, 35000, 70000];
+    let _beCatchUpTimer = null;
+    function beCatchUp() {
+      if (_beCatchUpTimer) clearTimeout(_beCatchUpTimer);
+      const before = Object.keys(_beWatches).length;
+      let i = 0;
+      const step = async () => {
+        try { await fetch('/api/check-fills', { method: 'POST' }); } catch { }
+        try { await loadBeWatches(); } catch { }
+        if (Object.keys(_beWatches).length !== before) return;   // появился — дальше незачем
+        i++;
+        if (i < BE_CATCHUP_AT.length) {
+          _beCatchUpTimer = setTimeout(step, BE_CATCHUP_AT[i] - BE_CATCHUP_AT[i - 1]);
+        }
+      };
+      _beCatchUpTimer = setTimeout(step, BE_CATCHUP_AT[0]);
+    }
+
     async function loadBeWatches() {
       try {
         const r = await fetch('/api/be-watch');
@@ -7150,14 +7173,18 @@
     function refreshAfterTrade(orderId) {
       try { loadUsdBalance(); } catch { }
       try { loadVolume30d(true); } catch { }
-      // Сторож безубытка и избранное ставит сервер по факту исполнения, а его
-      // цикл ходит раз в полминуты. Рыночный ордер исполняется мгновенно, и
-      // всё это время кнопка показывала «выключено», хотя сторож уже стоял.
-      // Просим проверить исполнения сейчас и сразу забираем состояние.
-      (async () => {
-        try { await fetch('/api/check-fills', { method: 'POST' }); } catch { }
-        try { await loadBeWatches(); } catch { }
-      })();
+      // Сторож безубытка и избранное ставит сервер по факту исполнения, и
+      // спрашивать его об этом ОДИН раз мало.
+      //
+      // Ордер только что отправлен: биржа ещё не пометила его исполненным, и
+      // первый же запрос возвращает «ничего не случилось». Сторож появляется
+      // секунд через тридцать, когда сервер сам переспросит биржу, — а кнопка
+      // до этого показывала «выключено», и выглядело это так, будто оповещение
+      // не поставилось. Помогала только перезагрузка страницы.
+      //
+      // Поэтому переспрашиваем несколько раз, с растущими промежутками, и
+      // останавливаемся, как только сторож появился.
+      beCatchUp();
       let i = 0;
       const tick = async () => {
         try { await loadLatestOrders(true); } catch { }

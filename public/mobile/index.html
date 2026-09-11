@@ -2560,6 +2560,26 @@
       document.querySelectorAll('[id^="bewM_"]').forEach(el => _paintBeBtnM(el, el.id.slice(5)));
     }
 
+    // Догнать состояние сторожей после сделки: несколько заходов с растущими
+    // промежутками, до первого изменения.
+    const BE_CATCHUP_AT_M = [1500, 6000, 15000, 35000, 70000];
+    let _beCatchUpTimerM = null;
+    function beCatchUpM() {
+      if (_beCatchUpTimerM) clearTimeout(_beCatchUpTimerM);
+      const before = Object.keys(_beWatches).length;
+      let i = 0;
+      const step = async () => {
+        try { await api('/api/check-fills', { method: 'POST' }); } catch { }
+        try { await loadBeWatchesM(); } catch { }
+        if (Object.keys(_beWatches).length !== before) return;
+        i++;
+        if (i < BE_CATCHUP_AT_M.length) {
+          _beCatchUpTimerM = setTimeout(step, BE_CATCHUP_AT_M[i] - BE_CATCHUP_AT_M[i - 1]);
+        }
+      };
+      _beCatchUpTimerM = setTimeout(step, BE_CATCHUP_AT_M[0]);
+    }
+
     async function loadBeWatchesM() {
       try {
         const r = await api('/api/be-watch');
@@ -5597,14 +5617,13 @@
     function refreshAfterTradeM(orderId) {
       try { loadBalance(); } catch { }
       try { loadVol30dMobile(true); } catch { }
-      // Сторож безубытка и избранное ставит сервер по факту исполнения, а его
-      // цикл ходит раз в полминуты. Рыночный ордер исполняется мгновенно, и
-      // всё это время кнопка показывала «выключено», хотя сторож уже нужен.
-      // На десктопе это давно так; здесь запроса не было вовсе.
-      (async () => {
-        try { await api('/api/check-fills', { method: 'POST' }); } catch { }
-        try { await loadBeWatchesM(); } catch { }
-      })();
+      // Сторож безубытка и избранное ставит сервер по факту исполнения, и
+      // спрашивать его об этом ОДИН раз мало: ордер только что отправлен,
+      // биржа ещё не пометила его исполненным, и первый запрос возвращает
+      // «ничего не случилось». Сторож появляется секунд через тридцать, а
+      // кнопка до этого показывает «выключено» — выглядит так, будто
+      // оповещение не поставилось, и помогает только перезагрузка.
+      beCatchUpM();
       let i = 0;
       const tick = async () => {
         try { await loadOrders(true); updateMonitor(); } catch { }
