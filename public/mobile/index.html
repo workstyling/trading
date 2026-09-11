@@ -129,7 +129,9 @@
     }
     .amt-btn:active { background: var(--s3); }
     .amt-input {
-      flex: 1; padding: 10px; background: var(--s2); border: 1px solid var(--b1);
+      /* min-width:0 — та же ловушка, что у поиска: у input своя минимальная
+         ширина, и flex:1 её не уменьшает */
+      flex: 1; min-width: 0; padding: 10px; background: var(--s2); border: 1px solid var(--b1);
       border-radius: var(--r1); color: var(--t0); font-family: 'JetBrains Mono', monospace;
       font-size: 16px; text-align: center; outline: none;
     }
@@ -209,7 +211,7 @@
       border-top: 1px solid var(--b0);
     }
     .limit-input {
-      flex: 1; padding: 10px; background: var(--s2); border: 1px solid var(--b1);
+      flex: 1; min-width: 0; padding: 10px; background: var(--s2); border: 1px solid var(--b1);
       border-radius: var(--r1); color: var(--t0); font-family: 'JetBrains Mono', monospace;
       font-size: 14px; outline: none;
     }
@@ -239,14 +241,23 @@
     /* ── Orders Panel ── */
     .orders-filter {
       display: flex; gap: 6px; margin-bottom: 10px; align-items: center;
+      /* Строка не имеет права быть шире экрана: панель и так с отступами */
+      max-width: 100%; box-sizing: border-box;
     }
     .filter-btn {
       padding: 6px 14px; border-radius: 20px; border: 1px solid var(--b1);
       background: transparent; color: var(--t1); font-size: 12px; font-weight: 500; cursor: pointer;
+      /* Кнопки держат свой размер, сжимается поле поиска, а не подписи */
+      flex: 0 0 auto; white-space: nowrap;
     }
     .filter-btn.active { background: var(--red); border-color: var(--red); color: #fff; }
     .order-search {
-      flex: 1; padding: 8px 12px; background: var(--s2); border: 1px solid var(--b1);
+      /* min-width:0 обязателен. У input своя минимальная ширина — около
+         двадцати символов, — и flex:1 её НЕ уменьшает: по умолчанию у
+         элемента флекса min-width:auto. Три кнопки плюс такой input не
+         влезали в ширину экрана, и поле уезжало за край. */
+      flex: 1 1 0; min-width: 0; width: 0;
+      padding: 8px 12px; background: var(--s2); border: 1px solid var(--b1);
       border-radius: 20px; color: var(--t0); font-size: 12px; outline: none;
       font-family: 'JetBrains Mono', monospace;
     }
