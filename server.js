@@ -6055,6 +6055,10 @@ function entryPaperOpen(rows) {
       score: row.entryValue.pct, dayFall: row.dayFallPct, pullback: row.pullbackPct, rule: ENTRY_RULE,
       recHour: row.recovery ? row.recovery.hour : null,
       spreadPct: row.spreadPct,
+      // Ход за сутки нужен, чтобы разложить журнал по тому же ответу
+      // «брать / можно / риск», который видит человек на экране. Без него
+      // проверялось одно правило, а показывалось другое.
+      chg24: row.chg24Pct,
       control: control || undefined,
       // Пометка на контрольных: со второй версии они отбираются теми же
       // условиями свежести, что и основные. Прежние остаются в файле, но
@@ -6379,6 +6383,27 @@ app.get('/api/entry-paper', (req, res) => {
       { label: '40-69', ...(group(done.filter(t => t.score < 70)) || { n: 0 }) },
       { label: '70-100', ...(group(done.filter(t => t.score >= 70)) || { n: 0 }) },
     ],
+    // РАЗБИВКА ПО ТОМУ ОТВЕТУ, КОТОРЫЙ ВИДИТ ЧЕЛОВЕК.
+    //
+    // Панель зовёт брать при трёх условиях: порог входа, откат от 1.5% и ход
+    // за сутки в пределах ±10%. А журнал открывал сделку по одному первому —
+    // то есть проверял не то правило, которое рекомендует. Сравнение «правило
+    // против случайного выбора» отвечало на вопрос, которого никто не задавал.
+    //
+    // Сделки не переоткрываем и цифры не сбрасываем: раскладываем уже
+    // накопленное по уровням. Ход за сутки у старых сделок не сохранялся, и
+    // отделить «риск» у них нельзя — такие идут в «без хода за сутки», а не
+    // подмешиваются к спокойным.
+    byVerdict: (() => {
+      const swing = t => t.chg24 != null && Math.abs(t.chg24) >= 10;
+      const known = done.filter(t => t.chg24 != null);
+      return {
+        брать: group(known.filter(t => !swing(t) && (t.pullback || 0) >= 1.5)) || { n: 0 },
+        можно: group(known.filter(t => !swing(t) && (t.pullback || 0) < 1.5)) || { n: 0 },
+        риск: group(known.filter(swing)) || { n: 0 },
+        безХода: group(done.filter(t => t.chg24 == null)) || { n: 0 },
+      };
+    })(),
     byFall: [
       { label: '<3%', ...(group(done.filter(t => (t.dayFall || 0) < 3)) || { n: 0 }) },
       { label: '3-6%', ...(group(done.filter(t => (t.dayFall || 0) >= 3 && (t.dayFall || 0) < 6)) || { n: 0 }) },

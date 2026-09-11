@@ -159,6 +159,36 @@ const t = (at, m60, hit, control) => ({
     ok(r.controlBasis === 'сопоставимый', 'и это сказано', r.controlBasis);
   }
 
+  console.log('\nЖурнал разложен по тому ответу, который видит человек');
+  {
+    // Панель зовёт брать при ТРЁХ условиях: порог входа, откат от 1.5% и ход
+    // за сутки в пределах ±10%. Журнал открывал сделку по одному первому — то
+    // есть проверял не то правило, которое рекомендует.
+    const trades = [];
+    const mk = (over) => mark(t(1000 + trades.length, 0.5, true, false));
+    // «брать»: спокойный ход, глубокий откат
+    for (let i = 0; i < 5; i++) { const x = mk(); x.chg24 = -4; x.pullback = 2.0; trades.push(x); }
+    // «можно»: спокойный ход, мелкий откат
+    for (let i = 0; i < 4; i++) { const x = mk(); x.chg24 = -4; x.pullback = 0.5; trades.push(x); }
+    // «риск»: разгон за сутки — даже с глубоким откатом
+    for (let i = 0; i < 3; i++) { const x = mk(); x.chg24 = 44; x.pullback = 3.0; trades.push(x); }
+    // старые сделки без хода за сутки: их нельзя подмешивать к спокойным
+    for (let i = 0; i < 6; i++) { const x = mk(); delete x.chg24; x.pullback = 2.0; trades.push(x); }
+    for (let i = 0; i < 12; i++) trades.push(mark(t(9000 + i, 0, false, true)));
+    ctx.entryPaper.trades = trades;
+    const r = await report(ctx);
+    const bv = r.byVerdict;
+    ok(!!bv, 'разбивка по уровням есть');
+    ok(bv['брать'].n === 5, '«брать» — только спокойные с откатом от 1.5%', String(bv['брать'].n));
+    ok(bv['можно'].n === 4, '«можно» — спокойные с мелким откатом', String(bv['можно'].n));
+    ok(bv['риск'].n === 3, '«риск» — по ходу за сутки, независимо от отката', String(bv['риск'].n));
+    ok(bv['безХода'].n === 6, 'старые сделки без хода за сутки — отдельно', String(bv['безХода'].n));
+    // Иначе разбивка врала бы: у старых сделок «риск» неотличим от спокойных
+    ok(bv['брать'].n + bv['можно'].n + bv['риск'].n + bv['безХода'].n === 18,
+      'и ничего не потеряно и не посчитано дважды');
+    ok(/chg24: row\.chg24Pct/.test(src), 'ход за сутки сохраняется в новых сделках');
+  }
+
   console.log('\nОбе вёрстки берут честную ошибку');
   for (const [name, file] of [['десктоп', 'public/index.html'], ['мобильная', 'public/mobile/index.html']]) {
     const h = read(file);
@@ -168,6 +198,7 @@ const t = (at, m60, hit, control) => ({
     ok(/рыночных моментов/.test(h), name + ': в подсказке видно, сколько было моментов');
     ok(/controlBasis/.test(h), name + ': и на чём построен контроль');
     ok(/m60NoHit/.test(h), name + ': и чем платят за долю дошедших');
+    ok(/byVerdict/.test(h), name + ': и разбивка по уровням таблицы видна');
   }
 
   fs.rmSync(dir, { recursive: true, force: true });

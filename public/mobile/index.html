@@ -6937,6 +6937,18 @@
                 (o.m60NoHit != null ? NL + 'У дошедших до цели час кончился на ' + o.m60Hit +
                   '%, у недошедших на ' + o.m60NoHit + '% — вот чем платят за долю дошедших.' : '') +
                 (pj.controlBasis ? NL + 'Контроль: ' + pj.controlBasis + '.' : '') +
+                // Панель зовёт брать при трёх условиях, а журнал открывал
+                // сделку по одному первому — проверялось не то правило,
+                // которое рекомендуется.
+                (() => {
+                  const bv = pj.byVerdict;
+                  if (!bv) return '';
+                  const part = (name, g) => !g || !g.n ? null
+                    : name + ' ' + g.n + ', через час ' + (g.m60 >= 0 ? '+' : '') + g.m60 + '%, дошли ' + g.hitHour + '%';
+                  const lines = [part('брать —', bv['брать']), part('можно —', bv['можно']),
+                    part('риск —', bv['риск']), part('без хода —', bv['безХода'])].filter(Boolean);
+                  return lines.length ? NL + 'По уровням таблицы:' + NL + lines.join(NL) : '';
+                })() +
                 (pf.length ? NL + 'обещано/вышло: ' + pf.map(x => x.label + ' ' + x.promised + String.fromCharCode(8594) + x.actual + '%').join(', ') : '') + '">' +
                 '<b style="color:var(--t1);">Проверка вперёд:</b> ' + o.n + ' сделок' +
                 (o.scans && o.scans < o.n ? ' в ' + o.scans + ' моментах' : '') +
