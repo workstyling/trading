@@ -140,12 +140,31 @@ async function candles(pair, fromMs, toMs) {
 }
 
 // Доли по монетам: среднее и ошибка среднего ПО МОНЕТАМ, не по точкам
+// Счётчики по клеткам, а не сами точки.
+//
+// Раньше по каждой монете хранился полный список точек — под сотню тысяч
+// объектов разом, поверх двадцати семи мегабайт разобранного кеша свечей.
+// Замер идёт НА БОЕВОЙ МАШИНЕ, рядом с торговым процессом, и на тесной по
+// памяти машине такой сосед способен утащить сервер за собой. От точки нужны
+// только две вещи: в какую клетку она попала и дошла ли до цели.
+function cellKey(lo, deep) { return lo + (deep ? 'd' : 's'); }
+function tally(counts, rows, bands) {
+  for (const r of rows) {
+    const band = bands.filter(b => r.fall >= b.lo).sort((a, b) => b.lo - a.lo)[0];
+    if (!band) continue;
+    const k = cellKey(band.lo, r.pull >= DEEP);
+    const c = counts[k] || (counts[k] = { n: 0, hit: 0 });
+    c.n++;
+    if (r.hit) c.hit++;
+  }
+}
 function cellStats(perCoin, lo, hi, deep) {
   const parts = [];
+  const k = cellKey(lo, deep);
   for (const coin in perCoin) {
-    const g = perCoin[coin].filter(r => r.fall >= lo && r.fall < hi && (r.pull >= DEEP) === deep);
-    if (g.length < MIN_PER_COIN) continue;
-    parts.push({ coin, p: g.filter(r => r.hit).length / g.length * 100, n: g.length });
+    const g = perCoin[coin][k];
+    if (!g || g.n < MIN_PER_COIN) continue;
+    parts.push({ coin, p: g.hit / g.n * 100, n: g.n });
   }
   if (parts.length < MIN_COINS) return { thin: true, coins: parts.length };
   const m = parts.reduce((s, x) => s + x.p, 0) / parts.length;
@@ -222,6 +241,7 @@ function cellStats(perCoin, lo, hi, deep) {
 
   // ── замер, только по корзине ─────────────────────────────────────────────
   const perCoin = {};
+  let totalPts = 0;
   for (const { coin } of basket) {
     const cs = cache[coin];
     if (!cs || cs.length < DAY + WINDOW + 300) continue;
@@ -247,15 +267,19 @@ function cellStats(perCoin, lo, hi, deep) {
       }
       rows.push({ fall: fallPct(hiDay, px), pull: fallPct(hi30, px), hit });
     }
-    perCoin[coin] = rows;
+    // Сворачиваем точки монеты в счётчики и отпускаем и точки, и её свечи:
+    // дальше ни то ни другое не нужно, а память освобождается сразу.
+    const counts = {};
+    tally(counts, rows, S.grid);
+    perCoin[coin] = counts;
+    totalPts += rows.length;
+    delete cache[coin];
   }
 
   const bandHi = (lo) => {
     const next = S.grid.filter(g => g.lo > lo).map(g => g.lo).sort((a, b) => a - b)[0];
     return next == null ? Infinity : next;
   };
-
-  const totalPts = Object.values(perCoin).reduce((s, r) => s + r.length, 0);
   console.log('\nкорзина ' + Object.keys(perCoin).length + ' монет (как у панели: топ ' + S.maxCoins +
     ' по объёму от $' + (S.minVol / 1e6) + 'М), точек ' + totalPts);
   console.log('зашито ' + (S.at || '?') + (S.n ? ' на ' + S.n.toLocaleString('ru-RU') + ' точках' : '') +
