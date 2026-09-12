@@ -189,6 +189,49 @@ const t = (at, m60, hit, control) => ({
     ok(/chg24: row\.chg24Pct/.test(src), 'ход за сутки сохраняется в новых сделках');
   }
 
+  console.log('\nРешение записано до того, как пришли числа');
+  {
+    // Журнал ведётся ради одного: решить, каким быть правилу. Если условие
+    // решения придумывать ПОСЛЕ того, как данные посмотрели, оно подгонится
+    // под них. Так уже было с баллом ВХОД.
+    const mkTake = (m60, at) => { const x = mark(t(at, m60, m60 > 0, false)); x.chg24 = -4; x.pullback = 2.0; return x; };
+
+    // Мало сделок — ждём, что бы числа ни показывали
+    let trades = [];
+    for (let i = 0; i < 10; i++) trades.push(mkTake(5, 1000 + i));
+    for (let i = 0; i < 40; i++) trades.push(mark(t(9000 + i, 0, false, true)));
+    ctx.entryPaper.trades = trades;
+    let r = await report(ctx);
+    ok(r.decision.state === 'ждём', 'пока сделок мало — ждём даже при огромном плюсе', r.decision.why);
+    ok(r.decision.needN === 40 && r.decision.giveUpN === 120, 'пороги названы числами',
+      r.decision.needN + '/' + r.decision.giveUpN);
+
+    // Набралось, и «брать» уверенно лучше контроля
+    trades = [];
+    for (let i = 0; i < 45; i++) trades.push(mkTake(2 + (i % 3) * 0.1, 1000 + i * 7));
+    for (let i = 0; i < 45; i++) trades.push(mark(t(9000 + i * 7, -1 + (i % 3) * 0.1, false, true)));
+    ctx.entryPaper.trades = trades;
+    r = await report(ctx);
+    ok(r.decision.state === 'сузить правило', 'уверенный плюс → сузить правило', r.decision.state + ': ' + r.decision.why);
+
+    // Набралось, и «брать» уверенно ХУЖЕ
+    trades = [];
+    for (let i = 0; i < 45; i++) trades.push(mkTake(-3 + (i % 3) * 0.1, 1000 + i * 7));
+    for (let i = 0; i < 45; i++) trades.push(mark(t(9000 + i * 7, 1 + (i % 3) * 0.1, true, true)));
+    ctx.entryPaper.trades = trades;
+    r = await report(ctx);
+    ok(r.decision.state === 'убрать порог отката', 'уверенный минус → порог вредит', r.decision.state);
+
+    // Набралось много, а разницы нет — порог не подтвердился
+    trades = [];
+    for (let i = 0; i < 130; i++) trades.push(mkTake((i % 5) * 0.02 - 0.04, 1000 + i * 7));
+    for (let i = 0; i < 130; i++) trades.push(mark(t(9000 + i * 7, (i % 5) * 0.02 - 0.04, false, true)));
+    ctx.entryPaper.trades = trades;
+    r = await report(ctx);
+    ok(r.decision.state === 'порог не подтвердился',
+      'сто двадцать сделок без разницы → порог уходит, как ушёл балл ВХОД', r.decision.state + ': ' + r.decision.why);
+  }
+
   console.log('\nОбе вёрстки берут честную ошибку');
   for (const [name, file] of [['десктоп', 'public/index.html'], ['мобильная', 'public/mobile/index.html']]) {
     const h = read(file);
@@ -199,6 +242,7 @@ const t = (at, m60, hit, control) => ({
     ok(/controlBasis/.test(h), name + ': и на чём построен контроль');
     ok(/m60NoHit/.test(h), name + ': и чем платят за долю дошедших');
     ok(/byVerdict/.test(h), name + ': и разбивка по уровням таблицы видна');
+    ok(/pj.decision|dec = pj.decision/.test(h), name + ': и записанное заранее решение тоже');
   }
 
   fs.rmSync(dir, { recursive: true, force: true });
