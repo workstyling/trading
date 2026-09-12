@@ -8131,6 +8131,7 @@
             <b>${coin}</b> на <b>$${quoteSize.toFixed(2)}</b> — это <b>РЕАЛЬНЫЙ</b> ордер.<br><br>
             <div id="mbLive" style="font-variant-numeric:tabular-nums;">Считаю по стакану…</div>
             <div id="mbAdvice" style="margin-top:9px;padding:7px 9px;border-radius:6px;background:rgba(191,90,242,0.07);border:1px solid rgba(191,90,242,0.22);font-size:12px;line-height:1.45;min-height:58px;"></div>
+            ${bookWarning(coin, quoteSize)}
             <div style="color:var(--t2);font-size:11px;margin-top:8px;">
               Цифры обновляются каждую секунду. Исполнится мгновенно, отменить нельзя.
             </div>
@@ -15637,6 +15638,10 @@ Requirements:
             ' style="cursor:pointer;' + v.bg + '">' +
             '<td style="padding:4px 6px;"><span style="color:var(--blue);font-weight:700;font-size:11px;">' + x.coin +
             '</span>' + swingMark(x) +
+            // Доля монеты в портфеле рисуется отдельным живым местом: кошелёк
+            // обновляется своим циклом, и перерисовывать ради него строку
+            // целиком незачем.
+            '<span data-bookshare="' + x.coin + '" data-live="1"></span>' +
             '<br><span style="color:var(--t2);font-size:9px;">$' + price(x.price) + '</span></td>' +
             num(rec ? '↩ ' + rec.hour + '%' : '—', recCol, true) +
             // Откат сразу за возвратом: это два признака одной оценки, и
@@ -15661,6 +15666,9 @@ Requirements:
             '<div id="entryPaper" style="margin-top:6px;padding-top:5px;border-top:1px solid var(--b1);font-size:10px;color:var(--t2);"></div>'
             : '<table style="width:100%;border-collapse:collapse;"><thead>' + head2 + '</thead><tbody>' + rows.slice(0, 3).map(cell).join('') + '</tbody></table>' +
               '<div style="color:var(--t2);font-size:10px;margin-top:5px;">Порог не взял никто — показаны ближайшие.</div>');
+
+        // Доли портфеля рисуются после разметки: кошелёк живёт своим циклом
+        try { paintBookShares(); } catch { }
 
         // Форвардный журнал: обещанное панелью против случившегося. Пока
         // сделок мало, показываем счётчик — чтобы было видно, что проверка
@@ -15954,6 +15962,82 @@ Requirements:
     document.getElementById('trBody')?.addEventListener('mouseleave', () => { trPaused = false; });
 
     // ── Holdings ──────────────────────────────────────
+    // ЧТО УЖЕ ЛЕЖИТ В КОШЕЛЬКЕ.
+    //
+    // Панель отбора не знала о позициях вовсе: RAY стоял с пометкой «брать»,
+    // когда его уже было 36% портфеля. Совет докупить то, чего и так слишком
+    // много, — это не подсказка, а ловушка, и никакого предсказания цены,
+    // чтобы её убрать, не требуется.
+    //
+    // Пороги: доля одной монеты и запас свободных денег. Оба взяты из
+    // собственной истории — медианная позиция была около 15% портфеля, — и
+    // оба меняются здесь одной строкой.
+    const BOOK_MAX_COIN_PCT = 20;    // доля одной монеты, при которой предупреждаем
+    const BOOK_MIN_CASH_PCT = 15;    // сколько свободных держать от портфеля
+    let _book = { total: 0, cash: 0, byCoin: {} };
+    function setBookFromHoldings(holdings) {
+      const b = { total: 0, cash: 0, byCoin: {} };
+      for (const h of holdings || []) {
+        const v = Number(h.usdValue) || 0;
+        if (h.currency === 'USD' || h.currency === 'USDC') { b.cash += v; continue; }
+        b.byCoin[h.currency] = (b.byCoin[h.currency] || 0) + v;
+        b.total += v;
+      }
+      _book = b;
+      // Строки списка отбора уже нарисованы — пусть подхватят доли
+      try { if (typeof loadEntryScan === 'function') paintBookShares(); } catch { }
+    }
+    // Доля монеты в портфеле, или null если её там нет
+    function bookShare(coin) {
+      if (!_book.total || !_book.byCoin[coin]) return null;
+      return Math.round(_book.byCoin[coin] / _book.total * 1000) / 10;
+    }
+    // ПРЕДУПРЕЖДЕНИЕ ПЕРЕД ПОКУПКОЙ: размер, а не выбор монеты.
+    //
+    // Выбор монеты преимущества не даёт — это измерено. А размер позиции даёт
+    // разброс исхода целиком, и он полностью в руках человека. Одна монета на
+    // треть портфеля решает месяц сама по себе, независимо от того, что
+    // показала таблица.
+    //
+    // Это предупреждение, а не запрет: чужими деньгами распоряжаться не мне.
+    function bookWarning(coin, addUsd) {
+      if (!_book.total) return '';
+      const have = _book.byCoin[coin] || 0;
+      const afterCoin = have + addUsd;
+      const afterTotal = _book.total + addUsd;
+      const pct = Math.round(afterCoin / afterTotal * 1000) / 10;
+      const cashLeft = _book.cash - addUsd;
+      const cashPct = Math.round(cashLeft / afterTotal * 1000) / 10;
+      const notes = [];
+      if (pct >= BOOK_MAX_COIN_PCT) {
+        notes.push('После покупки <b>' + coin + '</b> займёт <b>' + pct + '%</b> портфеля' +
+          (have > 0 ? ' (сейчас ' + Math.round(have / _book.total * 1000) / 10 + '%)' : '') +
+          '. Порог — ' + BOOK_MAX_COIN_PCT + '%: за ним одна монета решает исход месяца.');
+      }
+      if (cashPct < BOOK_MIN_CASH_PCT) {
+        notes.push('Свободных останется <b>$' + Math.max(cashLeft, 0).toFixed(0) + '</b> — ' +
+          cashPct.toFixed(1) + '% портфеля при запасе в ' + BOOK_MIN_CASH_PCT +
+          '%. С пустым кошельком нельзя ни докупить, ни воспользоваться сигналом.');
+      }
+      if (!notes.length) return '';
+      return '<div style="margin-top:9px;padding:7px 9px;border-radius:6px;' +
+        'background:rgba(245,132,58,0.10);border:1px solid rgba(245,132,58,0.40);' +
+        'font-size:12px;line-height:1.45;color:var(--t1);">' +
+        '<b style="color:#f5843a;">Размер позиции</b><br>' + notes.join('<br>') + '</div>';
+    }
+
+    function paintBookShares() {
+      document.querySelectorAll('[data-bookshare]').forEach(el => {
+        const s = bookShare(el.dataset.bookshare);
+        setLiveHtml(el, s == null ? '' :
+          '<span title="Эта монета уже в портфеле: ' + s + '% всех позиций' +
+          (s >= BOOK_MAX_COIN_PCT ? '. Это больше порога в ' + BOOK_MAX_COIN_PCT +
+            '%, при котором одна монета решает исход месяца.' : '.') +
+          ' Панель отбора про кошелёк не знает и позовёт докупить в любом случае." style="margin-left:5px;font-size:9px;font-weight:700;color:' +
+          (s >= BOOK_MAX_COIN_PCT ? '#f5843a' : 'var(--t2)') + ';">в портфеле ' + s + '%</span>');
+      });
+    }
+
     async function loadHoldings() {
       const list = document.getElementById('holdingsList');
       const totalEl = document.getElementById('holdingsTotal');
@@ -16001,6 +16085,10 @@ Requirements:
 
         // Server already filtered to > $1; trust it
         const holdings = data.holdings;
+        // Панель отбора про кошелёк ничего не знала и звала докупать монету,
+        // которой и так треть портфеля. Складываем доли сюда, чтобы строка
+        // могла это показать.
+        setBookFromHoldings(holdings);
 
         // USD/USDC в шапку
         const usdTotal = holdings

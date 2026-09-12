@@ -2796,6 +2796,7 @@
         <div style="font-size:13px;color:#cfd6e4;"><b>${coin}</b> на $${usd.toFixed(2)}, РЕАЛЬНЫЙ ордер.</div>
         <div id="mbLiveM" style="font-size:12.5px;color:#cfd6e4;margin-top:10px;font-variant-numeric:tabular-nums;">Считаю по стакану…</div>
         <div id="mbAdviceM" style="margin-top:8px;padding:6px 8px;border-radius:6px;background:rgba(191,90,242,0.07);border:1px solid rgba(191,90,242,0.22);font-size:11px;line-height:1.4;min-height:54px;"></div>
+        ${bookWarningM(coin, usd)}
         <div style="font-size:10.5px;color:#7c8698;margin-top:8px;">Обновляется каждую секунду. Отменить нельзя.</div>
         <div style="display:flex;gap:8px;margin-top:14px;">
           <button id="mbCancelM" style="flex:1;padding:10px;border-radius:8px;border:1px solid #333;background:transparent;color:#aab;">Отмена</button>
@@ -4529,11 +4530,71 @@
       toast(`${existing ? 'Updated' : 'Saved'} ${coin}: ${formatProfitM(nextProfit)}`);
     }
 
+    // ЧТО УЖЕ ЛЕЖИТ В КОШЕЛЬКЕ.
+    //
+    // Панель отбора не знала о позициях вовсе: RAY стоял с пометкой «брать»,
+    // когда его уже было 36% портфеля. Совет докупить то, чего и так слишком
+    // много, — ловушка, и никакого предсказания цены, чтобы её убрать, не
+    // требуется.
+    const BOOK_MAX_COIN_PCT_M = 20;
+    const BOOK_MIN_CASH_PCT_M = 15;
+    let _bookM = { total: 0, cash: 0, byCoin: {} };
+    function setBookFromHoldingsM(holdings) {
+      const b = { total: 0, cash: 0, byCoin: {} };
+      for (const h of holdings || []) {
+        const v = Number(h.usdValue) || 0;
+        if (h.currency === 'USD' || h.currency === 'USDC') { b.cash += v; continue; }
+        b.byCoin[h.currency] = (b.byCoin[h.currency] || 0) + v;
+        b.total += v;
+      }
+      _bookM = b;
+      try { paintBookSharesM(); } catch { }
+    }
+    function bookShareM(coin) {
+      if (!_bookM.total || !_bookM.byCoin[coin]) return null;
+      return Math.round(_bookM.byCoin[coin] / _bookM.total * 1000) / 10;
+    }
+    // Предупреждение перед покупкой: про размер, а не про выбор монеты.
+    // Выбор преимущества не даёт — это измерено. А размер даёт разброс исхода
+    // целиком и полностью в руках человека. Это предупреждение, не запрет.
+    function bookWarningM(coin, addUsd) {
+      if (!_bookM.total) return '';
+      const have = _bookM.byCoin[coin] || 0;
+      const afterTotal = _bookM.total + addUsd;
+      const pct = Math.round((have + addUsd) / afterTotal * 1000) / 10;
+      const cashLeft = _bookM.cash - addUsd;
+      const cashPct = Math.round(cashLeft / afterTotal * 1000) / 10;
+      const notes = [];
+      if (pct >= BOOK_MAX_COIN_PCT_M) {
+        notes.push('После покупки <b>' + coin + '</b> займёт <b>' + pct + '%</b> портфеля при пороге ' +
+          BOOK_MAX_COIN_PCT_M + '%.');
+      }
+      if (cashPct < BOOK_MIN_CASH_PCT_M) {
+        notes.push('Свободных останется <b>$' + Math.max(cashLeft, 0).toFixed(0) + '</b> — ' +
+          cashPct.toFixed(1) + '% при запасе ' + BOOK_MIN_CASH_PCT_M + '%.');
+      }
+      if (!notes.length) return '';
+      return '<div style="margin-top:8px;padding:6px 8px;border-radius:6px;' +
+        'background:rgba(245,132,58,0.10);border:1px solid rgba(245,132,58,0.40);' +
+        'font-size:11px;line-height:1.4;color:#cfd6e4;">' +
+        '<b style="color:#f5843a;">Размер позиции</b><br>' + notes.join('<br>') + '</div>';
+    }
+
+    function paintBookSharesM() {
+      document.querySelectorAll('[data-bookshare]').forEach(el => {
+        const s = bookShareM(el.dataset.bookshare);
+        el.innerHTML = s == null ? '' :
+          '<span style="margin-left:4px;font-size:9px;font-weight:700;color:' +
+          (s >= BOOK_MAX_COIN_PCT_M ? '#f5843a' : 'var(--t2)') + ';">' + s + '% в портфеле</span>';
+      });
+    }
+
     // ── Holdings ──
     async function loadHoldings() {
       const r = await api('/get-holdings');
       if (r.success) {
         const holdings = r.holdings || [];
+        setBookFromHoldingsM(holdings);
         let total = 0;
         holdings.forEach(h => total += h.usdValue);
 
@@ -6865,6 +6926,7 @@
             '<span style="color:' + vd.color + ';font-weight:800;font-size:9px;">' + vd.label + '</span> ' +
             '<span style="color:var(--blue);font-weight:700;font-size:12px;">' + x.coin + '</span>' +
             swingMark(x) +
+            '<span data-bookshare="' + x.coin + '"></span>' +
             '<span style="color:var(--t2);font-size:9px;margin-left:5px;">$' + price(x.price) + '</span>' +
             '<br><span style="color:var(--t2);font-size:9px;white-space:nowrap;">' + sub + '</span></td>' +
             // Возврат и откат стоят рядом: это два признака одной оценки, и
@@ -6880,6 +6942,9 @@
             '<div id="entryPaperM" style="margin-top:6px;padding-top:5px;border-top:1px solid var(--b1);font-size:10px;color:var(--t2);"></div>'
             : '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;"><table style="width:100%;border-collapse:collapse;table-layout:fixed;"><thead>' + head2 + '</thead><tbody>' + rows.slice(0, 3).map(cell).join('') + '</tbody></table></div>' +
               '<div style="color:var(--t2);font-size:10px;margin-top:5px;">Порог не взял никто — показаны ближайшие.</div>');
+
+        // Доли портфеля: кошелёк живёт своим циклом, дорисовываем после разметки
+        try { paintBookSharesM(); } catch { }
 
         // Форвардный журнал: обещанное панелью против случившегося. Пока
         // сделок мало, показываем счётчик — чтобы было видно, что проверка
