@@ -36,11 +36,11 @@ console.log('\n2. Сторож покрытия суток отдаёт отка
 
 console.log('\n3. Учёт времени в журнале');
 {
-  const at = src.match(/const at = \(min\) => \{[\s\S]*?\n      \};/)[0];
-  // Метка свечи — её начало; закрытие приходится на минуту позже.
-  ok(/const want = t\.at \+ \(min - 1\) \* 60_000;/.test(at),
-    'отметка берёт свечу, которая на нужной минуте ЗАКРЫВАЕТСЯ');
-  ok(/if \(mins \+ 1 > 60\) break;/.test(src), 'часовая отсечка по концу свечи');
+  const { candleOutcome } = require('../src/recovery/journal');
+  const raw = Array.from({ length: 65 }, (_, i) => [i * 60, 99, i >= 60 ? 110 : 100, 100, i >= 60 ? 110 : 100, 1]);
+  const outcome = candleOutcome({ at: 0, entry: 100 }, raw);
+  ok(outcome.m60 === 0, 'отметка не берёт закрытие после нужного часа');
+  ok(outcome.hit60 === null, 'часовая отсечка по концу свечи');
   ok(/t\.hit3d = t\.hit60 != null/.test(src),
     'трёхдневный не теряет возврат, подтверждённый за час');
 }
@@ -70,13 +70,14 @@ console.log('\n5. Telegram описывает действующие парам�
 console.log('\n6. Интерфейс не рисует отсутствие как плюс');
 for (const path of ['public/index.html', 'public/mobile/index.html']) {
   const h = fs.readFileSync(path, 'utf8');
-  const num = h.match(/const num = v => v == null \? '—' : \(v >= 0 \? '\+' : ''\) \+ v \+ '%';/);
-  ok(!!num, path.replace('public/', '') + ': пустое среднее рисуется прочерком');
-  ok(/const col = v => v == null \? 'var\(--t2\)'/.test(h),
+  const render = require('../public/js/recovery-journal').renderEntryJournal;
+  const empty = render({ comparison: { n: 10, controlN: 10, hours: 10, mainMean: null, controlMean: null } });
+  ok(empty.includes('—') && !empty.includes('null%'), path.replace('public/', '') + ': пустое среднее рисуется прочерком');
+  ok(h.includes('renderEntryJournal(pj)') && !empty.includes('var(--green)'),
     path.replace('public/', '') + ': и не красится зелёным');
   ok(!/но убыток сокращает\./.test(h),
     path.replace('public/', '') + ': подсказка не утверждает пользу порога как доказанную');
-  ok(/подтверждения пока нет/.test(h),
+  ok(/качество отбора проверяется/.test(h),
     path.replace('public/', '') + ': а говорит, что проверка идёт');
 }
 

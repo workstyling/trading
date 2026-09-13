@@ -1515,6 +1515,7 @@
       white-space: nowrap;
     }
   </style>
+  <script src="/js/recovery-journal.js"></script>
 </head>
 <body>
   <!-- Header -->
@@ -6749,9 +6750,9 @@
     }
     function entryPassesUi(x, g) {
       if (!x || x.dayFallPct == null || x.dayFallPct === '') return false;
-      if (Number(x.dayFallPct) < g.fall) return false;
+      if (!Number.isFinite(Number(x.dayFallPct)) || Number(x.dayFallPct) < g.fall) return false;
       if (x.spreadPct == null || x.spreadPct === '') return false;   // нет данных — не разрешение
-      return Number(x.spreadPct) <= g.spread;
+      return Number.isFinite(Number(x.spreadPct)) && Number(x.spreadPct) >= 0 && Number(x.spreadPct) <= g.spread;
     }
 
     async function loadEntryScanM() {
@@ -6767,7 +6768,7 @@
         const gate = ENTRY_MIN_M(j);
         const good = rows.filter(x => entryPassesUi(x, gate));
         const head = '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:6px;">' +
-          '<span style="color:var(--t1);font-weight:700;font-size:12px;" title="' + 'Порядок — по вероятности возврата. Она сложена из ДВУХ признаков, и оба проверены разделением по времени: глубина падения за сутки и ОТКАТ от получасового максимума. Внутри любой глубины откат от 1.5% добавляет 11-18 пунктов — столбец «откат» помечен зелёным там, где порог взят.' + String.fromCharCode(10) + 'Балл ВХОД возврат НЕ предсказывает: на 45 тысячах точек он ровный от 1 до 100 (70.8-72.4%), а вперёд дал 66% против 70% у случайного отбора. Смотреть на него при выборе не нужно ни в большую, ни в меньшую сторону; польза у него другая — при высоком балле мягче просадка по пути (-0.80% против -1.10% на глубоких падениях).' + String.fromCharCode(10) + 'Список ранжирует откаты, а не обещает прибыль.' + String.fromCharCode(10) + 'Возврат — доля случаев, когда цена возвращалась к входу за час, по глубине падения от суточного максимума (14 844 замера по монетам из этого же списка): ниже 1% — 56%, глубже 10% — 77%.' + String.fromCharCode(10) + 'ВХОД прибыльной сделку не делает: обе группы журнала в минусе. Сокращает ли он убыток — проверяется вперёд прямо сейчас, и подтверждения пока нет. Что вышло на сегодня, говорит строка под таблицей: если там написано «в пределах погрешности», значит порог себя ещё не доказал.' + String.fromCharCode(10) + 'Замер ' + (j.recoveryMeasuredAt || '—') + ' на растущем рынке; на затяжном падении доли надо перемерять.' + '">Рейтинг отката</span>' +
+          '<span style="color:var(--t1);font-weight:700;font-size:12px;" title="Историческая частота касания цели +0.30% за час по глубине падения и отката. Это не вероятность чистой прибыли. Уровни «брать / можно / риск» описывают условия сигнала; качество отбора проверяется в журнале ниже. Замер ' + (j.recoveryMeasuredAt || '—') + ', наблюдений ' + (j.recoverySample || '—') + '.">Рейтинг отката</span>' +
           '<span style="color:var(--t2);font-size:10px;">' + (j.total || 0) + ' монет · падение от ' + gate.fall + '%' +
           // Молчаливая потеря хуже пустого места: монета исчезала из
           // списка, и отличить «условия перестали выполняться» от «биржа не
@@ -6781,7 +6782,7 @@
           (j.staleSince ? '<span style="color:#ff6b6b;font-weight:700;"> · биржа не ответила, список устарел</span>' : '') +
           '</span></div>';
         if (!rows.length) {
-          box.innerHTML = head + '<div style="color:var(--t2);font-size:11px;">Первый скан после запуска…</div>';
+          box.innerHTML = head + renderRecoveryStatus(j.recheck) + '<div style="color:var(--t2);font-size:11px;">Первый скан после запуска…</div>';
           return;
         }
         // Общее направление рынка — строка над таблицей.
@@ -6876,6 +6877,10 @@
         // от 1.5% и вовсе 85% против 87%.
         const verdict = (x) => {
           const pass = entryPassesUi(x, gate);
+          if (x.chg24Pct == null || x.pullbackPct == null || !Number.isFinite(Number(x.chg24Pct)) ||
+              !Number.isFinite(Number(x.pullbackPct))) {
+            return { tier: 0, label: 'данные', color: 'var(--t2)', bg: '' };
+          }
           const sw = x.chg24Pct != null && Math.abs(x.chg24Pct) >= 10;
           const deep = x.pullbackPct != null && x.pullbackPct >= 1.5;
           if (!pass) return { tier: 0, label: '—', color: 'var(--t2)', bg: '' };
@@ -6906,20 +6911,20 @@
           ].filter(Boolean).join(' · ');
           return '<tr onclick="selectCoinForTradeM(\'' + safe + '\')" title="' +
             'Выбрать ' + safe + ' для покупки' +
-            (rec ? String.fromCharCode(10) + 'на такой глубине и откате цена возвращалась к входу за час в ' + rec.hour +
-              '% случаев, зависала в ' + rec.stuck + '% (58 107 замеров)' : '') +
+            (rec ? String.fromCharCode(10) + 'историческое касание цели +0.30% за час: ' + rec.hour +
+              '%; замер ' + (j.recoveryMeasuredAt || '—') + ', наблюдений ' + (j.recoverySample || '—') + ', до издержек' : '') +
             (x.spreadPct != null ? String.fromCharCode(10) + 'спред ' + x.spreadPct + '%' : '') +
             (x.dayFallPct == null && x.dayCoverH != null
               ? String.fromCharCode(10) + 'за сутки не считано: истории всего ' + x.dayCoverH + ' ч' : '') +
             // Померено: висящие сутками дают 70-74% дошедших против 75% у
             // свежих. Разницы нет, и строка это теперь говорит, а не пугает.
             (x.inListMin > 90 ? String.fromCharCode(10) +
-              'висит долго — на исход почти не влияет: дошедших 70-74% против 75% у свежих' : '') +
+              'монета давно в списке; часовой журнал проверяет первое появление сигнала' : '') +
             swingTip(x) +
             String.fromCharCode(10) + vd.label.toUpperCase() + (vd.tier === 3
-              ? ': откат взял порог 1.5%, ход за сутки спокойный'
-              : vd.tier === 2 ? ': вход пройден, но откат мельче 1.5% — возврат 66-78% вместо 84-89%'
-                : vd.tier === 1 ? ': за сутки монета прошла больше ±10%, просадка ниже −3% в 20-24% случаев'
+              ? ': откат взял порог 1.5%, ход за сутки в пределах ±10%; преимущество проверяется в журнале'
+              : vd.tier === 2 ? ': вход пройден, но откат мельче 1.5%'
+                : vd.tier === 1 ? ': за сутки монета прошла больше ±10%, повышенная амплитуда движения'
                   : '') + '"' +
             ' style="cursor:pointer;' + vd.bg + '">' +
             '<td style="padding:6px 4px;">' +
@@ -6936,7 +6941,7 @@
               deep ? '#00e5a0' : 'var(--t2)', deep, 3) +
             num(x.dayFallPct == null ? '—' : '−' + x.dayFallPct + '%', 'var(--t2)') + '</tr>';
         };
-        box.innerHTML = head + mkLine +
+        box.innerHTML = head + renderRecoveryStatus(j.recheck) + mkLine +
           (good.length
             ? '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;"><table style="width:100%;border-collapse:collapse;table-layout:fixed;"><thead>' + head2 + '</thead><tbody>' + good.slice().sort((a, b) => verdict(b).tier - verdict(a).tier).slice(0, 8).map(cell).join('') + '</tbody></table></div>' +
             '<div id="entryPaperM" style="margin-top:6px;padding-top:5px;border-top:1px solid var(--b1);font-size:10px;color:var(--t2);"></div>'
@@ -6952,90 +6957,7 @@
         try {
           const pj = await (await fetch('' + BASE + '/api/entry-paper')).json();
           const el = document.getElementById('entryPaperM');
-          if (el && pj.success) {
-            const o = pj.overall;
-            if (!o || o.n < 20) {
-              const days = pj.startedAt ? Math.max(0, Math.round((Date.now() - pj.startedAt) / 86400000 * 10) / 10) : 0;
-              el.innerHTML = '<span style="color:var(--t2);">Проверка вперёд идёт: ' + (o ? o.n : 0) +
-                ' сделок посчитано, ' + pj.open + ' в работе' +
-                (pj.openControl ? ' + ' + pj.openControl + ' контрольных' : '') +
-                (days ? ', ' + days + ' сут' : '') +
-                '. Выводы появятся после двадцати.</span>';
-            } else {
-              const pf = (pj.promiseVsFact || []).filter(x => x.n >= 5);
-              const c = pj.control;
-              const col = v => v == null ? 'var(--t2)' : v >= 0 ? 'var(--green)' : '#ff6b6b';
-              // null >= 0 это true: без явной проверки отсутствие среднего
-              // рисовалось как зелёный «+null%».
-              const num = v => v == null ? '—' : (v >= 0 ? '+' : '') + v + '%';
-              // Вперёд ставится ДОХОДНОСТЬ, а не доля возвратов.
-              //
-              // Раньше на видном месте стояла доля дошедших до цели, а она у
-              // основной группы и контроля почти одинакова: 66% против 65%,
-              // разница ±4 п.п. — и не должна отличаться, возврат определяется
-              // глубиной падения, а не баллом. Отличается доходность: −0.093%
-              // против −0.367% при погрешности ±0.127. Показывать надо ту
-              // величину, где разница есть, иначе панель уверяет в обратном.
-              const diff = c && c.n >= 10 && o.m60 != null && c.m60 != null ? o.m60 - c.m60 : null;
-              // Ошибка берётся по СКАНАМ, а не по сделкам.
-              //
-              // Один проход открывает сразу пачку сделок, и целый час они
-              // плывут по одному и тому же рынку. Считать их отдельными
-              // наблюдениями значит завышать выборку в разы: полторы сотни
-              // сделок могут оказаться двумя десятками рыночных моментов. У
-              // контроля скан даёт одну сделку, и обе оценки совпадают.
-              const seOf = (g) => (g && g.m60seScan != null ? g.m60seScan : (g ? g.m60se : null));
-              const se = c && seOf(c) != null && seOf(o) != null
-                ? Math.sqrt(seOf(o) * seOf(o) + seOf(c) * seOf(c)) : null;
-              const solid = diff != null && se != null && Math.abs(diff) > 2 * se;
-              // Доля дошедших до цели — тоже с ошибкой: без неё «80% против
-              // 61%» читается как доказанное, хотя может быть тем же шумом.
-              const hitDiff = c && c.n >= 10 && o.hitHour != null && c.hitHour != null ? o.hitHour - c.hitHour : null;
-              const hitSe = c && o.hitHourSeScan != null && c.hitHourSeScan != null
-                ? Math.sqrt(o.hitHourSeScan * o.hitHourSeScan + c.hitHourSeScan * c.hitHourSeScan) : null;
-              const hitSolid = hitDiff != null && hitSe != null && Math.abs(hitDiff) > 2 * hitSe;
-              const NL = String.fromCharCode(10);
-              el.innerHTML = '<span title="' + 'Обе группы в минусе: порог делает сделку менее убыточной, а не прибыльной.' +
-                (o.scans ? NL + 'Ошибка считается по сканам, а не по сделкам: один проход открывает пачку, и час они плывут по одному рынку. Сделок ' + o.n + ', рыночных моментов ' + o.scans + '.' : '') +
-                // Доля дошедших сама по себе ничего не решает: цель +0.30%, и
-                // почти всё съедает круг комиссии. Решают оставшиеся проценты.
-                (o.m60NoHit != null ? NL + 'У дошедших до цели час кончился на ' + o.m60Hit +
-                  '%, у недошедших на ' + o.m60NoHit + '% — вот чем платят за долю дошедших.' : '') +
-                (pj.controlBasis ? NL + 'Контроль: ' + pj.controlBasis + '.' : '') +
-                // Панель зовёт брать при трёх условиях, а журнал открывал
-                // сделку по одному первому — проверялось не то правило,
-                // которое рекомендуется.
-                (() => {
-                  const bv = pj.byVerdict;
-                  if (!bv) return '';
-                  const part = (name, g) => !g || !g.n ? null
-                    : name + ' ' + g.n + ', через час ' + (g.m60 >= 0 ? '+' : '') + g.m60 + '%, дошли ' + g.hitHour + '%';
-                  const lines = [part('брать —', bv['брать']), part('можно —', bv['можно']),
-                    part('риск —', bv['риск']), part('без хода —', bv['безХода'])].filter(Boolean);
-                  return lines.length ? NL + 'По уровням таблицы:' + NL + lines.join(NL) : '';
-                })() +
-                (pf.length ? NL + 'обещано/вышло: ' + pf.map(x => x.label + ' ' + x.promised + String.fromCharCode(8594) + x.actual + '%').join(', ') : '') + '">' +
-                '<b style="color:var(--t1);">Проверка вперёд:</b> ' + o.n + ' сделок' +
-                (o.scans && o.scans < o.n ? ' в ' + o.scans + ' моментах' : '') +
-                (c && c.n ? ' и ' + c.n + ' контрольных' : '') + ' · ' +
-                'через час <b style="color:' + col(o.m60) + ';">' + num(o.m60) + '</b>' +
-                (c && c.n >= 10 ? ' против <b style="color:' + col(c.m60) + ';">' + num(c.m60) + '</b> у контроля' : '') +
-                (diff != null
-                  ? ' · разница <b>' + (diff >= 0 ? '+' : '') + Math.round(diff * 1000) / 1000 + '</b>' +
-                    (se != null ? ' ±' + Math.round(se * 1000) / 1000 : '') +
-                    (solid ? '' : ' <span style="color:var(--t2);">(в пределах погрешности)</span>')
-                  : '') +
-                ' · до цели дошли ' + o.hitHour + '%' +
-                (c && c.n >= 10 ? ' против ' + c.hitHour + '%' +
-                  (hitSe != null ? ' (±' + Math.round(hitSe * 10) / 10 +
-                    (hitSolid ? '' : ', в пределах погрешности') + ')' : '') : '') +
-                // Условие решения записано ДО того, как пришли числа, и
-                // считается машиной: иначе оно подгонится под данные.
-                (pj.decision ? ' · <span style="color:' +
-                  (pj.decision.state === 'ждём' ? 'var(--t2)' : '#f5c518') +
-                  ';">решение: ' + pj.decision.state + '</span>' : '') + '</span>';
-            }
-          }
+          if (el && pj.success) el.innerHTML = renderEntryJournal(pj);
         } catch { }
       } catch (e) {
         // Молчащий catch уже однажды скрыл панель, которая не работала вовсе.

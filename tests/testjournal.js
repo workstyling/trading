@@ -27,6 +27,7 @@ const routes = {};
 function load() {
   const ctx = {
     fs, path, JSON, Date, Math, Set, Map, Array, Number, console,
+    entryJournal: require('../src/recovery/journal'), AbortSignal,
     __dirname: dir, setInterval: () => 0, setTimeout: () => 0,
     DIP_CB: 'https://x', DIP_H: {},
     ENTRY_GATE_SPREAD: Number((src.match(/const ENTRY_GATE_SPREAD = ([\d.]+)/) || [])[1]),
@@ -51,7 +52,8 @@ const report = async (ctx) => {
 // Посчитанная сделка: скан (момент открытия), результат через час, дошло ли
 const t = (at, m60, hit, control) => ({
   id: 'x' + Math.random(), coin: 'C' + Math.random().toString(36).slice(2, 6), pair: 'X-USD',
-  at, entry: 100, score: 50, dayFall: 4, rule: null,
+  at: at * 3600000, entry: 100, score: 50, dayFall: 4, spreadPct: 0.1, rule: null,
+  hitKnown60: true, hourComplete: true, outcomeVersion: 4,
   done60: true, m5: 0, m15: 0, m60, hit60: hit ? 10 : null, mae60: -0.5,
   control: control || undefined, cv: control ? 2 : undefined,
 });
@@ -147,8 +149,8 @@ const t = (at, m60, hit, control) => ({
     for (let i = 0; i < 5; i++) trades.push(mark(t(4000 + i, 1, true, true)));
     ctx.entryPaper.trades = trades;
     let r = await report(ctx);
-    ok(r.control.n === 25, 'пока сопоставимых мало — берётся весь контроль', String(r.control.n));
-    ok(/включая отобранный прежним способом/.test(r.controlBasis), 'и об этом сказано прямо', r.controlBasis);
+    ok(r.control.n === 5, 'малую выборку не заменяем старым контролем', String(r.control.n));
+    ok(/версия 2/.test(r.controlBasis), 'способ отбора назван явно', r.controlBasis);
     ok(r.controlFreshN === 5, 'видно, сколько сопоставимого уже набрано', String(r.controlFreshN));
 
     // Набралось достаточно — переходим на сопоставимый
@@ -156,7 +158,7 @@ const t = (at, m60, hit, control) => ({
     ctx.entryPaper.trades = trades;
     r = await report(ctx);
     ok(r.control.n === 35, 'когда набралось — берётся только сопоставимый', String(r.control.n));
-    ok(r.controlBasis === 'сопоставимый', 'и это сказано', r.controlBasis);
+    ok(/общие часы/.test(r.controlBasis), 'период сравнения тоже ограничен', r.controlBasis);
   }
 
   console.log('\nЖурнал разложен по тому ответу, который видит человек');
@@ -209,36 +211,37 @@ const t = (at, m60, hit, control) => ({
     // Набралось, и «брать» уверенно лучше контроля
     trades = [];
     for (let i = 0; i < 45; i++) trades.push(mkTake(2 + (i % 3) * 0.1, 1000 + i * 7));
-    for (let i = 0; i < 45; i++) trades.push(mark(t(9000 + i * 7, -1 + (i % 3) * 0.1, false, true)));
+    for (let i = 0; i < 45; i++) trades.push(mark(t(1000 + i * 7, -1 + (i % 3) * 0.1, false, true)));
     ctx.entryPaper.trades = trades;
     r = await report(ctx);
-    ok(r.decision.state === 'сузить правило', 'уверенный плюс → сузить правило', r.decision.state + ': ' + r.decision.why);
+    ok(r.decision.state === 'лучше контроля', 'уверенный плюс относится ко всему правилу', r.decision.state + ': ' + r.decision.why);
 
     // Набралось, и «брать» уверенно ХУЖЕ
     trades = [];
     for (let i = 0; i < 45; i++) trades.push(mkTake(-3 + (i % 3) * 0.1, 1000 + i * 7));
-    for (let i = 0; i < 45; i++) trades.push(mark(t(9000 + i * 7, 1 + (i % 3) * 0.1, true, true)));
+    for (let i = 0; i < 45; i++) trades.push(mark(t(1000 + i * 7, 1 + (i % 3) * 0.1, true, true)));
     ctx.entryPaper.trades = trades;
     r = await report(ctx);
-    ok(r.decision.state === 'убрать порог отката', 'уверенный минус → порог вредит', r.decision.state);
+    ok(r.decision.state === 'хуже контроля', 'уверенный минус относится ко всему правилу', r.decision.state);
 
     // Набралось много, а разницы нет — порог не подтвердился
     trades = [];
     for (let i = 0; i < 130; i++) trades.push(mkTake((i % 5) * 0.02 - 0.04, 1000 + i * 7));
-    for (let i = 0; i < 130; i++) trades.push(mark(t(9000 + i * 7, (i % 5) * 0.02 - 0.04, false, true)));
+    for (let i = 0; i < 130; i++) trades.push(mark(t(1000 + i * 7, (i % 5) * 0.02 - 0.04, false, true)));
     ctx.entryPaper.trades = trades;
     r = await report(ctx);
-    ok(r.decision.state === 'порог не подтвердился',
+    ok(r.decision.state === 'преимущество не подтверждено',
       'сто двадцать сделок без разницы → порог уходит, как ушёл балл ВХОД', r.decision.state + ': ' + r.decision.why);
   }
 
   console.log('\nОбе вёрстки берут честную ошибку');
   for (const [name, file] of [['десктоп', 'public/index.html'], ['мобильная', 'public/mobile/index.html']]) {
-    const h = read(file);
-    ok(/g\.m60seScan != null \? g\.m60seScan/.test(h), name + ': ошибка разности — по сканам');
-    ok(/hitHourSeScan/.test(h), name + ': у доли дошедших тоже есть ошибка');
+    const page = read(file);
+    const h = read('public/js/recovery-journal.js');
+    ok(page.includes('renderEntryJournal(pj)'), name + ': использует общий расчёт отображения');
+    ok(/c\.se/.test(h), name + ': ошибка разности приходит с сервера');
     ok(/в пределах погрешности/.test(h), name + ': и незначимое названо незначимым');
-    ok(/рыночных моментов/.test(h), name + ': в подсказке видно, сколько было моментов');
+    ok(/общих ч/.test(h), name + ': видно, сколько общих часов');
     ok(/controlBasis/.test(h), name + ': и на чём построен контроль');
     ok(/m60NoHit/.test(h), name + ': и чем платят за долю дошедших');
     ok(/byVerdict/.test(h), name + ': и разбивка по уровням таблицы видна');

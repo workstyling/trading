@@ -1,39 +1,10 @@
-// Сверка зашитой сетки возврата с сегодняшним рынком.
-//
-// В server.js стоит таблица recoveryOdds() и дата замера. Это фотография:
-// рынок съедет, а числа останутся, и заметить это неоткуда — они не протухают
-// громко, они протухают молча, и панель продолжает обещать 89% там, где их
-// давно нет.
-//
-// ── ЧЕМ МЕРИТЬ НЕЛЬЗЯ ───────────────────────────────────────────────────────
-//
-// Первая версия считала стандартную ошибку доли по числу ТОЧЕК: 11 250 точек,
-// ±0.4 пункта. И на первом же ночном прогоне прислала ложную тревогу.
-//
-// Точки не независимы. Окна перекрываются, соседние отстоят на пятнадцать
-// минут внутри трёхсуточного окна, и все они принадлежат трём десяткам монет.
-// А монеты в одной и той же клетке ведут себя совершенно по-разному:
-//
-//   падение 3-6%, откат мельче 1.5%:  от 39% (BNB) до 84% (DRV)
-//   падение 0-1%:                     от 36% (BTC) до 87% (APR)
-//
-// Настоящая неопределённость — разброс МЕЖДУ монетами, и он вчетверо больше:
-// ±1.2 пункта вместо ±0.28. Поэтому доля считается по монетам: сначала своя
-// доля у каждой, потом среднее и ошибка среднего по ним. Так же меняется и
-// смысл числа: это «сколько у типичной монеты», а не «сколько у той, что дала
-// больше всего точек».
-//
-// ── КАКИЕ МОНЕТЫ БРАТЬ ──────────────────────────────────────────────────────
-//
-// Те же, что видит панель: самые ликвидные, тем же порогом объёма и тем же
-// числом. Прежняя версия мерила ВСЁ, что осталось в кеше, — и один прогон шёл
-// по 30 монетам, другой по 68. Разница между такими прогонами доходила до
-// двенадцати пунктов в клетке, и это была разница корзин, а не рынка.
-//
-// Запуск:  node scripts/recheck-recovery.js [дней]
-// Выход:   0 — сетка держится, 1 — разошлась или сверка не состоялась
+// Сверка исторической сетки на данных после даты исходного замера.
+// Часовой исход использует полные свечи и те же расстояния, что live.
+// Код 0: расхождений не обнаружено; 1: расхождение/ошибка; 2: неполная сверка.
+// Запуск: node scripts/recheck-recovery.js [дней] [--cache-only]
 const fs = require('fs');
 const path = require('path');
+const { sampleWindows } = require('../src/recovery/recheck');
 
 const CB = 'https://api.exchange.coinbase.com';
 const H = { headers: { 'User-Agent': 'trading-app/1.0' } };
@@ -46,9 +17,8 @@ const ROOT = path.join(__dirname, '..');
 // невалидной дате, и все шестьдесят монет «не докачались».
 const DAYS = Number(process.argv.slice(2).find(a => !a.startsWith('-')) || 25);
 if (!Number.isFinite(DAYS) || DAYS < 3) { console.log('ПЛОХО: дней должно быть число от 3'); process.exit(1); }
-const NEED = 0.30;                       // окупает круг комиссии маркет+лимитка
+const NEED = 0.30;                       // ценовая цель до издержек
 const DEEP = 1.5;                        // порог отката, при котором он начинает добавлять
-const WINDOW = 864, DAY = 288;           // в пятиминутных свечах: 3 суток и сутки
 // Сколько точек нужно у монеты, чтобы её доля пошла в счёт.
 //
 // Было сто — и главные клетки просто не проверялись: глубокий откат редок, и
@@ -65,7 +35,6 @@ const MIN_COINS = 12;                    // меньше — по клетке �
 // хотя панель такие монеты не показывает вовсе.
 const { STABLE } = require(path.join(__dirname, '..', 'src', 'scalp', 'scanner'));
 
-const fallPct = (high, price) => (high - price) / high * 100;
 
 // ── что зашито: читаем из кода, а не помним ─────────────────────────────────
 function shippedGrid() {
@@ -167,11 +136,13 @@ function cellStats(perCoin, lo, hi, deep) {
     parts.push({ coin, p: g.hit / g.n * 100, n: g.n });
   }
   if (parts.length < MIN_COINS) return { thin: true, coins: parts.length };
-  const m = parts.reduce((s, x) => s + x.p, 0) / parts.length;
-  const sd = Math.sqrt(parts.reduce((s, x) => s + (x.p - m) ** 2, 0) / (parts.length - 1));
+  const total = parts.reduce((s, x) => s + x.n, 0);
+  const m = parts.reduce((s, x) => s + x.p * x.n, 0) / total;
+  const se = Math.sqrt(parts.length / (parts.length - 1) *
+    parts.reduce((s, x) => s + ((x.p - m) * x.n / total) ** 2, 0));
   const sorted = [...parts].sort((a, b) => a.p - b.p);
   return {
-    pct: m, se: sd / Math.sqrt(parts.length), sd,
+    pct: m, se,
     coins: parts.length, n: parts.reduce((s, x) => s + x.n, 0),
     lowest: sorted[0], highest: sorted[sorted.length - 1],
   };
@@ -183,6 +154,7 @@ function cellStats(perCoin, lo, hi, deep) {
 
   // ── корзина: та же, что у панели ─────────────────────────────────────────
   const prods = await (await fetch(`${CB}/products`, H)).json();
+  if (!Array.isArray(prods)) throw new Error('биржа не вернула список продуктов');
   const usd = prods.filter(p => p.quote_currency === 'USD' && p.status === 'online' && !p.trading_disabled);
   // Объёмы одним запросом по всем парам. Раньше бралась первая сотня с
   // хвостиком из списка бирж в её произвольном порядке — это не «самые
@@ -204,18 +176,23 @@ function cellStats(perCoin, lo, hi, deep) {
 
   let cache = {};
   try { cache = JSON.parse(fs.readFileSync(CACHE, 'utf8')); } catch { }
-  const to = Date.now(), from = to - DAYS * 86400000;
-  // Вчерашние свечи отвечают на вчерашний вопрос, а весь смысл сверки в том,
-  // что рынок мог смениться.
-  const stale = (cs) => !cs || !cs.length || (to - cs[cs.length - 1].t * 1000) > 36 * 3600 * 1000;
+  const to = Math.floor(Date.now() / 300000) * 300000;
+  const trained = Date.parse(S.at);
+  if (!Number.isFinite(trained)) throw new Error('неизвестна дата исходного замера');
+  const from = Math.max(to - DAYS * 86400000, trained + 86400000);
+  const downloadFrom = from - 86400000;
+  const stale = cs => !cs || !cs.length || cs[0].t * 1000 > downloadFrom + 3600000 ||
+    to - (cs[cs.length - 1].t + 300) * 1000 > 15 * 60000;
   const fetchCoin = async (coin, pair, tag) => {
+    if (process.argv.includes('--cache-only')) return false;
     process.stdout.write('\r  качаю ' + coin + ' ' + tag + ' (темп ' + pace + ' мс)        ');
-    const got = await candles(pair, from, to);
-    // НЕ затирать хорошее плохим. Первая версия писала в кеш что угодно, и
-    // отказ биржи стирал месяц истории по монете: следующий прогон видел ноль
-    // свечей и молча выкидывал её из замера.
-    if (got.length > DAYS * 150) {
-      cache[coin] = got;
+    const old = (cache[coin] || []).filter(c => c.t * 1000 >= downloadFrom && c.t * 1000 < to);
+    const needsHistory = !old.length || old[0].t * 1000 > downloadFrom + 3600000;
+    const start = needsHistory ? downloadFrom : Math.max(downloadFrom, old[old.length - 1].t * 1000 - 300000);
+    const got = await candles(pair, start, to);
+    const merged = [...new Map([...old, ...got].map(c => [c.t, c])).values()].sort((a, b) => a.t - b.t);
+    if (got.length && merged.length >= 252 && !stale(merged)) {
+      cache[coin] = merged;
       try { fs.writeFileSync(CACHE, JSON.stringify(cache)); } catch { }
       return true;
     }
@@ -225,7 +202,7 @@ function cellStats(perCoin, lo, hi, deep) {
   let k = 0, failed = [];
   for (const { coin, pair } of basket) {
     k++;
-    if (!stale(cache[coin]) && cache[coin].length > DAYS * 250) continue;
+    if (!stale(cache[coin])) continue;
     if (!await fetchCoin(coin, pair, '(' + k + '/' + basket.length + ')')) failed.push({ coin, pair });
   }
   // Второй заход по недокачанным: к концу прогона темп уже подстроен, и то,
@@ -242,31 +219,14 @@ function cellStats(perCoin, lo, hi, deep) {
   // ── замер, только по корзине ─────────────────────────────────────────────
   const perCoin = {};
   let totalPts = 0;
+  let evaluatedFrom = Infinity, evaluatedTo = 0;
   for (const { coin } of basket) {
     const cs = cache[coin];
-    if (!cs || cs.length < DAY + WINDOW + 300) continue;
-    const rows = [];
-    for (let i = DAY; i < cs.length - WINDOW; i += 3) {
-      const px = cs[i].cl;
-      if (!(px > 0)) continue;
-      // Окна назад ПО ВРЕМЕНИ, а не по числу свечей: ряд неразрывен только
-      // пока идут сделки, и по индексам треть суточных окон уезжала за сутки.
-      const t0 = cs[i].t;
-      const w30 = cs.slice(Math.max(0, i - 40), i + 1).filter(c => t0 - c.t <= 30 * 60);
-      const wDay = cs.slice(Math.max(0, i - DAY * 3), i + 1).filter(c => t0 - c.t <= 24 * 3600);
-      if (w30.length < 2 || wDay.length < 30) continue;
-      const hi30 = Math.max(...w30.map(c => c.hi));
-      const hiDay = Math.max(...wDay.map(c => c.hi));
-      if (!(hi30 > 0) || !(hiDay > 0)) continue;
-      const tp = px * (1 + NEED / 100);
-      let hit = false;
-      for (let j = i + 1; j < cs.length; j++) {
-        const dt = (cs[j].t - t0) / 60;
-        if (dt > 60) break;
-        if (cs[j].hi >= tp) { hit = true; break; }
-      }
-      rows.push({ fall: fallPct(hiDay, px), pull: fallPct(hi30, px), hit });
-    }
+    if (stale(cs)) continue;
+    const rows = sampleWindows(cs, { from, to, need: NEED });
+    if (!rows.length) continue;
+    evaluatedFrom = Math.min(evaluatedFrom, rows[0].at);
+    evaluatedTo = Math.max(evaluatedTo, rows[rows.length - 1].at);
     // Сворачиваем точки монеты в счётчики и отпускаем и точки, и её свечи:
     // дальше ни то ни другое не нужно, а память освобождается сразу.
     const counts = {};
@@ -284,11 +244,12 @@ function cellStats(perCoin, lo, hi, deep) {
     ' по объёму от $' + (S.minVol / 1e6) + 'М), точек ' + totalPts);
   console.log('зашито ' + (S.at || '?') + (S.n ? ' на ' + S.n.toLocaleString('ru-RU') + ' точках' : '') +
     (Object.keys(S.se).length ? '' : ' — ошибка того замера неизвестна, сравниваю по своей'));
-  console.log('\nдоля и ошибка — ПО МОНЕТАМ: точки внутри монеты не независимы\n');
+  console.log('\nДоля по наблюдениям; ошибка с группировкой по монетам. Диагностическая оценка, без исторического спреда.\n');
   console.log('  падение        откат         зашито    сейчас         монет   разброс между монетами');
 
   const drift = [];
-  let thin = 0, measured = 0;
+  let thin = 0, thinShown = 0, measured = 0;
+  const cellReport = [];
   const fresh = {};
   for (const g of S.grid) {
     const hi = bandHi(g.lo);
@@ -300,6 +261,8 @@ function cellStats(perCoin, lo, hi, deep) {
       const m = cellStats(perCoin, g.lo, hi, key === 'deep');
       if (m.thin) {
         thin++;
+        if (g.lo >= S.gate) thinShown++;
+        cellReport.push({ lo: g.lo, deep: key === 'deep', thin: true, coins: m.coins });
         console.log('  ' + label.padEnd(14) + name.padEnd(14) + String(want).padStart(5) + '%    монет всего ' + m.coins + ' — мало');
         continue;
       }
@@ -312,10 +275,12 @@ function cellStats(perCoin, lo, hi, deep) {
       const shown = g.lo >= S.gate;
       if (shown) measured++;
       const diff = m.pct - want;
+      cellReport.push({ lo: g.lo, deep: key === 'deep', promised: want, actual: m.pct, se: m.se, coins: m.coins });
       // Ошибка РАЗНОСТИ: у зашитого числа она тоже есть. Если её не знаем,
       // берём сегодняшнюю — вдвое осторожнее, чем считать зашитое точным.
-      const seWas = S.se[cellKey] != null ? S.se[cellKey] : m.se;
-      const seDiff = Math.sqrt(m.se * m.se + seWas * seWas);
+      // Ошибка старого замера была посчитана для других весов. Её нельзя
+      // выдавать за ошибку исходной сетки; используем диагностический допуск.
+      const seDiff = Math.SQRT2 * m.se;
       // Две ошибки И три пункта: одной значимости мало, а три пункта — та
       // величина, ниже которой обещание панели не меняется на глаз.
       const off = shown && Math.abs(diff) > 2 * seDiff && Math.abs(diff) > 3;
@@ -334,20 +299,23 @@ function cellStats(perCoin, lo, hi, deep) {
     console.log('  ' + Object.entries(fresh).map(([k, v]) => "'" + k + "': " + v).join(', '));
   }
 
-  // Слепая сверка опаснее её отсутствия: она молчит и этим говорит «всё
-  // хорошо». Если мерить было нечего вообще — это сбой, а не спокойствие.
-  if (!measured) {
-    console.log('\nСВЕРКА НЕ СОСТОЯЛАСЬ: ни одной клетки с достаточными данными');
-    process.exit(1);
-  }
+  const incomplete = thinShown > 0 || measured < S.grid.filter(g => g.lo >= S.gate)
+    .reduce((n, g) => n + 1 + Number(g.deep != null), 0) || failed.length > 0;
+  const status = drift.length ? 'drift' : incomplete ? 'incomplete' : 'no-drift';
+  console.log('RECHECK_RESULT ' + JSON.stringify({
+    version: 2, status, from, to, referenceDate: S.at,
+    evaluatedFrom: Number.isFinite(evaluatedFrom) ? evaluatedFrom : null,
+    evaluatedTo: evaluatedTo || null, coins: Object.keys(perCoin).length, points: totalPts,
+    missingCoins: failed.map(x => x.coin), cells: cellReport,
+    basis: 'полные часовые окна после даты исходного замера; без исторического спреда',
+  }));
   if (drift.length) {
-    console.log('\nРАЗОШЛОСЬ в ' + drift.length + ' клетках — сетку пора перемерить и обновить дату:');
-    for (const d of drift) {
-      console.log('  ' + d.label + ' / откат ' + d.name + ': зашито ' + d.want +
-        '%, сейчас ' + d.got.toFixed(1) + '% (ошибка разности ±' + d.seDiff.toFixed(2) +
-        ', ' + d.coins + ' монет)');
-    }
-    process.exit(1);
+    console.log('\nРАЗОШЛОСЬ в ' + drift.length + ' клетках; нужна проверка сетки, а не автоматическая замена процентов');
+    process.exitCode = 1;
+  } else if (incomplete) {
+    console.log('\nСВЕРКА НЕПОЛНАЯ: не все клетки и монеты имеют достаточные свежие данные');
+    process.exitCode = 2;
+  } else {
+    console.log('\nРасхождений с сеткой не обнаружено в проверенном периоде. Это не доказательство прибыльности.');
   }
-  console.log('\nсетка держится: все клетки в пределах двух ошибок или трёх пунктов');
-})();
+})().catch(error => { console.error(error.message); process.exitCode = 1; });

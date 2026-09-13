@@ -50,9 +50,9 @@ for (const v of [null, undefined, '']) ok(recoveryOdds(v, 2) === null, 'паде
 
 console.log('\nСвязи в коде');
 ok(/recoveryOdds\(sig\.dayFallPct, sig\.pullbackPct\)/.test(src), 'скан передаёт откат');
-ok(/recoveryOdds\(t\.dayFall, t\.pullback\)/.test(src), 'журнал тоже');
+ok(/entryJournal\.forecastCells\(done, recoveryOdds\)/.test(src), 'журнал проверяет обе координаты сетки');
 ok(/pullback: row\.pullbackPct/.test(src), 'и сохраняет его в сделке');
-ok(/recoveryOdds\(lo, null\)/.test(src), 'обещание полосы берётся осторожным столбцом');
+ok(!/recoveryOdds\(lo, null\)/.test(src), 'глубокие откаты не сверяются с мелким столбцом');
 ok(/const RECOVERY_SAMPLE = 58107;/.test(src), 'размер замера обновлён');
 ok(/const RECOVERY_MEASURED_AT = '2026-09-09';/.test(src), 'дата тоже');
 

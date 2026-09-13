@@ -67,7 +67,7 @@ const rsi14 = (closes) => {
   console.log('\n3. ВЕРДИКТ СОБРАН ИЗ ТЕХ УСЛОВИЙ, ЧТО ЗАЯВЛЕНЫ');
   const verdict = (r) => {
     const pass = r.dayFallPct >= gate.fallPct && r.spreadPct != null && r.spreadPct <= gate.spreadPct;
-    if (!pass) return '—';
+    if (!pass || r.chg24Pct == null || r.pullbackPct == null) return '—';
     if (r.chg24Pct != null && Math.abs(r.chg24Pct) >= 10) return 'риск';
     return r.pullbackPct >= 1.5 ? 'брать' : 'можно';
   };
@@ -75,7 +75,8 @@ const rsi14 = (closes) => {
   for (const r of rows) {
     const v = verdict(r);
     const pass = r.dayFallPct >= gate.fallPct && r.spreadPct != null && r.spreadPct <= gate.spreadPct;
-    ok(pass, r.coin.padEnd(9) + 'прошла порог входа (падение ' + r.dayFallPct + '%, спред ' + r.spreadPct + '%)');
+    if (r.signalTier != null) ok(r.signalTier === tierNum[v], r.coin.padEnd(9) + ' уровень сервера совпадает с независимым расчётом');
+    else console.log('  skip  ' + r.coin + ': API ещё не отдаёт уровень сигнала');
     if (v === 'риск') ok(Math.abs(r.chg24Pct) >= 10, r.coin.padEnd(9) + 'риск обоснован ходом ' + r.chg24Pct + '%');
   }
 

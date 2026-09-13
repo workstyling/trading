@@ -11,7 +11,8 @@ let candles = [];
 
 function load() {
   const ctx = {
-    fs, path, JSON, Date, Math, Set, Array, Number, console,
+    fs, path, JSON, Date, Math, Set, Map, Array, Number, console, AbortSignal,
+    entryJournal: require('../src/recovery/journal'),
     __dirname: dir, setInterval: () => 0,
     // Короткие паузы внутри расчёта пропускаем, длинные (планировщик) глушим:
     // заглушка `() => 0` оставляла await висеть навсегда и тест молча обрывался.
@@ -81,14 +82,14 @@ process.on('unhandledRejection', e => { console.error('УПАЛО:', e); process
 
   // расчёт по свечам
   ctx.entryPaper.trades = [{
-    id: 'x', coin: 'AAA', pair: 'AAA-USD', at: Date.now() - 70 * 60000,
-    entry: 100, score: 80, dayFall: 7, recHour: 75, rule: ctx.ENTRY_RULE,
+    id: 'x', coin: 'AAA', pair: 'AAA-USD', at: Math.floor(Date.now() / 60000) * 60000 - 70 * 60000,
+    entry: 100, score: 80, dayFall: 7, pullback: 0.4, recHour: 75, recHourAtOpen: 75, rule: ctx.ENTRY_RULE,
   }];
   const t0 = ctx.entryPaper.trades[0].at;
   // [время, low, high, open, close, объём] — как отдаёт Coinbase
   candles = [];
-  for (let m = 0; m <= 65; m += 5) {
-    const px = 100 + (m === 20 ? 0.5 : m * 0.005);       // на 20-й минуте задело +0.5%
+  for (let m = 0; m <= 65; m++) {
+    const px = 100 + (m === 19 ? 0.5 : m * 0.005);       // свеча закрывается на 20-й минуте
     candles.push([Math.floor((t0 + m * 60000) / 1000), px - 0.4, px, px, px, 1]);
   }
   await ctx.entryPaperSettle();
@@ -98,20 +99,20 @@ process.on('unhandledRejection', e => { console.error('УПАЛО:', e); process
   ok(t.m5 != null && t.m15 != null && t.m60 != null, 'отметки 5/15/60 минут заполнены',
     [t.m5, t.m15, t.m60].join(' / '));
   ok(t.mae60 <= 0, 'просадка по пути записана', String(t.mae60));
-  // обещание пересчитано по действующей таблице, старое сохранено рядом
-  ok(t.recHour === REC7 && t.recHourAtOpen === 75,
-    'обещание приведено к действующей таблице, прежнее сохранено',
+  // Прогноз фиксируется до получения исхода, а не подменяется новой сеткой.
+  ok(t.recHour === 75 && t.recHourAtOpen === 75,
+    'обещание при открытии сохранено после измерения',
     t.recHour + ' (было ' + t.recHourAtOpen + ')');
 
   // попадание позже часа не должно считаться часовым: свечи качаются до 65-й
   // минуты, и цель, задетая на 63-й, засчитывалась как «дошло за час»
   ctx.entryPaper.trades = [{
-    id: 'y', coin: 'BBB', pair: 'BBB-USD', at: Date.now() - 70 * 60000,
-    entry: 100, score: 80, dayFall: 7, recHour: 75, rule: ctx.ENTRY_RULE,
+    id: 'y', coin: 'BBB', pair: 'BBB-USD', at: Math.floor(Date.now() / 60000) * 60000 - 70 * 60000,
+    entry: 100, score: 80, dayFall: 7, pullback: 0.4, recHour: 75, recHourAtOpen: 75, rule: ctx.ENTRY_RULE,
   }];
   const t1 = ctx.entryPaper.trades[0].at;
   candles = [];
-  for (let m = 0; m <= 65; m += 5) {
+  for (let m = 0; m <= 65; m++) {
     const px = m >= 63 ? 101 : 99.9;                 // цель задета только на 65-й
     candles.push([Math.floor((t1 + m * 60000) / 1000), px - 0.1, px, px, px, 1]);
   }
@@ -130,13 +131,13 @@ process.on('unhandledRejection', e => { console.error('УПАЛО:', e); process
 
   // расчёт по свечам (возврат к исходной сделке)
   ctx.entryPaper.trades = [{
-    id: 'x', coin: 'AAA', pair: 'AAA-USD', at: Date.now() - 70 * 60000,
-    entry: 100, score: 80, dayFall: 7, recHour: 75, rule: ctx.ENTRY_RULE,
+    id: 'x', coin: 'AAA', pair: 'AAA-USD', at: Math.floor(Date.now() / 60000) * 60000 - 70 * 60000,
+    entry: 100, score: 80, dayFall: 7, pullback: 0.4, recHour: 75, recHourAtOpen: 75, rule: ctx.ENTRY_RULE,
   }];
   const t2 = ctx.entryPaper.trades[0].at;
   candles = [];
-  for (let m = 0; m <= 65; m += 5) {
-    const px = 100 + (m === 20 ? 0.5 : m * 0.005);
+  for (let m = 0; m <= 65; m++) {
+    const px = 100 + (m === 19 ? 0.5 : m * 0.005);
     candles.push([Math.floor((t2 + m * 60000) / 1000), px - 0.4, px, px, px, 1]);
   }
   await ctx.entryPaperSettle();
@@ -148,11 +149,11 @@ process.on('unhandledRejection', e => { console.error('УПАЛО:', e); process
   ok('control' in out, 'контрольная группа есть в отчёте отдельной строкой');
   ok(out.trades[0].control === false, 'в строке видно, основная сделка или контрольная');
   const pf = out.promiseVsFact.find(x => x.label === '>10%' || x.label === '6-10%');
-  ok(out.promiseVsFact.some(x => x.promised === REC7), 'обещание панели сохранено рядом с фактом',
+  ok(out.promiseVsFact.some(x => x.promised === 75 && x.current === REC7), 'исходное обещание и текущая сетка различимы',
     JSON.stringify(out.promiseVsFact.filter(x => x.n)));
   ok(out.needPct === 0.3, 'порог окупаемости назван');
   ok(Array.isArray(out.trades) && out.trades.length === 1, 'сами сделки перечислены — иначе журнал нечем проверить');
-  ok(out.trades[0].coin === 'AAA' && out.trades[0].promised === REC7 && out.trades[0].state === 'посчитана',
+  ok(out.trades[0].coin === 'AAA' && out.trades[0].promised === 75 && out.trades[0].state === 'посчитана',
     'в строке видно монету, обещание и состояние', JSON.stringify(out.trades[0]));
 
   // сделки, посчитанные старым кодом, при перезапуске сбрасываются на пересчёт

@@ -2728,13 +2728,14 @@ setTimeout(checkFilledOrders, 20_000); // baseline вскоре после ст�
 // торгового цикла значит подвесить его на несколько минут.
 const RECHECK_STAMP = path.join(__dirname, 'recovery-check.json');
 const RECHECK_EVERY_H = 22;
+const RECOVERY_CHECK_VERSION = 2;
 function recheckStamp() {
   try { return JSON.parse(fs.readFileSync(RECHECK_STAMP, 'utf8')) || {}; } catch { return {}; }
 }
 function recoveryRecheck(force) {
   const st = recheckStamp();
   // Перезапусков за день бывает много (каждая выкатка), а замер тяжёлый
-  if (!force && Date.now() - (st.at || 0) < RECHECK_EVERY_H * 3600 * 1000) return;
+  if (!force && st.version === RECOVERY_CHECK_VERSION && Date.now() - (st.at || 0) < RECHECK_EVERY_H * 3600 * 1000) return;
   // Замер идёт минутами и умирает вместе с процессом при выкатке. Без отметки
   // о НАЧАЛЕ череда перезапусков запускала бы его снова и снова, и он не
   // доходил бы до конца ни разу.
@@ -2756,7 +2757,13 @@ function recoveryRecheck(force) {
   p.on('error', (e) => console.error('[recovery-check] не запустился:', e.message));
   p.on('close', async (code) => {
     const mins = Math.round((Date.now() - started) / 60000);
-    try { fs.writeFileSync(RECHECK_STAMP, JSON.stringify({ at: Date.now(), startedAt: started, code, mins })); } catch { }
+    let report = null;
+    try {
+      const line = out.split('\n').find(line => line.startsWith('RECHECK_RESULT '));
+      if (line) report = JSON.parse(line.slice('RECHECK_RESULT '.length));
+    } catch { }
+    try { fs.writeFileSync(RECHECK_STAMP, JSON.stringify({ at: Date.now(), startedAt: started, code, mins,
+      version: RECOVERY_CHECK_VERSION, report })); } catch { }
     const tail = out.trim().split('\n').slice(-16).join('\n');
     console.log('[recovery-check] код ' + code + ', ' + mins + ' мин\n' + tail);
     // Молчим, когда сетка держится: сообщение раз в сутки «всё как было»
@@ -2769,7 +2776,9 @@ function recoveryRecheck(force) {
     // не верить сообщениям.
     if (code !== 0) {
       const drifted = /РАЗОШЛОСЬ/.test(out);
-      await sendTelegram(drifted
+      await sendTelegram(code === 2
+        ? '⚠️ Сверка сетки неполная: не хватает свежих наблюдений во всех клетках.\n\n' + tail
+        : drifted
         ? '⚠️ Сетка возврата разошлась с рынком.\n' +
           'Панель обещает не то, что происходит. Числа ниже — зашито против измеренного.\n\n' + tail
         : '⚠️ Сверка сетки не доработала (код ' + code + ', ' + mins + ' мин).\n' +
@@ -5713,11 +5722,6 @@ const RECOVERY_SE = {
   '0s': 1.93, '1s': 1.37, '1d': 1.14, '3s': 1.34, '3d': 1.01,
   '6s': 1.29, '6d': 1.26, '10s': 1.63, '10d': 1.20,
 };
-// Независимая проверка тех же чисел на другой выборке. Сетка устояла во всех
-// клетках, которые панель показывает: 3-6% мельче — 66.5 против 66, от 1.5% —
-// 84.6 против 84, 6-10% — 73.0 и 87.3 против 73 и 87, глубже 10% — 77.7 и 91.9
-// против 78 и 89. Все расхождения в пределах ошибки разности.
-const RECOVERY_CONFIRMED_AT = '2026-09-10';
 function recoveryOdds(dayFallPct, pullbackPct) {
   // Number(null) === 0, а не NaN: без явной проверки отсутствие данных
   // проходило как «падение 0%» и превращалось в 56% возврата. Сторож
@@ -5792,7 +5796,7 @@ function entryPasses(r) {
   if (Number(fall) < ENTRY_GATE_FALL) return false;
   const sp = r.spreadPct;
   if (sp == null || sp === '' || !Number.isFinite(Number(sp))) return false;
-  return Number(sp) <= ENTRY_GATE_SPREAD;
+  return Number(sp) >= 0 && Number(sp) <= ENTRY_GATE_SPREAD;
 }
 
 async function runEntryScan() {
@@ -5882,7 +5886,8 @@ async function runEntryScan() {
     // (1.5%) наверх.
     const swing = r => r.chg24Pct != null && Math.abs(r.chg24Pct) >= 10;
     const deep = r => Number(r.pullbackPct) >= 1.5;
-    const tier = r => !entryPasses(r) ? 0 : swing(r) ? 1 : deep(r) ? 3 : 2;
+    const tier = r => !entryPasses(r) || r.chg24Pct == null || r.pullbackPct == null
+      ? 0 : swing(r) ? 1 : deep(r) ? 3 : 2;
     // При равной доле возврата добивка шла по баллу ВХОД — а он на 45 тысячах
     // точек оказался ровным от 1 до 100 и вперёд себя не подтвердил, то есть
     // наверх поднималось наугад. Добиваем откатом и глубиной: это те же
@@ -5893,6 +5898,7 @@ async function runEntryScan() {
       recHour(b) - recHour(a) ||
       pull(b) - pull(a) ||
       fall(b) - fall(a));
+    for (const row of rows) row.signalTier = tier(row);
 
     // Отметки серий: монета остаётся «в списке», пока держит порог; выпала
     // больше чем на полчаса — следующее попадание считается новым.
@@ -5988,6 +5994,7 @@ setTimeout(runEntryScan, 70_000);
 // Ордера не создаются. Повторные сигналы по той же монете игнорируются, пока
 // открыта предыдущая: TAO дал 51 сигнал за 35 часов, и считать их за 51
 // независимую сделку значило бы подменить одну позицию пятьюдесятью.
+const entryJournal = require('./src/recovery/journal');
 const ENTRY_PAPER_FILE = path.join(__dirname, 'entry-paper.json');
 const ENTRY_PAPER_NEED = 0.30;        // сколько нужно, чтобы окупить комиссию
 // Порог по спреду обязан совпадать с целью: если спред шире цели, сделка не
@@ -6054,6 +6061,7 @@ function entryPaperOpen(rows) {
       coin: row.coin, pair: row.pair, at: now, entry: row.price,
       score: row.entryValue.pct, dayFall: row.dayFallPct, pullback: row.pullbackPct, rule: ENTRY_RULE,
       recHour: row.recovery ? row.recovery.hour : null,
+      recHourAtOpen: row.recovery ? row.recovery.hour : null,
       spreadPct: row.spreadPct,
       // Ход за сутки нужен, чтобы разложить журнал по тому же ответу
       // «брать / можно / риск», который видит человек на экране. Без него
@@ -6090,6 +6098,7 @@ function entryPaperOpen(rows) {
   // затянувшееся движение. Сравнение выходило смещённым.
   const below = rows.filter(r => !entryPasses(r) &&
     r.price > 0 && !ENTRY_PAPER_SKIP.has(r.coin) &&
+    entryJournal.finite(r.dayFallPct) && entryJournal.finite(r.spreadPct) && r.spreadPct >= 0 &&
     !(r.inListMin != null && r.inListMin > 4) &&
     !openCtrl.has(r.coin) && !openMain.has(r.coin));
   if (below.length) {
@@ -6100,73 +6109,39 @@ function entryPaperOpen(rows) {
   if (added) { saveEntryPaper(); console.log('[entry-paper] открыто ' + added); }
 }
 
-// Считаем результат по свечам: точно и одним запросом на сделку.
+async function settleEntryHour(t) {
+  let raw = [];
+  try {
+    const start = new Date(t.at).toISOString();
+    const end = new Date(t.at + 65 * 60_000).toISOString();
+    const r = await fetch(`${DIP_CB}/products/${t.pair}/candles?granularity=60&start=${start}&end=${end}`,
+      { ...DIP_H, signal: AbortSignal.timeout(15000) });
+    if (r.ok) raw = await r.json();
+  } catch (e) { console.error('[entry-paper]', t.coin, e.message); }
+  t.triesHour4 = (t.triesHour4 || 0) + 1;
+  const result = entryJournal.candleOutcome(t, raw, ENTRY_PAPER_NEED);
+  // Отказ биржи и неполное окно повторяем; после трёх попыток сохраняем
+  // известную часть, а неизвестные исходы исключаются из знаменателя.
+  if (!result.hourComplete && t.triesHour4 < 3) return;
+  if (t.done60 && !t.hourBeforeAudit) {
+    t.hourBeforeAudit = { m5: t.m5, m15: t.m15, m60: t.m60, hit60: t.hit60, mae60: t.mae60 };
+  }
+  Object.assign(t, result, { done60: true, v2: true, v3: true });
+}
+
+let entryPaperSettling = false;
 async function entryPaperSettle() {
+  if (entryPaperSettling) return;
+  entryPaperSettling = true;
+  try {
   const now = Date.now();
   const due60 = entryPaper.trades.filter(t => !t.done60 && now - t.at >= 62 * 60_000).slice(0, 8);
   const due3d = entryPaper.trades.filter(t => t.done60 && !t.done3d && now - t.at >= 3 * 24 * 3600_000).slice(0, 4);
   let changed = false;
 
   for (const t of due60) {
-    try {
-      const start = new Date(t.at).toISOString();
-      const end = new Date(t.at + 65 * 60_000).toISOString();
-      // Минутные свечи, а не пятиминутные. На пятиминутных отметка «через 5
-      // минут» бралась из свечи, начинающейся на десятой: искалась ближайшая
-      // по началу в пределах ±5 минут, и при входе в 15:04 ближайшей к 15:09
-      // оказывалась свеча 15:10. За 65 минут выходит 65 минутных свечей — в
-      // предел запроса укладывается с большим запасом.
-      const r = await fetch(`${DIP_CB}/products/${t.pair}/candles?granularity=60&start=${start}&end=${end}`, DIP_H);
-      // Временный отказ биржи не должен хоронить сделку навсегда: раньше
-      // единственная неудача помечала её «нет свечей» и результат терялся.
-      // Три попытки, потом сдаёмся.
-      if (!r.ok) { t.tries60 = (t.tries60 || 0) + 1; if (t.tries60 >= 3) t.done60 = 'нет свечей'; changed = true; continue; }
-      const raw = await r.json();
-      const cs = (Array.isArray(raw) ? raw : [])
-        .map(x => ({ t: Number(x[0]) * 1000, lo: Number(x[1]), hi: Number(x[2]), cl: Number(x[4]) }))
-        .filter(c => c.t >= t.at).sort((a, b) => a.t - b.t);
-      if (!cs.length) { t.tries60 = (t.tries60 || 0) + 1; if (t.tries60 >= 3) t.done60 = 'нет свечей'; changed = true; continue; }
-      // Отметка на минуте N — закрытие свечи, которая эту минуту покрывает.
-      // Допуск полторы минуты: минутный ряд рвётся, когда сделок нет.
-      const at = (min) => {
-        // Метка свечи — её НАЧАЛО, закрытие приходится на минуту позже.
-        // Ищем свечу, которая на нужной минуте ЗАКРЫВАЕТСЯ, то есть
-        // начинается минутой раньше: прежний поиск брал цену на минуту позже
-        // заявленной отметки.
-        const want = t.at + (min - 1) * 60_000;
-        let best = null;
-        for (const c of cs) { const d = Math.abs(c.t - want); if (d <= 90_000 && (!best || d < best.d)) best = { d, cl: c.cl }; }
-        return best ? Math.round((best.cl / t.entry - 1) * 10000) / 100 : null;
-      };
-      t.m5 = at(5); t.m15 = at(15); t.m60 = at(60);
-      const tp = t.entry * (1 + ENTRY_PAPER_NEED / 100);
-      // Отсечка по времени, и по КОНЦУ свечи, а не по началу. Со свечами по
-      // пять минут проверка `mins > 60` пропускала свечу, начинающуюся ровно
-      // на шестидесятой: она покрывает 60-65, и рост на 64-й минуте шёл в
-      // зачёт как часовой. С минутными свечами граница точная.
-      let hit = null, worst = 0;
-      for (const c of cs) {
-        const mins = (c.t - t.at) / 60_000;
-        if (mins + 1 > 60) break;
-        const d = (c.lo / t.entry - 1) * 100; if (d < worst) worst = d;
-        if (c.hi >= tp) { hit = Math.round(mins); break; }
-      }
-      t.hit60 = hit;              // за сколько минут дошло до +0.30%, или null
-      t.mae60 = Math.round(worst * 100) / 100;
-      // Обещание пересчитываем по ДЕЙСТВУЮЩЕЙ таблице, а исходное сохраняем.
-      // Иначе сравнение «обещано/вышло» смешивает разные версии: сделки,
-      // открытые до исправления часа, несут завышенные 58/61/70/75/79, а
-      // открытые после — верные 57/59/67/72/75. Проверять надо ту таблицу,
-      // что показывается сейчас; прежняя остаётся для истории.
-      const fresh = recoveryOdds(t.dayFall, t.pullback);
-      if (fresh) {
-        if (t.recHour !== fresh.hour) t.recHourAtOpen = t.recHour;
-        t.recHour = fresh.hour;
-      }
-      t.done60 = true;
-      t.v2 = true;                // посчитано после исправления учёта времени
-      changed = true;
-    } catch (e) { console.error('[entry-paper]', t.coin, e.message); }
+    await settleEntryHour(t);
+    changed = true;
     await new Promise(r => setTimeout(r, 220));
   }
 
@@ -6180,7 +6155,7 @@ async function entryPaperSettle() {
       // её максимум к сделке отношения не имеет. Часовой расчёт такую
       // отсекал, трёхдневный нет.
       const cs = (Array.isArray(raw) ? raw : []).map(x => ({ t: Number(x[0]) * 1000, hi: Number(x[2]) }))
-        .filter(c => c.t >= t.at);
+        .filter(c => c.t >= t.at && c.t + 3600_000 <= t.at + 3 * 24 * 3600_000 && c.hi > 0);
       const tp = t.entry * (1 + ENTRY_PAPER_NEED / 100);
       const hit = cs.filter(c => c.hi >= tp).sort((a, b) => a.t - b.t)[0];
       const found = hit ? Math.round((hit.t - t.at) / 60_000) : null;
@@ -6192,332 +6167,132 @@ async function entryPaperSettle() {
         ? (found != null ? Math.min(found, t.hit60) : t.hit60)
         : found;
       t.done3d = true;
+      const hours = new Set(cs.map(c => c.t));
+      let covered = true;
+      for (let at = Math.ceil(t.at / 3600_000) * 3600_000;
+        at + 3600_000 <= t.at + 3 * 24 * 3600_000; at += 3600_000) {
+        if (!hours.has(at)) covered = false;
+      }
+      t.hitKnown3d = t.hit3d != null || covered;
       changed = true;
     } catch (e) { console.error('[entry-paper]', t.coin, e.message); }
     await new Promise(r => setTimeout(r, 220));
   }
 
-  // Пересчёт старых сделок под исправленный отсчёт минут. Отметка «через 5
-  // минут» раньше брала свечу, начинающуюся на пятой, то есть цену шестой.
-  // Сдвиг не имеет направления — это шум, а не смещение, — но смешанная
-  // выборка хуже однородной, и проверить, что он ничего не менял, можно
-  // только пересчитав.
-  //
-  // Идёт после основной очереди и по шесть за такт: свежие сделки важнее
-  // старых, лимит биржи делится в их пользу.
+  // Перепроверяем последние сигналы первыми. Старые измерения сохраняются
+  // рядом; отсутствие свечей не превращается в отрицательный исход.
   const remeasure = entryPaper.trades
-    .filter(t => t.done60 === true && !t.v3 && t.pair && t.entry > 0 && (t.tries3 || 0) < 3)
-    .slice(0, 6);
+    .filter(t => t.done60 && t.outcomeVersion !== 4 && t.pair && t.entry > 0)
+    .sort((a, b) => {
+      const take = t => !t.control && t.chg24 != null && Math.abs(t.chg24) < 10 && t.pullback >= 1.5;
+      return Number(take(b)) - Number(take(a)) || b.at - a.at;
+    })
+    .slice(0, 12);
   for (const t of remeasure) {
-    try {
-      const start = new Date(t.at).toISOString();
-      const end = new Date(t.at + 65 * 60_000).toISOString();
-      const r = await fetch(`${DIP_CB}/products/${t.pair}/candles?granularity=60&start=${start}&end=${end}`, DIP_H);
-      if (!r.ok) { t.tries3 = (t.tries3 || 0) + 1; changed = true; continue; }
-      const raw = await r.json();
-      const cs = (Array.isArray(raw) ? raw : [])
-        .map(x => ({ t: Number(x[0]) * 1000, lo: Number(x[1]), hi: Number(x[2]), cl: Number(x[4]) }))
-        .filter(c => c.t >= t.at).sort((a, b) => a.t - b.t);
-      if (!cs.length) { t.tries3 = (t.tries3 || 0) + 1; changed = true; continue; }
-      const at = (min) => {
-        const want = t.at + (min - 1) * 60_000;
-        let best = null;
-        for (const c of cs) { const d = Math.abs(c.t - want); if (d <= 90_000 && (!best || d < best.d)) best = { d, cl: c.cl }; }
-        return best ? Math.round((best.cl / t.entry - 1) * 10000) / 100 : null;
-      };
-      // Сохраняем прежние значения: без них нельзя сказать, изменил ли
-      // пересчёт выводы или только цифры в четвёртом знаке.
-      if (t.m60was === undefined) { t.m5was = t.m5; t.m15was = t.m15; t.m60was = t.m60; }
-      t.m5 = at(5); t.m15 = at(15); t.m60 = at(60);
-      const tp = t.entry * (1 + ENTRY_PAPER_NEED / 100);
-      let hit = null, worst = 0;
-      for (const c of cs) {
-        const mins = (c.t - t.at) / 60_000;
-        if (mins + 1 > 60) break;
-        const d = (c.lo / t.entry - 1) * 100; if (d < worst) worst = d;
-        if (c.hi >= tp) { hit = Math.round(mins); break; }
-      }
-      t.hit60 = hit;
-      t.mae60 = Math.round(worst * 100) / 100;
-      t.v3 = true;
-      changed = true;
-    } catch (e) { console.error('[entry-paper] пересчёт ' + t.coin + ': ' + e.message); }
+    await settleEntryHour(t);
+    changed = true;
     await new Promise(r => setTimeout(r, 220));
-  }
-  if (remeasure.length) {
-    const left = entryPaper.trades.filter(t => t.done60 === true && !t.v3 && (t.tries3 || 0) < 3).length;
-    console.log('[entry-paper] пересчитано ' + remeasure.length + ', осталось ' + left);
   }
 
   if (changed) saveEntryPaper();
+  } finally { entryPaperSettling = false; }
 }
 setInterval(entryPaperSettle, 3 * 60 * 1000);
 setTimeout(entryPaperSettle, 100_000);
 
 app.get('/api/entry-paper', (req, res) => {
-  // Записи стейблов, попавшие в журнал до того, как их стали пропускать,
-  // из мерки исключаем: в файле они остаются, но эталоном служить не могут.
+  const audit = String((req.query || {}).audit || '') === '1';
+  if (audit && !constantTimeTokenEquals(String((req.headers || {})['x-deploy-key'] || ''), DEPLOY_KEY || 'trading-deploy-2026')) {
+    return res.status(403).json({ success: false, error: 'bad key' });
+  }
   const all = entryPaper.trades.filter(t => t.done60 === true && !ENTRY_PAPER_SKIP.has(t.coin));
-  // Правило входа сменилось: порог по баллу заменён порогом по глубине
-  // падения. Наблюдения, набранные под прежним правилом, отвечают на другой
-  // вопрос — держим их отдельно, а не подмешиваем.
   const cur = all.filter(t => t.rule === ENTRY_RULE);
   const old = all.filter(t => t.rule !== ENTRY_RULE);
   const done = cur.filter(t => !t.control);
-  // Контроль второй версии отбирается теми же условиями свежести, что и
-  // основная группа. Пока таких мало, сравнивать не с чем — берём весь
-  // контроль и честно говорим, на чём сравнение построено.
   const ctrlAll = cur.filter(t => t.control);
-  const ctrlFresh = ctrlAll.filter(t => t.cv === 2);
-  const ctrl = ctrlFresh.length >= 30 ? ctrlFresh : ctrlAll;
-  const ctrlBasis = ctrlFresh.length >= 30 ? 'сопоставимый' : 'весь, включая отобранный прежним способом';
-  const avg = a => a.length ? Math.round(a.reduce((x, y) => x + y, 0) / a.length * 1000) / 1000 : null;
-  const share = (a, f) => a.length ? Math.round(a.filter(f).length / a.length * 100) : null;
-  // Разброс нужен не меньше среднего: без него нельзя сказать, отличается ли
-  // основная группа от контрольной, а именно на это журнал и заводился.
-  const sd = (a) => {
-    if (a.length < 2) return null;
-    const m = a.reduce((x, y) => x + y, 0) / a.length;
-    return Math.sqrt(a.reduce((s, x) => s + (x - m) ** 2, 0) / (a.length - 1));
-  };
-  // ОШИБКА СЧИТАЕТСЯ ПО СКАНАМ, А НЕ ПО СДЕЛКАМ.
-  //
-  // Сделки не независимы. Один скан открывает сразу пачку — все монеты,
-  // прошедшие вход в эту минуту, — и целый час они плывут по одному и тому же
-  // рынку. Считать их отдельными наблюдениями значит завышать выборку в разы:
-  // 158 сделок могут оказаться двумя десятками рыночных моментов.
-  //
-  // Клетка скана — точное время открытия: все сделки одного прохода получают
-  // один и тот же `at`. Сначала среднее внутри скана, потом разброс между
-  // сканами. У контроля скан даёт одну сделку, и обе оценки совпадают — это и
-  // показывает, насколько велика разница для основной группы.
-  const byScan = (list, pick) => {
-    const m = new Map();
-    for (const t of list) {
-      const v = pick(t);
-      if (v == null) continue;
-      const key = t.at;
-      if (!m.has(key)) m.set(key, []);
-      m.get(key).push(v);
-    }
-    return [...m.values()].map(a => a.reduce((s, x) => s + x, 0) / a.length);
-  };
-  const seOf = (values) => {
-    if (values.length < 2) return null;
-    const d = sd(values);
-    return d == null ? null : d / Math.sqrt(values.length);
-  };
-  const group = (list) => {
-    if (!list.length) return null;
-    const m60s = list.map(t => t.m60).filter(v => v != null);
-    const d = sd(m60s);
-    const scans = byScan(list, t => t.m60);
-    // Сюда приходят только посчитанные сделки, поэтому «дошло» известно у всех
-    const hitScans = byScan(list, t => (t.hit60 != null ? 100 : 0));
-    const seCl = seOf(scans);
-    const hitSeCl = seOf(hitScans);
-    return {
-      n: list.length,
-      m5: avg(list.map(t => t.m5).filter(v => v != null)),
-      m15: avg(list.map(t => t.m15).filter(v => v != null)),
-      m60: avg(m60s),
-      m60sd: d == null ? null : Math.round(d * 1000) / 1000,
-      // Оставляем и наивную ошибку: по разнице между ней и честной сразу
-      // видно, насколько сделки слиплись.
-      m60se: d == null ? null : Math.round(d / Math.sqrt(m60s.length) * 1000) / 1000,
-      m60seScan: seCl == null ? null : Math.round(seCl * 1000) / 1000,
-      scans: scans.length,
-      hitHour: share(list, t => t.hit60 != null),
-      hitHourSeScan: hitSeCl == null ? null : Math.round(hitSeCl * 10) / 10,
-      // Чем кончился час у дошедших до цели и у недошедших ПОРОЗНЬ.
-      //
-      // «Дошли 80%» само по себе ничего не решает: цель всего +0.30%, и почти
-      // всё это съедает круг комиссии. Ответ на вопрос «стоит ли овчинка» —
-      // в том, чем оборачиваются оставшиеся 20%. Без этих двух чисел доля
-      // дошедших читается как прибыль, хотя средний исход часа может быть
-      // (и здесь остаётся) отрицательным.
-      m60Hit: avg(list.filter(t => t.hit60 != null).map(t => t.m60).filter(v => v != null)),
-      m60NoHit: avg(list.filter(t => t.hit60 == null).map(t => t.m60).filter(v => v != null)),
-      mae: avg(list.map(t => t.mae60).filter(v => v != null)),
-    };
-  };
-  const long = entryPaper.trades.filter(t => t.done3d === true);
+  // Старый контроль сохраняется в журнале, но не подмешивается при нехватке
+  // сопоставимого. Отсутствие достаточной выборки означает «ждём».
+  const ctrl = ctrlAll.filter(t => t.cv === 2 && entryJournal.finite(t.dayFall) &&
+    entryJournal.finite(t.spreadPct) && t.spreadPct >= 0);
+  const group = entryJournal.summarize;
+  const known = done.filter(t => entryJournal.finite(t.chg24) && entryJournal.finite(t.pullback));
+  const take = known.filter(t => Math.abs(t.chg24) < 10 && t.pullback >= 1.5);
+  const compare = entryJournal.comparison(done, ctrl);
+  const pending = entryPaper.trades.filter(t => t.done60 && t.outcomeVersion !== 4).length;
+  const long = entryPaper.trades.filter(t => !t.control && t.rule === ENTRY_RULE &&
+    !ENTRY_PAPER_SKIP.has(t.coin) && t.done3d === true);
+  const longKnown = long.filter(t => t.hit3d != null || t.hitKnown3d === true);
+  const recent = [...all.slice(-20), ...entryPaper.trades.filter(t => !t.done60).slice(-10)].reverse();
+  const exportKeys = ['id', 'coin', 'pair', 'at', 'entry', 'rule', 'score', 'dayFall', 'pullback', 'chg24',
+    'spreadPct', 'control', 'cv', 'recHour', 'recHourAtOpen', 'done60', 'outcomeVersion',
+    'm5', 'm15', 'm60', 'hit60', 'hitKnown60', 'hourComplete', 'mae60', 'triesHour4'];
   res.json({
     success: true,
     startedAt: entryPaper.startedAt,
     open: entryPaper.trades.filter(t => !t.done60 && !t.control).length,
     openControl: entryPaper.trades.filter(t => !t.done60 && t.control).length,
-    // Порог окупаемости: цель +0.30% при круге маркет+лимитка 0.225%.
     needPct: ENTRY_PAPER_NEED,
-    // Какое правило действует сейчас и что накоплено под ним. Прежний набор
-    // остаётся рядом: он и есть доказательство, что порог по баллу не работал.
-    rule: {
-      id: ENTRY_RULE,
-      what: 'падение от суточного максимума ' + ENTRY_GATE_FALL + '%+, спред не шире ' + ENTRY_GATE_SPREAD + '%',
-      since: entryPaper.ruleSince || null,
-      n: cur.length,
+    measurement: {
+      version: 4, basis: 'изменение цены по минутным свечам, без комиссий и спреда',
+      error: '1 стандартная ошибка; общие часы, веса по сделкам, HAC по соседним часам',
+      pending, unknown: cur.filter(t => !entryJournal.finite(t.m60)).length,
     },
+    rule: { id: ENTRY_RULE, what: 'падение от суточного максимума ' + ENTRY_GATE_FALL +
+      '%+, спред не шире ' + ENTRY_GATE_SPREAD + '%', since: entryPaper.ruleSince || null, n: cur.length },
     previousRule: old.length ? {
-      what: 'балл ВХОД 40+',
-      main: group(old.filter(t => !t.control)),
-      control: group(old.filter(t => t.control)),
+      what: 'балл ВХОД 40+', main: group(old.filter(t => !t.control)), control: group(old.filter(t => t.control)),
     } : null,
-    // Пересчёт старых сделок под исправленный отсчёт минут: сколько осталось
-    // и сдвинул ли он средний результат. Пока идёт, выборка смешанная, и
-    // об этом надо знать, а не догадываться.
-    remeasure: (() => {
-      const old = entryPaper.trades.filter(t => t.done60 === true && !t.v3 && (t.tries3 || 0) < 3).length;
-      const moved = all.filter(t => t.m60was !== undefined && t.m60 != null && t.m60was != null);
-      const shift = moved.length
-        ? Math.round(moved.reduce((a, t) => a + (t.m60 - t.m60was), 0) / moved.length * 1000) / 1000 : null;
-      return { left: old, done: all.filter(t => t.v3).length, checked: moved.length, avgShift: shift };
-    })(),
+    remeasure: { left: pending, done: all.filter(t => t.outcomeVersion === 4).length },
     overall: group(done),
-    // Контроль: те же условия, балл ниже порога. Разница между этими двумя
-    // строками и есть ответ на вопрос, стоит ли порог хоть чего-нибудь.
     control: group(ctrl),
-    // На чём построено сравнение и сколько уже набрано сопоставимого контроля
-    controlBasis: ctrlBasis,
-    controlFreshN: ctrlFresh.length,
+    controlBasis: 'версия 2; сравнение только за общие часы',
+    controlFreshN: ctrl.length,
+    comparison: { ...compare, provisional: pending > 0 },
     byScore: [
-      { label: '40-69', ...(group(done.filter(t => t.score < 70)) || { n: 0 }) },
+      { label: '0-69', ...(group(done.filter(t => t.score < 70)) || { n: 0 }) },
       { label: '70-100', ...(group(done.filter(t => t.score >= 70)) || { n: 0 }) },
     ],
-    // РАЗБИВКА ПО ТОМУ ОТВЕТУ, КОТОРЫЙ ВИДИТ ЧЕЛОВЕК.
-    //
-    // Панель зовёт брать при трёх условиях: порог входа, откат от 1.5% и ход
-    // за сутки в пределах ±10%. А журнал открывал сделку по одному первому —
-    // то есть проверял не то правило, которое рекомендует. Сравнение «правило
-    // против случайного выбора» отвечало на вопрос, которого никто не задавал.
-    //
-    // Сделки не переоткрываем и цифры не сбрасываем: раскладываем уже
-    // накопленное по уровням. Ход за сутки у старых сделок не сохранялся, и
-    // отделить «риск» у них нельзя — такие идут в «без хода за сутки», а не
-    // подмешиваются к спокойным.
-    byVerdict: (() => {
-      const swing = t => t.chg24 != null && Math.abs(t.chg24) >= 10;
-      const known = done.filter(t => t.chg24 != null);
-      return {
-        брать: group(known.filter(t => !swing(t) && (t.pullback || 0) >= 1.5)) || { n: 0 },
-        можно: group(known.filter(t => !swing(t) && (t.pullback || 0) < 1.5)) || { n: 0 },
-        риск: group(known.filter(swing)) || { n: 0 },
-        безХода: group(done.filter(t => t.chg24 == null)) || { n: 0 },
-      };
-    })(),
-    // РЕШЕНИЕ ЗАПИСАНО ДО ТОГО, КАК ПРИШЛИ ЧИСЛА.
-    //
-    // Журнал ведётся ради одного: решить, каким быть правилу отбора. Но если
-    // условие решения придумывать ПОСЛЕ того, как данные посмотрели, оно
-    // подгонится под них — и «улучшение» окажется шумом. Так уже было с
-    // баллом ВХОД: он выглядел разумным, пока его не проверили вперёд.
-    //
-    // Поэтому правило решения зашито здесь заранее и считается машиной, а не
-    // на глаз:
-    //
-    //   сравниваем «брать» с сопоставимым контролем по ДЕНЬГАМ (исход часа),
-    //   ошибка — по сканам, порог — две ошибки разности;
-    //
-    //   пока в «брать» меньше 40 сделок и 25 рыночных моментов — ЖДЁМ,
-    //     что бы там ни показывали числа;
-    //   «брать» лучше контроля больше чем на две ошибки — СУЗИТЬ правило:
-    //     порог отката и ход за сутки становятся частью условия входа,
-    //     «можно» перестаёт подсвечиваться зелёным;
-    //   «брать» ХУЖЕ больше чем на две ошибки — порог отката вредит,
-    //     УБРАТЬ его из условия;
-    //   набралось 120 сделок, а разница всё ещё в пределах ошибки — порог
-    //     вперёд НЕ ПОДТВЕРДИЛСЯ. Тогда он уходит из условия так же, как ушёл
-    //     балл: панель продолжает ранжировать, но перестаёт звать «брать».
-    //
-    // Менять эти числа задним числом нельзя — в этом весь смысл записи.
-    decision: (() => {
-      const bv = {
-        брать: group(done.filter(t => t.chg24 != null && Math.abs(t.chg24) < 10 && (t.pullback || 0) >= 1.5)),
-      };
-      const g = bv['брать'];
-      const NEED_N = 40, NEED_SCANS = 25, GIVE_UP_N = 120;
-      const out = { needN: NEED_N, needScans: NEED_SCANS, giveUpN: GIVE_UP_N,
-        haveN: g ? g.n : 0, haveScans: g ? g.scans : 0 };
-      if (!g || !ctrl.length || g.n < NEED_N || g.scans < NEED_SCANS) {
-        out.state = 'ждём';
-        out.why = 'в «брать» ' + out.haveN + ' сделок из ' + NEED_N + ' и ' +
-          out.haveScans + ' моментов из ' + NEED_SCANS;
-        return out;
-      }
-      const c = group(ctrl);
-      const se = Math.sqrt((g.m60seScan || 0) ** 2 + (c.m60seScan || 0) ** 2);
-      const diff = (g.m60 || 0) - (c.m60 || 0);
-      out.diff = Math.round(diff * 1000) / 1000;
-      out.se = Math.round(se * 1000) / 1000;
-      if (se > 0 && diff > 2 * se) { out.state = 'сузить правило'; out.why = '«брать» лучше контроля на ' + out.diff + ' при ошибке ' + out.se; }
-      else if (se > 0 && diff < -2 * se) { out.state = 'убрать порог отката'; out.why = '«брать» хуже контроля на ' + Math.abs(out.diff) + ' при ошибке ' + out.se; }
-      else if (g.n >= GIVE_UP_N) { out.state = 'порог не подтвердился'; out.why = g.n + ' сделок, разница ' + out.diff + ' ±' + out.se + ' — в пределах ошибки'; }
-      else { out.state = 'ждём'; out.why = 'разница ' + out.diff + ' ±' + out.se + ', до вывода нужно ' + GIVE_UP_N + ' сделок'; }
-      return out;
-    })(),
+    byVerdict: {
+      брать: group(take) || { n: 0 },
+      можно: group(known.filter(t => Math.abs(t.chg24) < 10 && t.pullback < 1.5)) || { n: 0 },
+      риск: group(known.filter(t => Math.abs(t.chg24) >= 10)) || { n: 0 },
+      безХода: group(done.filter(t => !entryJournal.finite(t.chg24) || !entryJournal.finite(t.pullback))) || { n: 0 },
+    },
+    decision: entryJournal.assessTake(take, ctrl),
     byFall: [
-      { label: '<3%', ...(group(done.filter(t => (t.dayFall || 0) < 3)) || { n: 0 }) },
-      { label: '3-6%', ...(group(done.filter(t => (t.dayFall || 0) >= 3 && (t.dayFall || 0) < 6)) || { n: 0 }) },
-      { label: '>6%', ...(group(done.filter(t => (t.dayFall || 0) >= 6)) || { n: 0 }) },
+      { label: '<3%', ...(group(done.filter(t => t.dayFall < 3)) || { n: 0 }) },
+      { label: '3-6%', ...(group(done.filter(t => t.dayFall >= 3 && t.dayFall < 6)) || { n: 0 }) },
+      { label: '>6%', ...(group(done.filter(t => t.dayFall >= 6)) || { n: 0 }) },
     ],
-    // Та же разбивка по КОНТРОЛЮ. Без неё нельзя ответить на главный вопрос:
-    // работает глубина падения сама по себе или только вместе с баллом. Если
-    // она делит и контрольную группу — значит порог по баллу можно менять на
-    // порог по глубине, а балл убирать.
     byFallControl: [
-      { label: '<3%', ...(group(ctrl.filter(t => (t.dayFall || 0) < 3)) || { n: 0 }) },
-      { label: '3-6%', ...(group(ctrl.filter(t => (t.dayFall || 0) >= 3 && (t.dayFall || 0) < 6)) || { n: 0 }) },
-      { label: '>6%', ...(group(ctrl.filter(t => (t.dayFall || 0) >= 6)) || { n: 0 }) },
+      { label: '<3%', ...(group(ctrl.filter(t => t.dayFall < 3)) || { n: 0 }) },
+      { label: '3-6%', ...(group(ctrl.filter(t => t.dayFall >= 3 && t.dayFall < 6)) || { n: 0 }) },
+      { label: '>6%', ...(group(ctrl.filter(t => t.dayFall >= 6)) || { n: 0 }) },
     ],
-    // Что дал бы порог по ГЛУБИНЕ вместо порога по баллу: обе группы вместе,
-    // разделённые только глубиной. Балл при этом не учитывается вовсе.
-    // По ОБЕИМ группам и по всем наблюдениям, включая набранные под прежним
-    // правилом: именно этот разрез и показал, что делит глубина, а не балл.
-    byFallAll: [3, 6].map(lo => {
-      const deep = all.filter(t => (t.dayFall || 0) >= lo);
-      const shallow = all.filter(t => (t.dayFall || 0) < lo);
-      const g = group(deep), h = group(shallow);
-      return { label: '>=' + lo + '%', deep: g || { n: 0 }, shallow: h || { n: 0 } };
-    }),
-    // Обещанное панелью против случившегося: главная проверка честности.
-    //
-    // Полосы те же, что в recoveryOdds, и обещание берётся ОТТУДА, а не из
-    // поля сделки. Раньше стояло g[0].recHour — значение, замороженное на
-    // момент расчёта первой сделки группы: после перемера таблицы отчёт
-    // сверялся с отменённым обещанием (показывал 67/72/75 против уже
-    // действующих 68/74/77).
-    //
-    // Мелкие падения раньше в проверку не попадали — полосы начинались с 3%.
-    // Между тем именно там расхождение самое большое, и получалось, что
-    // проверка честности прячет свой худший результат.
-    promiseVsFact: [[0, 1], [1, 3], [3, 6], [6, 10], [10, 1e9]].map(([lo, hi]) => {
-      const g = done.filter(t => (t.dayFall || 0) >= lo && (t.dayFall || 0) < hi);
-      // Обещание полосы берём осторожным столбцом: внутри полосы есть и
-      // мелкие, и глубокие откаты, а сравнивать надо с тем, что панель
-      // обещает по умолчанию.
-      const odds = recoveryOdds(lo, null);
-      return { label: hi > 1e8 ? '>' + lo + '%' : lo + '-' + hi + '%',
-        n: g.length, promised: odds ? odds.hour : null, actual: share(g, t => t.hit60 != null) };
-    }),
-    // Пустой результат и «ещё рано» — разные вещи. Раньше отдавался null и в
-    // обоих случаях на экране было пусто.
-    recovered3d: long.length
-      ? { n: long.length, share: share(long, t => t.hit3d != null) }
-      : { n: 0, share: null, pending: entryPaper.trades.filter(t => t.done60 && !t.done3d).length,
-          readyAt: entryPaper.startedAt + 3 * 24 * 3600_000 },
-    // Сами сделки: посчитанные и последние открытые. Раньше отдавались просто
-    // последние двадцать по времени, и посчитанные в них не попадали — то есть
-    // именно то, ради чего список и заводился, было не видно.
-    trades: [...all.slice(-20), ...entryPaper.trades.filter(t => !t.done60).slice(-10)]
-      .reverse().map(t => ({
+    byFallAll: [
+      { label: '<3%', ...(group(cur.filter(t => t.dayFall < 3)) || { n: 0 }) },
+      { label: '3-6%', ...(group(cur.filter(t => t.dayFall >= 3 && t.dayFall < 6)) || { n: 0 }) },
+      { label: '>6%', ...(group(cur.filter(t => t.dayFall >= 6)) || { n: 0 }) },
+    ],
+    promiseVsFact: entryJournal.forecastCells(done, recoveryOdds),
+    recovered3d: {
+      n: longKnown.length, unknown: long.length - longKnown.length,
+      share: longKnown.length ? Math.round(longKnown.filter(t => t.hit3d != null).length / longKnown.length * 100) : null,
+      pending: entryPaper.trades.filter(t => t.done60 && !t.done3d).length,
+      readyAt: entryPaper.startedAt + 3 * 24 * 3600_000,
+    },
+    ...(audit ? { auditTrades: entryPaper.trades.map(t => Object.fromEntries(exportKeys
+      .filter(k => t[k] !== undefined).map(k => [k, t[k]]))) } : {}),
+    trades: recent.map(t => ({
       coin: t.coin, at: t.at, entry: t.entry, score: t.score, dayFall: t.dayFall,
-      control: !!t.control,
-      promised: t.recHour, state: t.done60 === true ? 'посчитана' : t.done60 ? String(t.done60) : 'в работе',
+      control: !!t.control, promised: t.recHourAtOpen ?? t.recHour,
+      state: t.done60 === true ? (t.hourComplete === false ? 'неполные свечи' : 'посчитана') : t.done60 ? String(t.done60) : 'в работе',
       m5: t.m5 ?? null, m15: t.m15 ?? null, m60: t.m60 ?? null,
-      hit60: t.hit60 ?? null, mae60: t.mae60 ?? null, hit3d: t.hit3d ?? null,
+      hit60: t.hit60 ?? null, hitKnown60: t.hitKnown60 === true || t.hit60 != null,
+      mae60: t.mae60 ?? null,
     })),
   });
 });
-
 app.get('/api/entry-scan', (req, res) => {
   res.json({
     success: true,
@@ -6530,11 +6305,14 @@ app.get('/api/entry-scan', (req, res) => {
     recoveryMeasuredAt: RECOVERY_MEASURED_AT,
     recoverySample: RECOVERY_SAMPLE,
     // Когда числа последний раз подтверждались на другой выборке
-    recoveryConfirmedAt: RECOVERY_CONFIRMED_AT,
+    recoveryConfirmedAt: null,
     // Когда ночная сверка последний раз доходила до конца и с каким исходом.
     // Молчащий сторож неотличим от сторожа, у которого всё в порядке, — пусть
     // его работа будет видна снаружи.
-    recheck: (() => { const s = recheckStamp(); return s.at ? { at: s.at, code: s.code, mins: s.mins } : null; })(),
+    recheck: (() => { const s = recheckStamp(); return s.at ? {
+      at: s.at, code: s.code, mins: s.mins, current: s.version === RECOVERY_CHECK_VERSION,
+      report: s.version === RECOVERY_CHECK_VERSION ? s.report : null,
+    } : null; })(),
     gate: { fallPct: ENTRY_GATE_FALL, spreadPct: ENTRY_GATE_SPREAD },
     scanning: entryScan.running,
     // Если последний скан провалился, панель обязана сказать об этом, а не
