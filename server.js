@@ -916,7 +916,12 @@ async function getLatestOrders() {
   ];
 
   // Нормализуем данные
-  const normalizedOrders = allOrders.map(order => {
+  const normalizedOrders = allOrders.map(normalizeOrder);
+  return finishOrders(normalizedOrders);
+}
+
+function normalizeOrder(order) {
+  {
     const limitConfig = order.order_configuration?.limit_limit_gtc;
     const marketConfig = order.order_configuration?.market_market_ioc;
 
@@ -952,7 +957,48 @@ async function getLatestOrders() {
       limit_price: limitConfig?.limit_price || null,
       order_configuration: order.order_configuration
     };
-  });
+  }
+}
+
+// ВЫБРАННЫЕ ОРДЕРА, ВЫПАВШИЕ ИЗ ОКНА.
+//
+// Биржа отдаёт по 350 последних ордеров в каждом статусе. Выбранная сделка
+// старше этого окна просто исчезает из карточек: позиция выглядит меньше, чем
+// она есть, а денежные потоки по ней не сходятся. Такие ордера догружаются по
+// идентификатору поштучно.
+//
+// Ответ по завершённому ордеру не меняется, поэтому храним его до перезапуска
+// и повторно не запрашиваем. Неудачу тоже помним — иначе один недоступный
+// идентификатор дёргал бы биржу на каждом опросе.
+const pinnedOrders = new Map();
+const pinnedFailed = new Map();
+const PINNED_RETRY_MS = 30 * 60 * 1000;
+async function loadPinnedOrders(present) {
+  let selected = [];
+  try { selected = (loadSelectedOrders().selected || []).filter(Boolean); } catch { }
+  const missing = selected.filter(id => !present.has(id) && !pinnedOrders.has(id) &&
+    (Date.now() - (pinnedFailed.get(id) || 0)) > PINNED_RETRY_MS);
+  for (const id of missing.slice(0, 5)) {
+    try {
+      const raw = await client.getOrder({ orderId: id });
+      const data = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      const order = data && (data.order || data);
+      if (order && order.order_id) {
+        pinnedOrders.set(id, normalizeOrder(order));
+        console.log('[orders] догружен выбранный ордер вне окна: ' + id.slice(0, 8));
+      } else pinnedFailed.set(id, Date.now());
+    } catch (e) {
+      pinnedFailed.set(id, Date.now());
+      console.error('[orders] не удалось догрузить ' + id.slice(0, 8) + ': ' + e.message);
+    }
+  }
+  return [...pinnedOrders.entries()].filter(([id]) => !present.has(id) && selected.includes(id)).map(([, o]) => o);
+}
+
+async function finishOrders(normalizedOrders) {
+  const present = new Set(normalizedOrders.map(o => o.order_id));
+  const extra = await loadPinnedOrders(present);
+  if (extra.length) normalizedOrders = normalizedOrders.concat(extra);
 
   // Сортируем по дате (новые первыми)
   normalizedOrders.sort((a, b) => {
@@ -961,7 +1007,7 @@ async function getLatestOrders() {
     return timeB - timeA;
   });
 
-  console.log('Orders count:', normalizedOrders.length);
+  console.log('Orders count:', normalizedOrders.length + (extra.length ? ' (+' + extra.length + ' вне окна)' : ''));
   return normalizedOrders;
 }
 
