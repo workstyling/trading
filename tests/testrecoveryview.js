@@ -13,6 +13,21 @@ const measure = (data = scan, coin = row) => recoveryObservation(coin, data, now
 assert.equal(measure().hour, 54.2);
 assert(measure().why.includes('813'));
 assert.equal(measure(scan, { ...row, pullbackPct: 1.5 }).hour, null);
+// Прочерк без объяснения не отличить от поломки: он обязан называть, чего не
+// хватает и почему это пройдёт. Клетки с откатом от 1.5% пусты не потому, что
+// сигнала нет, а потому что окну наблюдений неполные четверо суток.
+{
+  const thin = measure(scan, { ...row, pullbackPct: 1.5 }).why;
+  assert(thin.includes('монет 3 из 12'), thin);
+  assert(/окно наблюдений 3 сут и растёт/.test(thin), thin);
+  assert(/7-14 суток/.test(thin), thin);
+  // Клетки нет в отчёте вовсе — тоже с числом, а не молча
+  const none = measure(scan, { ...row, dayFallPct: 6 }).why;
+  assert(none.includes('монет 0 из 12'), none);
+  // И в шапке видно, насколько длинное окно: от него зависят все прочерки
+  assert(/Окно наблюдений 3 сут и растёт/.test(renderRecoveryStatus(check, now)),
+    renderRecoveryStatus(check, now));
+}
 assert.equal(measure(scan, { ...row, dayFallPct: 6 }).hour, null);
 assert.equal(measure(scan, { ...row, dayFallPct: null }).hour, null);
 assert.equal(measure(scan, { ...row, pullbackPct: '' }).hour, null);

@@ -28,7 +28,17 @@
     const cell = report.cells.find(c => c.lo === lo && c.deep === deep);
     if (!cell || cell.thin || !finite(cell.actual) || cell.actual < 0 || cell.actual > 100 ||
         !finite(cell.se) || cell.se < 0 || !finite(cell.coins) || cell.coins < 12) {
-      return unknown('Для этой глубины падения и отката недостаточно свежих наблюдений.');
+      // Прочерк без объяснения не отличить от поломки. Называем, чего именно
+      // не хватает и почему это пройдёт: окно наблюдений начинается на сутки
+      // позже исходного замера и растёт само. По истории такие клетки
+      // набирают нужные 12 монет за 7-14 суток — при откате от 1.5% окна
+      // редки, и за неполные четверо суток их набирается 0-8.
+      const have = cell && finite(cell.coins) ? Number(cell.coins) : 0;
+      const days = finite(report.from) && finite(report.to)
+        ? Math.round((report.to - report.from) / 86400000 * 10) / 10 : null;
+      return unknown('Недостаточно свежих наблюдений: монет ' + have + ' из 12' +
+        (days == null ? '' : ', окно наблюдений ' + days + ' сут и растёт') +
+        '. Клетки с откатом от 1.5% набирают нужное за 7-14 суток — до тех пор здесь прочерк, а не оценка.');
     }
     const hour = Math.round(cell.actual * 10) / 10;
     const period = new Date(report.from).toISOString().slice(0, 10) + ' — ' + new Date(report.to).toISOString().slice(0, 10);
@@ -57,8 +67,12 @@
     const report = freshRecoveryReport(check, now);
     let message = 'Свежей оценки пока нет — вместо исторических процентов показан прочерк.';
     let color = '#f5c518';
+    // Длина окна объясняет прочерки: чем оно короче, тем больше клеток пустых.
+    const days = report && finite(report.from) && finite(report.to)
+      ? Math.round((report.to - report.from) / 86400000 * 10) / 10 : null;
+    const window = days == null ? '' : ' Окно наблюдений ' + days + ' сут и растёт.';
     if (report && report.status === 'drift') {
-      message = 'Историческая сетка разошлась с проверкой. Показаны свежие наблюдения; где данных мало — прочерк.';
+      message = 'Историческая сетка разошлась с проверкой. Показаны свежие наблюдения; где данных мало — прочерк.' + window;
     } else if (report && report.status === 'incomplete') {
       message = 'Свежие наблюдения: для части групп данных мало — показан прочерк.';
     } else if (report && report.status === 'no-drift') {
