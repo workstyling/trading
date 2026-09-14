@@ -178,11 +178,26 @@ function createMicroLab(options) {
     trade.holdMin = Math.round((trade.closedAt - trade.openedAt) / 60000 * 10) / 10;
     log(`${trade.coin} ${why}: ${trade.pnlPct}%`);
   }
+  // Свободные места отдаются кандидатам, которые МОГУТ войти.
+  //
+  // Раньше список сначала обрезался по числу свободных мест, а проверки «эта
+  // монета уже открыта» и «ещё не вышел перерыв» шли позже, внутри прохода.
+  // При лимите в две позиции, открытой A и кандидатах [A, B] брался только A,
+  // затем отбрасывался как уже открытый — и B не рассматривался, хотя место
+  // было свободно. Состав выборки от этого зависит, а он и есть предмет
+  // эксперимента.
+  function coolingDown(coin) {
+    const recent = [...state.trades].reverse().find(trade => trade.coin === coin && trade.closedAt);
+    return !!recent && Date.now() - recent.closedAt < cooldownMs;
+  }
   function canEnter(results, scanAt) {
     if (!state.enabled || !scanAt || Date.now() < scanAt || Date.now() - scanAt > 3 * 60 * 1000) return [];
     const open = state.trades.filter(trade => !trade.closedAt && isCurrent(trade));
     if (open.length >= maxOpen) return [];
-    return (results || []).filter(result => result && result.pass).slice(0, Math.max(0, maxOpen - open.length));
+    const openCoins = new Set(state.trades.filter(trade => !trade.closedAt).map(trade => trade.coin));
+    const ready = (results || []).filter(result => result && result.pass &&
+      !openCoins.has(result.coin) && !coolingDown(result.coin));
+    return ready.slice(0, Math.max(0, maxOpen - open.length));
   }
   async function tick({ results, scanAt }) {
     let changed = false;
