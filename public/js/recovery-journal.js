@@ -15,6 +15,14 @@
         !Array.isArray(r.missingCoins) || r.missingCoins.length) return null;
     return r;
   }
+  const validCell = cell => cell && !cell.thin && finite(cell.actual) && cell.actual >= 0 && cell.actual <= 100 &&
+    finite(cell.se) && cell.se >= 0 && finite(cell.coins) && cell.coins >= 12 ? cell : null;
+  const fallBand = row => finite(row.dayFallPct) ? [10, 6, 3, 1, 0].find(value => Number(row.dayFallPct) >= value) : null;
+  const freshReportFor = (scan, now) => {
+    const report = freshRecoveryReport(scan.recheck, now);
+    return report && report.referenceDate === scan.recoveryMeasuredAt ? report : null;
+  };
+  const scanNow = scan => finite(scan.serverNow) ? Number(scan.serverNow) : Date.now();
   function recoveryObservation(row, scan, now = finite(scan.serverNow) ? Number(scan.serverNow) : Date.now()) {
     const unknown = why => ({ hour: null, text: '—', color: 'var(--t2)', why });
     if (!finite(row.dayFallPct) || !finite(row.pullbackPct)) return unknown('Не хватает данных о падении или откате.');
@@ -23,11 +31,10 @@
     if (!report || report.referenceDate !== scan.recoveryMeasuredAt) {
       return unknown('Свежей сопоставимой проверки нет. Исторический процент не используется как оценка.');
     }
-    const lo = [10, 6, 3, 1, 0].find(value => row.dayFallPct >= value);
+    const lo = fallBand(row);
     const deep = row.pullbackPct >= 1.5;
     const cell = report.cells.find(c => c.lo === lo && c.deep === deep);
-    if (!cell || cell.thin || !finite(cell.actual) || cell.actual < 0 || cell.actual > 100 ||
-        !finite(cell.se) || cell.se < 0 || !finite(cell.coins) || cell.coins < 12) {
+    if (!validCell(cell)) {
       // Прочерк без объяснения не отличить от поломки. Называем, чего именно
       // не хватает и почему это пройдёт: окно наблюдений начинается на сутки
       // позже исходного замера и растёт само. По истории такие клетки
@@ -42,11 +49,89 @@
     }
     const hour = Math.round(cell.actual * 10) / 10;
     const period = new Date(report.from).toISOString().slice(0, 10) + ' — ' + new Date(report.to).toISOString().slice(0, 10);
-    return { hour, text: hour.toFixed(1) + '%', color: 'var(--blue)',
+    return { hour, se: Number(cell.se), text: hour.toFixed(1) + '%', color: 'var(--blue)',
       why: 'Свежая частота касания цели +0.30% за час: ' + hour.toFixed(1) +
         '% ±' + Number(cell.se).toFixed(1) + ' п.п. (1 стандартная ошибка); ' + cell.coins + ' монет' +
         (finite(cell.n) ? ', ' + cell.n + ' наблюдений' : '') + ', ' + period +
         '. Это наблюдение по группе, не вероятность прибыли этой монеты; комиссии и спред не вычтены.' };
+  }
+  // Базовая частота — клетка «падения почти нет, откат мелкий». Тот же замер,
+  // то же окно, та же цель, но без условий панели: сравнивать строку больше не
+  // с чем. Порог обязан приходить из того же измерения — своё число вместо
+  // базы значило бы придумать разрешение на покупку.
+  function recoveryBaseline(scan, now = scanNow(scan)) {
+    const report = freshReportFor(scan, now);
+    const cell = report && validCell(report.cells.find(c => c.lo === 0 && c.deep === false));
+    return cell ? { pct: Math.round(cell.actual * 10) / 10, se: Number(cell.se) } : null;
+  }
+  // «Выше базы» значит, что группа чаще доходит до цели, чем монета, которая
+  // никуда не падала. Правило то же, что у сторожа сетки: две ошибки разности
+  // И не меньше трёх пунктов — иначе подсветка загорается от шума, а гореть
+  // всё время значит не гореть вовсе.
+  function recoveryEdge(observation, baseline) {
+    if (!observation || observation.hour == null || !baseline) return { above: false, why: '' };
+    const diff = Math.round((observation.hour - baseline.pct) * 10) / 10;
+    const se = Math.sqrt(baseline.se * baseline.se + (finite(observation.se) ? observation.se * observation.se : 0));
+    const above = diff > 2 * se && diff >= 3;
+    return { above, diff, baseline: baseline.pct,
+      why: 'База (падения почти нет) ' + baseline.pct.toFixed(1) + '%, здесь ' + observation.hour.toFixed(1) +
+        '%: разница ' + (diff >= 0 ? '+' : '') + diff.toFixed(1) + ' п.п. при погрешности разности ' + se.toFixed(1) +
+        (above
+          ? '. Выше базы больше чем на две погрешности — до цели доходит чаще. Это не подтверждённая прибыль: комиссии и спред не вычтены.'
+          : '. В пределах погрешности — не лучше монеты без падения.') };
+  }
+  // Порядок строк: сверху те, у кого измеренная частота выше.
+  //
+  // Первым ключом стоял уровень отката, а свежих наблюдений в глубоких
+  // клетках пока нет — и верх списка занимали прочерки, тогда как 79% стояли
+  // пятой строкой. Смотреть сверху вниз стало нельзя.
+  //
+  // Измеренные строки идут выше всех неизмеренных, а не вперемешку по
+  // близкому числу: сверху должно стоять то, про что известно, чем оно
+  // кончалось. Внутри — по самой частоте.
+  //
+  // Строки без своей оценки упорядочиваем между собой по известной мелкой
+  // клетке того же падения: в историческом замере глубокий откат шёл не хуже
+  // мелкого, так что это осторожная нижняя граница. На экран это число не
+  // идёт — там остаётся прочерк, потому что своей оценки у клетки нет.
+  const MEASURED_FIRST = 1000;
+  function recoveryOrder(row, scan, verdict, observation, now = scanNow(scan)) {
+    if (verdict && verdict.tier <= 1) return -1;
+    // При равной частоте вперёд идёт более глубокий откат: в историческом
+    // замере он добавлял 11-18 пунктов. Надбавка меньше десятой доли
+    // процента, поэтому измеренную разницу она перебить не может.
+    if (observation && observation.hour != null) {
+      return MEASURED_FIRST + observation.hour +
+        Math.min(Math.max(finite(row.pullbackPct) ? Number(row.pullbackPct) : 0, 0), 9) / 100;
+    }
+    const report = freshReportFor(scan, now);
+    const band = fallBand(row);
+    const near = report && band != null && validCell(report.cells.find(c => c.lo === band && c.deep === false));
+    return near ? Math.round(Number(near.actual) * 10) / 10 : 0;
+  }
+  // Глубокий откат ушёл под черту: своей оценки у него нет, и измеренные
+  // строки теперь выше. Выбросить его молча нельзя — до сегодняшнего дня он
+  // стоял первым, а исторический замер давал ему 11-18 пунктов. Пропавшая
+  // строка неотличима от строки, которой не было.
+  function renderRecoveryDeepNote(sorted, shownCount, scan, now = scanNow(scan)) {
+    const hidden = (sorted || []).slice(shownCount)
+      .filter(row => finite(row.pullbackPct) && Number(row.pullbackPct) >= 1.5 &&
+        recoveryObservation(row, scan, now).hour == null)
+      .map(row => escapeHtml(String(row.coin).replace(/[^A-Z0-9]/gi, '')));
+    if (!hidden.length) return '';
+    return '<div style="font-size:10px;line-height:1.4;margin-top:5px;color:var(--t2);">' +
+      'Ниже черты глубокий откат без свежей оценки: <b>' + hidden.slice(0, 6).join(', ') + '</b>' +
+      (hidden.length > 6 ? ' и ещё ' + (hidden.length - 6) : '') +
+      '. В историческом замере откат от 1.5% добавлял 11-18 пунктов, но свежих наблюдений в этих ' +
+      'клетках пока нет — поэтому наверх они не подняты.</div>';
+  }
+  function renderRecoveryLegend(scan, now = scanNow(scan)) {
+    const base = recoveryBaseline(scan, now);
+    if (!base) return '';
+    return '<div style="font-size:10px;line-height:1.4;margin-bottom:6px;color:var(--t2);">' +
+      'Порог на экране: <b style="color:#00e5a0;">зелёным</b> — свежая частота цели выше базы <b>' +
+      base.pct.toFixed(1) + '%</b> (монеты почти без падения) больше чем на две погрешности. ' +
+      'Это «чаще доходит до цели», а не разрешение покупать: комиссии и спред не вычтены.</div>';
   }
   function recoveryVerdict(row, gate, observation) {
     const out = (tier, label, why, risk = false) => ({ tier, label, why,
@@ -134,7 +219,9 @@
     if (overall && overall.hitUnknown) line += ' · неизвестен исход цели у ' + overall.hitUnknown + ' записей';
     return '<span title="' + esc(notes.filter(Boolean).join(NL)) + '">' + line + '</span>';
   }
-  const api = { renderEntryJournal, renderRecoveryStatus, recoveryObservation, recoveryVerdict, recoveryDayChange, escapeRecoveryText: escapeHtml };
+  const api = { renderEntryJournal, renderRecoveryStatus, renderRecoveryLegend, renderRecoveryDeepNote, recoveryObservation,
+    recoveryVerdict, recoveryDayChange, recoveryBaseline, recoveryEdge, recoveryOrder,
+    escapeRecoveryText: escapeHtml };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else Object.assign(root, api);
 })(typeof globalThis !== 'undefined' ? globalThis : this);

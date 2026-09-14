@@ -15586,6 +15586,9 @@ Requirements:
         const cell = (x) => {
           const v = verdict(x);
           const rec = recoveryObservation(x, j);
+          // Порог покупаемости на экране: база того же замера, с которой
+          // сравнивается строка. Без неё 57% и 79% выглядели одинаково тёмными.
+          const edge = recoveryEdge(rec, recoveryBaseline(j));
           const safe = String(x.coin).replace(/[^A-Z0-9]/gi, '');
           const held = x.inListMin == null ? null
             : x.inListMin >= 120 ? Math.round(x.inListMin / 60) + ' ч' : x.inListMin + ' мин';
@@ -15596,27 +15599,38 @@ Requirements:
               : 'Падение от суточного пика: ' + x.dayFallPct + '%',
             x.spreadPct == null ? 'Спред неизвестен' : 'Спред ' + x.spreadPct + '%',
             x.inListMin > 90 ? 'Монета давно в списке; часовой журнал проверяет первое появление сигнала' : '',
+            edge.why,
             v.label + ': ' + v.why,
           ].filter(Boolean).join(String.fromCharCode(10));
           const num = (value, color, bold) => '<td style="text-align:right;padding:4px 6px;font-size:11px;white-space:nowrap;font-variant-numeric:tabular-nums;color:' +
             (color || 'var(--t2)') + ';' + (bold ? 'font-weight:800;' : '') + '">' + value + '</td>';
-          return '<tr onclick="selectCoinForTrade(\'' + safe + '\')" title="' + escapeRecoveryText(tip) + '" style="cursor:pointer;' + v.bg + '">' +
+          return '<tr onclick="selectCoinForTrade(\'' + safe + '\')" title="' + escapeRecoveryText(tip) + '" style="cursor:pointer;' + (v.bg || (edge.above ? 'background:rgba(0,229,160,0.07);' : '')) + '">' +
             '<td style="padding:4px 6px;"><span style="color:var(--blue);font-weight:700;font-size:11px;">' + safe + '</span>' + swingMark(x) +
             '<span data-bookshare="' + safe + '" data-live="1"></span>' +
             '<br><span style="color:var(--t2);font-size:9px;">$' + price(x.price) + '</span></td>' +
-            num(rec.text, rec.color, true) +
+            num((edge.above ? String.fromCharCode(9650) + ' ' : '') + rec.text,
+              edge.above ? '#00e5a0' : rec.color, true) +
             num(x.pullbackPct == null ? '—' : x.pullbackPct + '%') +
             num(recoveryDayChange(x)) +
             num(x.rsi == null ? '—' : Math.round(x.rsi)) +
             '<td style="text-align:center;padding:4px 6px;font-size:10px;font-weight:800;color:' + v.color + ';">' + v.label + '</td>' +
             num(held || '—') + '</tr>';
         };
-        box.innerHTML = head + renderRecoveryStatus(j.recheck, j.serverNow) + mkLine +
+        // Порядок один на обе вёрстки: измеренные строки выше прочерков, а
+        // внутри — по самой частоте. Считаем список один раз, чтобы под
+        // таблицей можно было назвать тех, кто остался за чертой.
+        const SHOWN = 8;
+        const ranked = good.slice().sort((a, b) =>
+          recoveryOrder(b, j, verdict(b), recoveryObservation(b, j)) -
+          recoveryOrder(a, j, verdict(a), recoveryObservation(a, j)));
+        box.innerHTML = head + renderRecoveryStatus(j.recheck, j.serverNow) +
+          renderRecoveryLegend(j) + mkLine +
           (good.length
-            // Сохраняем уровни условий отката и порядок сканера.
-            // Наличие измерения не превращает уровень в разрешение покупки.
+            // Порядок показывает, где чаще доходило до цели. Наличие
+            // измерения не превращает строку в разрешение покупки.
             ? '<table style="width:100%;border-collapse:collapse;"><thead>' + head2 + '</thead><tbody>' +
-              good.slice().sort((a, b) => verdict(b).tier - verdict(a).tier).slice(0, 8).map(cell).join('') + '</tbody></table>' +
+              ranked.slice(0, SHOWN).map(cell).join('') + '</tbody></table>' +
+            renderRecoveryDeepNote(ranked, SHOWN, j) +
             '<div id="entryPaper" style="margin-top:6px;padding-top:5px;border-top:1px solid var(--b1);font-size:10px;color:var(--t2);"></div>'
             : '<table style="width:100%;border-collapse:collapse;"><thead>' + head2 + '</thead><tbody>' + rows.slice(0, 3).map(cell).join('') + '</tbody></table>' +
               '<div style="color:var(--t2);font-size:10px;margin-top:5px;">Порог не взял никто — показаны ближайшие.</div>');
