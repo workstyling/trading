@@ -4646,11 +4646,46 @@ function paperTargetPct() {
   return 2.0;
 }
 
-// PnL как в реальной сделке: купили лимиткой по ask, продаём лимиткой — комиссия с обеих сторон
-function paperPnl(pos, price) {
-  const fee = pos.feePct != null ? pos.feePct : paperLimitFee();
-  const qty = pos.qty != null ? pos.qty : (pos.budget * (1 - fee) / pos.entry);
-  const out = qty * price * (1 - fee);
+// Комиссия тейкера: платится, когда сделка забирает встречную заявку.
+function paperTakerFee() {
+  const s = loadSettings();
+  return (parseFloat(s.marketFee) || defaultSettings.marketFee) / 100;
+}
+
+// PnL БУМАЖНОЙ СДЕЛКИ ПО СПОСОБУ ИСПОЛНЕНИЯ.
+//
+// Раньше с обеих сторон бралась ставка мейкера (0.075%). Но лаборатория
+// покупает сразу по лучшему ask — это забирает встречную заявку, то есть
+// тейкер (0.15%). Мейкер платят только там, где заявка стояла в стакане: это
+// выход по цели. Стоп и выход по времени исполняются по наблюдаемому биду —
+// снова тейкер.
+//
+// Занижение комиссии красит стратегию лучше, чем она есть: на 44 закрытых
+// записях разница модели составила около −$54.
+//
+// Ставки и способ исполнения сохраняются НА СДЕЛКЕ при открытии: настройки
+// меняются, а прошлые записи должны остаться воспроизводимыми.
+function paperFees(pos) {
+  // Запись прежней модели считаем ЕЁ ставкой с обеих сторон. Пересчитать
+  // историю новыми ставками значит переписать прошлые выводы задним числом:
+  // они перестанут воспроизводиться, а разница спишется на «уточнение».
+  if (!pos || pos.fm !== 2) {
+    const old = pos && pos.feePct != null ? pos.feePct : paperLimitFee();
+    return { entry: old, maker: old, taker: old, legacy: true };
+  }
+  return {
+    entry: pos.feeEntryPct != null ? pos.feeEntryPct : paperTakerFee(),
+    maker: pos.feeMakerPct != null ? pos.feeMakerPct : paperLimitFee(),
+    taker: pos.feeTakerPct != null ? pos.feeTakerPct : paperTakerFee(),
+    legacy: false,
+  };
+}
+// exitKind: 'tp' — выход стоял в стакане (мейкер), иначе забрали встречную (тейкер)
+function paperPnl(pos, price, exitKind) {
+  const f = paperFees(pos);
+  const qty = pos.qty != null ? pos.qty : (pos.budget * (1 - f.entry) / pos.entry);
+  const exitFee = f.legacy ? f.entry : ((exitKind || pos.exitKind) === 'tp' ? f.maker : f.taker);
+  const out = qty * price * (1 - exitFee);
   return Math.round((out - pos.budget) * 100) / 100;
 }
 
@@ -4685,7 +4720,13 @@ async function fetchBestAsk(productId) {
 
 // Собрать позицию по текущим настройкам — общий код для ручного и автоматического входа
 function buildPaperPos(coin, pair, ask, ctx, source) {
-  const fee = paperLimitFee();
+  // Вход — покупка по лучшему ask, то есть тейкер. Ставки сохраняются на
+  // сделке: настройки меняются, а прошлые записи должны остаться
+  // воспроизводимыми. fm — версия модели комиссий, чтобы старые записи не
+  // смешивались с новыми в отчётах.
+  const maker = paperLimitFee();
+  const taker = paperTakerFee();
+  const fee = taker;
   const targetPct = paperTargetPct();
   const budget = paperBot.budgetUsd;
   // Стоп настраивается: 0 = без стопа (как в реальной торговле — держим до цели)
@@ -4695,7 +4736,8 @@ function buildPaperPos(coin, pair, ask, ctx, source) {
     coin, pair, source,
     entry: ask,                       // лучший ask на момент входа
     qty: budget * (1 - fee) / ask,    // сколько монет реально получили после комиссии
-    feePct: fee, targetPct, slPct,
+    feePct: fee, feeEntryPct: taker, feeMakerPct: maker, feeTakerPct: taker, fm: 2,
+    targetPct, slPct,
     last: ask, peak: ask, budget,
     sl: slPct > 0 ? ask * (1 - slPct / 100) : 0,
     slStage: slPct > 0 ? (slPct >= 5 ? 'аварийный' : 'SL') : 'без стопа',
@@ -4707,7 +4749,10 @@ function closePaperPos(pos, price, reason) {
   pos.closedAt = Date.now();
   pos.exit = price;
   pos.reason = reason;
-  pos.pnl = paperPnl(pos, price);
+  // Только выход по цели стоял в стакане — он платит мейкера. Стоп, выход по
+  // времени и ручное закрытие забирают встречную заявку: тейкер.
+  pos.exitKind = reason === 'TP' ? 'tp' : 'taker';
+  pos.pnl = paperPnl(pos, price, pos.exitKind);
   pos.pnlPct = Math.round(pos.pnl / pos.budget * 10000) / 100;
   pos.holdH = Math.round((pos.closedAt - pos.openedAt) / 3600000 * 10) / 10;
   paperBot.open = paperBot.open.filter(p => p.id !== pos.id);
@@ -5295,7 +5340,10 @@ function saveMicroScalpWatch() {
   }
 }
 function currentMicroScalpExecution() {
-  return { ...MICRO_EXECUTION, feePct: paperLimitFee() };
+  // Ставки по способу исполнения: вход и выходы не по цели — тейкер,
+  // выход по цели — мейкер. Прежняя feePct остаётся для записей старой модели.
+  return { ...MICRO_EXECUTION, feePct: paperLimitFee(),
+    feeMakerPct: paperLimitFee(), feeTakerPct: paperTakerFee() };
 }
 const microScalpLab = createMicroLab({
   file: MICRO_SCALP_FILE,
@@ -6723,6 +6771,7 @@ function currentLabExecution() {
     targetPct: paperTargetPct(),
     slPct: paperBot.slPct != null ? paperBot.slPct : PAPER_CFG.slPct,
     feePct: paperLimitFee(),
+    feeMakerPct: paperLimitFee(), feeTakerPct: paperTakerFee(),
     maxHoldH: LAB_MAX_HOLD_H,
     executionModel: 'ask-entry / limit-target / observed-bid-stop-time-v2',
   };

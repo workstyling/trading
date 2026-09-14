@@ -12846,10 +12846,19 @@ Requirements:
           }
         }
 
+        // ОДИН СОСТАВ ОРДЕРОВ НА ВСЁ.
+        //
+        // Выключенные ордера убирались из сумм, но оставались в списках, по
+        // которым решается «позиция закрыта» и что записать в историю.
+        // Выключение покупки давало totalFilled = −35 230 и totalUSD = −629.44,
+        // отрицательный остаток считался закрытой позицией — и кнопка
+        // предлагала записать +$629.44 прибыли по позиции, где ещё лежат
+        // 32 705 монет. Один клик, и в историю уходит выдуманная сделка.
+        const active = orders.filter(o => !mutedOrders.includes(o.order_id));
+
         // Calculate totals (only BUY orders for profit calc, skip unfilled SELL orders and muted orders)
         let totalFilled = 0, totalUSD = 0, buyFilled = 0, buyUSD = 0, buyWeightedPrice = 0;
-        orders.forEach(o => {
-          if (mutedOrders.includes(o.order_id)) return; // Skip muted
+        active.forEach(o => {
           const filled = parseFloat(o.filled_size) || 0;
           const value = Math.round((parseFloat(o.total_value) || 0) * 100) / 100;
           const avgPrice = parseFloat(o.average_filled_price) || 0;
@@ -12888,8 +12897,8 @@ Requirements:
         const initMarketDiff = initMarketPnL - initLimitPnL;
 
         // Check if group has BUY and SELL orders with fills for profit calculation
-        const filledBuys = orders.filter(o => o.side === 'BUY' && parseFloat(o.filled_size) > 0);
-        const filledSells = orders.filter(o => o.side === 'SELL' && parseFloat(o.filled_size) > 0);
+        const filledBuys = active.filter(o => o.side === 'BUY' && parseFloat(o.filled_size) > 0);
+        const filledSells = active.filter(o => o.side === 'SELL' && parseFloat(o.filled_size) > 0);
         // Записывать прибыль можно только по ЗАКРЫТОЙ позиции.
         //
         // Прежде хватало одной исполненной продажи, а прибылью считалось
@@ -12902,7 +12911,13 @@ Requirements:
         // Пыль после продажи остаётся почти всегда, поэтому закрытой считаем
         // позицию, остаток которой стоит меньше доллара.
         const restUsd = totalFilled * (avgBuyPrice || 0);
-        const positionClosed = totalFilled <= 0 || restUsd < 1;
+        // Отрицательный остаток — это НЕ закрытая позиция.
+        //
+        // Продано больше, чем видно купленного: часть покупок за краем окна
+        // ордеров или выключена руками. Считать такое закрытием значит
+        // записывать в прибыль деньги, которые на самом деле ещё вложены.
+        const oversold = totalFilled < 0;
+        const positionClosed = !oversold && restUsd < 1;
         const canSaveProfit = filledBuys.length > 0 && filledSells.length > 0 && positionClosed;
 
         // Calculate group profit: same logic as USD column (negated totalUSD)
@@ -12928,14 +12943,18 @@ Requirements:
         // ширину втрое, строка перекладывалась и блок прыгал при каждой
         // перерисовке. На кнопке — короткое «ещё открыта», в подсказке —
         // сколько осталось.
-        const openTitle = !positionClosed && filledSells.length > 0
-          ? `Позиция ещё открыта: осталось ${fmtSize(totalFilled)} ${coin}. Прибыль известна только после полного выхода.`
-          : '';
+        const openTitle = oversold
+          ? `Продано больше, чем видно купленного: остаток ${fmtSize(totalFilled)} ${coin}. Часть покупок выключена или лежит за краем окна ордеров — записывать такую «прибыль» нельзя, это ещё вложенные деньги.`
+          : !positionClosed && filledSells.length > 0
+            ? `Позиция ещё открыта: осталось ${fmtSize(totalFilled)} ${coin}. Прибыль известна только после полного выхода.`
+            : '';
         const btnText = alreadySaved
           ? `Update Profit (was ${savedProfitText}) → ${profitText}`
-          : (!positionClosed && filledSells.length > 0
-            ? `Save Profit — ещё открыта`
-            : `Save Profit ${profitText}`);
+          : (oversold
+            ? `Save Profit — не сходится`
+            : !positionClosed && filledSells.length > 0
+              ? `Save Profit — ещё открыта`
+              : `Save Profit ${profitText}`);
         const btnClass = `save-profit-btn ${groupProfit >= 0 ? 'profit-positive' : 'profit-negative'}`;
 
         // Check if any order was created today

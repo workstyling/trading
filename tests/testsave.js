@@ -16,7 +16,8 @@ console.log('\nУсловие записи');
   // Воспроизводим условие как есть
   const can = (buys, sells, totalFilled, avgBuy) => {
     const restUsd = totalFilled * (avgBuy || 0);
-    const positionClosed = totalFilled <= 0 || restUsd < 1;
+    const oversold = totalFilled < 0;
+    const positionClosed = !oversold && restUsd < 1;
     return buys > 0 && sells > 0 && positionClosed;
   };
   // Ровно случай с CRO: продана половина, остаток стоит $1292
@@ -30,11 +31,39 @@ console.log('\nУсловие записи');
   // Нулевая средняя цена не должна открывать лазейку
   ok(can(1, 1, 21516.2, 0) === true, 'при неизвестной цене остаток оценить нечем — не блокируем',
     'известное ограничение: без цены остаток в долларах не посчитать');
+
+  // ОТРИЦАТЕЛЬНЫЙ ОСТАТОК — НЕ ЗАКРЫТИЕ.
+  //
+  // Продано больше, чем видно купленного: часть покупок выключена руками или
+  // лежит за краем окна ордеров. Раньше такое считалось закрытой позицией: по
+  // CP выключение покупки давало остаток −35 230 и кнопку «записать +$629.44»
+  // по позиции, где ещё лежат 32 705 монет.
+  ok(can(1, 1, -35230, 0.0178) === false, 'продано больше купленного — записывать нельзя');
+  ok(can(1, 1, -1, 0.06) === false, 'и небольшой минус тоже не закрытие');
+}
+
+console.log('\nСостав ордеров одинаков для сумм и для записи');
+{
+  // Выключенные ордера убирались из сумм, но оставались в списках, по которым
+  // решается «позиция закрыта» и что уходит в историю. Один состав на всё.
+  ok(/const active = orders\.filter\(o => !mutedOrders\.includes\(o\.order_id\)\)/.test(d),
+    'десктоп: состав считается один раз');
+  ok(/active\.forEach\(o => \{/.test(d), 'и суммы идут по нему');
+  ok(/const filledBuys = active\.filter/.test(d) && /const filledSells = active\.filter/.test(d),
+    'и списки для записи тоже');
+  ok(!/const filledBuys = orders\.filter/.test(d), 'полного списка ордеров в записи не осталось');
+
+  // Телефон выключения не показывает, но обязан их сохранить: он отправлял
+  // muted: [] и стирал то, что выключено на десктопе.
+  ok(/muted: _mutedFromServer/.test(m), 'телефон возвращает список выключенных как есть');
+  ok(!/JSON\.stringify\(\{ selected: selectedOrders, muted: \[\] \}\)/.test(m),
+    'и больше не стирает его пустым списком');
 }
 
 console.log('\nОбе вёрстки');
 for (const [name, h] of [['index.html', d], ['mobile/index.html', m]]) {
-  ok(/const positionClosed = totalFilled <= 0 \|\| restUsd < 1;/.test(h), name + ': признак закрытия считается');
+  ok(/const oversold = totalFilled < 0;/.test(h) && /const positionClosed = !oversold && restUsd < 1;/.test(h),
+    name + ': признак закрытия считается, и минус закрытием не считается');
   ok(/canSaveProfit = filledBuys\.length > 0 && filledSells\.length > 0 && positionClosed/.test(h),
     name + ': запись требует закрытой позиции');
   ok(/ещё открыта/.test(h), name + ': сказано, почему записывать рано');

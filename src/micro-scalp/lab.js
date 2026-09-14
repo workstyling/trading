@@ -75,14 +75,28 @@ function createMicroLab(options) {
       slPct: isFiniteNumber(trade && trade.slPct) ? trade.slPct : fallback.slPct,
       maxHoldMin: isFiniteNumber(trade && trade.maxHoldMin) ? trade.maxHoldMin : fallback.maxHoldMin,
       feePct: isFiniteNumber(trade && trade.feePct) ? trade.feePct : fallback.feePct,
+      // Ставки по способу исполнения. Вход — покупка по ask (тейкер), выход по
+      // цели стоял в стакане (мейкер), стоп и выход по времени забирают
+      // встречную заявку (снова тейкер). Раньше с обеих сторон бралась ставка
+      // мейкера, и стратегия выглядела лучше, чем есть.
+      feeMakerPct: isFiniteNumber(trade && trade.feeMakerPct) ? trade.feeMakerPct : fallback.feeMakerPct,
+      feeTakerPct: isFiniteNumber(trade && trade.feeTakerPct) ? trade.feeTakerPct : fallback.feeTakerPct,
       executionModel: trade && trade.executionModel || fallback.executionModel,
     };
   }
-  function pnl(trade, exit) {
+  function pnl(trade, exit, exitKind) {
     const execution = executionFor(trade);
     if (!(trade && trade.entry > 0 && trade.budget > 0 && exit > 0)) return null;
-    const quantity = isFiniteNumber(trade.qty) ? trade.qty : trade.budget * (1 - execution.feePct) / trade.entry;
-    return Math.round((quantity * exit * (1 - execution.feePct) - trade.budget) * 100) / 100;
+    // Записи прежней модели считаем прежней ставкой: переписывать историю
+    // задним числом нельзя, иначе прошлые выводы станут невоспроизводимы.
+    const entryFee = trade.fm === 2 && isFiniteNumber(execution.feeTakerPct)
+      ? execution.feeTakerPct : execution.feePct;
+    const exitFee = trade.fm !== 2 ? execution.feePct
+      : (exitKind || trade.exitKind) === 'tp'
+        ? (isFiniteNumber(execution.feeMakerPct) ? execution.feeMakerPct : execution.feePct)
+        : (isFiniteNumber(execution.feeTakerPct) ? execution.feeTakerPct : execution.feePct);
+    const quantity = isFiniteNumber(trade.qty) ? trade.qty : trade.budget * (1 - entryFee) / trade.entry;
+    return Math.round((quantity * exit * (1 - exitFee) - trade.budget) * 100) / 100;
   }
   function save() {
     let temporary = null;
@@ -158,7 +172,8 @@ function createMicroLab(options) {
     trade.why = why;
     trade.exitObservedBid = quote.bid;
     trade.exitObservedBidAt = quote.at;
-    trade.pnl = pnl(trade, exit);
+    trade.exitKind = why === 'TP' ? 'tp' : 'taker';
+    trade.pnl = pnl(trade, exit, trade.exitKind);
     trade.pnlPct = trade.pnl != null ? Math.round(trade.pnl / trade.budget * 10000) / 100 : null;
     trade.holdMin = Math.round((trade.closedAt - trade.openedAt) / 60000 * 10) / 10;
     log(`${trade.coin} ${why}: ${trade.pnlPct}%`);
@@ -216,7 +231,7 @@ function createMicroLab(options) {
           entryQuoteAt: quote.at,
           last: quote.bid,
           lastBidAt: quote.at,
-          qty: state.budget * (1 - execution.feePct) / quote.ask,
+          qty: state.budget * (1 - (execution.feeTakerPct != null ? execution.feeTakerPct : execution.feePct)) / quote.ask,
           budget: state.budget,
           openedAt: now,
           cohortId: state.cohortId,
@@ -226,6 +241,9 @@ function createMicroLab(options) {
           slPct: execution.slPct,
           maxHoldMin: execution.maxHoldMin,
           feePct: execution.feePct,
+          feeMakerPct: execution.feeMakerPct,
+          feeTakerPct: execution.feeTakerPct,
+          fm: 2,
           executionModel: execution.executionModel,
           mfe: initialPct,
           mae: initialPct,
