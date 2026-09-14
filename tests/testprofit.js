@@ -38,6 +38,9 @@ console.log('\nСервер не пишет поверх истории что �
     app: { post: (p, h) => { routes[p] = h; }, get: () => { } },
   };
   vm.createContext(ctx);
+  // Отпечаток истории объявлен рядом — без него обработчик не соберётся
+  const rv = src.indexOf('function historyRev');
+  vm.runInContext(src.slice(rv, src.indexOf('\n}\n', rv) + 2), ctx);
   const i = src.indexOf("app.post('/save-profit-history'");
   const j = src.indexOf('\n});\n', i) + 4;
   vm.runInContext(src.slice(i, j), ctx);
@@ -74,6 +77,68 @@ console.log('\nСервер не пишет поверх истории что �
   ok(r.code === 400 && stored === null, 'пустое тело тоже не стирает историю');
 }
 
+console.log('\nДва устройства не затирают друг друга');
+{
+  // Телефон и ноутбук читают одно и то же, каждый добавляет свою запись и
+  // присылает ВЕСЬ массив. Проверка длины этого не ловила: у обоих массивов
+  // она одинаковая, и вторая запись молча стирала первую.
+  const routes = {};
+  let store = [{ id: 1 }];
+  const ctx = {
+    console, JSON, Array, String, Number, Math,
+    loadProfitHistory: () => store,
+    saveProfitHistory: (h) => { store = h; },
+    app: { post: (p, h) => { routes[p] = h; }, get: (p, h) => { routes[p] = h; } },
+  };
+  vm.createContext(ctx);
+  const rv = src.indexOf('function historyRev');
+  vm.runInContext(src.slice(rv, src.indexOf('\n}\n', rv) + 2), ctx);
+  for (const path of ["app.get('/get-profit-history'", "app.post('/save-profit-history'"]) {
+    const a = src.indexOf(path);
+    vm.runInContext(src.slice(a, src.indexOf('\n});\n', a) + 4), ctx);
+  }
+  const call = (path, body) => {
+    let code = 200, out = null;
+    const res = { status: (c) => { code = c; return res; }, json: (x) => { out = x; return res; } };
+    routes[path]({ body: body || {} }, res);
+    return { code, out };
+  };
+
+  const read = call('/get-profit-history').out;
+  ok(!!read.rev, 'чтение отдаёт отпечаток истории', read.rev);
+
+  const first = call('/save-profit-history', { history: [{ id: 1 }, { id: 'A' }], rev: read.rev });
+  ok(first.code === 200 && store.length === 2, 'первый сохранился');
+
+  const second = call('/save-profit-history', { history: [{ id: 1 }, { id: 'B' }], rev: read.rev });
+  ok(second.code === 409 && second.out.conflict, 'второй с устаревшим отпечатком отклонён', 'код ' + second.code);
+  ok(store.map(e => e.id).join(',') === '1,A', 'и запись первого на месте', store.map(e => e.id).join(','));
+  ok(Array.isArray(second.out.history) && second.out.rev, 'в отказе отдана свежая история и её отпечаток');
+
+  const retry = call('/save-profit-history',
+    { history: [...second.out.history, { id: 'B' }], rev: second.out.rev });
+  ok(retry.code === 200 && store.map(e => e.id).join(',') === '1,A,B',
+    'повтор на свежей истории сохраняет обе записи', store.map(e => e.id).join(','));
+
+  // Старый клиент без отпечатка не должен ломаться — для него прежняя защита
+  const old = call('/save-profit-history', { history: [...store, { id: 'C' }] });
+  ok(old.code === 200, 'клиент без отпечатка ещё работает');
+  // Отпечаток от НАБОРА, а не от порядка: переставленный список — не конфликт
+  const shuffled = [...store].reverse();
+  ok(ctx.historyRev(shuffled) === ctx.historyRev(store), 'порядок записей отпечаток не меняет');
+}
+
+console.log('\nОбе вёрстки шлют отпечаток');
+{
+  const d = read('public/index.html'), m = read('public/mobile/index.html');
+  ok(/rev: _profitRev\b/.test(d), 'десктоп прикладывает отпечаток к сохранению');
+  ok(/_profitRev = data\.rev/.test(d), 'и запоминает его при чтении');
+  ok(/j\.conflict && Array\.isArray\(j\.history\)/.test(d), 'и умеет наложить правку на чужую историю');
+  ok(/rev: _profitRevM\b/.test(m), 'телефон тоже прикладывает отпечаток');
+  ok(/_profitRevM = r\.rev/.test(m), 'и запоминает его при чтении');
+  ok(/saved\.conflict && Array\.isArray\(saved\.history\)/.test(m), 'и умеет повторить на свежей');
+}
+
 console.log('\nДесктоп: неудачу видно');
 {
   const f = desk.slice(desk.indexOf('async function saveProfitHistoryToServer'),
@@ -86,16 +151,16 @@ console.log('\nДесктоп: неудачу видно');
   const g = desk.slice(desk.indexOf('async function saveGroupProfit'),
     desk.indexOf('async function deleteProfitEntry'));
   ok(/const before = JSON\.parse\(JSON\.stringify\(profitHistory\)\)/.test(g), 'снимок делается ДО правки');
-  ok((g.match(/if \(!await saveProfitHistoryToServer\(before\)\) return;/g) || []).length === 2,
+  ok((g.match(/if \(!await saveProfitHistoryToServer\(before, reapply\w+\)\) return;/g) || []).length === 2,
     'и на обеих ветках — новая запись и обновление существующей — неудача останавливает');
   // Иначе сделка исчезнет и из истории, и из списка выбранных
-  ok(g.indexOf('if (!await saveProfitHistoryToServer(before)) return;') < g.indexOf('saveSelectedOrders()'),
+  ok(g.indexOf('saveProfitHistoryToServer(before, reapplyAdd)') < g.indexOf('saveSelectedOrders()'),
     'ордера снимаются с выбора только после успешной записи');
 
   const d = desk.slice(desk.indexOf('async function deleteProfitEntry'),
     desk.indexOf('async function deleteProfitEntry') + 3000);
   ok(/const before = JSON\.parse\(JSON\.stringify\(profitHistory\)\)/.test(d), 'удаление тоже со снимком');
-  ok(/if \(!await saveProfitHistoryToServer\(before\)\) return;/.test(d),
+  ok(/saveProfitHistoryToServer\(before, \(fresh\) => fresh\.filter/.test(d),
     'и не говорит «удалена», если не удалилась');
 }
 

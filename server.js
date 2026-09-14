@@ -306,9 +306,23 @@ app.post('/api/favorites', (req, res) => {
   } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
+// Отпечаток истории: от набора записей, а не от порядка.
+//
+// Нужен, чтобы поймать чужую правку. Телефон и ноутбук читают историю, каждый
+// добавляет свою запись и присылает ВЕСЬ массив — второй затирал первого, и
+// запись пропадала молча. Проверка длины этого не ловила: у обоих массивов она
+// одинаковая.
+function historyRev(h) {
+  if (!Array.isArray(h)) return '0';
+  const ids = h.map(e => String(e && e.id)).sort();
+  let a = 5381;
+  for (const s of ids) for (let i = 0; i < s.length; i++) a = ((a * 33) ^ s.charCodeAt(i)) >>> 0;
+  return h.length + '-' + a.toString(36);
+}
+
 app.get('/get-profit-history', (req, res) => {
   const history = loadProfitHistory();
-  res.json({ success: true, history });
+  res.json({ success: true, history, rev: historyRev(history) });
 });
 
 // API: Save profit history
@@ -322,6 +336,17 @@ app.post('/save-profit-history', (req, res) => {
       return res.status(400).json({ success: false, error: 'история должна быть массивом' });
     }
     const had = loadProfitHistory();
+    // Кто-то успел записать раньше. Отдаём свежую историю и отказываем:
+    // клиент наложит свою правку на неё и повторит. Без этого второе
+    // устройство просто затирало запись первого — и она пропадала молча.
+    const { rev } = req.body;
+    if (rev != null && rev !== historyRev(had)) {
+      return res.status(409).json({
+        success: false, conflict: true,
+        error: 'история изменилась с другого устройства',
+        history: had, rev: historyRev(had),
+      });
+    }
     if (Array.isArray(had) && history.length < had.length - 1) {
       // Удаление по одной записи законно, а обвал списка — нет: так выглядит
       // страница, отправившая недогруженную историю.
@@ -331,7 +356,7 @@ app.post('/save-profit-history', (req, res) => {
       });
     }
     saveProfitHistory(history);
-    res.json({ success: true, count: history.length });
+    res.json({ success: true, count: history.length, rev: historyRev(history) });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
@@ -2607,16 +2632,41 @@ setTimeout(reconcileBeWatches, 45_000);
 // покупки прибавляют объём и потраченное, исполненные продажи вычитают.
 // Панель считает по ВЫБРАННЫМ ордерам, сервер — по всем; если часть ордеров
 // скрыта вручную, числа разойдутся, и это честнее, чем угадывать выбор.
+// Сколько монеты и денег в ТЕКУЩЕЙ позиции — по ордерам биржи.
+//
+// Две ошибки, из-за которых сторож безубытка считал не то:
+//
+// 1. Учитывались только ордера со статусом FILLED. Отменённая лимитная
+//    продажа с ненулевым исполнением монеты продала, но в расчёт не входила:
+//    по CP выходило 67 935 монет вместо 32 705 настоящих, и затраты $1203
+//    вместо $583. Смотреть надо на исполненный объём, а не на статус.
+//
+// 2. Складывались все циклы подряд. Монету купили, продали с прибылью,
+//    купили снова — прибыль первого цикла уменьшала затраты второго, и
+//    безубыток оказывался ниже настоящего. Поэтому счёт обнуляется каждый
+//    раз, когда позиция сходилась к нулю: новый заход — новая точка отсчёта.
 function positionFromOrders(orders, productId) {
+  // По времени вперёд: без порядка «обнулилась» не определить
+  const own = orders
+    .filter(o => o.product_id === productId && (parseFloat(o.filled_size) || 0) > 0)
+    .map(o => ({
+      t: Date.parse(o.last_fill_time || o.created_time || 0) || 0,
+      side: o.side,
+      size: parseFloat(o.filled_size) || 0,
+      val: Math.round((parseFloat(o.total_value) || 0) * 100) / 100,
+    }))
+    .sort((a, b) => a.t - b.t);
+
   let filled = 0, usd = 0;
-  for (const o of orders) {
-    if (o.product_id !== productId || o.status !== 'FILLED') continue;
-    const size = parseFloat(o.filled_size) || 0;
-    const val = Math.round((parseFloat(o.total_value) || 0) * 100) / 100;
-    if (o.side === 'BUY') { filled += size; usd += val; }
-    else if (size > 0) { filled -= size; usd -= val; }
+  for (const o of own) {
+    if (o.side === 'BUY') { filled += o.size; usd += o.val; }
+    else { filled -= o.size; usd -= o.val; }
+    // Позиция сошлась к нулю — цикл закрыт, его прибыль или убыток к
+    // следующему заходу отношения не имеет. Пыль в доли процента от прошедшего
+    // объёма нулём и считаем: точного совпадения на бирже не бывает.
+    if (filled <= Math.max(o.size, filled + o.size) * 1e-6) { filled = 0; usd = 0; }
   }
-  return { filled, usd };
+  return { filled, usd: Math.round(usd * 100) / 100 };
 }
 
 function autoFavorite(coin) {

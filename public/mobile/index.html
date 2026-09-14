@@ -1761,6 +1761,8 @@
     const SELECTED_KEY = 'mobileSelectedOrders';
     let selectedOrders = [];
     let profitHistory = [];
+    // Отпечаток истории на момент чтения: см. сохранение прибыли
+    let _profitRevM = null;
     let profitHistoryReady = false;
     const APP_TOKEN_STORAGE_KEY = 'tradingAppToken';
     const nativeFetch = window.fetch.bind(window);
@@ -4391,6 +4393,7 @@
       const r = await api('/get-profit-history');
       if (r.success) {
         profitHistory = Array.isArray(r.history) ? r.history : [];
+        _profitRevM = r.rev || null;   // отпечаток на момент чтения
         profitHistoryReady = true;
         const history = profitHistory;
         let total = 0;
@@ -4512,16 +4515,41 @@
         });
       }
 
-      const saved = await api('/save-profit-history', {
+      // ОТПЕЧАТОК ИСТОРИИ НА МОМЕНТ ЧТЕНИЯ.
+      //
+      // Телефон и ноутбук читают одно и то же, каждый добавляет свою запись и
+      // присылает ВЕСЬ массив — второй затирал первого, и запись пропадала
+      // молча. Сервер сверяет отпечаток и отказывает; тогда своя правка
+      // накладывается на свежую историю и отправляется снова.
+      const entryNow = existing
+        ? profitHistory.find(e => {
+            const ids = [...(e.buyOrders || []), ...(e.sellOrders || [])];
+            return allIds.some(id => ids.includes(id));
+          })
+        : profitHistory[profitHistory.length - 1];
+      const send = () => api('/save-profit-history', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ history: profitHistory })
+        body: JSON.stringify({ history: profitHistory, rev: _profitRevM })
       });
+      let saved = await send();
+      if (saved.conflict && Array.isArray(saved.history)) {
+        const copy = JSON.parse(JSON.stringify(saved.history));
+        const same = copy.find(e => {
+          const ids = [...(e.buyOrders || []), ...(e.sellOrders || [])];
+          return allIds.some(id => ids.includes(id));
+        });
+        if (same) Object.assign(same, entryNow); else copy.push(entryNow);
+        profitHistory = copy;
+        _profitRevM = saved.rev;
+        saved = await send();
+      }
       if (!saved.success) {
         profitHistory = historyBeforeSave;
         toast(saved.error || 'Failed to save profit', 'error');
         return;
       }
+      if (saved.rev) _profitRevM = saved.rev;
       if (!existing) {
         selectedOrders = selectedOrders.filter(id => !allIds.includes(id));
         saveSelectedToServer();

@@ -56,9 +56,48 @@ console.log('\nСверка ставит сторож там, где его не
   ctx._balances = [{ currency: 'CP', total: 67935 }];
   await ctx.reconcileBeWatches();
   ok(ctx.beWatches.length === 1 && ctx.beWatches[0].coin === 'CP', 'сторож поставлен по состоянию', JSON.stringify(ctx.beWatches[0]));
-  ok(Math.abs(ctx.beWatches[0].usd - 1203.26) < 0.01, 'потраченное посчитано по всем ордерам монеты',
+  // СЧЁТ ИДЁТ ОТ ПОСЛЕДНЕГО ОБНУЛЕНИЯ ПОЗИЦИИ, А НЕ ПО ВСЕМ ОРДЕРАМ.
+  //
+  // Здесь монету купили, продали целиком с прибылью и купили снова. Раньше
+  // складывались все три ордера, и прибыль первого цикла ($8.79) уменьшала
+  // затраты второго: выходило $1203.26 вместо $1212.05, а безубыток
+  // оказывался НИЖЕ настоящего — сторож сработал бы раньше времени.
+  ok(Math.abs(ctx.beWatches[0].usd - 1212.05) < 0.01,
+    'затраты считаются от нового захода, а не вместе с закрытым циклом',
     '$' + ctx.beWatches[0].usd.toFixed(2));
   ok(ctx.beWatches[0].auto === true, 'помечен как поставленный сверкой');
+
+  // ОТМЕНЁННАЯ ПРОДАЖА С ЧАСТИЧНЫМ ИСПОЛНЕНИЕМ ТОЖЕ ПРОДАЛА.
+  //
+  // Учитывались только ордера со статусом FILLED. Лимитная продажа, снятая
+  // после частичного исполнения, монету продала — а в расчёт не входила: по CP
+  // выходило 67 935 монет вместо 32 705 и затраты $1203 вместо $583.
+  {
+    const partial = ord('CP-USD', 'SELL', 35230, 629.44, 3000);
+    partial.status = 'CANCELLED';
+    ctx.beWatches = [];
+    ctx._orders = [ord('CP-USD', 'BUY', 67935, 1212.05, 1000), partial];
+    ctx.ordersCache = { data: ctx._orders, ts: Date.now() };
+    ctx._balances = [{ currency: 'CP', total: 32705 }];
+    await ctx.reconcileBeWatches();
+    ok(ctx.beWatches.length === 1, 'позиция после частичной продажи видна');
+    ok(ctx.beWatches[0].filled === 32705, 'осталось ровно непроданное',
+      String(ctx.beWatches[0].filled));
+    ok(Math.abs(ctx.beWatches[0].usd - 582.61) < 0.01, 'и затраты уменьшены на полученное',
+      '$' + ctx.beWatches[0].usd.toFixed(2));
+
+    // Возвращаем прежнюю обстановку: дальше идут проверки, написанные под неё.
+    // Подменить фикстуру и не вернуть — ошибка, которую я тут уже допускал.
+    ctx.beWatches = [];
+    ctx._orders = [
+      ord('CP-USD', 'BUY', 139841, 2482.32),
+      ord('CP-USD', 'SELL', 139841, 2491.11),
+      ord('CP-USD', 'BUY', 67935, 1212.05),
+    ];
+    ctx.ordersCache = { data: ctx._orders, ts: Date.now() };
+    ctx._balances = [{ currency: 'CP', total: 67935 }];
+    await ctx.reconcileBeWatches();
+  }
 
   // Повторный проход не должен дублировать
   await ctx.reconcileBeWatches();

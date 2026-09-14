@@ -56,7 +56,7 @@ console.log('\nПосле удаления видно, что произошло
   const body = d.slice(d.indexOf('async function deleteProfitEntry'), d.indexOf('// Telegram integration'));
   ok(/showCustomAlert\('Запись удалена/.test(body), 'сказано, что удалено');
   // Со снимком и с проверкой: не сохранилось — не говорим «удалена»
-  ok(/if \(!await saveProfitHistoryToServer\(before\)\) return;/.test(body),
+  ok(/saveProfitHistoryToServer\(before, \(fresh\) => fresh\.filter/.test(body),
     'изменение сохраняется на сервер, и неудача останавливает');
   ok(/updateProfitPanel\(\)/.test(body), 'панель перерисовывается');
 }

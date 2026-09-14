@@ -11112,6 +11112,7 @@ Requirements:
         const data = await res.json();
         if (data.success) {
           profitHistory = data.history || [];
+          _profitRev = data.rev || null;   // отпечаток на момент чтения
           updateProfitPanel();
         }
       } catch (e) {
@@ -11128,21 +11129,40 @@ Requirements:
     //
     // `before` — снимок истории до правки: не дошло, значит на экране должно
     // остаться то же, что на сервере, а не выдуманное.
-    async function saveProfitHistoryToServer(before) {
+    // Отпечаток истории на момент чтения. Телефон и ноутбук читают одно и то
+    // же, каждый добавляет свою запись и присылает ВЕСЬ массив — второй
+    // затирал первого, и запись пропадала молча. Сервер сверяет отпечаток и
+    // отказывает; здесь мы накладываем свою правку на свежую историю и
+    // повторяем.
+    let _profitRev = null;
+    async function saveProfitHistoryToServer(before, reapply) {
       const fail = (why) => {
         if (before) profitHistory = before;
         try { updateProfitPanel(); } catch { }
         showCustomAlert('Не удалось сохранить историю прибыли: ' + why + '. Запись НЕ сохранена.', true);
         return false;
       };
-      try {
+      const send = async () => {
         const res = await fetch('/save-profit-history', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ history: profitHistory })
+          body: JSON.stringify({ history: profitHistory, rev: _profitRev })
         });
         const j = await res.json().catch(() => ({}));
+        return { res, j };
+      };
+      try {
+        let { res, j } = await send();
+        if (res.status === 409 && j.conflict && Array.isArray(j.history)) {
+          // Кто-то записал раньше. Свою правку накладываем на его историю —
+          // иначе одна из двух записей потеряется, и заметить это нельзя.
+          if (typeof reapply !== 'function') return fail('история изменилась с другого устройства');
+          profitHistory = reapply(j.history);
+          _profitRev = j.rev;
+          ({ res, j } = await send());
+        }
         if (!res.ok || !j.success) return fail(j.error || 'сервер ответил ' + res.status);
+        if (j.rev) _profitRev = j.rev;
         return true;
       } catch (e) {
         console.error('Error saving profit history:', e);
@@ -11181,7 +11201,17 @@ Requirements:
         existingEntry.createdDate = createdDate || null;
         existingEntry.soldAt = soldAt;
         existingEntry.date = new Date().toISOString();
-        if (!await saveProfitHistoryToServer(before)) return;
+        // При чужой правке накладываем ЭТУ же правку на свежую историю
+        const reapplyUpdate = (fresh) => {
+          const copy = JSON.parse(JSON.stringify(fresh));
+          const same = copy.find(e => {
+            const ids = [...(e.buyOrders || []), ...(e.sellOrders || [])];
+            return allIds.some(id => ids.includes(id));
+          });
+          if (same) Object.assign(same, existingEntry); else copy.push(existingEntry);
+          return copy;
+        };
+        if (!await saveProfitHistoryToServer(before, reapplyUpdate)) return;
         updateProfitPanel();
         const updatedProfitFmt = Math.abs(profit).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         showCustomAlert(`Updated ${coin} profit: ${profit >= 0 ? '+' : '-'}$${updatedProfitFmt}`);
@@ -11202,7 +11232,18 @@ Requirements:
       profitHistory.push(entry);
       // Не сохранилось — не считаем ордера закрытыми и не снимаем их с выбора:
       // иначе сделка исчезнет и из истории, и из списка выбранных.
-      if (!await saveProfitHistoryToServer(before)) return;
+      // При чужой правке дописываем свою запись к свежей истории, если её там
+      // ещё нет: так сохраняются обе, а не последняя.
+      const reapplyAdd = (fresh) => {
+        const copy = JSON.parse(JSON.stringify(fresh));
+        const dup = copy.some(e => {
+          const ids = [...(e.buyOrders || []), ...(e.sellOrders || [])];
+          return allIds.some(id => ids.includes(id));
+        });
+        if (!dup) copy.push(entry);
+        return copy;
+      };
+      if (!await saveProfitHistoryToServer(before, reapplyAdd)) return;
 
       // Remove saved orders from selected
       const allOrderIds = [...entry.buyOrders, ...entry.sellOrders];
@@ -11234,7 +11275,9 @@ Requirements:
         async () => {
           const before = JSON.parse(JSON.stringify(profitHistory));
           profitHistory = profitHistory.filter(x => x.id !== id);
-          if (!await saveProfitHistoryToServer(before)) return;
+          // Чужая правка не должна воскрешать удалённое и не должна стирать
+          // чужую новую запись: удаляем ровно одну строку из свежей истории.
+          if (!await saveProfitHistoryToServer(before, (fresh) => fresh.filter(x => x.id !== id))) return;
           updateProfitPanel();
           showCustomAlert('Запись удалена: ' + (e.coin || '—') + ' ' + sum);
         });
