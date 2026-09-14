@@ -275,7 +275,7 @@ function cellStats(perCoin, lo, hi, deep) {
       const shown = g.lo >= S.gate;
       if (shown) measured++;
       const diff = m.pct - want;
-      cellReport.push({ lo: g.lo, deep: key === 'deep', promised: want, actual: m.pct, se: m.se, coins: m.coins });
+      cellReport.push({ lo: g.lo, deep: key === 'deep', promised: want, actual: m.pct, se: m.se, coins: m.coins, n: m.n });
       // Ошибка РАЗНОСТИ: у зашитого числа она тоже есть. Если её не знаем,
       // берём сегодняшнюю — вдвое осторожнее, чем считать зашитое точным.
       // Ошибка старого замера была посчитана для других весов. Её нельзя

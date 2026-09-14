@@ -77,7 +77,7 @@ for (const path of ['public/index.html', 'public/mobile/index.html']) {
     path.replace('public/', '') + ': и не красится зелёным');
   ok(!/но убыток сокращает\./.test(h),
     path.replace('public/', '') + ': подсказка не утверждает пользу порога как доказанную');
-  ok(/качество отбора проверяется/.test(h),
+  ok(/Качество отбора проверяется/.test(h),
     path.replace('public/', '') + ': а говорит, что проверка идёт');
 }
 

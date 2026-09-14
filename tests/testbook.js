@@ -66,7 +66,7 @@ for (const [name, file, sfx] of [['десктоп', 'public/index.html', ''], ['
   ok(ctx.warn('RAY', 1000) === '', 'без кошелька ничего не утверждаем');
 
   console.log('  — доля видна в строке таблицы');
-  ok(/data-bookshare="' \+ x\.coin \+ '"/.test(src), 'место под долю есть в строке монеты');
+  ok(/data-bookshare="' \+ safe \+ '"/.test(src), 'место под долю есть в строке монеты с очищенным символом');
   ok(/paintBookShares' + sfx + '\(\)/.test(src.replace(/\s+/g, ' ')) || src.includes('paintBookShares' + sfx + '()'),
     'и оно заполняется после отрисовки');
   ok(src.includes('setBookFromHoldings' + sfx + '(holdings)'), 'кошелёк питает эти доли');

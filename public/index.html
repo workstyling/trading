@@ -15445,7 +15445,7 @@ Requirements:
         const gate = ENTRY_MIN(j);
         const good = rows.filter(x => entryPassesUi(x, gate));
         const head = '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:6px;">' +
-          '<span style="color:var(--t1);font-weight:700;font-size:12px;" title="Историческая частота касания цели +0.30% за час по глубине падения и отката. Это не вероятность чистой прибыли. Уровни «брать / можно / риск» описывают условия сигнала; качество отбора проверяется в журнале ниже. Замер ' + (j.recoveryMeasuredAt || '—') + ', наблюдений ' + (j.recoverySample || '—') + '.">Рейтинг отката</span>' +
+          '<span style="color:var(--t1);font-weight:700;font-size:12px;" title="Свежая частота касания цели +0.30% за час по глубине падения и отката. Это не вероятность чистой прибыли. Качество отбора проверяется в журнале ниже. Исторический замер ' + (j.recoveryMeasuredAt || '—') + ', наблюдений ' + (j.recoverySample || '—') + '; его проценты не подменяют свежие данные.">Рейтинг отката</span>' +
           '<span style="color:var(--t2);font-size:10px;">' + (j.total || 0) + ' монет · падение от ' + gate.fall + '%' +
           // Молчаливая потеря хуже пустого места: монета исчезала из
           // списка, и отличить «условия перестали выполняться» от «биржа не
@@ -15459,7 +15459,7 @@ Requirements:
           (j.staleSince ? '<span style="color:#ff6b6b;font-weight:700;"> · биржа не ответила, список устарел</span>' : '') +
           '</span></div>';
         if (!rows.length) {
-          box.innerHTML = head + renderRecoveryStatus(j.recheck) + '<div style="color:var(--t2);font-size:11px;">Первый скан после запуска…</div>';
+          box.innerHTML = head + renderRecoveryStatus(j.recheck, j.serverNow) + '<div style="color:var(--t2);font-size:11px;">Первый скан после запуска…</div>';
           return;
         }
         // Общее направление рынка — строка над таблицей.
@@ -15506,166 +15506,53 @@ Requirements:
         const head2 =
           '<tr style="color:var(--t2);font-size:9px;text-transform:uppercase;letter-spacing:0.4px;">' +
           '<th style="text-align:left;padding:3px 6px;">монета</th>' +
-          '<th style="text-align:right;padding:3px 6px;" title="Доля случаев, когда цена возвращалась к входу за час. Главный столбец: по нему список и упорядочен.">возврат</th>' +
-          '<th style="text-align:right;padding:3px 6px;" title="Откат от получасового максимума. Второй по силе признак после глубины за сутки, и он с ней складывается: внутри любой глубины откат от 1.5% добавляет 11-18 пунктов к доле возврата. Проверено разделением по времени — держится в обеих половинах периода.">откат</th>' +
-          '<th style="text-align:right;padding:3px 6px;" title="Насколько ниже суточного максимума. Первый из двух признаков, из которых сложен возврат.">за сутки</th>' +
+          '<th style="text-align:right;padding:3px 6px;" title="Свежая доля касаний цели +0.30% за час по группе. Прочерк — данных недостаточно.">цель 1ч</th>' +
+          '<th style="text-align:right;padding:3px 6px;" title="Расстояние до максимума за последние 30 минут.">откат</th>' +
+          '<th style="text-align:right;padding:3px 6px;" title="Изменение цены за 24 часа. Падение от суточного пика указано в подсказке строки.">за сутки</th>' +
           '<th style="text-align:right;padding:3px 6px;">RSI</th>' +
-          // Колонка «вход» уступила место ответу. Балл измерен ровным от 1 до
-          // 100 и вперёд себя не подтвердил — держать под него столько же
-          // места, сколько под работающий признак, значит звать смотреть не
-          // туда. Сам балл остался в подсказке строки.
-          '<th style="text-align:center;padding:3px 6px;" title="Сводит в один ответ всё, что измерено.' + String.fromCharCode(10) +
-          'БРАТЬ — прошла порог входа (падение 3%+, спред до 0.30%), откат взял 1.5% (внутри любой глубины это +11-18 пунктов к доле возврата) и ход за сутки в пределах ±10%.' + String.fromCharCode(10) +
-          'МОЖНО — вход пройден, но откат мельче 1.5%.' + String.fromCharCode(10) +
-          'РИСК — за сутки монета прошла больше ±10%: цена уходит ниже −3% в течение часа в 20-24% случаев против 2.7% у спокойных.' + String.fromCharCode(10) +
-          'Это уровни условий сигнала. Подтверждено ли преимущество, показывает журнал ниже.">брать?</th>' +
+          '<th style="text-align:center;padding:3px 6px;" title="Наблюдать — условия отката выполнены, прибыльность не подтверждена. Нет оценки — мало свежих наблюдений. Риск — суточный ход от ±10%.">статус</th>' +
           '<th style="text-align:right;padding:3px 6px;">в списке</th></tr>';
-        // РАЗМАХ ЗА СУТКИ: одно и то же падение бывает разного происхождения.
-        //
-        // Монета, выросшая за сутки на четверть и сдавшая 5% с пика, даёт тот
-        // же сигнал, что монета, весь день спокойно сползавшая вниз. Это
-        // разные вещи: в первом случае покупается откат после разгона, и
-        // падать дальше он может стремительно.
-        //
-        // Замер на 79 638 точках входа по 78 монетам за 25 суток, вход тот же
-        // (падение от суточного максимума 3%+), горизонт час:
-        //
-        //   за сутки выросла >+10%:  просадка −2.26%, ниже −3% в 23.7% случаев
-        //   за сутки около нуля:     просадка −0.77%, ниже −3% в  2.7% случаев
-        //   за сутки упала  <−10%:   просадка −2.01%, ниже −3% в 20.5% случаев
-        //
-        // Доля дошедших до цели у разогнанных ДАЖЕ ВЫШЕ — 86% против 68%.
-        // Размах больше в обе стороны, и по одной доле дошедших этого не
-        // видно: поэтому не запрет, а пометка.
         const swingMark = (x) => {
           const v = x.chg24Pct;
-          if (v == null || Math.abs(v) < 10) return '';
-          const up = v > 0;
-          const tip = (up
-            ? 'За сутки монета выросла на +' + v + '%. Падение от максимума здесь — откат после разгона.'
-            : 'За сутки монета упала на ' + v + '%. Это не откат, а продолжающееся падение.') +
-            String.fromCharCode(10) +
-            'За час просадка в среднем ' + (up ? '−2.26%' : '−2.01%') + ' против −0.77% у спокойных, ' +
-            'и ниже −3% цена уходит в ' + (up ? '23.7%' : '20.5%') + ' случаев против 2.7%.' +
-            String.fromCharCode(10) +
-            (up
-              ? 'Доля дошедших до цели при этом ВЫШЕ — 86% против 68%: размах больше в обе стороны, а не только вниз.'
-              : 'И средний исход часа отрицательный: −0.076% против +0.041% у спокойных.') +
-            String.fromCharCode(10) + 'Замер: 79 638 точек входа, 78 монет, 25 суток.';
-          return '<span title="' + tip + '" style="margin-left:4px;font-size:9px;font-weight:700;color:' +
-            (up ? '#f5843a' : '#ff6b6b') + ';">' + (up ? '↑' : '↓') + Math.abs(Math.round(v)) + '%</span>';
+          if (v == null || !Number.isFinite(Number(v)) || Math.abs(v) < 10) return '';
+          return '<span style="margin-left:4px;font-size:9px;font-weight:700;color:' + (v > 0 ? '#f5843a' : '#ff6b6b') + ';">' +
+            (v > 0 ? '↑' : '↓') + Math.abs(Math.round(v)) + '%</span>';
         };
-        // ОТВЕТ НА ВОПРОС «БРАТЬ?» — из того, что измерено, и только.
-        //
-        // В условие входят три вещи, каждая с числом за спиной:
-        //
-        //   падение от суточного максимума 3%+ и спред не шире 0.30% — порог
-        //     самой панели;
-        //   откат от получасового максимума 1.5%+ — внутри любой глубины
-        //     добавляет 11-18 пунктов к доле возврата, держится в обеих
-        //     половинах периода;
-        //   ход за сутки в пределах ±10% — за этой чертой цена уходит ниже
-        //     −3% в течение часа в 20-24% случаев против 2.7% у спокойных.
-        //
-        // Чего в условии НЕТ и почему:
-        //
-        //   балл ВХОД — измерен ровным от 1 до 100 (70.8-72.4%), вперёд себя
-        //     не подтвердил, из отбора убран;
-        //   сколько монета уже висит в списке — померено, разницы почти нет:
-        //     доля дошедших 75% у свежих против 70-74% у висящих сутками, а с
-        //     откатом от 1.5% и вовсе 85% против 87%. Предупреждение про
-        //     «висит долго» осталось как справка, но покупке не мешает.
-        //
-        // Три уровня, а не «да/нет»: у среднего доля возврата 66-78%, это не
-        // запрет, а более слабый сигнал. И ни один уровень не обещает прибыли
-        // — форвардная проверка внизу панели говорит, что правило делает
-        // сделку менее убыточной, а не прибыльной.
         const verdict = (x) => {
-          const pass = entryPassesUi(x, gate);
-          if (x.chg24Pct == null || x.pullbackPct == null || !Number.isFinite(Number(x.chg24Pct)) ||
-              !Number.isFinite(Number(x.pullbackPct))) {
-            return { tier: 0, label: 'данные', color: 'var(--t2)', bg: '', why: 'неизвестен ход за сутки или откат' };
-          }
-          const sw = x.chg24Pct != null && Math.abs(x.chg24Pct) >= 10;
-          const deep = x.pullbackPct != null && x.pullbackPct >= 1.5;
-          if (!pass) {
-            return { tier: 0, label: '—', color: 'var(--t2)', bg: '',
-              why: x.dayFallPct != null && x.dayFallPct < gate.fall
-                ? 'падение всего ' + x.dayFallPct + '%, нужно от ' + gate.fall + '%'
-                : 'спред ' + (x.spreadPct == null ? 'неизвестен' : x.spreadPct + '%, шире ' + gate.spread + '%') };
-          }
-          if (sw) {
-            return { tier: 1, label: 'риск', color: '#ff6b6b', bg: 'background:rgba(255,107,107,0.08);',
-              why: (x.chg24Pct > 0 ? 'разгон +' : 'обвал ') + Math.round(x.chg24Pct) +
-                '% за сутки: повышенная амплитуда движения' };
-          }
-          if (deep) {
-            return { tier: 3, label: 'брать', color: '#00e5a0', bg: 'background:rgba(0,229,160,0.16);',
-              why: 'откат ' + x.pullbackPct + '% взял порог 1.5%, ход за сутки в пределах ±10%; преимущество проверяется в журнале' };
-          }
-          return { tier: 2, label: 'можно', color: '#f5c518', bg: 'background:rgba(245,197,24,0.07);',
-            why: 'вход пройден, но откат ' + (x.pullbackPct == null ? '—' : x.pullbackPct + '%') +
-              ' не дотянул до 1.5%: возврат ' + (x.recovery ? x.recovery.hour : '—') +
-              '% по исторической сетке, без гарантии чистой прибыли' };
+          return recoveryVerdict(x, gate, recoveryObservation(x, j));
         };
         const cell = (x) => {
-          const e = x.entryValue;
           const v = verdict(x);
-          const pass = entryPassesUi(x, gate);
-          // Балл остаётся на экране, но больше ничего не решает: цвет и
-          // подсветка идут от того, прошла ли монета порог по глубине.
-          const col = pass ? '#00e5a0' : '#7c8698';
-          const rec = x.recovery;
-          const recCol = !rec ? 'var(--t2)' : rec.hour >= 76 ? '#00e5a0' : rec.hour >= 63 ? '#f5c518' : '#f5843a';
-          // Одинарные кавычки внутри двойных: JSON.stringify рвал атрибут.
+          const rec = recoveryObservation(x, j);
           const safe = String(x.coin).replace(/[^A-Z0-9]/gi, '');
           const held = x.inListMin == null ? null
-            : x.inListMin >= 120 ? Math.round(x.inListMin / 60) + ' ч'
-              : x.inListMin + ' мин';
-          const num = (v, c, w) => '<td style="text-align:right;padding:4px 6px;color:' + (c || 'var(--t1)') +
-            ';font-size:11px;font-variant-numeric:tabular-nums;' + (w ? 'font-weight:800;' : '') + '">' + v + '</td>';
-          return '<tr onclick="selectCoinForTrade(\'' + safe + '\')" title="' +
-            'Выбрать ' + safe + ' для покупки и открыть график' +
-            (rec ? String.fromCharCode(10) + 'историческое касание цели +0.30% за час: ' + rec.hour +
-              '%; замер ' + (j.recoveryMeasuredAt || '—') + ', наблюдений ' + (j.recoverySample || '—') + ', до издержек' : '') +
-            (x.spreadPct != null ? String.fromCharCode(10) + 'спред ' + x.spreadPct + '%' : '') +
-            (x.dayFallPct == null && x.dayCoverH != null
-              ? String.fromCharCode(10) + 'за сутки не считано: истории всего ' + x.dayCoverH +
-                ' ч, суточный максимум по ней был бы занижен' : '') +
-            (x.runup ? String.fromCharCode(10) + 'выросла от суточного минимума на ' + x.runup.runup +
-              '% — разгон возврату помогает, а не мешает' : '') +
-            // Померено: висящие сутками дают 70-74% дошедших против 75% у
-            // свежих, а с откатом от 1.5% — 87% против 85%. Разницы нет, и
-            // строка это теперь говорит, а не пугает.
-            (x.inListMin > 90 ? String.fromCharCode(10) +
-              'монета давно в списке; часовой журнал проверяет первое появление сигнала' : '') +
-            String.fromCharCode(10) + v.label.toUpperCase() + ': ' + v.why + '"' +
-            ' style="cursor:pointer;' + v.bg + '">' +
-            '<td style="padding:4px 6px;"><span style="color:var(--blue);font-weight:700;font-size:11px;">' + x.coin +
-            '</span>' + swingMark(x) +
-            // Доля монеты в портфеле рисуется отдельным живым местом: кошелёк
-            // обновляется своим циклом, и перерисовывать ради него строку
-            // целиком незачем.
-            '<span data-bookshare="' + x.coin + '" data-live="1"></span>' +
+            : x.inListMin >= 120 ? Math.round(x.inListMin / 60) + ' ч' : x.inListMin + ' мин';
+          const tip = [
+            'Выбрать ' + safe + ' и открыть график',
+            rec.why,
+            x.dayFallPct == null ? (x.dayCoverH != null ? 'Падение от пика не считано: истории всего ' + x.dayCoverH + ' ч' : '')
+              : 'Падение от суточного пика: ' + x.dayFallPct + '%',
+            x.spreadPct == null ? 'Спред неизвестен' : 'Спред ' + x.spreadPct + '%',
+            x.inListMin > 90 ? 'Монета давно в списке; часовой журнал проверяет первое появление сигнала' : '',
+            v.label + ': ' + v.why,
+          ].filter(Boolean).join(String.fromCharCode(10));
+          const num = (value, color, bold) => '<td style="text-align:right;padding:4px 6px;font-size:11px;white-space:nowrap;font-variant-numeric:tabular-nums;color:' +
+            (color || 'var(--t2)') + ';' + (bold ? 'font-weight:800;' : '') + '">' + value + '</td>';
+          return '<tr onclick="selectCoinForTrade(\'' + safe + '\')" title="' + escapeRecoveryText(tip) + '" style="cursor:pointer;' + v.bg + '">' +
+            '<td style="padding:4px 6px;"><span style="color:var(--blue);font-weight:700;font-size:11px;">' + safe + '</span>' + swingMark(x) +
+            '<span data-bookshare="' + safe + '" data-live="1"></span>' +
             '<br><span style="color:var(--t2);font-size:9px;">$' + price(x.price) + '</span></td>' +
-            num(rec ? '↩ ' + rec.hour + '%' : '—', recCol, true) +
-            // Откат сразу за возвратом: это два признака одной оценки, и
-            // смотреть на них надо вместе. Порог 1.5% помечен цветом — внутри
-            // любой глубины падения он добавляет 11-18 пунктов к доле
-            // возврата, и проверка по времени это подтвердила.
-            num(x.pullbackPct == null ? '—' : x.pullbackPct + '%',
-              x.pullbackPct >= 1.5 ? '#00e5a0' : 'var(--t2)', x.pullbackPct >= 1.5) +
-            num(x.dayFallPct == null ? '—' : '−' + x.dayFallPct + '%', 'var(--t2)') +
-            num(x.rsi == null ? '—' : Math.round(x.rsi), 'var(--t2)') +
-            '<td style="text-align:center;padding:4px 6px;font-size:10px;font-weight:800;color:' + v.color + ';">' +
-            v.label + '</td>' +
-            num(held || '—', 'var(--t2)') + '</tr>';
+            num(rec.text, rec.color, true) +
+            num(x.pullbackPct == null ? '—' : x.pullbackPct + '%') +
+            num(recoveryDayChange(x)) +
+            num(x.rsi == null ? '—' : Math.round(x.rsi)) +
+            '<td style="text-align:center;padding:4px 6px;font-size:10px;font-weight:800;color:' + v.color + ';">' + v.label + '</td>' +
+            num(held || '—') + '</tr>';
         };
-        box.innerHTML = head + renderRecoveryStatus(j.recheck) + mkLine +
+        box.innerHTML = head + renderRecoveryStatus(j.recheck, j.serverNow) + mkLine +
           (good.length
-            // Сперва те, что брать, потом «можно», в конце рискованные. Внутри
-            // уровня порядок прежний — по возврату и откату. Сортировка
-            // устойчивая, поэтому он сохраняется.
+            // Сохраняем уровни условий отката и порядок сканера.
+            // Наличие измерения не превращает уровень в разрешение покупки.
             ? '<table style="width:100%;border-collapse:collapse;"><thead>' + head2 + '</thead><tbody>' +
               good.slice().sort((a, b) => verdict(b).tier - verdict(a).tier).slice(0, 8).map(cell).join('') + '</tbody></table>' +
             '<div id="entryPaper" style="margin-top:6px;padding-top:5px;border-top:1px solid var(--b1);font-size:10px;color:var(--t2);"></div>'
