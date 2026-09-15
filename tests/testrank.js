@@ -154,16 +154,17 @@ for (const [name, file] of [['десктоп', 'public/index.html'], ['моби�
   const cold = ctx.cell(row({ coin: 'REZ', dayFallPct: 4, pullbackPct: 2 }));
   const risk = ctx.cell(row({ dayFallPct: 12, chg24Pct: -14 }));
   console.log('  ' + name);
-  ok(/#00e5a0/.test(warm), '  строка выше порога выделена цветом');
-  ok(warm.includes('rgba(0,229,160,0.07)'), '  и заливкой строки');
-  ok(hot.includes('rgba(0,229,160,0.07)'), '  верхняя строка тоже залита');
+  ok(/var\(--blue\)/.test(warm), '  наблюдение выделено голубым');
+  ok(warm.includes('rgba(0,180,255,0.06)'), '  и заливкой строки');
+  ok(hot.includes('rgba(0,180,255,0.06)'), '  верхняя строка тоже залита');
   ok(hot.includes(String.fromCharCode(9650)), '  у числа есть метка порога');
   ok(!/#00e5a0/.test(cold), '  прочерк не выделяется');
-  ok(!cold.includes('rgba(0,229,160,0.07)'), '  и не заливается');
+  ok(!cold.includes('rgba(0,180,255,0.06)'), '  и не заливается');
   ok(risk.includes('rgba(255,107,107'), '  риск остаётся красным');
-  ok(!risk.includes('rgba(0,229,160,0.07)'), '  и зелёная заливка его не перекрывает');
+  ok(!risk.includes('rgba(0,180,255,0.06)'), '  заливка наблюдения не перекрывает риск');
   ok(hot.includes('База (падения почти нет)'), '  сравнение с базой есть в подсказке');
-  ok(hot.includes('#00ffa8') && !cold.includes('#00ffa8'), '  верхняя клетка выделена ярче остальных');
+  ok(hot.includes('border-left:3px solid var(--blue)') && !cold.includes('border-left:3px'), '  максимум выделен рамкой');
+  ok(!hot.includes('#00ffa8') && !hot.includes('rgba(0,255,168'), '  максимум наблюдения не получает цвет покупки');
   ok(hot.includes('максимум'), '  и подписана словом');
   ok(warm.includes('максимум') === false, '  строка ниже такой пометки не получает');
   // Сортировка и подпись живут вне вырезанного куска — проверяем текстом

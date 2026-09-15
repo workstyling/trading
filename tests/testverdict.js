@@ -42,8 +42,9 @@ for (const [name, file] of [['десктоп', 'public/index.html'], ['моби�
   const html = renderer.cell(row({ pullbackPct: 0.9 })), visible = html.replace(/<[^>]+>/g, ' ');
   ok(visible.includes('54.2%') && !visible.includes('89%'), 'в строке свежая частота нужной группы');
   ok(visible.includes('+4.25%'), 'суточный ход показан со знаком');
-  const sparse = renderer.cell(row({ dayFallPct: 16.35 })).replace(/<[^>]+>/g, ' ');
-  ok(sparse.includes('+4.25%') && !sparse.includes('16.35%') && !sparse.includes('89%'), 'падение от пика не попадает в суточную колонку');
+  const sparseHtml = renderer.cell(row({ dayFallPct: 16.35 }));
+  const columns = [...sparseHtml.matchAll(/<td\b[^>]*>([\s\S]*?)<\/td>/g)].map(m => m[1].replace(/<[^>]+>/g, ' '));
+  ok(columns[3].trim() === '+4.25%' && columns[0].includes('от пика −16.35%'), 'суточный ход и падение от пика показаны отдельно');
   ok(renderer.cell(row({ dayFallPct: 16.35 })).includes('Падение от суточного пика: 16.35%'), 'глубина от пика сохранена в подсказке');
   ok(!html.includes('rgba(0,229,160,0.16)'), 'нет зелёной заливки разрешения');
   ok(html.includes('data-bookshare="REZ"'), 'ячейка позиции сохраняется');
@@ -91,7 +92,7 @@ console.log('\nКолонка «вход» уступила место отве�
 {
   const d = read('public/index.html');
   const head = d.slice(d.indexOf('const head2 ='), d.indexOf('const verdict'));
-  ok(/>статус<\/th>/.test(head), 'десктоп: статус вместо разрешения покупки');
+  ok(/>статус \/ спред<\/th>/.test(head), 'десктоп: статус и текущий спред');
   ok(!/>вход<\/th>/.test(head), 'а колонки «вход» больше нет — балл возврат не предсказывает');
   ok(/>цель 1ч<\/th>/.test(head) && /откат<\/th>/.test(head), 'цель за час и откат на месте');
 }

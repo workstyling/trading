@@ -6253,7 +6253,7 @@
       <div class="main-right">
         <!-- Открытые paper-сделки — самое верхнее, за ними следят чаще всего -->
         <div style="display:none;"><div id="tlPaperStrip" style="display:none;margin-bottom:14px;"></div></div>
-        <div id="entryScanBox" style="margin-bottom:14px;padding:9px 11px;border:1px solid rgba(0,229,160,0.30);border-radius:8px;background:rgba(0,229,160,0.04);"></div>
+        <div id="entryScanBox" style="margin-bottom:14px;padding:9px 11px;border:1px solid var(--b1);border-radius:8px;background:var(--s1);"></div>
         <div id="microScalpPanel" style="display:none;">
           <div class="tl-head">
             <div class="tl-head-top">
@@ -15498,8 +15498,10 @@ Requirements:
       const box = document.getElementById('entryScanBox');
       if (!box) return;
       try {
-        const j = await (await fetch('/api/entry-scan')).json();
-        if (!j.success) return;
+        const j = await (await fetch('/api/entry-scan', {
+          signal: typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(10000) : undefined,
+        })).json();
+        if (!j.success) throw new Error('Скан не получен; сигналы покупки отключены');
         // Тот же счётчик, что у сканов: показывает, когда считали и сколько
         // до следующего пересчёта, с поправкой на расхождение часов.
         trackFreshness('entryAgo', j);
@@ -15572,7 +15574,7 @@ Requirements:
           '<th style="text-align:right;padding:3px 6px;" title="Расстояние до максимума за последние 30 минут.">откат</th>' +
           '<th style="text-align:right;padding:3px 6px;" title="Изменение цены за 24 часа. Падение от суточного пика указано в подсказке строки.">за сутки</th>' +
           '<th style="text-align:right;padding:3px 6px;">RSI</th>' +
-          '<th style="text-align:center;padding:3px 6px;" title="Наблюдать — условия отката выполнены, прибыльность не подтверждена. Нет оценки — мало свежих наблюдений. Риск — суточный ход от ±10%.">статус</th>' +
+          '<th style="text-align:center;padding:3px 6px;" title="Брать — разрешённая группа, указан план выхода. Наблюдать — условия отката выполнены, прибыльность не подтверждена. Нет оценки — мало свежих наблюдений. Риск — суточный ход от ±10%.">статус / спред</th>' +
           '<th style="text-align:right;padding:3px 6px;">в списке</th></tr>';
         const swingMark = (x) => {
           const v = x.chg24Pct;
@@ -15605,21 +15607,23 @@ Requirements:
             x.spreadPct == null ? 'Спред неизвестен' : 'Спред ' + x.spreadPct + '%',
             x.inListMin > 90 ? 'Монета давно в списке; часовой журнал проверяет первое появление сигнала' : '',
             edge.why,
-            peak ? 'Из показанных строк здесь самая высокая измеренная частота касания цели. Это утверждение о порядке, а не о прибыли: по измерениям покупка по этому списку издержек не окупает.' : '',
+            peak ? 'Из показанных строк здесь самая высокая измеренная частота касания цели. Максимум частоты сам по себе не разрешает покупку.' : '',
             v.label + ': ' + v.why,
           ].filter(Boolean).join(String.fromCharCode(10));
           const num = (value, color, bold) => '<td style="text-align:right;padding:4px 6px;font-size:11px;white-space:nowrap;font-variant-numeric:tabular-nums;color:' +
             (color || 'var(--t2)') + ';' + (bold ? 'font-weight:800;' : '') + '">' + value + '</td>';
-          return '<tr onclick="selectCoinForTrade(\'' + safe + '\')" title="' + escapeRecoveryText(tip) + '" style="cursor:pointer;' + (v.bg || (edge.above ? 'background:rgba(0,229,160,0.07);' : '')) + '">' +
-            '<td style="padding:4px 6px;' + (peak ? 'border-left:3px solid #00ffa8;' : '') + '"><span style="color:var(--blue);font-weight:700;font-size:11px;">' + safe + '</span>' + swingMark(x) + (peak ? '<span style="margin-left:4px;font-size:8.5px;font-weight:800;color:#00ffa8;border:1px solid rgba(0,255,168,0.5);border-radius:4px;padding:0 3px;">максимум</span>' : '') +
+          return '<tr onclick="selectCoinForTrade(\'' + safe + '\')" title="' + escapeRecoveryText(tip) + '" style="cursor:pointer;' + (v.bg || (edge.above ? 'background:rgba(0,180,255,0.06);' : '')) + '">' +
+            '<td style="padding:4px 6px;' + (peak ? 'border-left:3px solid var(--blue);' : '') + '"><span style="color:var(--blue);font-weight:700;font-size:11px;">' + safe + '</span>' + swingMark(x) + (peak ? '<span style="margin-left:4px;font-size:8.5px;font-weight:800;color:var(--blue);border:1px solid var(--blue);border-radius:4px;padding:0 3px;">максимум</span>' : '') +
             '<span data-bookshare="' + safe + '" data-live="1"></span>' +
-            '<br><span style="color:var(--t2);font-size:9px;">$' + price(x.price) + '</span></td>' +
+            '<br><span style="color:var(--t2);font-size:9px;">$' + price(x.price) +
+            '<br>от пика ' + (x.dayFallPct == null ? '—' : '−' + x.dayFallPct + '%') + '</span></td>' +
             num((edge.above ? String.fromCharCode(9650) + ' ' : '') + rec.text,
-              peak ? '#00ffa8' : edge.above ? '#00e5a0' : rec.color, true) +
+              edge.above || peak ? 'var(--blue)' : rec.color, true) +
             num(x.pullbackPct == null ? '—' : x.pullbackPct + '%') +
             num(recoveryDayChange(x)) +
             num(x.rsi == null ? '—' : Math.round(x.rsi)) +
-            '<td style="text-align:center;padding:4px 6px;font-size:10px;font-weight:800;color:' + v.color + ';">' + v.label + '</td>' +
+            '<td style="text-align:center;padding:4px 6px;font-size:10px;font-weight:800;color:' + v.color + ';">' + v.label +
+            '<br><span style="color:var(--t2);font-size:9px;font-weight:400;">' + (x.spreadPct == null ? '—' : x.spreadPct + '%') + '</span></td>' +
             num(held || '—') + '</tr>';
         };
         // Порядок один на обе вёрстки: измеренные строки выше прочерков, а
@@ -15630,7 +15634,7 @@ Requirements:
           recoveryOrder(b, j, verdict(b), recoveryObservation(b, j)) -
           recoveryOrder(a, j, verdict(a), recoveryObservation(a, j)));
         box.innerHTML = head + renderRecoveryStatus(j.recheck, j.serverNow) +
-          renderRecoveryNet(j) + renderRecoveryLegend(j) + mkLine +
+          renderRecoveryNet(j) + renderRecoveryLegend(j) + renderRecoveryRules(j) + mkLine +
           (good.length
             // Порядок показывает, где чаще доходило до цели. Наличие
             // измерения не превращает строку в разрешение покупки.

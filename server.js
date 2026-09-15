@@ -6,6 +6,7 @@ const os = require('os');
 const crypto = require('crypto');
 const { RESTClient } = require('./cb/dist/rest/index.js');
 const predictor = require('./src/predictor');
+const { recoverySignalRows } = require('./public/js/recovery-journal');
 
 // ХВОСТ ЖУРНАЛА В ПАМЯТИ.
 //
@@ -6553,8 +6554,8 @@ app.get('/api/entry-paper', (req, res) => {
     })),
   });
 });
-app.get('/api/entry-scan', (req, res) => {
-  res.json({
+function entryScanResponse(now = Date.now()) {
+  const response = {
     success: true,
     at: entryScan.at,
     total: entryScan.total,
@@ -6582,11 +6583,13 @@ app.get('/api/entry-scan', (req, res) => {
     // молча показывать устаревший список как свежий.
     staleSince: entryScan.failedAt || 0,
     intervalMs: ENTRY_SCAN_INTERVAL_MS,
-    serverNow: Date.now(),
+    serverNow: now,
     market: entryScan.market,
-    results: entryScan.results.slice(0, 15),
-  });
-});
+  };
+  response.results = recoverySignalRows(entryScan.results, response).slice(0, 15);
+  return response;
+}
+app.get('/api/entry-scan', (req, res) => res.json(entryScanResponse()));
 
 async function runMicroScalpScan() {
   if (microScalpScan.running || !cbVolumeCache.size) return;

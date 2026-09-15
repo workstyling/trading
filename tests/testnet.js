@@ -46,6 +46,9 @@ console.log('\nКогда клетка пройдёт порог, строка �
   ok(text(html).includes('помечены словом «брать»'), 'сказано, где искать разрешённые строки');
   const two = renderRecoveryNet({ entryNet: { ...allowed, buyCells: [allowed.buyCells[0], allowed.buyCells[0]] } });
   ok(text(two).includes('Разрешены к покупке 2 клетки'), 'число согласовано со словом');
+  const invalid = renderRecoveryNet({ entryNet: { ...allowed, buyCells: [{ ...allowed.buyCells[0], netB: null }] } });
+  ok(!text(invalid).includes('Разрешена к покупке'), 'шапка не разрешает группу без результатов проверки');
+  ok(text(html).includes('сигналы покупки отключены'), 'шапка сообщает об отсутствии свежего скана');
 }
 
 console.log('\nБез измерения строка молчит');

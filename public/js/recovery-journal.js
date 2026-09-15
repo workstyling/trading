@@ -148,14 +148,53 @@
   // Список приходит с сервера и пуст, пока ни одна клетка не показала плюс
   // после издержек дважды — на поиске и на проверке. Панель сама разрешений
   // не выдаёт и порогов не смягчает: её дело — показать то, что измерено.
-  function recoveryBuyCell(row, scan) {
+  function validRecoveryBuyCell(cell) {
+    return cell && [3, 6, 10].includes(cell.lo) && typeof cell.deep === 'boolean' &&
+      [1, 4, 12, 24].includes(cell.horizonH) && [0.3, 1, 2, 3].includes(cell.target) &&
+      // measure-net requires 12 coins × 15 entries in each of two periods.
+      Number.isInteger(cell.n) && cell.n >= 360 &&
+      ['netA', 'netB', 'seA', 'seB'].every(key => finite(cell[key])) && cell.seA >= 0 && cell.seB >= 0 &&
+      cell.netA - 2 * cell.seA > 0 && cell.netB - 2 * cell.seB > 0;
+  }
+  function recoveryScanFresh(scan, now = scanNow(scan)) {
+    return !scan.staleSince && finite(scan.at) && scan.at > 0 && scan.at <= now + 60000 && now - scan.at <= 5 * 60000;
+  }
+  function recoveryBuyCell(row, scan, now = scanNow(scan)) {
+    if (!recoveryScanFresh(scan, now) || !finite(row.price) || row.price <= 0) return null;
     const cells = scan && scan.entryNet && scan.entryNet.buyCells;
     if (!Array.isArray(cells) || !cells.length) return null;
     const lo = fallBand(row);
     if (lo == null || !finite(row.pullbackPct)) return null;
     const deep = row.pullbackPct >= 1.5;
-    const cell = cells.find(c => c && c.lo === lo && !!c.deep === deep);
-    return cell && finite(cell.horizonH) && finite(cell.target) && cell.target > 0 ? cell : null;
+    return cells.find(c => validRecoveryBuyCell(c) && c.lo === lo && c.deep === deep) || null;
+  }
+  // Сначала вычисляем решение для всей вселенной, затем сокращаем ответ API.
+  // Иначе разрешённая строка может остаться за пределами первых 15 монет.
+  function recoverySignalRows(rows, scan) {
+    const gate = { fall: scan.gate && scan.gate.fallPct, spread: scan.gate && scan.gate.spreadPct };
+    return (rows || []).map(row => {
+      const plan = recoveryBuyCell(row, scan);
+      const verdict = recoveryVerdict(row, gate, { hour: null }, plan);
+      return { ...row, buySignal: verdict.tier === 4, buyPlan: verdict.tier === 4 ? plan : null };
+    }).sort((a, b) => Number(b.buySignal) - Number(a.buySignal));
+  }
+  function renderRecoveryRules(scan) {
+    const gate = scan && scan.gate;
+    const fall = gate && finite(gate.fallPct) ? Number(gate.fallPct) + '%' : 'неизвестен';
+    const spread = gate && finite(gate.spreadPct) ? Number(gate.spreadPct) + '%' : 'неизвестен';
+    const fresh = recoveryScanFresh(scan);
+    return '<details style="font-size:10px;line-height:1.5;margin-bottom:7px;color:var(--t2);">' +
+      '<summary style="cursor:pointer;color:var(--t1);">Когда появится сигнал покупки' +
+      (fresh ? '' : ' · скан не готов или устарел') + '</summary>' +
+      '<div style="padding:5px 0;">' +
+      '1. Падение от максимума за сутки — от <b>' + fall + '</b>; спред — не больше <b>' + spread + '</b>.<br>' +
+      '2. Ход за сутки строго между −10% и +10%; цена и условия известны, скану не больше 5 минут.<br>' +
+      '3. Для группы с таким падением и откатом подтверждён плюс после комиссий: средний результат минус две погрешности выше нуля в обеих частях проверки.<br>' +
+      'Откат от максимума за 30 минут делит группы на &lt;1.5% и ≥1.5%; сам по себе глубокий откат не разрешает вход. RSI, рост BTC и процент «цель 1ч» не включают покупку.<br>' +
+      '<b style="color:#00ffa8;">Сигнал: зелёная строка «брать» с целью и сроком, вверху списка.</b> ' +
+      '«Наблюдать» и «максимум» означают только наблюдение. Нажатие на строку открывает график.<br>' +
+      'Проверка доходности обновляется отдельным пересчётом; накопление часовой статистики само по себе покупку не разрешает.' +
+      '</div></details>';
   }
   // ГЛАВНАЯ СТРОКА ПАНЕЛИ: что даёт покупка по этому списку после издержек.
   //
@@ -167,10 +206,10 @@
     if (!net || !finite(net.panel) || !finite(net.control) || !finite(net.modes) || !(net.modes > 0)) return '';
     const pct = v => (v >= 0 ? '+' : '') + Number(v).toFixed(2) + '%';
     const okModes = Number(net.plusModes) || 0;
-    const buy = Array.isArray(net.buyCells) ? net.buyCells : [];
+    const buy = Array.isArray(net.buyCells) ? net.buyCells.filter(validRecoveryBuyCell) : [];
     const details = [
       'Прогон по свечам: вход по цене, выход по цели лимитом либо по цене в конце горизонта маркетом, стоп -3%.',
-      'Комиссии учтены: мейкер 0.075%, тейкер 0.15%. Цель +0.30% равна круговому обороту тейкером — частота касания сама по себе не обещает ничего.',
+      'В модели комиссии: мейкер 0.075%, тейкер 0.15%. Фактические комиссии зависят от тарифа счёта. Исторический спред и проскальзывание не измерены.',
       'Отбор: ' + pct(net.panel) + ' ±' + net.panelSe + ' за сделку на ' + net.n + ' входах.',
       'Случайный вход: ' + pct(net.control) + ' ±' + net.controlSe + ' на ' + net.controlN + '.',
       net.worst && finite(net.worst.diff)
@@ -189,9 +228,9 @@
       return box('#9ff5cf', 'rgba(0,255,168,0.35)', 'rgba(0,255,168,0.10)',
         '<b>' + (buy.length === 1 ? 'Разрешена к покупке 1 клетка' : 'Разрешены к покупке ' + buy.length +
           (buy.length < 5 ? ' клетки' : ' клеток')) + '.</b> ' +
-        'Плюс после издержек и на поиске, и на проверке (' + escapeHtml(String(net.from)) + ' — ' +
+        'Плюс после комиссий модели и на поиске, и на проверке (' + escapeHtml(String(net.from)) + ' — ' +
         escapeHtml(String(net.to)) + '). В таблице такие строки помечены словом «брать» с горизонтом и целью. ' +
-        'Остальные строки — наблюдение.');
+        'Остальные строки — наблюдение. ' + (recoveryScanFresh(scan) ? '' : 'Скан не готов или устарел: сигналы покупки отключены.'));
     }
     return box('#ff9f9f', 'rgba(255,107,107,0.35)', 'rgba(255,107,107,0.10)',
       '<b>Покупать по этому списку нельзя.</b> Прогон по свечам ' + escapeHtml(String(net.from)) + ' — ' +
@@ -204,9 +243,9 @@
     const base = recoveryBaseline(scan, now);
     if (!base) return '';
     return '<div style="font-size:10px;line-height:1.4;margin-bottom:6px;color:var(--t2);">' +
-      'Порог на экране: <b style="color:#00e5a0;">зелёным</b> — свежая частота цели выше базы <b>' +
+      '<b style="color:var(--blue);">Голубым</b> — свежая частота цели выше базы <b>' +
       base.pct.toFixed(1) + '%</b> (монеты почти без падения) больше чем на две погрешности. ' +
-      'Это «чаще доходит до цели», а не разрешение покупать: комиссии и спред не вычтены.</div>';
+      'Это «чаще доходит до цели», а не разрешение покупать. Зелёная строка — только сигнал «брать» с целью и сроком.</div>';
   }
   function recoveryVerdict(row, gate, observation, buyCell) {
     const out = (tier, label, why, risk = false) => ({ tier, label, why,
@@ -220,14 +259,14 @@
     // положителен дважды: на поиске и на проверке. Вместе со словом идёт план
     // выхода — без него «брать» не значит ничего: цель +0.30% равна круговому
     // обороту тейкером, и сделка без цели и срока съедается комиссией.
-    if (buyCell) {
+    if (validRecoveryBuyCell(buyCell)) {
       const plan = buyCell.horizonH + 'ч +' + buyCell.target + '%';
       return { tier: 4, label: 'брать ' + plan, color: '#00ffa8',
         bg: 'background:rgba(0,255,168,0.12);',
-        why: 'Клетка разрешена к покупке: после издержек ' + Number(buyCell.netA).toFixed(2) +
+        why: 'Клетка разрешена к покупке: после комиссий модели ' + Number(buyCell.netA).toFixed(2) +
           '% на поиске и ' + Number(buyCell.netB).toFixed(2) + '% на проверке, наблюдений ' +
           (buyCell.n || '?') + '. Выход: цель +' + buyCell.target + '% лимитом, срок ' +
-          buyCell.horizonH + ' ч, дальше по цене. Это средний результат группы, а не обещание по этой монете.' };
+          buyCell.horizonH + ' ч, дальше по цене; стоп −3%. Спред и проскальзывание в историческом прогоне не измерены. Это средний результат группы, а не обещание по этой монете.' };
     }
     return observation.hour == null
       ? out(tier, 'нет оценки', observation.why)
@@ -309,6 +348,7 @@
   }
   const api = { renderEntryJournal, renderRecoveryStatus, renderRecoveryLegend, renderRecoveryNet, renderRecoveryDeepNote, recoveryObservation,
     recoveryVerdict, recoveryDayChange, recoveryBaseline, recoveryEdge, recoveryOrder, recoveryPeak, recoveryBuyCell,
+    recoverySignalRows, renderRecoveryRules,
     escapeRecoveryText: escapeHtml };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else Object.assign(root, api);

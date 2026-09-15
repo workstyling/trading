@@ -46,7 +46,7 @@ const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
       await pause(250);
     }
     assert(ready, 'server failed to start: ' + output.slice(-2500));
-    for (const endpoint of ['/api/lab', '/api/scalp-scan', '/api/entry-paper']) {
+    for (const endpoint of ['/api/lab', '/api/scalp-scan', '/api/entry-scan', '/api/entry-paper']) {
       const response = await fetch(base + endpoint);
       assert(response.ok, endpoint);
       assert((await response.json()).success, endpoint);

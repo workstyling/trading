@@ -10,7 +10,7 @@
 // «брать» без срока и цели — это сделка, которую съедает комиссия.
 const fs = require('fs'), vm = require('vm');
 const view = require('../public/js/recovery-journal');
-const { recoveryBuyCell, recoveryVerdict, recoveryObservation, recoveryOrder } = view;
+const { recoveryBuyCell, recoveryVerdict, recoveryObservation, recoveryOrder, recoverySignalRows, renderRecoveryRules } = view;
 let bad = 0;
 const ok = (c, m, x) => { if (!c) bad++; console.log('  ' + (c ? 'ok  ' : 'ПЛОХО') + '  ' + m + (x ? '   ' + x : '')); };
 const read = p => fs.readFileSync(p, 'utf8').split('\r\n').join('\n');
@@ -42,10 +42,55 @@ console.log('\nРазрешение ищется по клетке строки'
   ok(recoveryBuyCell(row(), {}) === null, 'нет измерения — нет разрешения');
   ok(recoveryBuyCell(row({ dayFallPct: null }), scan) === null, 'без падения клетка не определяется');
   // Испорченная запись не должна открывать покупку
-  for (const broken of [{ ...CELL, horizonH: null }, { ...CELL, target: 0 }, { ...CELL, target: 'две' }]) {
+  for (const change of [{ horizonH: null }, { horizonH: -1 }, { target: 0 }, { target: 'две' },
+    { netA: null }, { netB: -0.1 }, { seA: null }, { seB: -1 }, { n: 0 }, { n: 359 }, { deep: 0 },
+    { netA: 0.2, seA: 0.1 }, { netB: 0.2, seB: 0.1 }]) {
+    const broken = { ...CELL, ...change };
     ok(recoveryBuyCell(row(), { ...scan, entryNet: { buyCells: [broken] } }) === null,
       'клетка без исправного плана выхода не разрешает покупку');
   }
+}
+
+console.log('\nСвежесть и отсутствие данных');
+{
+  for (const change of [{ at: null }, { at: 0 }, { at: true }, { at: now - 300001 },
+    { at: now + 60001 }, { staleSince: now }]) {
+    const stale = { ...scan, ...change };
+    ok(recoveryBuyCell(row(), stale) === null && verdict(row(), stale).tier !== 4,
+      'устаревший, отсутствующий или будущий скан не даёт сигнал');
+  }
+  ok(recoveryBuyCell(row(), { ...scan, at: now - 300000 }) === CELL, 'граница свежести включена');
+  for (const price of [null, 0, -1, true, NaN]) {
+    ok(recoveryBuyCell(row({ price }), scan) === null, 'без действительной цены вход запрещён');
+  }
+  for (const change of [{ chg24Pct: -10 }, { chg24Pct: 10 }, { chg24Pct: null },
+    { spreadPct: null }, { spreadPct: -0.1 }, { spreadPct: 0.301 }, { dayFallPct: 2.99 }, { pullbackPct: null }]) {
+    ok(verdict(row(change)).tier !== 4, 'разрешение группы не перекрывает условия монеты');
+  }
+}
+
+console.log('\nСервер не теряет сигнал за пределами первых 15 строк');
+{
+  const data = { ...scan, gate: { fallPct: 3, spreadPct: 0.3 } };
+  const candidates = Array.from({ length: 20 }, (_, i) => row({ coin: 'WAIT' + i, dayFallPct: 4 }));
+  candidates.push(row({ coin: 'BUY' }));
+  const ranked = recoverySignalRows(candidates, data).slice(0, 15);
+  ok(ranked[0].coin === 'BUY' && ranked[0].buySignal === true, 'разрешённая 21-я монета приходит первой');
+  ok(ranked[0].buyPlan === CELL, 'API отдаёт план выхода');
+  ok(!ranked[1].buySignal && ranked[1].buyPlan === null, 'наблюдение не получает разрешение');
+  ok(!candidates[0].buySignal, 'сортировка ответа не меняет исходный скан');
+  ok(recoverySignalRows(candidates, { ...data, staleSince: now }).every(r => !r.buySignal), 'сбой скана снимает все сигналы API');
+  const source = read('server.js');
+  const start = source.indexOf('function entryScanResponse(');
+  const end = source.indexOf("app.get('/api/entry-scan'", start);
+  const ctx = { recoverySignalRows, entryScan: { at: now, results: candidates }, ENTRY_NET: scan.entryNet,
+    RECOVERY_MEASURED_AT: scan.recoveryMeasuredAt, RECOVERY_SAMPLE: 1, RECOVERY_CHECK_VERSION: 2,
+    ENTRY_GATE_FALL: 3, ENTRY_GATE_SPREAD: 0.3, ENTRY_SCAN_INTERVAL_MS: 120000, recheckStamp: () => ({}) };
+  vm.createContext(ctx);
+  vm.runInContext(source.slice(start, end), ctx);
+  const response = ctx.entryScanResponse(now);
+  ok(response.results.length === 15 && response.results[0].coin === 'BUY', 'реальный обработчик сокращает список после определения сигнала');
+  ok(ctx.entryScanResponse(now + 300001).results.every(r => !r.buySignal), 'реальный обработчик повторно проверяет свежесть при каждом запросе');
 }
 
 console.log('\nВердикт и план выхода');
@@ -97,7 +142,11 @@ for (const [name, file] of [['десктоп', 'public/index.html'], ['моби�
   vm.createContext(ctx2);
   vm.runInContext(src.slice(start, end) + ';this.cell = cell;', ctx2);
   ok(!ctx2.cell(row()).includes('брать 4ч'), name + ': без разрешения слова нет');
+  ok(src.includes('renderRecoveryRules(j)'), name + ': условия доступны в панели');
+  ok(html.includes('от пика') && html.includes('0.1%'), name + ': падение и спред видны');
 }
+const rules = renderRecoveryRules({ ...scan, gate: { fallPct: 3, spreadPct: 0.3 } });
+ok(rules.includes('RSI') && rules.includes('само по себе покупку не разрешает'), 'условия объясняют роль RSI и отдельного пересчёта');
 
 console.log(bad ? '\nПЛОХО: ' + bad : '\nвсё зелено');
 process.exit(bad ? 1 : 0);

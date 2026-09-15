@@ -69,21 +69,34 @@ const rsi14 = (closes) => {
     const pass = r.dayFallPct >= gate.fallPct && r.spreadPct != null && r.spreadPct <= gate.spreadPct;
     if (!pass || r.chg24Pct == null || r.pullbackPct == null) return '—';
     if (r.chg24Pct != null && Math.abs(r.chg24Pct) >= 10) return 'риск';
-    return r.pullbackPct >= 1.5 ? 'брать' : 'можно';
+    return r.pullbackPct >= 1.5 ? 'глубокий' : 'наблюдать';
   };
-  const tierNum = { 'брать': 3, 'можно': 2, 'риск': 1, '—': 0 };
+  const tierNum = { 'глубокий': 3, 'наблюдать': 2, 'риск': 1, '—': 0 };
+  const number = x => x != null && x !== '' && typeof x !== 'boolean' && Number.isFinite(Number(x));
+  const buy = r => {
+    if (tierNum[verdict(r)] < 2 || !(r.price > 0) || !number(j.at) || j.at <= 0 ||
+        j.staleSince || j.serverNow - j.at > 300000 || j.at > j.serverNow + 60000) return false;
+    const lo = [10, 6, 3].find(n => r.dayFallPct >= n);
+    return (j.entryNet?.buyCells || []).some(c => c && c.lo === lo && c.deep === (r.pullbackPct >= 1.5) &&
+      [1, 4, 12, 24].includes(c.horizonH) && [0.3, 1, 2, 3].includes(c.target) && Number.isInteger(c.n) && c.n >= 360 &&
+      ['netA', 'netB', 'seA', 'seB'].every(k => number(c[k])) && c.seA >= 0 && c.seB >= 0 &&
+      c.netA > 2 * c.seA && c.netB > 2 * c.seB);
+  };
   for (const r of rows) {
     const v = verdict(r);
-    const pass = r.dayFallPct >= gate.fallPct && r.spreadPct != null && r.spreadPct <= gate.spreadPct;
     if (r.signalTier != null) ok(r.signalTier === tierNum[v], r.coin.padEnd(9) + ' уровень сервера совпадает с независимым расчётом');
     else console.log('  skip  ' + r.coin + ': API ещё не отдаёт уровень сигнала');
     if (v === 'риск') ok(Math.abs(r.chg24Pct) >= 10, r.coin.padEnd(9) + 'риск обоснован ходом ' + r.chg24Pct + '%');
+    if (typeof r.buySignal === 'boolean') {
+      ok(r.buySignal === buy(r), r.coin.padEnd(9) + ' сигнал покупки совпадает с независимым расчётом');
+      ok(r.buySignal ? !!r.buyPlan : r.buyPlan === null, r.coin.padEnd(9) + ' план есть только у сигнала');
+    } else console.log('  skip  ' + r.coin + ': сервер ещё не обновлён до buySignal');
   }
 
-  console.log('\n4. ПОРЯДОК СТРОК: СНАЧАЛА «БРАТЬ», ПОТОМ «МОЖНО», ПОТОМ «РИСК»');
-  let prev = 9, order = true;
+  console.log('\n4. ПОРЯДОК API: СНАЧАЛА СИГНАЛЫ ПОКУПКИ, ЗАТЕМ УРОВЕНЬ ОТКАТА');
+  let prev = Infinity, order = true;
   for (const r of rows) {
-    const t = tierNum[verdict(r)];
+    const t = (buy(r) ? 10 : 0) + tierNum[verdict(r)];
     if (t > prev) order = false;
     prev = t;
   }
@@ -92,7 +105,7 @@ const rsi14 = (closes) => {
   let inner = true;
   for (let i = 1; i < rows.length; i++) {
     const a = rows[i - 1], b = rows[i];
-    if (verdict(a) !== verdict(b)) continue;
+    if (buy(a) !== buy(b) || verdict(a) !== verdict(b)) continue;
     const ra = (a.recovery && a.recovery.hour) || 0, rb = (b.recovery && b.recovery.hour) || 0;
     if (rb > ra) inner = false;
     if (rb === ra && (b.pullbackPct || 0) > (a.pullbackPct || 0) + 1e-9) inner = false;

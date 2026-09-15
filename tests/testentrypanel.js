@@ -157,7 +157,7 @@ const coin = (c, pct, why, fall, rec, inList, spread) => ({ coin: c, price: 1.23
   m = await mkt(null);
   ok(!/Рынок/.test(m), 'без данных индикатор не рисуется');
   m = await mkt({ coins: 46, up: 34, medChg24: 0.8, btcChg24: null });
-  ok(/Рынок растёт/.test(m) && !/BTC/.test(m), 'без хода BTC остальное всё равно показано');
+  ok(/Рынок растёт/.test(m) && !/BTC [+-]?\d/.test(m), 'без хода BTC остальное всё равно показано');
   payload = { ...base };
   await ctx.loadEntryScan();
   t = txt();
@@ -177,7 +177,7 @@ const coin = (c, pct, why, fall, rec, inList, spread) => ({ coin: c, price: 1.23
   ok(/35 ч/.test(t), 'долго висящая монета помечена сроком', t.slice(0, 140));
   // Возврат и откат стоят рядом: это два признака одной оценки.
   // Колонка «вход» уступила место ответу: балл возврат не предсказывает.
-  ok(/монета цель 1ч откат за сутки RSI статус в списке/.test(t), 'колонки постоянные и подписаны');
+  ok(/монета цель 1ч откат за сутки RSI статус \/ спред в списке/.test(t), 'колонки постоянные и подписаны');
   ok(/\$1.2345|\$1.234/.test(t), 'цена монеты показана');
   const freshRow = t.split('FRESH')[1] || '';
   ok(/—/.test(freshRow.slice(0, 60)), 'у свежей монеты в колонке срока прочерк', freshRow.slice(0, 60));
@@ -252,9 +252,8 @@ const coin = (c, pct, why, fall, rec, inList, spread) => ({ coin: c, price: 1.23
   ok(/Первый скан/.test(txt()), 'пустой скан объяснён, а не показан нулями');
 
   payload = { success: false, error: 'нет данных' };
-  const before = box.innerHTML;
   await ctx.loadEntryScan();
-  ok(box.innerHTML === before, 'при отказе success:false панель сохраняет прежнее');
+  ok(/сигналы покупки отключены/.test(txt()) && !/<tr/.test(box.innerHTML), 'при отказе success:false старые сигналы удалены');
 
   // а вот поломка обязана быть видимой, а не проглоченной
   ctx.fetch = async () => { throw new Error('HTTP 500'); };

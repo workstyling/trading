@@ -1642,7 +1642,7 @@
   <div class="panel" id="panelVolume" data-tab="volume">
     <div style="display:none;"><div id="tlPaperStripM" style="display:none;margin-bottom:10px;"></div></div>
 
-    <div id="entryScanBoxM" style="margin-bottom:14px;padding:8px 9px;border:1px solid rgba(0,229,160,0.30);border-radius:8px;background:rgba(0,229,160,0.04);"></div>
+    <div id="entryScanBoxM" style="margin-bottom:14px;padding:8px 9px;border:1px solid var(--b1);border-radius:8px;background:var(--s1);"></div>
     <div id="microScalpPanelM" style="display:none;">
     <div style="display:flex;align-items:center;gap:7px;margin-bottom:7px;">
       <span style="font-weight:700;color:#bf5af2;font-size:13px;">⚡ Быстрый скальп</span>
@@ -6802,8 +6802,10 @@
       const box = document.getElementById('entryScanBoxM');
       if (!box) return;
       try {
-        const j = await (await fetch('' + BASE + '/api/entry-scan')).json();
-        if (!j.success) return;
+        const j = await (await fetch('' + BASE + '/api/entry-scan', {
+          signal: typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(10000) : undefined,
+        })).json();
+        if (!j.success) throw new Error('Скан не получен; сигналы покупки отключены');
         // Тот же счётчик, что у сканов: показывает, когда считали и сколько
         // до следующего пересчёта, с поправкой на расхождение часов.
         trackFreshnessM('entryAgoM', j);
@@ -6906,24 +6908,27 @@
             x.spreadPct == null ? 'Спред неизвестен' : 'Спред ' + x.spreadPct + '%',
             x.inListMin > 90 ? 'Монета давно в списке; часовой журнал проверяет первое появление сигнала' : '',
             edge.why,
-            peak ? 'Из показанных строк здесь самая высокая измеренная частота касания цели. Это утверждение о порядке, а не о прибыли: по измерениям покупка по этому списку издержек не окупает.' : '',
+            peak ? 'Из показанных строк здесь самая высокая измеренная частота касания цели. Максимум частоты сам по себе не разрешает покупку.' : '',
             v.label + ': ' + v.why,
           ].filter(Boolean).join(String.fromCharCode(10));
           const num = (value, color, bold) => '<td style="text-align:right;padding:6px 3px;font-size:11px;white-space:nowrap;font-variant-numeric:tabular-nums;color:' +
             (color || 'var(--t2)') + ';' + (bold ? 'font-weight:800;' : '') + '">' + value + '</td>';
           const sub = [
             'RSI ' + (x.rsi == null ? '—' : Math.round(x.rsi)),
-            'вход ' + (x.entryValue ? x.entryValue.pct : 0) + '%',
             held,
           ].filter(Boolean).join(' · ');
-          return '<tr onclick="selectCoinForTradeM(\'' + safe + '\')" title="' + escapeRecoveryText(tip) + '" style="cursor:pointer;' + (v.bg || (edge.above ? 'background:rgba(0,229,160,0.07);' : '')) + '">' +
-            '<td style="padding:6px 4px;' + (peak ? 'border-left:3px solid #00ffa8;' : '') + '"><span style="color:' + v.color + ';font-weight:800;font-size:9px;">' + v.label + '</span> ' +
-            '<span style="color:var(--blue);font-weight:700;font-size:12px;">' + safe + '</span>' + swingMark(x) + (peak ? '<span style="margin-left:4px;font-size:8.5px;font-weight:800;color:#00ffa8;border:1px solid rgba(0,255,168,0.5);border-radius:4px;padding:0 3px;">максимум</span>' : '') +
+          const conditions = [
+            'от пика ' + (x.dayFallPct == null ? '—' : '−' + x.dayFallPct + '%'),
+            'спред ' + (x.spreadPct == null ? '—' : x.spreadPct + '%'),
+          ].map(text => '<span style="display:inline-block;white-space:nowrap;">' + text + '</span>').join(' · ');
+          return '<tr onclick="selectCoinForTradeM(\'' + safe + '\')" title="' + escapeRecoveryText(tip) + '" style="cursor:pointer;' + (v.bg || (edge.above ? 'background:rgba(0,180,255,0.06);' : '')) + '">' +
+            '<td style="padding:6px 4px;' + (peak ? 'border-left:3px solid var(--blue);' : '') + '"><span style="color:' + v.color + ';font-weight:800;font-size:9px;">' + v.label + '</span> ' +
+            '<span style="color:var(--blue);font-weight:700;font-size:12px;">' + safe + '</span>' + swingMark(x) + (peak ? '<span style="margin-left:4px;font-size:8.5px;font-weight:800;color:var(--blue);border:1px solid var(--blue);border-radius:4px;padding:0 3px;">максимум</span>' : '') +
             '<span data-bookshare="' + safe + '"></span>' +
             '<span style="color:var(--t2);font-size:9px;margin-left:5px;">$' + price(x.price) + '</span>' +
-            '<br><span style="color:var(--t2);font-size:9px;">' + sub + '</span></td>' +
+            '<br><span style="color:var(--t2);font-size:9px;">' + sub + '<br>' + conditions + '</span></td>' +
             num((edge.above ? String.fromCharCode(9650) + ' ' : '') + rec.text,
-              peak ? '#00ffa8' : edge.above ? '#00e5a0' : rec.color, true) +
+              edge.above || peak ? 'var(--blue)' : rec.color, true) +
             num(x.pullbackPct == null ? '—' : x.pullbackPct + '%') +
             num(recoveryDayChange(x)) + '</tr>';
         };
@@ -6935,7 +6940,7 @@
           recoveryOrder(b, j, verdict(b), recoveryObservation(b, j)) -
           recoveryOrder(a, j, verdict(a), recoveryObservation(a, j)));
         box.innerHTML = head + renderRecoveryStatus(j.recheck, j.serverNow) +
-          renderRecoveryNet(j) + renderRecoveryLegend(j) + mkLine +
+          renderRecoveryNet(j) + renderRecoveryLegend(j) + renderRecoveryRules(j) + mkLine +
           (good.length
             ? '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;"><table style="width:100%;border-collapse:collapse;table-layout:fixed;"><thead>' + head2 + '</thead><tbody>' + ranked.slice(0, SHOWN).map(cell).join('') + '</tbody></table></div>' +
             renderRecoveryDeepNote(ranked, SHOWN, j) +
