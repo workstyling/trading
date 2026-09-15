@@ -1121,7 +1121,7 @@ setInterval(fetchAllCbVolumes, 30 * 60 * 1000);
 // API: Research - 100% Coinbase data
 let researchCache = { data: null, ts: 0 };
 const RESEARCH_CACHE_TTL = 300000; // 5 minutes
-const STABLECOINS = new Set(['USDT','USDC','DAI','BUSD','TUSD','GUSD','USDP','FRAX','LUSD','CRVUSD','PYUSD','EURC','FDUSD','USDS','USDM','ALUSD','SUSD','MUSD','DOLA','RAI','EUR','GBP','CBETH']);
+const STABLECOINS = new Set(['USDT','USDC','DAI','BUSD','TUSD','GUSD','USDP','FRAX','LUSD','CRVUSD','PYUSD','EURC','FDUSD','USDS','USDM','ALUSD','SUSD','MUSD','DOLA','RAI','EUR','GBP','CBETH','PAXG','WBTC','USD1','RLUSD','USDG']);
 
 // Research data cache (from background scan)
 let researchCoinsCache = [];
@@ -5313,6 +5313,9 @@ async function runScalpScan() {
         scalpScan.progress = total ? Math.round(done / total * 100) : 0;
       },
     });
+    // Сканер гейта не трогаем: его STABLE входит в отпечаток когорты.
+    // Доллар и золото здесь всё равно не вход — но занимают строку «БЛИЗКО».
+    out.results = out.results.filter(r => !STABLECOINS.has(r.coin));
     const validation = scalpValidationStatus();
     // Тренд балла: до перезаписи результатов сравниваем с прошлым сканом
     for (const r of out.results) {
@@ -6300,7 +6303,7 @@ function saveEntryPaper() {
 // двигается по построению, и любая такая строка — это ноль, добавленный к
 // выборке. В контроле это вреднее всего: нули тянут его среднее к нулю и
 // сужают погрешность, отчего разница между группами выглядит точнее, чем есть.
-const ENTRY_PAPER_SKIP = new Set(['USDT', 'USDC', 'DAI', 'PYUSD', 'USDS', 'EURC', 'GUSD', 'RLUSD', 'LUSD', 'USDG']);
+const ENTRY_PAPER_SKIP = new Set(['USDT', 'USDC', 'DAI', 'PYUSD', 'USDS', 'EURC', 'GUSD', 'RLUSD', 'LUSD', 'USDG', 'USD1', 'PAXG', 'WBTC']);
 
 function entryPaperOpen(rows) {
   const now = Date.now();
@@ -6604,6 +6607,7 @@ async function runMicroScalpScan() {
         microScalpScan.progress = total ? Math.round(done / total * 100) : 0;
       },
     });
+    out.results = out.results.filter(row => !STABLECOINS.has(row.coin));
     for (const row of out.results) {
       row.readiness = microScalpReadiness(row);
       row.setupStrength = microScalpSetupStrength(row);

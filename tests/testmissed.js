@@ -50,6 +50,14 @@ console.log('\nПовтор запроса к бирже');
       // ложная тревога приучает не смотреть на настоящую.
       ok(/\.filter\(x => !STABLECOINS\.has\(x\.coin\)\)/.test(src),
         'стейблкоины в корзину скана не попадают');
+      const stables = (src.match(/const STABLECOINS = new Set\(\[([^\]]+)\]\)/) || [])[1] || '';
+      ok(stables.includes('USD1'), 'USD1 не попадает в рейтинг отката');
+      ok(stables.includes('PAXG'), 'PAXG (золото) тоже');
+      ok(stables.includes('WBTC'), 'WBTC тоже');
+      ok(/ENTRY_PAPER_SKIP = new Set\([^\)]*USD1/.test(src), 'журнал не берёт USD1 в контроль');
+      ok(/ENTRY_PAPER_SKIP = new Set\([^\)]*PAXG/.test(src), 'и не берёт PAXG');
+      ok(/out\.results = out\.results\.filter\(r => !STABLECOINS\.has\(r\.coin\)\)/.test(src),
+        'скальп-таблица тоже отбрасывает стейблы без смены отпечатка гейта');
       ok(/if \(!sig\) \{ missed\.push\(coin\); return; \}/.test(src), 'нет данных — монета в списке потерь');
       ok(/catch \{ missed\.push\(coin\);/.test(src), 'и исключение тоже, а не просто проглатывается');
       ok(/missed: entryScan\.missed \|\| \[\]/.test(src), 'список уходит в ответ панели');
@@ -64,6 +72,8 @@ console.log('\nПовтор запроса к бирже');
         ok(/не посчитано /.test(h), name + ': и называет число');
         ok(/Это не значит, что условия перестали выполняться/.test(h),
           name + ': и объясняет, что это не отказ по правилу');
+        ok(/white-space:nowrap;">\$' \+ price\(x\.price\)/.test(h),
+          name + ': цена в рейтинге не переносится посередине числа');
       }
     }
 

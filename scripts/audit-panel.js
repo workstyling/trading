@@ -154,12 +154,15 @@ const rsi14 = (closes) => {
   console.log('\n7. ЧЕГО В ТАБЛИЦЕ БЫТЬ НЕ ДОЛЖНО');
   ok(!rows.some(r => r.dayFallPct == null), 'нет строк без падения');
   ok(!rows.some(r => r.recovery == null), 'нет строк без возврата');
-  ok(!rows.some(r => r.spreadPct == null), 'нет строк с неизвестным спредом');
+  // Неизвестный спред — запрет, не дыра. Полный скан показывает и такие строки
+  // в «Остальных»; вход и ненулевой уровень им давать нельзя.
+  ok(!rows.some(r => r.spreadPct == null && (r.buySignal || r.signalTier > 0)),
+    'неизвестный спред не даёт вход и не поднимает уровень');
   ok(!rows.some(r => r.price == null || !(r.price > 0)), 'нет строк без цены');
   const coins = rows.map(r => r.coin);
   ok(new Set(coins).size === coins.length, 'монеты не повторяются');
-  const STABLE = ['USDT', 'USDC', 'DAI', 'PYUSD', 'EURC'];
-  ok(!coins.some(c => STABLE.includes(c)), 'стейблкоинов нет');
+  const STABLE = ['USDT', 'USDC', 'DAI', 'PYUSD', 'EURC', 'USD1', 'PAXG', 'WBTC'];
+  ok(!coins.some(c => STABLE.includes(c)), 'стейблкоинов и золота нет');
   ok((j.missed || []).length === 0, 'непосчитанных нет', JSON.stringify(j.missed));
 
   console.log('\n' + (bad ? 'ПЛОХО: ' + bad : 'точных расхождений нет') +

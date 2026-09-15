@@ -15633,8 +15633,8 @@ Requirements:
           return '<tr data-entry-state="' + mark.state + '" onclick="selectCoinForTrade(\'' + safe + '\')" title="' + escapeRecoveryText(tip) + '" style="cursor:pointer;' + mark.bg + '">' +
             '<td style="padding:4px 6px;"><span style="color:' + rowColor + ';font-weight:700;font-size:11px;">' + safe + '</span>' + swingMark(x) + (peak ? '<span style="margin-left:4px;font-size:8.5px;font-weight:800;color:' + rowColor + ';border:1px solid ' + rowColor + ';border-radius:4px;padding:0 3px;">максимум</span>' : '') +
             '<span data-bookshare="' + safe + '" data-live="1"></span>' +
-            '<br><span style="color:var(--t2);font-size:9px;">$' + price(x.price) +
-            '<br>от пика ' + (x.dayFallPct == null ? '—' : '−' + x.dayFallPct + '%') + '</span></td>' +
+            '<br><span style="color:var(--t2);font-size:9px;white-space:nowrap;">$' + price(x.price) + '</span>' +
+            '<br><span style="color:var(--t2);font-size:9px;">от пика ' + (x.dayFallPct == null ? '—' : '−' + x.dayFallPct + '%') + '</span></td>' +
             num((edge.above ? String.fromCharCode(9650) + ' ' : '') + rec.text,
               rowColor, true) +
             num(x.pullbackPct == null ? '—' : x.pullbackPct + '%') +
