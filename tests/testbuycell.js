@@ -74,7 +74,7 @@ console.log('\nСервер не теряет сигнал за пределам
   const data = { ...scan, gate: { fallPct: 3, spreadPct: 0.3 } };
   const candidates = Array.from({ length: 20 }, (_, i) => row({ coin: 'WAIT' + i, dayFallPct: 4 }));
   candidates.push(row({ coin: 'BUY' }));
-  const ranked = recoverySignalRows(candidates, data).slice(0, 15);
+  const ranked = recoverySignalRows(candidates, data);
   ok(ranked[0].coin === 'BUY' && ranked[0].buySignal === true, 'разрешённая 21-я монета приходит первой');
   ok(ranked[0].buyPlan === CELL, 'API отдаёт план выхода');
   ok(!ranked[1].buySignal && ranked[1].buyPlan === null, 'наблюдение не получает разрешение');
@@ -89,7 +89,7 @@ console.log('\nСервер не теряет сигнал за пределам
   vm.createContext(ctx);
   vm.runInContext(source.slice(start, end), ctx);
   const response = ctx.entryScanResponse(now);
-  ok(response.results.length === 15 && response.results[0].coin === 'BUY', 'реальный обработчик сокращает список после определения сигнала');
+  ok(response.results.length === candidates.length && response.results[0].coin === 'BUY', 'реальный обработчик отдаёт весь скан, покупка идёт первой');
   ok(ctx.entryScanResponse(now + 300001).results.every(r => !r.buySignal), 'реальный обработчик повторно проверяет свежесть при каждом запросе');
 }
 
@@ -131,14 +131,14 @@ for (const [name, file] of [['десктоп', 'public/index.html'], ['моби�
     name + ': разрешение передаётся в вердикт');
   const start = src.indexOf('        const swingMark = (x) => {');
   const end = src.indexOf('        box.innerHTML = head + renderRecoveryStatus', start);
-  const ctx = { ...view, j: scan, gate, good: [row()], price: x => String(x) };
+  const ctx = { ...view, j: scan, gate, rows: [row()], price: x => String(x) };
   vm.createContext(ctx);
   vm.runInContext(src.slice(start, end) + ';this.cell = cell;', ctx);
   const html = ctx.cell(row());
   ok(html.includes('брать 4ч +2%'), name + ': слово и план выхода видны в строке');
   ok(html.includes('rgba(0,255,168'), name + ': строка выделена заливкой');
   const off = { ...scan, entryNet: { ...scan.entryNet, buyCells: [] } };
-  const ctx2 = { ...view, j: off, gate, good: [row()], price: x => String(x) };
+  const ctx2 = { ...view, j: off, gate, rows: [row()], price: x => String(x) };
   vm.createContext(ctx2);
   vm.runInContext(src.slice(start, end) + ';this.cell = cell;', ctx2);
   ok(!ctx2.cell(row()).includes('брать 4ч'), name + ': без разрешения слова нет');

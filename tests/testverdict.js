@@ -18,7 +18,7 @@ const scan = { recoveryMeasuredAt: '2026-09-09', recheck: {
 function renderers(source, data = scan) {
   const start = source.indexOf('        const swingMark = (x) => {');
   const end = source.indexOf('        box.innerHTML = head + renderRecoveryStatus', start);
-  const ctx = { ...view, j: data, gate: { fall: 3, spread: 0.3 }, good: [], price: x => String(x) };
+  const ctx = { ...view, j: data, gate: { fall: 3, spread: 0.3 }, rows: [], price: x => String(x) };
   vm.createContext(ctx);
   vm.runInContext(source.slice(start, end) + ';this.verdict = verdict; this.cell = cell;', ctx);
   return ctx;

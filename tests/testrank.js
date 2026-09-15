@@ -10,7 +10,7 @@
 const fs = require('fs'), vm = require('vm');
 const view = require('../public/js/recovery-journal');
 const { recoveryBaseline, recoveryEdge, recoveryOrder, recoveryObservation, recoveryVerdict,
-  renderRecoveryLegend, renderRecoveryDeepNote, recoveryPeak } = view;
+  renderRecoveryLegend, recoveryPeak } = view;
 let bad = 0;
 const ok = (c, m, x) => { if (!c) bad++; console.log('  ' + (c ? 'ok  ' : 'ПЛОХО') + '  ' + m + (x ? '   ' + x : '')); };
 const read = p => fs.readFileSync(p, 'utf8').split('\r\n').join('\n');
@@ -100,25 +100,6 @@ console.log('\nПорядок строк');
   ok(o(row({ dayFallPct: 12 })) === 0 && o(row({ dayFallPct: 4 })) === 0, 'нет замера — нет и порядка по нему');
 }
 
-console.log('\nОшедшие под черту не пропадают молча');
-{
-  const deepBig = row({ coin: 'USELESS', dayFallPct: 9.73, pullbackPct: 3.14, chg24Pct: -9.12 });
-  const note = renderRecoveryDeepNote([row({ coin: 'FIL', dayFallPct: 12 }), deepBig], 1, scan, now);
-  ok(/USELESS/.test(note), 'монета с глубоким откатом названа под таблицей');
-  ok(/11-18 пунктов/.test(note), 'и сказано, чем она была хороша в историческом замере');
-  ok(renderRecoveryDeepNote([deepBig], 1, scan, now) === '', 'показанная строка в примечание не попадает');
-  ok(renderRecoveryDeepNote([row({ dayFallPct: 12 })], 0, scan, now) === '',
-    'измеренная строка под чертой примечания не требует');
-  ok(renderRecoveryDeepNote([row({ pullbackPct: 0.9 })], 0, scan, now) === '',
-    'мелкий откат в примечание не идёт');
-  ok(renderRecoveryDeepNote(null, 0, scan, now) === '', 'без списка примечание молчит');
-  // Когда клетки наберут данные, примечание должно исчезнуть само
-  const full = JSON.parse(JSON.stringify(scan));
-  full.recheck.report.cells[5] = { lo: 6, deep: true, actual: 82, se: 2, coins: 20, n: 900 };
-  ok(renderRecoveryDeepNote([row({}), deepBig], 1, full, now) === '',
-    'появилась своя оценка — примечание уходит');
-}
-
 console.log('\nПри равной частоте вперёд идёт глубокий откат');
 {
   ok(order(row({ coin: 'UNI', pullbackPct: 1.38 })) > order(row({ coin: 'DASH', pullbackPct: 0.59 })),
@@ -146,7 +127,7 @@ for (const [name, file] of [['десктоп', 'public/index.html'], ['моби�
   const start = src.indexOf('        const swingMark = (x) => {');
   const end = src.indexOf('        box.innerHTML = head + renderRecoveryStatus', start);
   const shown = [row({ coin: 'FIL', dayFallPct: 12 }), row({ coin: 'AAVE' })];
-  const ctx = { ...view, j: scan, gate, good: shown, price: x => String(x) };
+  const ctx = { ...view, j: scan, gate, rows: shown, price: x => String(x) };
   vm.createContext(ctx);
   vm.runInContext(src.slice(start, end) + ';this.cell = cell;', ctx);
   const hot = ctx.cell(row({ coin: 'FIL', dayFallPct: 12 }));   // верхняя клетка
@@ -155,15 +136,15 @@ for (const [name, file] of [['десктоп', 'public/index.html'], ['моби�
   const risk = ctx.cell(row({ dayFallPct: 12, chg24Pct: -14 }));
   console.log('  ' + name);
   ok(/var\(--blue\)/.test(warm), '  наблюдение выделено голубым');
-  ok(warm.includes('rgba(0,180,255,0.06)'), '  и заливкой строки');
-  ok(hot.includes('rgba(0,180,255,0.06)'), '  верхняя строка тоже залита');
+  ok(warm.includes('data-entry-state="possible"') && warm.includes('var(--entry-possible-bg)'), '  возможный кандидат получает оранжевую рамку и фон');
+  ok(hot.includes('data-entry-state="possible"'), '  максимум без подтверждения прибыли тоже только возможный');
   ok(hot.includes(String.fromCharCode(9650)), '  у числа есть метка порога');
   ok(!/#00e5a0/.test(cold), '  прочерк не выделяется');
   ok(!cold.includes('rgba(0,180,255,0.06)'), '  и не заливается');
   ok(risk.includes('rgba(255,107,107'), '  риск остаётся красным');
   ok(!risk.includes('rgba(0,180,255,0.06)'), '  заливка наблюдения не перекрывает риск');
   ok(hot.includes('База (падения почти нет)'), '  сравнение с базой есть в подсказке');
-  ok(hot.includes('border-left:3px solid var(--blue)') && !cold.includes('border-left:3px'), '  максимум выделен рамкой');
+  ok(!hot.includes('border-left:3px solid var(--blue)') && !cold.includes('border-left:3px'), '  метка максимума не перекрывает рамку статуса');
   ok(!hot.includes('#00ffa8') && !hot.includes('rgba(0,255,168'), '  максимум наблюдения не получает цвет покупки');
   ok(hot.includes('максимум'), '  и подписана словом');
   ok(warm.includes('максимум') === false, '  строка ниже такой пометки не получает');
@@ -172,8 +153,8 @@ for (const [name, file] of [['десктоп', 'public/index.html'], ['моби�
     '  список упорядочен по измеренной частоте');
   ok(!/verdict\(b\)\.tier - verdict\(a\)\.tier/.test(src), '  прежний порядок по уровню отката убран');
   ok(/renderRecoveryLegend\(j\)/.test(src), '  подпись про порог показана');
-  ok(/renderRecoveryDeepNote\(ranked, SHOWN, j\)/.test(src), '  ушедшие под черту названы под таблицей');
-  ok(/const SHOWN = 8;/.test(src), '  и черта — то же число, что и в таблице');
+  ok(/renderRecoveryGroups\(ranked, j, cell, [47]\)/.test(src), '  все монеты показаны в трёх группах');
+  ok(!/const SHOWN = 8;/.test(src), '  ограничение восемью строками убрано');
 }
 
 console.log(bad ? '\nПЛОХО: ' + bad : '\nвсё зелено');

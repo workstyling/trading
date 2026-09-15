@@ -31,6 +31,9 @@
       --loss: #ee5253;
       --blue: #4cc9f0;
       --yellow: #f4d35e;
+      --entry-confirmed: #00ffa8;
+      --entry-possible: #f5843a;
+      --entry-possible-bg: rgba(245, 132, 58, 0.10);
       --purple: #a78bfa;
       --r1: 8px;
       --r2: 12px;
@@ -38,6 +41,18 @@
       --font-display: 'Space Grotesk', sans-serif;
       --font-body: 'Inter', sans-serif;
     }
+
+    tr[data-entry-state="confirmed"] { --entry-border: var(--entry-confirmed); }
+    tr[data-entry-state="possible"] { --entry-border: var(--entry-possible); }
+    tr[data-entry-state="confirmed"] > td,
+    tr[data-entry-state="possible"] > td {
+      border-top: 2px solid var(--entry-border);
+      border-bottom: 2px solid var(--entry-border);
+    }
+    tr[data-entry-state="confirmed"] > td:first-child,
+    tr[data-entry-state="possible"] > td:first-child { border-left: 3px solid var(--entry-border); }
+    tr[data-entry-state="confirmed"] > td:last-child,
+    tr[data-entry-state="possible"] > td:last-child { border-right: 2px solid var(--entry-border); }
 
     * {
       box-sizing: border-box;
@@ -15485,7 +15500,7 @@ Requirements:
     // Числа приходят с сервера: повторять их здесь значит однажды разойтись.
     function ENTRY_MIN(j) {
       const g = (j && j.gate) || {};
-      return { fall: g.fallPct == null ? 3 : g.fallPct, spread: g.spreadPct == null ? 0.3 : g.spreadPct };
+      return { fall: g.fallPct, spread: g.spreadPct };
     }
     function entryPassesUi(x, g) {
       if (!x || x.dayFallPct == null || x.dayFallPct === '') return false;
@@ -15510,7 +15525,7 @@ Requirements:
         const good = rows.filter(x => entryPassesUi(x, gate));
         const head = '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:6px;">' +
           '<span style="color:var(--t1);font-weight:700;font-size:12px;" title="Свежая частота касания цели +0.30% за час по глубине падения и отката. Это не вероятность чистой прибыли. Качество отбора проверяется в журнале ниже. Исторический замер ' + (j.recoveryMeasuredAt || '—') + ', наблюдений ' + (j.recoverySample || '—') + '; его проценты не подменяют свежие данные.">Рейтинг отката</span>' +
-          '<span style="color:var(--t2);font-size:10px;">' + (j.total || 0) + ' монет · падение от ' + gate.fall + '%' +
+          '<span style="color:var(--t2);font-size:10px;">' + (j.total || 0) + ' монет · падение от ' + (gate.fall == null ? '—' : gate.fall + '%') +
           // Молчаливая потеря хуже пустого места: монета исчезала из
           // списка, и отличить «условия перестали выполняться» от «биржа не
           // ответила» было нельзя. ZEC так пропал со строки «брать».
@@ -15590,12 +15605,13 @@ Requirements:
         const cell = (x) => {
           const v = verdict(x);
           const rec = recoveryObservation(x, j);
+          const mark = recoveryRowMark(x, j, v, rec);
           // Порог покупаемости на экране: база того же замера, с которой
           // сравнивается строка. Без неё 57% и 79% выглядели одинаково тёмными.
           const edge = recoveryEdge(rec, recoveryBaseline(j));
           // Верхняя клетка из показанных: одинаково зелёные восемь строк не
           // выделяют ничего, а гейт по падению сам отбирает клетки выше базы.
-          const peak = rec.hour != null && rec.hour === recoveryPeak(good, j);
+          const peak = rec.hour != null && rec.hour === recoveryPeak(rows, j);
           const safe = String(x.coin).replace(/[^A-Z0-9]/gi, '');
           const held = x.inListMin == null ? null
             : x.inListMin >= 120 ? Math.round(x.inListMin / 60) + ' ч' : x.inListMin + ' мин';
@@ -15609,11 +15625,12 @@ Requirements:
             edge.why,
             peak ? 'Из показанных строк здесь самая высокая измеренная частота касания цели. Максимум частоты сам по себе не разрешает покупку.' : '',
             v.label + ': ' + v.why,
+            mark.why,
           ].filter(Boolean).join(String.fromCharCode(10));
           const num = (value, color, bold) => '<td style="text-align:right;padding:4px 6px;font-size:11px;white-space:nowrap;font-variant-numeric:tabular-nums;color:' +
             (color || 'var(--t2)') + ';' + (bold ? 'font-weight:800;' : '') + '">' + value + '</td>';
-          return '<tr onclick="selectCoinForTrade(\'' + safe + '\')" title="' + escapeRecoveryText(tip) + '" style="cursor:pointer;' + (v.bg || (edge.above ? 'background:rgba(0,180,255,0.06);' : '')) + '">' +
-            '<td style="padding:4px 6px;' + (peak ? 'border-left:3px solid var(--blue);' : '') + '"><span style="color:var(--blue);font-weight:700;font-size:11px;">' + safe + '</span>' + swingMark(x) + (peak ? '<span style="margin-left:4px;font-size:8.5px;font-weight:800;color:var(--blue);border:1px solid var(--blue);border-radius:4px;padding:0 3px;">максимум</span>' : '') +
+          return '<tr data-entry-state="' + mark.state + '" onclick="selectCoinForTrade(\'' + safe + '\')" title="' + escapeRecoveryText(tip) + '" style="cursor:pointer;' + (mark.bg || (edge.above ? 'background:rgba(0,180,255,0.06);' : '')) + '">' +
+            '<td style="padding:4px 6px;"><span style="color:' + (mark.state === 'none' ? 'var(--blue)' : mark.color) + ';font-weight:700;font-size:11px;">' + safe + '</span>' + swingMark(x) + (peak ? '<span style="margin-left:4px;font-size:8.5px;font-weight:800;color:var(--blue);border:1px solid var(--blue);border-radius:4px;padding:0 3px;">максимум</span>' : '') +
             '<span data-bookshare="' + safe + '" data-live="1"></span>' +
             '<br><span style="color:var(--t2);font-size:9px;">$' + price(x.price) +
             '<br>от пика ' + (x.dayFallPct == null ? '—' : '−' + x.dayFallPct + '%') + '</span></td>' +
@@ -15622,28 +15639,20 @@ Requirements:
             num(x.pullbackPct == null ? '—' : x.pullbackPct + '%') +
             num(recoveryDayChange(x)) +
             num(x.rsi == null ? '—' : Math.round(x.rsi)) +
-            '<td style="text-align:center;padding:4px 6px;font-size:10px;font-weight:800;color:' + v.color + ';">' + v.label +
+            '<td style="text-align:center;padding:4px 6px;font-size:10px;font-weight:800;color:' + mark.color + ';">' + mark.label +
             '<br><span style="color:var(--t2);font-size:9px;font-weight:400;">' + (x.spreadPct == null ? '—' : x.spreadPct + '%') + '</span></td>' +
             num(held || '—') + '</tr>';
         };
-        // Порядок один на обе вёрстки: измеренные строки выше прочерков, а
-        // внутри — по самой частоте. Считаем список один раз, чтобы под
-        // таблицей можно было назвать тех, кто остался за чертой.
-        const SHOWN = 8;
-        const ranked = good.slice().sort((a, b) =>
+        // Одинаковые группы на компьютере и телефоне; показываем весь скан.
+        const ranked = rows.slice().sort((a, b) =>
           recoveryOrder(b, j, verdict(b), recoveryObservation(b, j)) -
           recoveryOrder(a, j, verdict(a), recoveryObservation(a, j)));
         box.innerHTML = head + renderRecoveryStatus(j.recheck, j.serverNow) +
           renderRecoveryNet(j) + renderRecoveryLegend(j) + renderRecoveryRules(j) + mkLine +
-          (good.length
-            // Порядок показывает, где чаще доходило до цели. Наличие
-            // измерения не превращает строку в разрешение покупки.
-            ? '<table style="width:100%;border-collapse:collapse;"><thead>' + head2 + '</thead><tbody>' +
-              ranked.slice(0, SHOWN).map(cell).join('') + '</tbody></table>' +
-            renderRecoveryDeepNote(ranked, SHOWN, j) +
-            '<div id="entryPaper" style="margin-top:6px;padding-top:5px;border-top:1px solid var(--b1);font-size:10px;color:var(--t2);"></div>'
-            : '<table style="width:100%;border-collapse:collapse;"><thead>' + head2 + '</thead><tbody>' + rows.slice(0, 3).map(cell).join('') + '</tbody></table>' +
-              '<div style="color:var(--t2);font-size:10px;margin-top:5px;">Порог не взял никто — показаны ближайшие.</div>');
+          '<table style="width:100%;border-collapse:collapse;"><thead>' + head2 + '</thead><tbody>' +
+          renderRecoveryGroups(ranked, j, cell, 7) + '</tbody></table>' +
+          (!good.length ? '<div style="color:var(--t2);font-size:10px;margin-top:5px;">Порог не взял никто — монеты показаны в остальных.</div>' : '') +
+          '<div id="entryPaper" style="margin-top:6px;padding-top:5px;border-top:1px solid var(--b1);font-size:10px;color:var(--t2);"></div>';
 
         // Доли портфеля рисуются после разметки: кошелёк живёт своим циклом
         try { paintBookShares(); } catch { }

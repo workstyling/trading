@@ -101,9 +101,8 @@
     }
     return peak;
   }
-  // Измеренные строки идут выше всех неизмеренных, а не вперемешку по
-  // близкому числу: сверху должно стоять то, про что известно, чем оно
-  // кончалось. Внутри — по самой частоте.
+  // Сначала покупки, затем возможные покупки, затем остальные.
+  // Внутри группы измеренные строки выше прочерков, по частоте цели.
   //
   // Строки без своей оценки упорядочиваем между собой по известной мелкой
   // клетке того же падения: в историческом замере глубокий откат шёл не хуже
@@ -112,36 +111,19 @@
   const MEASURED_FIRST = 1000;
   function recoveryOrder(row, scan, verdict, observation, now = scanNow(scan)) {
     if (verdict && verdict.tier <= 1) return -1;
-    // Разрешённые к покупке — выше всех: список читают сверху вниз, и строка
-    // «брать» под восемью «наблюдать» не выполняет своей работы.
-    if (verdict && verdict.tier >= 4) return 2000 + (observation && observation.hour != null ? observation.hour : 0);
+    const mark = verdict && recoveryRowMark(row, scan, verdict, observation, now);
+    const priority = mark && mark.state === 'confirmed' ? 4000 : mark && mark.state === 'possible' ? 2000 : 0;
     // При равной частоте вперёд идёт более глубокий откат: в историческом
     // замере он добавлял 11-18 пунктов. Надбавка меньше десятой доли
     // процента, поэтому измеренную разницу она перебить не может.
     if (observation && observation.hour != null) {
-      return MEASURED_FIRST + observation.hour +
+      return priority + MEASURED_FIRST + observation.hour +
         Math.min(Math.max(finite(row.pullbackPct) ? Number(row.pullbackPct) : 0, 0), 9) / 100;
     }
     const report = freshReportFor(scan, now);
     const band = fallBand(row);
     const near = report && band != null && validCell(report.cells.find(c => c.lo === band && c.deep === false));
-    return near ? Math.round(Number(near.actual) * 10) / 10 : 0;
-  }
-  // Глубокий откат ушёл под черту: своей оценки у него нет, и измеренные
-  // строки теперь выше. Выбросить его молча нельзя — до сегодняшнего дня он
-  // стоял первым, а исторический замер давал ему 11-18 пунктов. Пропавшая
-  // строка неотличима от строки, которой не было.
-  function renderRecoveryDeepNote(sorted, shownCount, scan, now = scanNow(scan)) {
-    const hidden = (sorted || []).slice(shownCount)
-      .filter(row => finite(row.pullbackPct) && Number(row.pullbackPct) >= 1.5 &&
-        recoveryObservation(row, scan, now).hour == null)
-      .map(row => escapeHtml(String(row.coin).replace(/[^A-Z0-9]/gi, '')));
-    if (!hidden.length) return '';
-    return '<div style="font-size:10px;line-height:1.4;margin-top:5px;color:var(--t2);">' +
-      'Ниже черты глубокий откат без свежей оценки: <b>' + hidden.slice(0, 6).join(', ') + '</b>' +
-      (hidden.length > 6 ? ' и ещё ' + (hidden.length - 6) : '') +
-      '. В историческом замере откат от 1.5% добавлял 11-18 пунктов, но свежих наблюдений в этих ' +
-      'клетках пока нет — поэтому наверх они не подняты.</div>';
+    return priority + (near ? Math.round(Number(near.actual) * 10) / 10 : 0);
   }
   // Разрешена ли клетка этой монеты к покупке.
   //
@@ -178,12 +160,51 @@
       return { ...row, buySignal: verdict.tier === 4, buyPlan: verdict.tier === 4 ? plan : null };
     }).sort((a, b) => Number(b.buySignal) - Number(a.buySignal));
   }
+  function recoveryRowMark(row, scan, verdict, observation, now = scanNow(scan)) {
+    const plain = { state: 'none', label: verdict.label, color: verdict.color, bg: verdict.bg, why: '' };
+    if (!recoveryScanFresh(scan, now) || !finite(row.price) || row.price <= 0 || verdict.tier < 2) return plain;
+    if (verdict.tier === 4) return { ...plain, state: 'confirmed',
+      why: 'Зелёная рамка: вход подтверждён правилами и проверкой доходности группы. Это не гарантия прибыли.' };
+    const edge = recoveryEdge(observation, recoveryBaseline(scan, now));
+    if (!edge.above) return plain;
+    return { state: 'possible', label: 'возможная покупка', color: 'var(--entry-possible)',
+      bg: 'background:var(--entry-possible-bg);',
+      why: 'Оранжевая рамка: параметры монеты подходят, свежая частота цели выше базы больше чем на две погрешности и минимум на 3 п.п. Прибыльность группы не подтверждена — это кандидат для наблюдения, покупка ещё не разрешена.' };
+  }
+  function renderRecoveryGroups(sorted, scan, renderRow, columns) {
+    const gate = { fall: scan.gate && scan.gate.fallPct, spread: scan.gate && scan.gate.spreadPct };
+    const groups = { confirmed: [], possible: [], none: [] };
+    for (const row of sorted) {
+      const observation = recoveryObservation(row, scan);
+      const verdict = recoveryVerdict(row, gate, observation, recoveryBuyCell(row, scan));
+      groups[recoveryRowMark(row, scan, verdict, observation).state].push(row);
+    }
+    return [
+      ['confirmed', 'Покупать', 'var(--entry-confirmed)'],
+      ['possible', 'Возможная покупка', 'var(--entry-possible)'],
+      ['none', 'Остальные', 'var(--t1)'],
+    ].map(([state, label, color]) => {
+      const rows = groups[state];
+      const empty = state === 'confirmed' ? 'Сейчас нет подтверждённых сигналов покупки.'
+        : state === 'possible' ? 'Сейчас нет кандидатов на покупку.' : '';
+      return '<tr data-entry-group="' + state + '"><th colspan="' + columns +
+        '" style="text-align:left;padding:10px 6px 5px;font-size:11px;color:' + color + ';">' +
+        label + ' · ' + rows.length + '</th></tr>' +
+        (rows.length ? rows.map(renderRow).join('') : empty ? '<tr><td colspan="' + columns +
+          '" style="padding:4px 6px;font-size:10px;color:var(--t2);">' + empty + '</td></tr>' : '');
+    }).join('');
+  }
   function renderRecoveryRules(scan) {
     const gate = scan && scan.gate;
     const fall = gate && finite(gate.fallPct) ? Number(gate.fallPct) + '%' : 'неизвестен';
     const spread = gate && finite(gate.spreadPct) ? Number(gate.spreadPct) + '%' : 'неизвестен';
     const fresh = recoveryScanFresh(scan);
-    return '<details style="font-size:10px;line-height:1.5;margin-bottom:7px;color:var(--t2);">' +
+    return '<div style="font-size:10px;line-height:1.5;margin-bottom:7px;color:var(--t1);">' +
+      '<b>Параметры входа:</b> от пика ≥' + fall + ' · спред ≤' + spread +
+      ' · −10% &lt; за сутки &lt; +10% · скан ≤5 мин.<br>' +
+      '<span style="border-left:3px solid #00ffa8;padding-left:5px;color:#00ffa8;">Зелёная рамка — подтверждены параметры и прибыльность группы</span><br>' +
+      '<span style="border-left:3px solid var(--entry-possible);padding-left:5px;color:var(--entry-possible);">Оранжевая рамка — возможная покупка, ждём подтверждения</span>' +
+      '</div><details style="font-size:10px;line-height:1.5;margin-bottom:7px;color:var(--t2);">' +
       '<summary style="cursor:pointer;color:var(--t1);">Когда появится сигнал покупки' +
       (fresh ? '' : ' · скан не готов или устарел') + '</summary>' +
       '<div style="padding:5px 0;">' +
@@ -191,8 +212,10 @@
       '2. Ход за сутки строго между −10% и +10%; цена и условия известны, скану не больше 5 минут.<br>' +
       '3. Для группы с таким падением и откатом подтверждён плюс после комиссий: средний результат минус две погрешности выше нуля в обеих частях проверки.<br>' +
       'Откат от максимума за 30 минут делит группы на &lt;1.5% и ≥1.5%; сам по себе глубокий откат не разрешает вход. RSI, рост BTC и процент «цель 1ч» не включают покупку.<br>' +
-      '<b style="color:#00ffa8;">Сигнал: зелёная строка «брать» с целью и сроком, вверху списка.</b> ' +
-      '«Наблюдать» и «максимум» означают только наблюдение. Нажатие на строку открывает график.<br>' +
+      '<b style="color:#00ffa8;">Подтверждённый вход: зелёная рамка и «брать» с целью и сроком, вверху списка.</b> ' +
+      'Это прохождение правил алгоритма, не гарантия прибыли.<br>' +
+      '<b style="color:var(--entry-possible);">Возможный вход: оранжевая рамка.</b> Параметры монеты подходят, свежая частота цели выше базы больше чем на две погрешности и минимум на 3 п.п., но проверка доходности ещё не пройдена. Покупка не разрешена.<br>' +
+      'Без свежей оценки или при ходе за сутки от ±10% рамки входа нет. «Максимум» отмечает только частоту цели. Нажатие на строку открывает график.<br>' +
       'Проверка доходности обновляется отдельным пересчётом; накопление часовой статистики само по себе покупку не разрешает.' +
       '</div></details>';
   }
@@ -245,7 +268,7 @@
     return '<div style="font-size:10px;line-height:1.4;margin-bottom:6px;color:var(--t2);">' +
       '<b style="color:var(--blue);">Голубым</b> — свежая частота цели выше базы <b>' +
       base.pct.toFixed(1) + '%</b> (монеты почти без падения) больше чем на две погрешности. ' +
-      'Это «чаще доходит до цели», а не разрешение покупать. Зелёная строка — только сигнал «брать» с целью и сроком.</div>';
+      'Это «чаще доходит до цели», а не разрешение покупать. Цвет рамки обозначает статус входа; условия ниже.</div>';
   }
   function recoveryVerdict(row, gate, observation, buyCell) {
     const out = (tier, label, why, risk = false) => ({ tier, label, why,
@@ -346,9 +369,9 @@
     if (overall && overall.hitUnknown) line += ' · неизвестен исход цели у ' + overall.hitUnknown + ' записей';
     return '<span title="' + esc(notes.filter(Boolean).join(NL)) + '">' + line + '</span>';
   }
-  const api = { renderEntryJournal, renderRecoveryStatus, renderRecoveryLegend, renderRecoveryNet, renderRecoveryDeepNote, recoveryObservation,
+  const api = { renderEntryJournal, renderRecoveryStatus, renderRecoveryLegend, renderRecoveryNet, recoveryObservation,
     recoveryVerdict, recoveryDayChange, recoveryBaseline, recoveryEdge, recoveryOrder, recoveryPeak, recoveryBuyCell,
-    recoverySignalRows, renderRecoveryRules,
+    recoverySignalRows, renderRecoveryRules, recoveryRowMark, renderRecoveryGroups,
     escapeRecoveryText: escapeHtml };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else Object.assign(root, api);

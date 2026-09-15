@@ -6586,7 +6586,7 @@ function entryScanResponse(now = Date.now()) {
     serverNow: now,
     market: entryScan.market,
   };
-  response.results = recoverySignalRows(entryScan.results, response).slice(0, 15);
+  response.results = recoverySignalRows(entryScan.results, response);
   return response;
 }
 app.get('/api/entry-scan', (req, res) => res.json(entryScanResponse()));

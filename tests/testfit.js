@@ -30,8 +30,8 @@ console.log('\nТаблица влезает в телефон');
   // Если что-то всё же шире экрана, прокрутка живёт в своём ящике
   ok(/overflow-x:auto;-webkit-overflow-scrolling:touch;/.test(m) && /table-layout:fixed/.test(m),
     'таблица в прокручиваемом ящике с фиксированной раскладкой');
-  ok((m.match(/overflow-x:auto;-webkit-overflow-scrolling:touch;"><table style="width:100%;border-collapse:collapse;table-layout:fixed/g) || []).length === 2,
-    'обёрнуты обе ветки — и список, и «ближайшие»');
+  ok((m.match(/overflow-x:auto;-webkit-overflow-scrolling:touch;"><table style="width:100%;border-collapse:collapse;table-layout:fixed/g) || []).length === 1,
+    'единая таблица всех трёх групп обёрнута для прокрутки');
   // Десктоп не тронут: там семь колонок помещаются
   const dh = d.slice(d.indexOf('const head2 ='), d.indexOf('const price = v =>') + 1);
   ok((d.slice(d.indexOf('const head2 ='), d.indexOf('const cell = (x) =>')).match(/<th /g) || []).length === 7,
