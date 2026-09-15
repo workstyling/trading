@@ -266,9 +266,12 @@
     const base = recoveryBaseline(scan, now);
     if (!base) return '';
     return '<div style="font-size:10px;line-height:1.4;margin-bottom:6px;color:var(--t2);">' +
-      '<b style="color:var(--blue);">Голубым</b> — свежая частота цели выше базы <b>' +
+      '<b>▲ у процента</b> — свежая частота цели выше базы <b>' +
       base.pct.toFixed(1) + '%</b> (монеты почти без падения) больше чем на две погрешности. ' +
-      'Это «чаще доходит до цели», а не разрешение покупать. Цвет рамки обозначает статус входа; условия ниже.</div>';
+      'Это «чаще доходит до цели», а не разрешение покупать. ' +
+      '<b style="color:var(--entry-confirmed);">Зелёные — покупать по сигналу.</b> ' +
+      '<b style="color:var(--entry-possible);">Оранжевые — кандидаты, покупка ещё не подтверждена.</b> ' +
+      'Остальные — без сигнала покупки.</div>';
   }
   function recoveryVerdict(row, gate, observation, buyCell) {
     const out = (tier, label, why, risk = false) => ({ tier, label, why,

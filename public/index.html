@@ -33,7 +33,7 @@
       --yellow: #f4d35e;
       --entry-confirmed: #00ffa8;
       --entry-possible: #f5843a;
-      --entry-possible-bg: rgba(245, 132, 58, 0.10);
+      --entry-possible-bg: rgba(245, 132, 58, 0.15);
       --purple: #a78bfa;
       --r1: 8px;
       --r2: 12px;
@@ -15606,6 +15606,7 @@ Requirements:
           const v = verdict(x);
           const rec = recoveryObservation(x, j);
           const mark = recoveryRowMark(x, j, v, rec);
+          const rowColor = mark.state === 'none' ? 'var(--t1)' : mark.color;
           // Порог покупаемости на экране: база того же замера, с которой
           // сравнивается строка. Без неё 57% и 79% выглядели одинаково тёмными.
           const edge = recoveryEdge(rec, recoveryBaseline(j));
@@ -15628,14 +15629,14 @@ Requirements:
             mark.why,
           ].filter(Boolean).join(String.fromCharCode(10));
           const num = (value, color, bold) => '<td style="text-align:right;padding:4px 6px;font-size:11px;white-space:nowrap;font-variant-numeric:tabular-nums;color:' +
-            (color || 'var(--t2)') + ';' + (bold ? 'font-weight:800;' : '') + '">' + value + '</td>';
-          return '<tr data-entry-state="' + mark.state + '" onclick="selectCoinForTrade(\'' + safe + '\')" title="' + escapeRecoveryText(tip) + '" style="cursor:pointer;' + (mark.bg || (edge.above ? 'background:rgba(0,180,255,0.06);' : '')) + '">' +
-            '<td style="padding:4px 6px;"><span style="color:' + (mark.state === 'none' ? 'var(--blue)' : mark.color) + ';font-weight:700;font-size:11px;">' + safe + '</span>' + swingMark(x) + (peak ? '<span style="margin-left:4px;font-size:8.5px;font-weight:800;color:var(--blue);border:1px solid var(--blue);border-radius:4px;padding:0 3px;">максимум</span>' : '') +
+            (color || rowColor) + ';' + (bold ? 'font-weight:800;' : '') + '">' + value + '</td>';
+          return '<tr data-entry-state="' + mark.state + '" onclick="selectCoinForTrade(\'' + safe + '\')" title="' + escapeRecoveryText(tip) + '" style="cursor:pointer;' + mark.bg + '">' +
+            '<td style="padding:4px 6px;"><span style="color:' + rowColor + ';font-weight:700;font-size:11px;">' + safe + '</span>' + swingMark(x) + (peak ? '<span style="margin-left:4px;font-size:8.5px;font-weight:800;color:' + rowColor + ';border:1px solid ' + rowColor + ';border-radius:4px;padding:0 3px;">максимум</span>' : '') +
             '<span data-bookshare="' + safe + '" data-live="1"></span>' +
             '<br><span style="color:var(--t2);font-size:9px;">$' + price(x.price) +
             '<br>от пика ' + (x.dayFallPct == null ? '—' : '−' + x.dayFallPct + '%') + '</span></td>' +
             num((edge.above ? String.fromCharCode(9650) + ' ' : '') + rec.text,
-              edge.above || peak ? 'var(--blue)' : rec.color, true) +
+              rowColor, true) +
             num(x.pullbackPct == null ? '—' : x.pullbackPct + '%') +
             num(recoveryDayChange(x)) +
             num(x.rsi == null ? '—' : Math.round(x.rsi)) +
