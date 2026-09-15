@@ -1993,7 +1993,7 @@
               <span style="color:${pos.unrealized == null ? 'var(--t2)' : pnlCol(pos.unrealized)};font-weight:700;font-size:11px;">${pos.unrealized == null ? '—' : money(pos.unrealized) + ' (' + (pos.unrealizedPct >= 0 ? '+' : '') + pos.unrealizedPct + '%)'}</span>
             </div>`).join('')}` : ''}
             ${closed.map(c => `<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--b0);">
-              <span style="color:var(--t0);font-weight:600;">${c.coin} <span style="color:var(--t2);font-weight:400;font-size:10px;">${c.ctx && c.ctx.rbTag ? c.ctx.rbTag : ''} ${c.holdH}h</span></span>
+              <span style="color:var(--t0);font-weight:600;">${c.coin}${c.partial ? `<span title="Продано больше монет, чем журнал видел купленными: часть проданного куплена до того, как журнал начал вести эту монету, или её покупка уехала за край окна ордеров. Прибыль и процент посчитаны только по покрытой части, остальное журнал не оценивает." style="color:#f5843a;font-size:10px;margin-left:3px;">частично</span>` : ''} <span style="color:var(--t2);font-weight:400;font-size:10px;">${c.ctx && c.ctx.rbTag ? c.ctx.rbTag : ''} ${c.holdH}h</span></span>
               <span style="color:${c.pnl >= 0 ? 'var(--green)' : 'var(--red)'};font-weight:700;">${c.pnl >= 0 ? '+' : '−'}$${Math.abs(c.pnl).toFixed(2)} (${c.pnlPct >= 0 ? '+' : ''}${c.pnlPct}%)</span>
             </div>`).join('')}` : 'Сделок пока нет — журнал наполняется автоматически при покупках и продажах.';
         }

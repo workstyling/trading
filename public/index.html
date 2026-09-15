@@ -17280,7 +17280,8 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
           <div style="font-size:11px;color:var(--t2);font-weight:700;margin-bottom:6px;">ЗАКРЫТЫЕ СДЕЛКИ (последние ${closed.length})</div>
           <table class="pred-table"><thead><tr><th>Coin</th><th>PnL</th><th>%</th><th>Cost</th><th>Hold</th><th>Score</th><th>Rebound</th><th>Вердикт</th><th>Час</th><th>Закрыто</th></tr></thead><tbody>
           ${closed.map(c => `<tr>
-            <td><strong>${c.coin}</strong></td>
+            <td><strong>${c.coin}</strong>${c.partial
+              ? `<span title="Продано больше монет, чем журнал видел купленными: часть проданного куплена до того, как журнал начал вести эту монету, или её покупка уехала за край окна ордеров. Прибыль и процент посчитаны только по покрытой части, остальное журнал не оценивает." style="color:#f5843a;font-size:10px;margin-left:4px;">частично</span>` : ''}</td>
             <td>${_jPnlCell(c.pnl)}</td>
             <td class="${c.pnlPct >= 0 ? 'profit-pos' : 'profit-neg'}">${c.pnlPct >= 0 ? '+' : ''}${c.pnlPct}%</td>
             <td>$${c.costTotal}</td>

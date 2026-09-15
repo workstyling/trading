@@ -4199,6 +4199,60 @@ function saveJournal() {
   catch (e) { console.error('[journal] save', e.message); }
 }
 
+// Пересчёт записи по её же ордерам — тем же правилом, что и живой учёт.
+//
+// Нужен для починки уже записанного: код исправлен, но запись с фантомной
+// прибылью лежит в файле и продолжает показываться. Молча стереть её нельзя
+// (сделка была), оставить как есть — тоже: она и есть тот самый неверный итог.
+function journalReplay(buys, sells) {
+  const events = [...(buys || []).map(x => ({ ...x, side: 'B' })),
+                  ...(sells || []).map(x => ({ ...x, side: 'S' }))]
+    .sort((a, b) => (a.t || 0) - (b.t || 0) || (a.side === 'B' ? -1 : 1));
+  let size = 0, rest = 0, realized = 0, outsideTotal = 0;
+  const perSell = [];
+  for (const e of events) {
+    if (e.side === 'B') { size += e.size; rest += e.usd; continue; }
+    if (size <= 0) { perSell.push({ orderId: e.orderId, pnl: 0, covered: 0, outside: e.size }); continue; }
+    const covered = Math.min(e.size, size);
+    const outside = e.size - covered;
+    const costBasis = rest * (covered / size);
+    const pnl = e.usd * (covered / e.size) - costBasis;
+    size -= covered; rest -= costBasis; realized += pnl; outsideTotal += outside;
+    perSell.push({ orderId: e.orderId, pnl: Math.round(pnl * 100) / 100, covered, outside });
+  }
+  return { realized, perSell, outside: outsideTotal };
+}
+
+// Разовая починка записей, посчитанных до исправления.
+function journalRepairClosed() {
+  let fixed = 0;
+  for (const rec of journal.closed || []) {
+    // Уже помеченную не трогаем: размеры ордеров не меняются, и без этой
+    // проверки починка шла бы при каждом запуске — с записью в файл и в лог.
+    if (rec.partial) continue;
+    const bought = (rec.buys || []).reduce((a, x) => a + x.size, 0);
+    const sold = (rec.sells || []).reduce((a, x) => a + x.size, 0);
+    if (!(bought > 0) || sold <= bought * (1 + 1e-6)) continue;
+    const again = journalReplay(rec.buys, rec.sells);
+    const was = rec.pnl;
+    for (const sell of rec.sells) {
+      const r = again.perSell.find(x => x.orderId === sell.orderId);
+      if (!r) continue;
+      sell.pnl = r.pnl;
+      if (r.outside > 0) { sell.covered = r.covered; sell.outside = r.outside; }
+    }
+    rec.pnl = Math.round(again.realized * 100) / 100;
+    rec.pnlPct = rec.costTotal > 0 ? Math.round(again.realized / rec.costTotal * 10000) / 100 : 0;
+    rec.partial = true;
+    fixed++;
+    console.log('[journal] пересчитана ' + rec.coin + ': было $' + was + ', стало $' + rec.pnl +
+      ' — продано ' + sold + ' при известных ' + bought);
+  }
+  if (fixed) saveJournal();
+  return fixed;
+}
+journalRepairClosed();
+
 // Контекст рынка на момент входа — только из уже готовых кешей, без лишних запросов
 function captureEntryContext(coin) {
   const sc = latestScores[coin];
@@ -4246,12 +4300,25 @@ function journalOnFill(o) {
   } else if (o.side === 'SELL') {
     const pos = journal.open[coin];
     if (!pos || pos.totalSize <= 0) return; // продажа монеты, купленной до появления журнала
-    const ratio = Math.min(1, size / pos.totalSize);
-    const costBasis = pos.restCost * ratio;
-    const realized = usd - costBasis;
-    pos.sells.push({ orderId: o.order_id, price, size, usd, pnl: Math.round(realized * 100) / 100, t });
+    // ПРОДАНО БОЛЬШЕ, ЧЕМ ЖУРНАЛ ВИДЕЛ КУПЛЕННЫМ.
+    //
+    // Доля покупки клалась в costBasis целиком, а выручка бралась вся — за
+    // монеты, которых журнал не покупал. По O это дало +$2967 (+363%) на
+    // сделке, где цена прошла +4.0%: журнал знал 1647 монет за $817, продано
+    // было 7351 за $3785. Одна эта запись давала 77% всей прибыли журнала.
+    //
+    // Оценить можно только покрытую часть продажи: выручку берём в той же
+    // доле, в какой продажу покрывают известные монеты. Остаток — не прибыль
+    // и не убыток, а сделка по монетам, входа которых журнал не видел.
+    const covered = Math.min(size, pos.totalSize);
+    const outside = size - covered;
+    const costBasis = pos.restCost * (covered / pos.totalSize);
+    const proceeds = usd * (covered / size);
+    const realized = proceeds - costBasis;
+    pos.sells.push({ orderId: o.order_id, price, size, usd, pnl: Math.round(realized * 100) / 100, t,
+      ...(outside > size * 1e-9 ? { covered, outside } : {}) });
     pos.realized += realized;
-    pos.totalSize -= size;
+    pos.totalSize -= covered;
     pos.restCost -= costBasis;
     // Позиция закрыта, если осталось меньше 0.5% исходного размера (пыль)
     if (pos.totalSize <= Math.max(1e-9, pos.origSize * 0.005)) {
@@ -4261,6 +4328,9 @@ function journalOnFill(o) {
         pnlPct: pos.costTotal > 0 ? Math.round(pos.realized / pos.costTotal * 10000) / 100 : 0,
         costTotal: Math.round(pos.costTotal * 100) / 100,
         entryAt: pos.entryAt, closedAt: t, holdH,
+        // Запись, где продано больше известного, помечена: её процент
+        // считается от того, что журнал видел, а не от всей сделки.
+        ...(pos.sells.some(x => x.outside > 0) ? { partial: true } : {}),
         ctx: pos.ctx, buys: pos.buys, sells: pos.sells
       });
       journal.closed = journal.closed.slice(-500);
