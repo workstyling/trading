@@ -160,7 +160,7 @@ for (const lo of BANDS) {
   const hi = BANDS[BANDS.indexOf(lo) + 1] ?? Infinity;
   for (const deep of [false, true]) {
     const pick = r => r.fall >= lo && r.fall < hi && (r.pull >= DEEP) === deep;
-    let best = null;
+    let best = null, closest = null;
     for (const h of HOURS) {
       for (const target of TARGETS) {
         const key = h + '|' + target;
@@ -168,9 +168,13 @@ for (const lo of BANDS) {
         const B = measure(byCoin, r => halves.B(r) && pick(r), key);
         if (!A || !B) continue;
         checked++;
+        // Самый близкий к порогу режим показываем даже когда он не прошёл:
+        // «не разрешена» без числа не отличить от «не считали», и не видно,
+        // на сколько клетка промахнулась.
+        const worst = Math.min(A.m, B.m);
+        if (!closest || worst > closest.worst) closest = { horizonH: h, target, A, B, worst };
         if (!(A.m - 2 * A.se > 0 && B.m - 2 * B.se > 0)) continue;
         // Из прошедших берём самый осторожный: худшую из двух половин
-        const worst = Math.min(A.m, B.m);
         if (!best || worst > best.worst) best = { horizonH: h, target, A, B, worst };
       }
     }
@@ -183,8 +187,13 @@ for (const lo of BANDS) {
       console.log('  ' + label.padEnd(22) + 'РАЗРЕШЕНА: ' + best.horizonH + 'ч, цель ' + best.target +
         '% — поиск +' + best.A.m.toFixed(3) + ' ±' + best.A.se.toFixed(3) +
         ', проверка +' + best.B.m.toFixed(3) + ' ±' + best.B.se.toFixed(3));
+    } else if (closest) {
+      const need = (c) => (c.m >= 0 ? '+' : '') + c.m.toFixed(3) + ' ±' + c.se.toFixed(3);
+      console.log('  ' + label.padEnd(22) + 'не разрешена. Ближе всех ' + closest.horizonH + 'ч/цель ' +
+        closest.target + '%: поиск ' + need(closest.A) + ', проверка ' + need(closest.B) +
+        ' (нужен плюс с запасом две ошибки в обеих)');
     } else {
-      console.log('  ' + label.padEnd(22) + 'нет режима, который в плюсе на обеих половинах');
+      console.log('  ' + label.padEnd(22) + 'не разрешена: данных не хватает ни на один режим');
     }
   }
 }
