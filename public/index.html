@@ -15589,6 +15589,9 @@ Requirements:
           // Порог покупаемости на экране: база того же замера, с которой
           // сравнивается строка. Без неё 57% и 79% выглядели одинаково тёмными.
           const edge = recoveryEdge(rec, recoveryBaseline(j));
+          // Верхняя клетка из показанных: одинаково зелёные восемь строк не
+          // выделяют ничего, а гейт по падению сам отбирает клетки выше базы.
+          const peak = rec.hour != null && rec.hour === recoveryPeak(good, j);
           const safe = String(x.coin).replace(/[^A-Z0-9]/gi, '');
           const held = x.inListMin == null ? null
             : x.inListMin >= 120 ? Math.round(x.inListMin / 60) + ' ч' : x.inListMin + ' мин';
@@ -15600,16 +15603,17 @@ Requirements:
             x.spreadPct == null ? 'Спред неизвестен' : 'Спред ' + x.spreadPct + '%',
             x.inListMin > 90 ? 'Монета давно в списке; часовой журнал проверяет первое появление сигнала' : '',
             edge.why,
+            peak ? 'Из показанных строк здесь самая высокая измеренная частота касания цели. Это утверждение о порядке, а не о прибыли: по измерениям покупка по этому списку издержек не окупает.' : '',
             v.label + ': ' + v.why,
           ].filter(Boolean).join(String.fromCharCode(10));
           const num = (value, color, bold) => '<td style="text-align:right;padding:4px 6px;font-size:11px;white-space:nowrap;font-variant-numeric:tabular-nums;color:' +
             (color || 'var(--t2)') + ';' + (bold ? 'font-weight:800;' : '') + '">' + value + '</td>';
           return '<tr onclick="selectCoinForTrade(\'' + safe + '\')" title="' + escapeRecoveryText(tip) + '" style="cursor:pointer;' + (v.bg || (edge.above ? 'background:rgba(0,229,160,0.07);' : '')) + '">' +
-            '<td style="padding:4px 6px;"><span style="color:var(--blue);font-weight:700;font-size:11px;">' + safe + '</span>' + swingMark(x) +
+            '<td style="padding:4px 6px;' + (peak ? 'border-left:3px solid #00ffa8;' : '') + '"><span style="color:var(--blue);font-weight:700;font-size:11px;">' + safe + '</span>' + swingMark(x) + (peak ? '<span style="margin-left:4px;font-size:8.5px;font-weight:800;color:#00ffa8;border:1px solid rgba(0,255,168,0.5);border-radius:4px;padding:0 3px;">максимум</span>' : '') +
             '<span data-bookshare="' + safe + '" data-live="1"></span>' +
             '<br><span style="color:var(--t2);font-size:9px;">$' + price(x.price) + '</span></td>' +
             num((edge.above ? String.fromCharCode(9650) + ' ' : '') + rec.text,
-              edge.above ? '#00e5a0' : rec.color, true) +
+              peak ? '#00ffa8' : edge.above ? '#00e5a0' : rec.color, true) +
             num(x.pullbackPct == null ? '—' : x.pullbackPct + '%') +
             num(recoveryDayChange(x)) +
             num(x.rsi == null ? '—' : Math.round(x.rsi)) +

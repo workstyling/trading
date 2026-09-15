@@ -10,7 +10,7 @@
 const fs = require('fs'), vm = require('vm');
 const view = require('../public/js/recovery-journal');
 const { recoveryBaseline, recoveryEdge, recoveryOrder, recoveryObservation, recoveryVerdict,
-  renderRecoveryLegend, renderRecoveryDeepNote } = view;
+  renderRecoveryLegend, renderRecoveryDeepNote, recoveryPeak } = view;
 let bad = 0;
 const ok = (c, m, x) => { if (!c) bad++; console.log('  ' + (c ? 'ok  ' : 'ПЛОХО') + '  ' + m + (x ? '   ' + x : '')); };
 const read = p => fs.readFileSync(p, 'utf8').split('\r\n').join('\n');
@@ -127,26 +127,45 @@ console.log('\nПри равной частоте вперёд идёт глуб
     'но надбавка за откат не перебивает измеренную разницу');
 }
 
+console.log('\nВерхняя клетка помечена отдельно');
+{
+  // Подсветка «выше базы» загорается почти на всех строках сразу: гейт по
+  // падению сам отбирает клетки выше базы. Восемь одинаково зелёных строк не
+  // выделяют ничего, поэтому верхняя клетка помечена ещё раз.
+  const shown = [row({ coin: 'FIL', dayFallPct: 12 }), row({ coin: 'AAVE' }), row({ coin: 'USELESS', pullbackPct: 2 })];
+  ok(recoveryPeak(shown, scan, now) === 79.1, 'максимум берётся из показанных строк',
+    String(recoveryPeak(shown, scan, now)));
+  ok(recoveryPeak([row({ coin: 'AAVE' })], scan, now) === 57.7, 'без верхней клетки максимум — следующая');
+  ok(recoveryPeak([row({ pullbackPct: 2 })], scan, now) === null, 'из одних прочерков максимума нет');
+  ok(recoveryPeak([], scan, now) === null && recoveryPeak(null, scan, now) === null, 'пустой список не ломает');
+}
+
 console.log('\nОбе вёрстки');
 for (const [name, file] of [['десктоп', 'public/index.html'], ['мобильная', 'public/mobile/index.html']]) {
   const src = read(file);
   const start = src.indexOf('        const swingMark = (x) => {');
   const end = src.indexOf('        box.innerHTML = head + renderRecoveryStatus', start);
-  const ctx = { ...view, j: scan, gate, good: [], price: x => String(x) };
+  const shown = [row({ coin: 'FIL', dayFallPct: 12 }), row({ coin: 'AAVE' })];
+  const ctx = { ...view, j: scan, gate, good: shown, price: x => String(x) };
   vm.createContext(ctx);
   vm.runInContext(src.slice(start, end) + ';this.cell = cell;', ctx);
-  const hot = ctx.cell(row({ coin: 'FIL', dayFallPct: 12 }));
+  const hot = ctx.cell(row({ coin: 'FIL', dayFallPct: 12 }));   // верхняя клетка
+  const warm = ctx.cell(row({ coin: 'AAVE' }));                 // выше базы, но не максимум
   const cold = ctx.cell(row({ coin: 'REZ', dayFallPct: 4, pullbackPct: 2 }));
   const risk = ctx.cell(row({ dayFallPct: 12, chg24Pct: -14 }));
   console.log('  ' + name);
-  ok(/#00e5a0/.test(hot), '  строка выше порога выделена цветом');
-  ok(hot.includes('rgba(0,229,160,0.07)'), '  и заливкой строки');
+  ok(/#00e5a0/.test(warm), '  строка выше порога выделена цветом');
+  ok(warm.includes('rgba(0,229,160,0.07)'), '  и заливкой строки');
+  ok(hot.includes('rgba(0,229,160,0.07)'), '  верхняя строка тоже залита');
   ok(hot.includes(String.fromCharCode(9650)), '  у числа есть метка порога');
   ok(!/#00e5a0/.test(cold), '  прочерк не выделяется');
   ok(!cold.includes('rgba(0,229,160,0.07)'), '  и не заливается');
   ok(risk.includes('rgba(255,107,107'), '  риск остаётся красным');
   ok(!risk.includes('rgba(0,229,160,0.07)'), '  и зелёная заливка его не перекрывает');
   ok(hot.includes('База (падения почти нет)'), '  сравнение с базой есть в подсказке');
+  ok(hot.includes('#00ffa8') && !cold.includes('#00ffa8'), '  верхняя клетка выделена ярче остальных');
+  ok(hot.includes('максимум'), '  и подписана словом');
+  ok(warm.includes('максимум') === false, '  строка ниже такой пометки не получает');
   // Сортировка и подпись живут вне вырезанного куска — проверяем текстом
   ok(/recoveryOrder\(b, j, verdict\(b\), recoveryObservation\(b, j\)\) -\s*\n\s*recoveryOrder\(a, j, verdict\(a\), recoveryObservation\(a, j\)\)/.test(src),
     '  список упорядочен по измеренной частоте');

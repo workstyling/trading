@@ -86,6 +86,21 @@
   // клетках пока нет — и верх списка занимали прочерки, тогда как 79% стояли
   // пятой строкой. Смотреть сверху вниз стало нельзя.
   //
+  // Самая высокая измеренная частота из показанных.
+  //
+  // Подсветка «выше базы» загорается почти на всех строках сразу: гейт по
+  // падению сам отбирает клетки выше базы, и восемь одинаково зелёных строк
+  // не выделяют ничего. Отдельно помечаем верхнюю клетку — это утверждение о
+  // порядке, а не о прибыли: «из показанного здесь измеренная частота
+  // наибольшая», и ничего больше.
+  function recoveryPeak(rows, scan, now = scanNow(scan)) {
+    let peak = null;
+    for (const row of rows || []) {
+      const hour = recoveryObservation(row, scan, now).hour;
+      if (hour != null && (peak == null || hour > peak)) peak = hour;
+    }
+    return peak;
+  }
   // Измеренные строки идут выше всех неизмеренных, а не вперемешку по
   // близкому числу: сверху должно стоять то, про что известно, чем оно
   // кончалось. Внутри — по самой частоте.
@@ -251,7 +266,7 @@
     return '<span title="' + esc(notes.filter(Boolean).join(NL)) + '">' + line + '</span>';
   }
   const api = { renderEntryJournal, renderRecoveryStatus, renderRecoveryLegend, renderRecoveryNet, renderRecoveryDeepNote, recoveryObservation,
-    recoveryVerdict, recoveryDayChange, recoveryBaseline, recoveryEdge, recoveryOrder,
+    recoveryVerdict, recoveryDayChange, recoveryBaseline, recoveryEdge, recoveryOrder, recoveryPeak,
     escapeRecoveryText: escapeHtml };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else Object.assign(root, api);
