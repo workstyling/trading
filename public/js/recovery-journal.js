@@ -125,6 +125,37 @@
       '. В историческом замере откат от 1.5% добавлял 11-18 пунктов, но свежих наблюдений в этих ' +
       'клетках пока нет — поэтому наверх они не подняты.</div>';
   }
+  // ГЛАВНАЯ СТРОКА ПАНЕЛИ: что даёт покупка по этому списку после издержек.
+  //
+  // Частоту касания цели легко прочитать как обещание прибыли — особенно
+  // когда строки отсортированы и подсвечены. Прогон по свечам говорит
+  // обратное, и молчать об этом значит продавать список как список покупки.
+  function renderRecoveryNet(scan) {
+    const net = scan && scan.entryNet;
+    if (!net || !finite(net.panel) || !finite(net.control) || !finite(net.modes) || !(net.modes > 0)) return '';
+    const pct = v => (v >= 0 ? '+' : '') + Number(v).toFixed(2) + '%';
+    const okModes = Number(net.plusModes) || 0;
+    const details = [
+      'Прогон по свечам: вход по цене, выход по цели лимитом либо по цене в конце горизонта маркетом, стоп -3%.',
+      'Комиссии учтены: мейкер 0.075%, тейкер 0.15%. Цель +0.30% равна круговому обороту тейкером — частота касания сама по себе не обещает ничего.',
+      'Отбор: ' + pct(net.panel) + ' ±' + net.panelSe + ' за сделку на ' + net.n + ' входах.',
+      'Случайный вход: ' + pct(net.control) + ' ±' + net.controlSe + ' на ' + net.controlN + '.',
+      net.worst && finite(net.worst.diff)
+        ? 'Хуже всего на длинном горизонте: ' + net.worst.horizonH + ' ч, цель ' + net.worst.target + '% — отбор ' +
+          pct(net.worst.panel) + ' против ' + pct(net.worst.control) + ', разница ' + net.worst.diff + ' ±' + net.worst.se + ' п.п.'
+        : '',
+      'Это измерение периода, а не приговор правилу: исходная сетка мерилась на растущем рынке, здесь окно падающего.',
+      'Пересчёт: node scripts/measure-net.js',
+    ].filter(Boolean).join(String.fromCharCode(10));
+    return '<div title="' + escapeHtml(details) + '" style="font-size:10px;line-height:1.45;margin-bottom:6px;' +
+      'padding:5px 7px;border-radius:6px;background:rgba(255,107,107,0.10);border:1px solid rgba(255,107,107,0.35);' +
+      'color:#ff9f9f;">' +
+      '<b>Покупать по этому списку нельзя.</b> Прогон по свечам ' + escapeHtml(String(net.from)) + ' — ' +
+      escapeHtml(String(net.to)) + ': отбор давал <b>' + pct(net.panel) + '</b> за сделку против <b>' +
+      pct(net.control) + '</b> у случайного входа. Из ' + net.modes + ' режимов (горизонты 1/4/12/24 ч) ' +
+      (okModes ? 'окупились ' + okModes : 'не окупился <b>ни один</b>') +
+      '. Это список наблюдения, а не список покупки.</div>';
+  }
   function renderRecoveryLegend(scan, now = scanNow(scan)) {
     const base = recoveryBaseline(scan, now);
     if (!base) return '';
@@ -219,7 +250,7 @@
     if (overall && overall.hitUnknown) line += ' · неизвестен исход цели у ' + overall.hitUnknown + ' записей';
     return '<span title="' + esc(notes.filter(Boolean).join(NL)) + '">' + line + '</span>';
   }
-  const api = { renderEntryJournal, renderRecoveryStatus, renderRecoveryLegend, renderRecoveryDeepNote, recoveryObservation,
+  const api = { renderEntryJournal, renderRecoveryStatus, renderRecoveryLegend, renderRecoveryNet, renderRecoveryDeepNote, recoveryObservation,
     recoveryVerdict, recoveryDayChange, recoveryBaseline, recoveryEdge, recoveryOrder,
     escapeRecoveryText: escapeHtml };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
