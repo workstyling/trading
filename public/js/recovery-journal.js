@@ -112,6 +112,9 @@
   const MEASURED_FIRST = 1000;
   function recoveryOrder(row, scan, verdict, observation, now = scanNow(scan)) {
     if (verdict && verdict.tier <= 1) return -1;
+    // Разрешённые к покупке — выше всех: список читают сверху вниз, и строка
+    // «брать» под восемью «наблюдать» не выполняет своей работы.
+    if (verdict && verdict.tier >= 4) return 2000 + (observation && observation.hour != null ? observation.hour : 0);
     // При равной частоте вперёд идёт более глубокий откат: в историческом
     // замере он добавлял 11-18 пунктов. Надбавка меньше десятой доли
     // процента, поэтому измеренную разницу она перебить не может.
@@ -140,6 +143,20 @@
       '. В историческом замере откат от 1.5% добавлял 11-18 пунктов, но свежих наблюдений в этих ' +
       'клетках пока нет — поэтому наверх они не подняты.</div>';
   }
+  // Разрешена ли клетка этой монеты к покупке.
+  //
+  // Список приходит с сервера и пуст, пока ни одна клетка не показала плюс
+  // после издержек дважды — на поиске и на проверке. Панель сама разрешений
+  // не выдаёт и порогов не смягчает: её дело — показать то, что измерено.
+  function recoveryBuyCell(row, scan) {
+    const cells = scan && scan.entryNet && scan.entryNet.buyCells;
+    if (!Array.isArray(cells) || !cells.length) return null;
+    const lo = fallBand(row);
+    if (lo == null || !finite(row.pullbackPct)) return null;
+    const deep = row.pullbackPct >= 1.5;
+    const cell = cells.find(c => c && c.lo === lo && !!c.deep === deep);
+    return cell && finite(cell.horizonH) && finite(cell.target) && cell.target > 0 ? cell : null;
+  }
   // ГЛАВНАЯ СТРОКА ПАНЕЛИ: что даёт покупка по этому списку после издержек.
   //
   // Частоту касания цели легко прочитать как обещание прибыли — особенно
@@ -150,6 +167,7 @@
     if (!net || !finite(net.panel) || !finite(net.control) || !finite(net.modes) || !(net.modes > 0)) return '';
     const pct = v => (v >= 0 ? '+' : '') + Number(v).toFixed(2) + '%';
     const okModes = Number(net.plusModes) || 0;
+    const buy = Array.isArray(net.buyCells) ? net.buyCells : [];
     const details = [
       'Прогон по свечам: вход по цене, выход по цели лимитом либо по цене в конце горизонта маркетом, стоп -3%.',
       'Комиссии учтены: мейкер 0.075%, тейкер 0.15%. Цель +0.30% равна круговому обороту тейкером — частота касания сама по себе не обещает ничего.',
@@ -162,14 +180,25 @@
       'Это измерение периода, а не приговор правилу: исходная сетка мерилась на растущем рынке, здесь окно падающего.',
       'Пересчёт: node scripts/measure-net.js',
     ].filter(Boolean).join(String.fromCharCode(10));
-    return '<div title="' + escapeHtml(details) + '" style="font-size:10px;line-height:1.45;margin-bottom:6px;' +
-      'padding:5px 7px;border-radius:6px;background:rgba(255,107,107,0.10);border:1px solid rgba(255,107,107,0.35);' +
-      'color:#ff9f9f;">' +
+    const box = (color, border, bg, html) => '<div title="' + escapeHtml(details) +
+      '" style="font-size:10px;line-height:1.45;margin-bottom:6px;padding:5px 7px;border-radius:6px;' +
+      'background:' + bg + ';border:1px solid ' + border + ';color:' + color + ';">' + html + '</div>';
+    if (buy.length) {
+      // Разрешение выдаётся клетке, а не монете: строки этих клеток помечены
+      // словом «брать» вместе с горизонтом и целью выхода.
+      return box('#9ff5cf', 'rgba(0,255,168,0.35)', 'rgba(0,255,168,0.10)',
+        '<b>' + (buy.length === 1 ? 'Разрешена к покупке 1 клетка' : 'Разрешены к покупке ' + buy.length +
+          (buy.length < 5 ? ' клетки' : ' клеток')) + '.</b> ' +
+        'Плюс после издержек и на поиске, и на проверке (' + escapeHtml(String(net.from)) + ' — ' +
+        escapeHtml(String(net.to)) + '). В таблице такие строки помечены словом «брать» с горизонтом и целью. ' +
+        'Остальные строки — наблюдение.');
+    }
+    return box('#ff9f9f', 'rgba(255,107,107,0.35)', 'rgba(255,107,107,0.10)',
       '<b>Покупать по этому списку нельзя.</b> Прогон по свечам ' + escapeHtml(String(net.from)) + ' — ' +
       escapeHtml(String(net.to)) + ': отбор давал <b>' + pct(net.panel) + '</b> за сделку против <b>' +
       pct(net.control) + '</b> у случайного входа. Из ' + net.modes + ' режимов (горизонты 1/4/12/24 ч) ' +
       (okModes ? 'окупились ' + okModes : 'не окупился <b>ни один</b>') +
-      '. Это список наблюдения, а не список покупки.</div>';
+      '. Ни одна клетка не прошла порог покупки. Это список наблюдения, а не список покупки.');
   }
   function renderRecoveryLegend(scan, now = scanNow(scan)) {
     const base = recoveryBaseline(scan, now);
@@ -179,7 +208,7 @@
       base.pct.toFixed(1) + '%</b> (монеты почти без падения) больше чем на две погрешности. ' +
       'Это «чаще доходит до цели», а не разрешение покупать: комиссии и спред не вычтены.</div>';
   }
-  function recoveryVerdict(row, gate, observation) {
+  function recoveryVerdict(row, gate, observation, buyCell) {
     const out = (tier, label, why, risk = false) => ({ tier, label, why,
       color: risk ? '#ff6b6b' : 'var(--t2)', bg: risk ? 'background:rgba(255,107,107,0.08);' : '' });
     if (!finite(row.chg24Pct) || !finite(row.pullbackPct)) return out(0, 'данные', 'Неизвестен ход за сутки или откат.');
@@ -187,6 +216,19 @@
         row.spreadPct < 0 || row.spreadPct > gate.spread) return out(0, '—', 'Порог падения или спреда не пройден.');
     if (Math.abs(row.chg24Pct) >= 10) return out(1, 'риск', 'Ход за сутки от ±10%: повышенная амплитуда движения.', true);
     const tier = row.pullbackPct >= 1.5 ? 3 : 2;
+    // «Брать» появляется только там, где измеренный результат после издержек
+    // положителен дважды: на поиске и на проверке. Вместе со словом идёт план
+    // выхода — без него «брать» не значит ничего: цель +0.30% равна круговому
+    // обороту тейкером, и сделка без цели и срока съедается комиссией.
+    if (buyCell) {
+      const plan = buyCell.horizonH + 'ч +' + buyCell.target + '%';
+      return { tier: 4, label: 'брать ' + plan, color: '#00ffa8',
+        bg: 'background:rgba(0,255,168,0.12);',
+        why: 'Клетка разрешена к покупке: после издержек ' + Number(buyCell.netA).toFixed(2) +
+          '% на поиске и ' + Number(buyCell.netB).toFixed(2) + '% на проверке, наблюдений ' +
+          (buyCell.n || '?') + '. Выход: цель +' + buyCell.target + '% лимитом, срок ' +
+          buyCell.horizonH + ' ч, дальше по цене. Это средний результат группы, а не обещание по этой монете.' };
+    }
     return observation.hour == null
       ? out(tier, 'нет оценки', observation.why)
       : out(tier, 'наблюдать', 'Условия отката выполнены. Прибыльность отбора не подтверждена; частота цели не разрешает покупку.');
@@ -266,7 +308,7 @@
     return '<span title="' + esc(notes.filter(Boolean).join(NL)) + '">' + line + '</span>';
   }
   const api = { renderEntryJournal, renderRecoveryStatus, renderRecoveryLegend, renderRecoveryNet, renderRecoveryDeepNote, recoveryObservation,
-    recoveryVerdict, recoveryDayChange, recoveryBaseline, recoveryEdge, recoveryOrder, recoveryPeak,
+    recoveryVerdict, recoveryDayChange, recoveryBaseline, recoveryEdge, recoveryOrder, recoveryPeak, recoveryBuyCell,
     escapeRecoveryText: escapeHtml };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else Object.assign(root, api);

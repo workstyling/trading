@@ -33,6 +33,21 @@ console.log('\nСтрока о прибыльности отбора');
   ok(/растущем рынке/.test(html), 'оговорка про период не потеряна');
 }
 
+console.log('\nКогда клетка пройдёт порог, строка станет разрешающей');
+{
+  // Ничего дописывать для этого не нужно: список клеток приходит с сервера,
+  // и панель сама меняет и цвет строки, и её текст.
+  const allowed = { ...net, buyCells: [{ lo: 10, deep: false, horizonH: 4, target: 2,
+    netA: 0.31, seA: 0.1, netB: 0.28, seB: 0.09, n: 900 }] };
+  const html = renderRecoveryNet({ entryNet: allowed });
+  ok(text(html).includes('Разрешена к покупке 1 клетка'), 'сказано, сколько клеток разрешено');
+  ok(!text(html).includes('Покупать по этому списку нельзя'), 'запрет снят, а не оставлен рядом');
+  ok(html.includes('rgba(0,255,168'), 'и строка больше не красная');
+  ok(text(html).includes('помечены словом «брать»'), 'сказано, где искать разрешённые строки');
+  const two = renderRecoveryNet({ entryNet: { ...allowed, buyCells: [allowed.buyCells[0], allowed.buyCells[0]] } });
+  ok(text(two).includes('Разрешены к покупке 2 клетки'), 'число согласовано со словом');
+}
+
 console.log('\nБез измерения строка молчит');
 {
   ok(renderRecoveryNet({}) === '', 'нет данных — нет утверждения');
@@ -65,7 +80,13 @@ for (const [name, file] of [['десктоп', 'public/index.html'], ['моби�
   ok(fs.existsSync('scripts/measure-net.js'), 'скрипт пересчёта в репозитории');
   const script = read('scripts/measure-net.js');
   ok(/MAKER = 0\.075, TAKER = 0\.15/.test(script), 'скрипт считает с боевыми комиссиями');
-  ok(/walk\(0\)/.test(script), 'и всегда считает контрольную группу');
+  ok(script.includes('measure(byCoin, () => true, key)'), 'и всегда считает контрольную группу');
+  // Разрешение на покупку обязано требовать повтора на второй половине: в
+  // прошлый раз четыре признака обогнали базу на августе и развернулись.
+  ok(script.includes('A.m - 2 * A.se > 0 && B.m - 2 * B.se > 0'),
+    'разрешение требует плюса на обеих половинах с запасом в две ошибки');
+  ok(script.includes('buyCells'), 'и уходит в вывод для server.js');
+  ok(src.includes('buyCells: []'), 'сейчас разрешённых клеток нет');
 }
 
 console.log(bad ? '\nПЛОХО: ' + bad : '\nвсё зелено');

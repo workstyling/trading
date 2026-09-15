@@ -15581,7 +15581,9 @@ Requirements:
             (v > 0 ? '↑' : '↓') + Math.abs(Math.round(v)) + '%</span>';
         };
         const verdict = (x) => {
-          return recoveryVerdict(x, gate, recoveryObservation(x, j));
+          // Разрешение на покупку приходит с сервера клетками: панель его не
+          // выдаёт и порогов не смягчает.
+          return recoveryVerdict(x, gate, recoveryObservation(x, j), recoveryBuyCell(x, j));
         };
         const cell = (x) => {
           const v = verdict(x);
