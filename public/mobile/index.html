@@ -6913,7 +6913,8 @@
           const edge = recoveryEdge(rec, recoveryBaseline(j));
           // Верхняя клетка из показанных: одинаково зелёные восемь строк не
           // выделяют ничего, а гейт по падению сам отбирает клетки выше базы.
-          const peak = rec.hour != null && rec.hour === recoveryPeak(rows, j);
+          const peak = rec.hour != null && recoveryPeakMark(rows, j).show &&
+            rec.hour === recoveryPeakMark(rows, j).hour;
           const safe = String(x.coin).replace(/[^A-Z0-9]/gi, '');
           const held = x.inListMin == null ? null
             : x.inListMin >= 120 ? Math.round(x.inListMin / 60) + ' ч' : x.inListMin + ' мин';
@@ -6955,7 +6956,8 @@
           recoveryOrder(b, j, verdict(b), recoveryObservation(b, j)) -
           recoveryOrder(a, j, verdict(a), recoveryObservation(a, j)));
         box.innerHTML = head + renderRecoveryStatus(j.recheck, j.serverNow) +
-          renderRecoveryNet(j) + renderRecoveryLegend(j) + renderRecoveryRules(j) + mkLine +
+          renderRecoveryNet(j) + renderRecoveryLegend(j) + renderRecoveryTieNote(rows, j) +
+          renderRecoveryRules(j) + mkLine +
           '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;"><table style="width:100%;border-collapse:collapse;table-layout:fixed;"><thead>' + head2 + '</thead><tbody>' +
           renderRecoveryGroups(ranked, j, cell, 4) + '</tbody></table></div>' +
           (!good.length ? '<div style="color:var(--t2);font-size:10px;margin-top:5px;">Порог не взял никто — монеты показаны в остальных.</div>' : '') +

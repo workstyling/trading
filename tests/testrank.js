@@ -10,7 +10,7 @@
 const fs = require('fs'), vm = require('vm');
 const view = require('../public/js/recovery-journal');
 const { recoveryBaseline, recoveryEdge, recoveryOrder, recoveryObservation, recoveryVerdict,
-  renderRecoveryLegend, recoveryPeak } = view;
+  renderRecoveryLegend, recoveryPeak, recoveryPeakMark, renderRecoveryTieNote } = view;
 let bad = 0;
 const ok = (c, m, x) => { if (!c) bad++; console.log('  ' + (c ? 'ok  ' : 'ПЛОХО') + '  ' + m + (x ? '   ' + x : '')); };
 const read = p => fs.readFileSync(p, 'utf8').split('\r\n').join('\n');
@@ -18,7 +18,8 @@ const now = Date.now();
 
 // Клетки как в боевом отчёте 14 сентября: база 45.1, мелкие клетки измерены,
 // все глубокие тонкие.
-const scan = { recoveryMeasuredAt: '2026-09-09', at: now, serverNow: now, recheck: {
+const scan = { recoveryMeasuredAt: '2026-09-09', at: now, serverNow: now,
+  gate: { fallPct: 3, spreadPct: 0.3 }, recheck: {
   current: true, code: 1, at: now, report: { version: 2, status: 'drift',
     referenceDate: '2026-09-09', from: now - 4 * 86400000, to: now - 300000, missingCoins: [],
     cells: [
@@ -120,6 +121,38 @@ console.log('\nВерхняя клетка помечена отдельно');
   ok(recoveryPeak([row({ pullbackPct: 2 })], scan, now) === null, 'из одних прочерков максимума нет');
   ok(recoveryPeak([], scan, now) === null && recoveryPeak(null, scan, now) === null, 'пустой список не ломает');
 }
+
+console.log('\nПометка «максимум» молчит, когда никого не выделяет');
+{
+  // Частота принадлежит клетке, а не монете: в падающем рынке весь список
+  // сваливается в одну полосу падения, и «максимум» доставался пяти строкам
+  // из тридцати двух. Указатель на пятерых никуда не указывает.
+  const one = [row({ coin: 'FIL', dayFallPct: 12 }), row({ coin: 'AAVE' })];
+  ok(recoveryPeakMark(one, scan, now).show === true, 'одна строка на вершине — пометка есть');
+  ok(recoveryPeakMark(one, scan, now).count === 1, 'и счёт сходится');
+  const two = [...one, row({ coin: 'XRP', dayFallPct: 11 })];
+  ok(recoveryPeakMark(two, scan, now).show === true, 'две тоже помечаются');
+  const three = [...two, row({ coin: 'XLM', dayFallPct: 13 })];
+  ok(recoveryPeakMark(three, scan, now).show === false, 'трое и больше — пометки нет', String(recoveryPeakMark(three, scan, now).count));
+  ok(renderRecoveryTieNote(three, scan, now).includes('Верхние <b>3</b> строки'),
+    'вместо неё сказано, сколько строк неразличимы');
+  ok(renderRecoveryTieNote(three, scan, now).includes('79.1%'), 'и названа их общая частота');
+  ok(renderRecoveryTieNote(two, scan, now) === '', 'когда пометка есть, подписи нет');
+  ok(renderRecoveryTieNote([], scan, now) === '', 'пустой список молчит');
+  ok(renderRecoveryTieNote([row({ pullbackPct: 2 })], scan, now) === '', 'без измерения подписи нет');
+  // Согласование числа: «Верхние 3 строк» роняет доверие к остальным числам
+  const many = n => renderRecoveryTieNote(Array.from({ length: n },
+    (_, i) => row({ coin: 'C' + i, dayFallPct: 12 })), scan, now);
+  ok(many(3).includes('3</b> строки') && many(5).includes('5</b> строк') &&
+    many(21).includes('21</b> строка'), 'число и слово согласованы');
+  // «Риск» в вершину не попадает: у него та же клетка, но он внизу списка
+  const withRisk = [...two, row({ coin: 'INJ', dayFallPct: 12, chg24Pct: -14 }),
+    row({ coin: 'ZKC', dayFallPct: 13, chg24Pct: 15 })];
+  ok(recoveryPeakMark(withRisk, scan, now).count === 2, 'опасные строки не считаются вершиной',
+    String(recoveryPeakMark(withRisk, scan, now).count));
+  ok(recoveryPeakMark(withRisk, scan, now).show === true, 'и не отнимают пометку у настоящих кандидатов');
+}
+
 
 console.log('\nОбе вёрстки');
 for (const [name, file] of [['десктоп', 'public/index.html'], ['мобильная', 'public/mobile/index.html']]) {

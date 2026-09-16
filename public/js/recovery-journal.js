@@ -101,6 +101,42 @@
     }
     return peak;
   }
+  // Указатель, который показывает на пятерых, никуда не показывает.
+  //
+  // Частота у всей клетки одна, поэтому в падающем рынке весь список
+  // сваливается в одну полосу падения и «максимум» достаётся половине
+  // таблицы: 5 строк из 32 при 79%. Помечаем только тогда, когда пометка
+  // действительно выделяет — одну или две строки. Иначе молчим и говорим
+  // прямо, что верхние строки между собой неразличимы.
+  const PEAK_MARK_MAX = 2;
+  function recoveryPeakMark(rows, scan, now = scanNow(scan)) {
+    // Считаем только по кандидатам. Частота принадлежит клетке, а не монете,
+    // поэтому в ту же полосу падения попадают и строки «риск» с суточным
+    // размахом от ±10%: у INJ и ZKC были те же 79%, что у ALGO, XRP и XLM.
+    // Пометка «максимум» на строке, которая лежит внизу списка как опасная,
+    // противоречит и списку, и себе.
+    const gate = { fall: scan.gate && scan.gate.fallPct, spread: scan.gate && scan.gate.spreadPct };
+    const eligible = (rows || []).filter(row =>
+      recoveryVerdict(row, gate, recoveryObservation(row, scan, now), recoveryBuyCell(row, scan, now)).tier >= 2);
+    const hour = recoveryPeak(eligible, scan, now);
+    if (hour == null) return { hour: null, count: 0, show: false };
+    const count = eligible.filter(row => recoveryObservation(row, scan, now).hour === hour).length;
+    return { hour, count, show: count <= PEAK_MARK_MAX };
+  }
+  // Когда пометки нет, её отсутствие надо объяснить: иначе «максимум» просто
+  // пропадает, и непонятно, сломалось что-то или так и задумано.
+  function renderRecoveryTieNote(rows, scan, now = scanNow(scan)) {
+    const peak = recoveryPeakMark(rows, scan, now);
+    if (!peak.hour || peak.show) return '';
+    // «Верхние 3 строк» читается как недосмотр и роняет доверие ко всему
+    // остальному, что панель пишет числами.
+    const tail = peak.count % 100 >= 11 && peak.count % 100 <= 14 ? 'строк'
+      : peak.count % 10 === 1 ? 'строка' : peak.count % 10 >= 2 && peak.count % 10 <= 4 ? 'строки' : 'строк';
+    return '<div style="font-size:10px;line-height:1.4;margin-bottom:6px;color:var(--t2);">' +
+      'Верхние <b>' + peak.count + '</b> ' + tail + ' — одна группа с частотой <b>' + peak.hour.toFixed(1) +
+      '%</b>: у них одно и то же измерение, и между собой таблица их не различает. ' +
+      'Порядок внутри группы — по глубине отката, а не по ожидаемому росту.</div>';
+  }
   // Сначала покупки, затем возможные покупки, затем остальные.
   // Внутри группы измеренные строки выше прочерков, по частоте цели.
   //
@@ -377,7 +413,7 @@
     return '<span title="' + esc(notes.filter(Boolean).join(NL)) + '">' + line + '</span>';
   }
   const api = { renderEntryJournal, renderRecoveryStatus, renderRecoveryLegend, renderRecoveryNet, recoveryObservation,
-    recoveryVerdict, recoveryDayChange, recoveryBaseline, recoveryEdge, recoveryOrder, recoveryPeak, recoveryBuyCell,
+    recoveryVerdict, recoveryDayChange, recoveryBaseline, recoveryEdge, recoveryOrder, recoveryPeak, recoveryPeakMark, renderRecoveryTieNote, recoveryBuyCell,
     recoverySignalRows, renderRecoveryRules, recoveryRowMark, renderRecoveryGroups,
     escapeRecoveryText: escapeHtml };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
