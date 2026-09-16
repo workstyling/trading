@@ -42,7 +42,7 @@ const scan = { success: true, at: now, serverNow: now, gate: { fallPct: 3, sprea
     payload = possible;
     await render();
     assert(box.innerHTML.includes('data-entry-state="possible"'));
-    assert(box.innerHTML.includes('возможная покупка'));
+    assert(box.innerHTML.includes('кандидат'));
     assert(!box.innerHTML.includes('data-entry-state="confirmed"'));
     assert(!view.recoverySignalRows(possible.results, possible)[0].buySignal, 'orange must not authorize a purchase');
     for (const change of [{ at: now - 300001 }, { recheck: null }, { staleSince: now }, { gate: null },
@@ -70,7 +70,7 @@ const scan = { success: true, at: now, serverNow: now, gate: { fallPct: 3, sprea
     assert.equal(renderedCoins.length, mixed.results.length, 'no coins disappear after eight rows');
     assert.equal(new Set(renderedCoins).size, mixed.results.length, 'each coin appears exactly once');
     assert(box.innerHTML.includes('Покупать · 1'));
-    assert(box.innerHTML.includes('Возможная покупка · 1'));
+    assert(box.innerHTML.includes('Кандидаты · покупка не разрешена · 1'));
     assert(box.innerHTML.includes('Остальные · 19'));
     assert(src.includes('tr[data-entry-state="confirmed"] { --entry-border: var(--entry-confirmed); }'));
     assert(src.includes('tr[data-entry-state="possible"] { --entry-border: var(--entry-possible); }'));

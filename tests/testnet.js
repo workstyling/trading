@@ -9,7 +9,8 @@
 //
 // Молчать об этом значит продавать список наблюдения как список покупки.
 const fs = require('fs');
-const { renderRecoveryNet } = require('../public/js/recovery-journal');
+const view = require('../public/js/recovery-journal');
+const { renderRecoveryNet, renderRecoveryGroups, renderRecoveryRules } = view;
 let bad = 0;
 const ok = (c, m, x) => { if (!c) bad++; console.log('  ' + (c ? 'ok  ' : 'ПЛОХО') + '  ' + m + (x ? '   ' + x : '')); };
 const read = p => fs.readFileSync(p, 'utf8').split('\r\n').join('\n');
@@ -50,6 +51,29 @@ console.log('\nКогда клетка пройдёт порог, строка �
   ok(!text(invalid).includes('Разрешена к покупке'), 'шапка не разрешает группу без результатов проверки');
   ok(text(html).includes('сигналы покупки отключены'), 'шапка сообщает об отсутствии свежего скана');
 }
+
+console.log('\nЭкран не зовёт покупать то, что запрещает строкой выше');
+{
+  // Группа кандидатов называлась «Возможная покупка», и на одном экране с
+  // «покупать по этому списку нельзя» получалось противоречие. Читают при
+  // этом короткое: заголовок группы, а не абзац над таблицей. Вдобавок в неё
+  // попадали все показанные строки разом — гейт по падению сам отбирает
+  // клетки выше базы, так что «Остальные» оставались пустыми.
+  const now = Date.now();
+  const scan = { at: now, serverNow: now, recoveryMeasuredAt: '2026-09-09',
+    gate: { fallPct: 3, spreadPct: 0.3 }, entryNet: { ...net, buyCells: [] },
+    recheck: { current: true, code: 1, at: now, report: { version: 2, status: 'drift',
+      referenceDate: '2026-09-09', from: now - 4 * 86400000, to: now - 300000, missingCoins: [],
+      cells: [{ lo: 0, deep: false, actual: 45.1, se: 3.91, coins: 23, n: 1911 },
+              { lo: 3, deep: false, actual: 57.74, se: 2.38, coins: 36, n: 4951 }] } } };
+  const rows = [{ coin: 'AAVE', price: 1, dayFallPct: 4, pullbackPct: 0.9, chg24Pct: 1.5, spreadPct: 0.1 }];
+  const groups = text(renderRecoveryGroups(rows, scan, r => '<tr><td>' + r.coin + '</td></tr>', 7));
+  ok(!groups.includes('Возможная покупка'), 'группа кандидатов не названа покупкой');
+  ok(groups.includes('покупка не разрешена'), 'и прямо сказано, что покупка не разрешена');
+  ok(groups.includes('Сейчас нет подтверждённых сигналов покупки'), 'пустая группа покупок так и говорит');
+  ok(!text(renderRecoveryRules(scan)).includes('возможная покупка'), 'и в правилах приглашения нет');
+}
+
 
 console.log('\nБез измерения строка молчит');
 {

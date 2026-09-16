@@ -2990,6 +2990,24 @@ app.post('/api/recheck', (req, res) => {
   res.json({ success: true, started: true, previous: was.at ? { at: was.at, code: was.code } : null });
 });
 
+// Сверка открытых позиций журнала с биржей и кошельком.
+//
+// По умолчанию холостая: показывает, что изменилось бы, и ничего не пишет.
+// Запись — только с apply=1, и перед ней рядом ложится снимок «до». Ключ тот
+// же, что у выкатки: правка журнала меняет показанную прибыль.
+app.post('/api/journal/reconcile', async (req, res) => {
+  const deployKey = DEPLOY_KEY || 'trading-deploy-2026';
+  if (!constantTimeTokenEquals(String(req.query.key || req.headers['x-deploy-key'] || ''), deployKey)) {
+    return res.status(403).json({ success: false, error: 'bad key' });
+  }
+  try {
+    res.json({ success: true, ...(await journalReconcile({ apply: req.query.apply === '1' })) });
+  } catch (e) {
+    console.error('[journal] сверка не прошла:', e.message);
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
 // Хвост журнала по ключу. Тем же ключом, что и выкатка: другого способа
 // доказать право на доступ к машине у нас нет, а строки журнала — это её
 // внутренности.
@@ -4311,39 +4329,178 @@ function journalOnFill(o) {
     // Оценить можно только покрытую часть продажи: выручку берём в той же
     // доле, в какой продажу покрывают известные монеты. Остаток — не прибыль
     // и не убыток, а сделка по монетам, входа которых журнал не видел.
-    const covered = Math.min(size, pos.totalSize);
-    const outside = size - covered;
-    const costBasis = pos.restCost * (covered / pos.totalSize);
-    const proceeds = usd * (covered / size);
-    const realized = proceeds - costBasis;
-    pos.sells.push({ orderId: o.order_id, price, size, usd, pnl: Math.round(realized * 100) / 100, t,
-      ...(outside > size * 1e-9 ? { covered, outside } : {}) });
-    pos.realized += realized;
-    pos.totalSize -= covered;
-    pos.restCost -= costBasis;
-    // Позиция закрыта, если осталось меньше 0.5% исходного размера (пыль)
-    if (pos.totalSize <= Math.max(1e-9, pos.origSize * 0.005)) {
-      const holdH = Math.round((t - pos.entryAt) / 3600000 * 10) / 10;
-      journal.closed.push({
-        coin, pnl: Math.round(pos.realized * 100) / 100,
-        pnlPct: pos.costTotal > 0 ? Math.round(pos.realized / pos.costTotal * 10000) / 100 : 0,
-        costTotal: Math.round(pos.costTotal * 100) / 100,
-        entryAt: pos.entryAt, closedAt: t, holdH,
-        // Запись, где продано больше известного, помечена: её процент
-        // считается от того, что журнал видел, а не от всей сделки.
-        ...(pos.sells.some(x => x.outside > 0) ? { partial: true } : {}),
-        ctx: pos.ctx, buys: pos.buys, sells: pos.sells
-      });
-      journal.closed = journal.closed.slice(-500);
-      delete journal.open[coin];
-      console.log(`[journal] CLOSED ${coin}: pnl=$${pos.realized.toFixed(2)} hold=${holdH}h`);
-    }
+    journalApplySell(pos, { orderId: o.order_id, price, size, usd, t });
+    journalCloseIfFlat(coin, pos, t);
   }
   saveJournal();
 }
 
+// Учёт одной продажи. Общий для живого потока и для сверки с биржей: две
+// разные арифметики по одной позиции однажды разойдутся, и разойдутся молча.
+function journalApplySell(pos, fill) {
+  const covered = Math.min(fill.size, pos.totalSize);
+  const outside = fill.size - covered;
+  const costBasis = pos.restCost * (covered / pos.totalSize);
+  const proceeds = fill.usd * (covered / fill.size);
+  const realized = proceeds - costBasis;
+  pos.sells.push({ orderId: fill.orderId, price: fill.price, size: fill.size, usd: fill.usd,
+    pnl: Math.round(realized * 100) / 100, t: fill.t,
+    ...(outside > fill.size * 1e-9 ? { covered, outside } : {}) });
+  pos.realized += realized;
+  pos.totalSize -= covered;
+  pos.restCost -= costBasis;
+  return { covered, outside, realized };
+}
+
+// Позиция закрыта, если осталось меньше 0.5% исходного размера (пыль)
+function journalCloseIfFlat(coin, pos, t, extra) {
+  if (!(pos.totalSize <= Math.max(1e-9, pos.origSize * 0.005)) && !extra) return false;
+  const holdH = Math.round((t - pos.entryAt) / 3600000 * 10) / 10;
+  journal.closed.push({
+    coin, pnl: Math.round(pos.realized * 100) / 100,
+    pnlPct: pos.costTotal > 0 ? Math.round(pos.realized / pos.costTotal * 10000) / 100 : 0,
+    costTotal: Math.round(pos.costTotal * 100) / 100,
+    entryAt: pos.entryAt, closedAt: t, holdH,
+    // Запись, где продано больше известного, помечена: её процент
+    // считается от того, что журнал видел, а не от всей сделки.
+    ...(pos.sells.some(x => x.outside > 0) ? { partial: true } : {}),
+    ...(extra || {}),
+    ctx: pos.ctx, buys: pos.buys, sells: pos.sells
+  });
+  journal.closed = journal.closed.slice(-500);
+  delete journal.open[coin];
+  console.log(`[journal] CLOSED ${coin}: pnl=$${pos.realized.toFixed(2)} hold=${holdH}h`);
+  return true;
+}
+
+// СВЕРКА ОТКРЫТЫХ ПОЗИЦИЙ С БИРЖЕЙ И КОШЕЛЬКОМ.
+//
+// Журнал строит позиции из окна последних 350 ордеров в каждом статусе.
+// Продажа, уехавшая за край окна, оставляет позицию открытой навсегда: PUMP
+// на $1163 и CRO на $1197 числились открытыми, хотя в кошельке их нет, а ZEC
+// показывал +$1352 (+189%) за 230 дней на монете, от которой осталась пыль.
+//
+// Лечится не списанием, а догрузкой: по конкретной монете биржа отдаёт свои
+// ордера отдельным запросом, и пропавшие продажи находятся с настоящими
+// ценами. Считаются они тем же journalApplySell, что и живой поток.
+//
+// Что не удалось найти на бирже, но чего нет в кошельке, закрывается с
+// пометкой unknownExit: цену такого выхода мы не знаем и выдумывать её
+// нельзя — в прибыль эта часть не идёт ни плюсом, ни минусом.
+async function journalReconcile({ apply = false } = {}) {
+  // Сначала ВСЕ запросы, потом ВСЕ изменения — и ни одного await между ними.
+  //
+  // Иначе холостой прогон опасен: он правит журнал в памяти, а пришедшее за
+  // время запроса исполнение вызывает saveJournal и записывает эту черновую
+  // правку на диск. Собираем данные, меняем разом, при холостом прогоне
+  // возвращаем снимок обратно.
+  const balances = await fetchAccountBalances();
+  const inWallet = (coin) => {
+    const row = balances.find(b => b.currency === coin);
+    return row ? Number(row.total) || 0 : 0;
+  };
+  const jobs = [];
+  for (const [coin, pos] of Object.entries(journal.open || {})) {
+    const real = inWallet(coin);
+    // Позицию, которую кошелёк подтверждает, не трогаем вовсе.
+    if (pos.totalSize > 0 && real > 0 && Math.abs(real - pos.totalSize) / pos.totalSize <= 0.05) continue;
+    const job = { coin, real, orders: null, error: null };
+    try {
+      const raw = await client.listOrders({ limit: '250', product_ids: [coin + '-USD'],
+        order_status: ['FILLED'] });
+      const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      job.orders = (parsed.orders || []).map(normalizeOrder);
+    } catch (e) { job.error = e.message; }
+    jobs.push(job);
+  }
+
+  const snapshot = JSON.stringify(journal);
+  const report = [];
+  // Считаем именно ПРАВКИ, а не строки отчёта: молчание биржи — тоже строка,
+  // но переписывать из-за неё журнал нечем.
+  let mutated = 0;
+  for (const job of jobs) {
+    const pos = journal.open[job.coin];
+    if (!pos) continue;                       // закрылась, пока шли запросы
+    const entry = { coin: job.coin, wallet: job.real, added: [],
+      was: { size: pos.totalSize, restCost: Math.round(pos.restCost * 100) / 100 }, action: null };
+    if (job.error) { entry.action = 'биржа не ответила: ' + job.error; report.push(entry); continue; }
+    // Берём только то, чего в позиции ещё нет и что случилось после входа.
+    const known = new Set([...pos.buys, ...pos.sells].map(x => x.orderId));
+    const missing = job.orders
+      .filter(o => !known.has(o.order_id) && Number(o.filled_size) > 0 && Number(o.total_value) > 0)
+      .map(o => ({ o, t: new Date(o.last_fill_time || o.created_time).getTime() }))
+      .filter(x => Number.isFinite(x.t) && x.t >= pos.entryAt)
+      .sort((a, b) => a.t - b.t);
+    let lastT = null;
+    for (const { o, t } of missing) {
+      const size = parseFloat(o.filled_size), usd = parseFloat(o.total_value);
+      const price = parseFloat(o.average_filled_price) || 0;
+      if (o.side === 'BUY') {
+        pos.buys.push({ orderId: o.order_id, price, size, usd, t });
+        pos.origSize += size; pos.totalSize += size; pos.costTotal += usd; pos.restCost += usd;
+        entry.added.push({ side: 'BUY', size, usd: Math.round(usd * 100) / 100 });
+      } else if (o.side === 'SELL' && pos.totalSize > 0) {
+        const r = journalApplySell(pos, { orderId: o.order_id, price, size, usd, t });
+        entry.added.push({ side: 'SELL', size, usd: Math.round(usd * 100) / 100,
+          pnl: Math.round(r.realized * 100) / 100 });
+      }
+      lastT = t;
+    }
+    const when = lastT || Date.now();
+    if (journalCloseIfFlat(job.coin, pos, when)) {
+      entry.action = 'закрыта найденными продажами, итог $' +
+        (journal.closed[journal.closed.length - 1] || {}).pnl;
+      mutated++;
+      report.push(entry);
+      continue;
+    }
+    // Продажи не нашлись, а кошелёк говорит, что монеты нет.
+    if (!(job.real > 0) || job.real < pos.totalSize * 0.005) {
+      const lost = Math.round(pos.restCost * 100) / 100;
+      journalCloseIfFlat(job.coin, pos, when, { unknownExit: true, unknownCost: lost, partial: true });
+      entry.action = 'закрыта без цены выхода: $' + lost + ' не отнесены ни к прибыли, ни к убытку';
+      mutated++;
+      report.push(entry);
+      continue;
+    }
+    // Кошелёк знает другое количество: приводим к нему, себестоимость делим
+    // в той же доле. Остаток ушёл туда же, куда и у закрытых, — мимо журнала.
+    if (Math.abs(job.real - pos.totalSize) / pos.totalSize > 0.05) {
+      const share = job.real / pos.totalSize;
+      const dropped = Math.round(pos.restCost * (1 - share) * 100) / 100;
+      pos.restCost = pos.restCost * share;
+      pos.totalSize = job.real;
+      pos.adjustedAt = Date.now();
+      pos.unknownCost = Math.round(((pos.unknownCost || 0) + dropped) * 100) / 100;
+      entry.action = 'приведена к кошельку: $' + dropped + ' списаны без цены выхода';
+      mutated++;
+      report.push(entry);
+      continue;
+    }
+    if (entry.added.length) { entry.action = 'догружены ордера'; mutated++; report.push(entry); }
+  }
+
+  if (!apply) { journal = JSON.parse(snapshot); return { applied: false, changed: mutated, report }; }
+  if (!mutated) return { applied: false, changed: 0, report };
+  // Снимок «до» рядом с журналом: пересчитать сверку обратно нечем.
+  try { fs.writeFileSync(JOURNAL_FILE + '.before-reconcile', snapshot); } catch (e) {
+    journal = JSON.parse(snapshot);
+    return { applied: false, error: 'не удалось сохранить снимок: ' + e.message, changed: 0, report: [] };
+  }
+  saveJournal();
+  return { applied: true, changed: mutated, report };
+}
+
 function journalStats() {
-  const closed = journal.closed;
+  // Запись без цены выхода — не победа и не поражение.
+  //
+  // Такие появляются после сверки: монеты в кошельке нет, а продажи биржа не
+  // отдала. Считать их нулевой прибылью значит записать в поражения (pnl не
+  // больше нуля), а вложенное в них — в потери, которых мы не измеряли.
+  // Держим их отдельно и называем числом.
+  const unknownExits = (journal.closed || []).filter(c => c.unknownExit);
+  const closed = (journal.closed || []).filter(c => !c.unknownExit);
   const agg = (arr) => {
     const wins = arr.filter(x => x.pnl > 0).length;
     const losses = arr.length - wins;
@@ -4366,6 +4523,11 @@ function journalStats() {
   };
   return {
     overall: agg(closed),
+    unknownExits: unknownExits.length ? {
+      n: unknownExits.length,
+      cost: Math.round(unknownExits.reduce((a, c) => a + (c.unknownCost || 0), 0) * 100) / 100,
+      coins: unknownExits.map(c => c.coin),
+    } : null,
     byTag: groupBy(c => c.ctx && c.ctx.rbTag ? c.ctx.rbTag : '—'),
     byScore: groupBy(c => {
       const s = c.ctx ? c.ctx.score : null;

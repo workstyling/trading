@@ -167,9 +167,13 @@
       why: 'Зелёная рамка: вход подтверждён правилами и проверкой доходности группы. Это не гарантия прибыли.' };
     const edge = recoveryEdge(observation, recoveryBaseline(scan, now));
     if (!edge.above) return plain;
-    return { state: 'possible', label: 'возможная покупка', color: 'var(--entry-possible)',
+    // Было «возможная покупка». Строкой выше панель говорит, что покупать по
+    // этому списку нельзя, и два этих текста на одном экране противоречат
+    // друг другу — читают при этом короткий, а не длинный. Называем состояние
+    // строки, а не действие: параметры подходят, прибыльность не измерена.
+    return { state: 'possible', label: 'кандидат', color: 'var(--entry-possible)',
       bg: 'background:var(--entry-possible-bg);',
-      why: 'Оранжевая рамка: параметры монеты подходят, свежая частота цели выше базы больше чем на две погрешности и минимум на 3 п.п. Прибыльность группы не подтверждена — это кандидат для наблюдения, покупка ещё не разрешена.' };
+      why: 'Оранжевая рамка: параметры монеты подходят, свежая частота цели выше базы больше чем на две погрешности и минимум на 3 п.п. Прибыльность группы не подтверждена, и по прогону этот отбор издержек не окупает — это кандидат для наблюдения, а не для покупки.' };
   }
   function renderRecoveryGroups(sorted, scan, renderRow, columns) {
     const gate = { fall: scan.gate && scan.gate.fallPct, spread: scan.gate && scan.gate.spreadPct };
@@ -181,12 +185,12 @@
     }
     return [
       ['confirmed', 'Покупать', 'var(--entry-confirmed)'],
-      ['possible', 'Возможная покупка', 'var(--entry-possible)'],
+      ['possible', 'Кандидаты · покупка не разрешена', 'var(--entry-possible)'],
       ['none', 'Остальные', 'var(--t1)'],
     ].map(([state, label, color]) => {
       const rows = groups[state];
       const empty = state === 'confirmed' ? 'Сейчас нет подтверждённых сигналов покупки.'
-        : state === 'possible' ? 'Сейчас нет кандидатов на покупку.' : '';
+        : state === 'possible' ? 'Сейчас нет кандидатов.' : '';
       return '<tr data-entry-group="' + state + '"><th colspan="' + columns +
         '" style="text-align:left;padding:10px 6px 5px;font-size:11px;color:' + color + ';">' +
         label + ' · ' + rows.length + '</th></tr>' +
@@ -203,7 +207,7 @@
       '<b>Параметры входа:</b> от пика ≥' + fall + ' · спред ≤' + spread +
       ' · −10% &lt; за сутки &lt; +10% · скан ≤5 мин.<br>' +
       '<span style="border-left:3px solid #00ffa8;padding-left:5px;color:#00ffa8;">Зелёная рамка — подтверждены параметры и прибыльность группы</span><br>' +
-      '<span style="border-left:3px solid var(--entry-possible);padding-left:5px;color:var(--entry-possible);">Оранжевая рамка — возможная покупка, ждём подтверждения</span>' +
+      '<span style="border-left:3px solid var(--entry-possible);padding-left:5px;color:var(--entry-possible);">Оранжевая рамка — параметры подходят, прибыльность не подтверждена</span>' +
       '</div><details style="font-size:10px;line-height:1.5;margin-bottom:7px;color:var(--t2);">' +
       '<summary style="cursor:pointer;color:var(--t1);">Когда появится сигнал покупки' +
       (fresh ? '' : ' · скан не готов или устарел') + '</summary>' +
@@ -270,7 +274,7 @@
       base.pct.toFixed(1) + '%</b> (монеты почти без падения) больше чем на две погрешности. ' +
       'Это «чаще доходит до цели», а не разрешение покупать. ' +
       '<b style="color:var(--entry-confirmed);">Зелёные — покупать по сигналу.</b> ' +
-      '<b style="color:var(--entry-possible);">Оранжевые — кандидаты, покупка ещё не подтверждена.</b> ' +
+      '<b style="color:var(--entry-possible);">Оранжевые — кандидаты, покупка не разрешена.</b> ' +
       'Остальные — без сигнала покупки.</div>';
   }
   function recoveryVerdict(row, gate, observation, buyCell) {
