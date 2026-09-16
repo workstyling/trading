@@ -10,7 +10,8 @@
 const fs = require('fs'), vm = require('vm');
 const view = require('../public/js/recovery-journal');
 const { recoveryBaseline, recoveryEdge, recoveryOrder, recoveryObservation, recoveryVerdict,
-  renderRecoveryLegend, recoveryPeak, recoveryPeakMark, renderRecoveryTieNote } = view;
+  renderRecoveryLegend, recoveryPeak, recoveryPeakMark, renderRecoveryTieNote,
+  recoveryFresh, recoveryHeldNote } = view;
 let bad = 0;
 const ok = (c, m, x) => { if (!c) bad++; console.log('  ' + (c ? 'ok  ' : 'ПЛОХО') + '  ' + m + (x ? '   ' + x : '')); };
 const read = p => fs.readFileSync(p, 'utf8').split('\r\n').join('\n');
@@ -151,6 +152,26 @@ console.log('\nПометка «максимум» молчит, когда ни
   ok(recoveryPeakMark(withRisk, scan, now).count === 2, 'опасные строки не считаются вершиной',
     String(recoveryPeakMark(withRisk, scan, now).count));
   ok(recoveryPeakMark(withRisk, scan, now).show === true, 'и не отнимают пометку у настоящих кандидатов');
+}
+
+
+console.log('\nСвежее пересечение отличается от затянувшегося движения');
+{
+  // Журнал записывает сигналом только первые четыре минуты: дальше это одно
+  // движение, которое всё ещё идёт. На экране этого не было видно — в списке
+  // стояли строки с «21 ч» и «39 ч», и выглядели они как кандидаты наравне с
+  // только что появившимися.
+  ok(recoveryFresh({ inListMin: 0 }) && recoveryFresh({ inListMin: 4 }), 'первые четыре минуты — свежее');
+  ok(!recoveryFresh({ inListMin: 5 }) && !recoveryFresh({ inListMin: 1260 }), 'дальше уже нет');
+  ok(!recoveryFresh({ inListMin: null }) && !recoveryFresh({}), 'без данных свежести не выдумываем');
+  ok(/Свежее пересечение/.test(recoveryHeldNote({ inListMin: 2 })), 'свежему входу сказано, что он свежий');
+  ok(/не новый сигнал/.test(recoveryHeldNote({ inListMin: 1260 })), 'затянувшемуся — что он не сигнал');
+  ok(/журнал такие не записывает/.test(recoveryHeldNote({ inListMin: 1260 })), 'и что журнал его не считает');
+  ok(/не влияет/.test(recoveryHeldNote({ inListMin: 1260 })), 'но и частоту цели это не меняет');
+  ok(/неизвестно/.test(recoveryHeldNote({})), 'без данных так и сказано');
+  // Порог тот же, по которому сервер отбирает сделки в форвардный журнал
+  const server = read('server.js');
+  ok(/row\.inListMin != null && row\.inListMin > 4/.test(server), 'порог совпадает с серверным');
 }
 
 

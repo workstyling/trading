@@ -302,16 +302,16 @@
       (okModes ? 'окупились ' + okModes : 'не окупился <b>ни один</b>') +
       '. Ни одна клетка не прошла порог покупки. Это список наблюдения, а не список покупки.');
   }
+  // Цвета объясняются один раз — в блоке правил, где рядом нарисованы сами
+  // рамки. Здесь они дублировались словами, и над таблицей из двенадцати
+  // строк стояло двенадцать строк объяснений.
   function renderRecoveryLegend(scan, now = scanNow(scan)) {
     const base = recoveryBaseline(scan, now);
     if (!base) return '';
     return '<div style="font-size:10px;line-height:1.4;margin-bottom:6px;color:var(--t2);">' +
       '<b>▲ у процента</b> — свежая частота цели выше базы <b>' +
       base.pct.toFixed(1) + '%</b> (монеты почти без падения) больше чем на две погрешности. ' +
-      'Это «чаще доходит до цели», а не разрешение покупать. ' +
-      '<b style="color:var(--entry-confirmed);">Зелёные — покупать по сигналу.</b> ' +
-      '<b style="color:var(--entry-possible);">Оранжевые — кандидаты, покупка не разрешена.</b> ' +
-      'Остальные — без сигнала покупки.</div>';
+      'Это «чаще доходит до цели», а не разрешение покупать.</div>';
   }
   function recoveryVerdict(row, gate, observation, buyCell) {
     const out = (tier, label, why, risk = false) => ({ tier, label, why,
@@ -337,6 +337,30 @@
     return observation.hour == null
       ? out(tier, 'нет оценки', observation.why)
       : out(tier, 'наблюдать', 'Условия отката выполнены. Прибыльность отбора не подтверждена; частота цели не разрешает покупку.');
+  }
+  // СВЕЖЕЕ ПЕРЕСЕЧЕНИЕ ИЛИ ЗАТЯНУВШЕЕСЯ ДВИЖЕНИЕ.
+  //
+  // Журнал записывает сигналом только первые ENTRY_FRESH_MIN минут: дальше
+  // это не новое событие, а одно движение, которое всё ещё идёт. Порог тот
+  // же, по которому сервер отбирает сделки в форвардный журнал.
+  //
+  // На экране этого не было видно вовсе. В списке стояли строки с «21 ч» и
+  // «39 ч» — то есть ни одна из них не была сигналом, хотя выглядели они как
+  // кандидаты наравне с только что появившимися.
+  //
+  // Это отметка о новизне события, а не о доходности: что свежие входы лучше
+  // затянувшихся, никто не измерял, и порядок строк от неё не зависит.
+  const ENTRY_FRESH_MIN = 4;
+  function recoveryFresh(row) {
+    return finite(row.inListMin) && Number(row.inListMin) <= ENTRY_FRESH_MIN;
+  }
+  function recoveryHeldNote(row) {
+    if (!finite(row.inListMin)) return 'Сколько монета уже удовлетворяет условиям — неизвестно.';
+    return recoveryFresh(row)
+      ? 'Свежее пересечение: условия выполнились меньше ' + ENTRY_FRESH_MIN +
+        ' минут назад. Только такие строки форвардный журнал записывает сигналом.'
+      : 'Условия держатся уже ' + row.inListMin + ' мин. Это не новый сигнал, а одно затянувшееся ' +
+        'движение: журнал такие не записывает. На саму частоту цели это не влияет — она у клетки одна.';
   }
   function recoveryDayChange(row) {
     return finite(row.chg24Pct) ? (row.chg24Pct > 0 ? '+' : '') + Number(row.chg24Pct) + '%' : '—';
@@ -414,6 +438,7 @@
   }
   const api = { renderEntryJournal, renderRecoveryStatus, renderRecoveryLegend, renderRecoveryNet, recoveryObservation,
     recoveryVerdict, recoveryDayChange, recoveryBaseline, recoveryEdge, recoveryOrder, recoveryPeak, recoveryPeakMark, renderRecoveryTieNote, recoveryBuyCell,
+    recoveryFresh, recoveryHeldNote,
     recoverySignalRows, renderRecoveryRules, recoveryRowMark, renderRecoveryGroups,
     escapeRecoveryText: escapeHtml };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

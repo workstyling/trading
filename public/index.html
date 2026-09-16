@@ -15585,12 +15585,12 @@ Requirements:
         const head2 =
           '<tr style="color:var(--t2);font-size:9px;text-transform:uppercase;letter-spacing:0.4px;">' +
           '<th style="text-align:left;padding:3px 6px;">монета</th>' +
-          '<th style="text-align:right;padding:3px 6px;" title="Свежая доля касаний цели +0.30% за час по группе. Прочерк — данных недостаточно.">цель 1ч</th>' +
+          '<th style="text-align:right;padding:3px 6px;" title="Свежая доля касаний цели +0.30% за час по группе. Прочерк — данных недостаточно.">цель 1ч · группа</th>' +
           '<th style="text-align:right;padding:3px 6px;" title="Расстояние до максимума за последние 30 минут.">откат</th>' +
           '<th style="text-align:right;padding:3px 6px;" title="Изменение цены за 24 часа. Падение от суточного пика указано в подсказке строки.">за сутки</th>' +
           '<th style="text-align:right;padding:3px 6px;">RSI</th>' +
           '<th style="text-align:center;padding:3px 6px;" title="Брать — разрешённая группа, указан план выхода. Наблюдать — условия отката выполнены, прибыльность не подтверждена. Нет оценки — мало свежих наблюдений. Риск — суточный ход от ±10%.">статус / спред</th>' +
-          '<th style="text-align:right;padding:3px 6px;">в списке</th></tr>';
+          '<th style="text-align:right;padding:3px 6px;" title="Сколько монета уже удовлетворяет условиям. Сигналом форвардный журнал считает только первые 4 минуты: дальше это не новое событие, а одно затянувшееся движение. На частоту цели время в списке не влияет.">в списке</th></tr>';
         const swingMark = (x) => {
           const v = x.chg24Pct;
           if (v == null || !Number.isFinite(Number(v)) || Math.abs(v) < 10) return '';
@@ -15623,7 +15623,7 @@ Requirements:
             x.dayFallPct == null ? (x.dayCoverH != null ? 'Падение от пика не считано: истории всего ' + x.dayCoverH + ' ч' : '')
               : 'Падение от суточного пика: ' + x.dayFallPct + '%',
             x.spreadPct == null ? 'Спред неизвестен' : 'Спред ' + x.spreadPct + '%',
-            x.inListMin > 90 ? 'Монета давно в списке; часовой журнал проверяет первое появление сигнала' : '',
+            recoveryHeldNote(x),
             edge.why,
             peak ? 'Из показанных строк здесь самая высокая измеренная частота касания цели. Максимум частоты сам по себе не разрешает покупку.' : '',
             v.label + ': ' + v.why,
@@ -15643,7 +15643,7 @@ Requirements:
             num(x.rsi == null ? '—' : Math.round(x.rsi)) +
             '<td style="text-align:center;padding:4px 6px;font-size:10px;font-weight:800;color:' + mark.color + ';">' + mark.label +
             '<br><span style="color:var(--t2);font-size:9px;font-weight:400;">' + (x.spreadPct == null ? '—' : x.spreadPct + '%') + '</span></td>' +
-            num(held || '—') + '</tr>';
+            num(held || '—', recoveryFresh(x) ? 'var(--entry-confirmed)' : 'var(--t2)', recoveryFresh(x)) + '</tr>';
         };
         // Одинаковые группы на компьютере и телефоне; показываем весь скан.
         const ranked = rows.slice().sort((a, b) =>

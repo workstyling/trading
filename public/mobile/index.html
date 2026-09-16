@@ -6889,7 +6889,7 @@
         const head2 =
           '<tr style="color:var(--t2);font-size:9px;text-transform:uppercase;letter-spacing:0.3px;">' +
           '<th style="text-align:left;padding:4px;">монета</th>' +
-          '<th style="text-align:right;padding:4px 3px;width:60px;" title="Свежая доля касаний цели +0.30% за час по группе. Прочерк — данных недостаточно.">цель 1ч</th>' +
+          '<th style="text-align:right;padding:4px 3px;width:60px;" title="Свежая доля касаний цели +0.30% за час по группе. Прочерк — данных недостаточно.">цель 1ч · группа</th>' +
           '<th style="text-align:right;padding:4px 3px;width:50px;" title="Расстояние до максимума за последние 30 минут.">откат</th>' +
           '<th style="text-align:right;padding:4px;width:58px;" title="Изменение цены за 24 часа. Падение от суточного пика указано в подсказке строки.">за сутки</th></tr>';
         const swingMark = (x) => {
@@ -6924,7 +6924,7 @@
             x.dayFallPct == null ? (x.dayCoverH != null ? 'Падение от пика не считано: истории всего ' + x.dayCoverH + ' ч' : '')
               : 'Падение от суточного пика: ' + x.dayFallPct + '%',
             x.spreadPct == null ? 'Спред неизвестен' : 'Спред ' + x.spreadPct + '%',
-            x.inListMin > 90 ? 'Монета давно в списке; часовой журнал проверяет первое появление сигнала' : '',
+            recoveryHeldNote(x),
             edge.why,
             peak ? 'Из показанных строк здесь самая высокая измеренная частота касания цели. Максимум частоты сам по себе не разрешает покупку.' : '',
             v.label + ': ' + v.why,
@@ -6934,7 +6934,9 @@
             (color || rowColor) + ';' + (bold ? 'font-weight:800;' : '') + '">' + value + '</td>';
           const sub = [
             'RSI ' + (x.rsi == null ? '—' : Math.round(x.rsi)),
-            held,
+            // Свежее пересечение видно и без подсказки: на телефоне её нет
+            held && (recoveryFresh(x)
+              ? '<b style="color:var(--entry-confirmed);">' + held + ' · свежее</b>' : held),
           ].filter(Boolean).join(' · ');
           const conditions = [
             'от пика ' + (x.dayFallPct == null ? '—' : '−' + x.dayFallPct + '%'),
