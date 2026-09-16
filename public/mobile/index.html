@@ -6913,8 +6913,8 @@
           const edge = recoveryEdge(rec, recoveryBaseline(j));
           // Верхняя клетка из показанных: одинаково зелёные восемь строк не
           // выделяют ничего, а гейт по падению сам отбирает клетки выше базы.
-          const peak = rec.hour != null && recoveryPeakMark(rows, j).show &&
-            rec.hour === recoveryPeakMark(rows, j).hour;
+                    // Пометки «максимум» нет: выше частота не лучше, см. recoveryOrder
+          const peak = false;
           const safe = String(x.coin).replace(/[^A-Z0-9]/gi, '');
           const held = x.inListMin == null ? null
             : x.inListMin >= 120 ? Math.round(x.inListMin / 60) + ' ч' : x.inListMin + ' мин';

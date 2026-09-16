@@ -85,7 +85,9 @@ console.log('\nСервер не теряет сигнал за пределам
   const end = source.indexOf("app.get('/api/entry-scan'", start);
   const ctx = { recoverySignalRows, entryScan: { at: now, results: candidates }, ENTRY_NET: scan.entryNet,
     RECOVERY_MEASURED_AT: scan.recoveryMeasuredAt, RECOVERY_SAMPLE: 1, RECOVERY_CHECK_VERSION: 2,
-    ENTRY_GATE_FALL: 3, ENTRY_GATE_SPREAD: 0.3, ENTRY_SCAN_INTERVAL_MS: 120000, recheckStamp: () => ({}) };
+    ENTRY_FREQ_RANK: {},
+    ENTRY_GATE_FALL: 3, ENTRY_GATE_SPREAD: 0.3, ENTRY_SCAN_INTERVAL_MS: 120000,
+    ENTRY_FREQ_RANK: {}, recheckStamp: () => ({}) };
   vm.createContext(ctx);
   vm.runInContext(source.slice(start, end), ctx);
   const response = ctx.entryScanResponse(now);

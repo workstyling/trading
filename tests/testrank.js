@@ -78,36 +78,41 @@ console.log('\nПорог: две ошибки разности и не мень
     'в подсказке названо, с чем сравнили');
 }
 
-console.log('\nПорядок строк');
+console.log('\nПорядок строк: по свежести, а не по частоте');
 {
-  ok(order(row({ dayFallPct: 12 })) > order(row({ dayFallPct: 4 })), 'выше частота — выше строка');
-  // Строка без своей оценки стоит ниже любой измеренной: «нет оценки» — это
-  // не кандидат на покупку, и держать его над числом значит возвращать ту же
-  // ошибку. Между собой прочерки идут по известной мелкой клетке того же
-  // падения: глубокий откат в историческом замере шёл не хуже мелкого.
-  const deepBig = row({ coin: 'USELESS', dayFallPct: 9.73, pullbackPct: 3.14, chg24Pct: -9.12 });
-  ok(obs(deepBig).hour === null, 'у глубокой клетки своей оценки пока нет');
-  ok(order(deepBig) < order(row({ dayFallPct: 4 })), 'прочерк уходит ниже любой измеренной строки');
-  ok(order(deepBig) > order(row({ coin: 'ARB', dayFallPct: 4.12, pullbackPct: 1.63 })),
-    'между прочерками порядок по своему падению');
-  ok(order(row({ dayFallPct: 6.5 })) > order(deepBig), 'при равной клетке известное число впереди прочерка');
-  // Риск — всегда вниз, какая бы частота ни была
-  ok(order(row({ dayFallPct: 12, chg24Pct: -14 })) < order(row({ dayFallPct: 4 })), 'риск уходит вниз');
-  ok(order(row({ dayFallPct: 12, chg24Pct: -14 })) === -1, 'и он ниже любой строки без оценки');
-  ok(order(row({ dayFallPct: 12 })) > 1000 && order(deepBig) < 1000, 'измеренное и неизмеренное не перемешиваются');
-  // Без свежего отчёта порядок не ломается и не выдумывается
-  const blind = { ...scan, recheck: null };
-  const o = x => recoveryOrder(x, blind, recoveryVerdict(x, gate, recoveryObservation(x, blind, now)),
-    recoveryObservation(x, blind, now), now);
-  ok(o(row({ dayFallPct: 12 })) === 0 && o(row({ dayFallPct: 4 })) === 0, 'нет замера — нет и порядка по нему');
+  // Сортировать по частоте было первым побуждением, и проверка вне выборки
+  // его отменила: на горизонте четырёх часов верхняя пятина монет по частоте
+  // дала -0.332% за сделку против -0.143% у нижней (разница -0.188 ±0.064).
+  // Монета касается цели чаще потому, что сильнее дёргается, — и чаще
+  // достаёт до стопа. Список по частоте показывал бы на худшее.
+  const fresh = row({ coin: 'NEW', dayFallPct: 4, inListMin: 2 });
+  const hourOld = row({ coin: 'OLD', dayFallPct: 12, inListMin: 60 });
+  const dayOld = row({ coin: 'STALE', dayFallPct: 12, inListMin: 1260 });
+  ok(order(fresh) > order(hourOld), 'свежее пересечение выше давнего');
+  ok(order(hourOld) > order(dayOld), 'и между давними — кто новее');
+  ok(order(row({ coin: 'A', dayFallPct: 12, inListMin: 30 })) <
+     order(row({ coin: 'B', dayFallPct: 4, inListMin: 10 })),
+    'высокая частота сама по себе наверх не поднимает');
+  ok(order(row({ dayFallPct: 12, inListMin: 30 })) === order(row({ dayFallPct: 4, inListMin: 30 })),
+    'при равной свежести частота на порядок не влияет вовсе');
+  ok(order(row({ dayFallPct: 12, inListMin: 1, chg24Pct: -14 })) === -1, 'риск уходит вниз');
+  ok(order(fresh) > order(row({ dayFallPct: 12, inListMin: 1, chg24Pct: -14 })), 'и ниже любого кандидата');
+  ok(order(row({ coin: 'NOTIME', dayFallPct: 12, inListMin: null })) < order(dayOld),
+    'без времени в списке — в самый низ');
 }
 
-console.log('\nПри равной частоте вперёд идёт глубокий откат');
+console.log('\nНадбавки за откат больше нет');
 {
-  ok(order(row({ coin: 'UNI', pullbackPct: 1.38 })) > order(row({ coin: 'DASH', pullbackPct: 0.59 })),
-    'глубже откат — выше строка');
-  ok(order(row({ dayFallPct: 12, pullbackPct: 0 })) > order(row({ dayFallPct: 4, pullbackPct: 1.4 })),
-    'но надбавка за откат не перебивает измеренную разницу');
+  // Раньше при равной частоте вперёд шёл более глубокий откат: в
+  // историческом замере он добавлял 11-18 пунктов к частоте касания. Но
+  // частота и деньги — разные вещи, а прибыльности у глубокого отката никто
+  // не подтверждал. Порядок теперь событийный, и таких надбавок в нём нет.
+  // Сравниваем внутри одной клетки: откат от 1.5% переносит строку в другую,
+  // и разница вышла бы из-за клетки, а не из-за надбавки.
+  const deeper = row({ coin: 'DEEP', pullbackPct: 1.4, inListMin: 30 });
+  const flat = row({ coin: 'FLAT', pullbackPct: 0.1, inListMin: 30 });
+  ok(order(deeper) === order(flat), 'глубина отката на порядок не влияет');
+  ok(order(row({ pullbackPct: 1.4, inListMin: 5 })) > order(deeper), 'а свежесть влияет');
 }
 
 console.log('\nВерхняя клетка помечена отдельно');
@@ -200,7 +205,7 @@ for (const [name, file] of [['десктоп', 'public/index.html'], ['моби�
   ok(hot.includes('База (падения почти нет)'), '  сравнение с базой есть в подсказке');
   ok(!hot.includes('border-left:3px solid var(--blue)') && !cold.includes('border-left:3px'), '  метка максимума не перекрывает рамку статуса');
   ok(!hot.includes('#00ffa8') && !hot.includes('rgba(0,255,168'), '  максимум наблюдения не получает цвет покупки');
-  ok(hot.includes('максимум'), '  и подписана словом');
+  ok(!hot.includes('максимум'), '  пометки «максимум» нет: выше частота не лучше');
   ok(warm.includes('максимум') === false, '  строка ниже такой пометки не получает');
   // Сортировка и подпись живут вне вырезанного куска — проверяем текстом
   ok(/recoveryOrder\(b, j, verdict\(b\), recoveryObservation\(b, j\)\) -\s*\n\s*recoveryOrder\(a, j, verdict\(a\), recoveryObservation\(a, j\)\)/.test(src),
