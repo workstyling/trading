@@ -145,6 +145,16 @@ function cellStats(perCoin, lo, hi, deep) {
     pct: m, se,
     coins: parts.length, n: parts.reduce((s, x) => s + x.n, 0),
     lowest: sorted[0], highest: sorted[sorted.length - 1],
+    // ДОЛЯ КАЖДОЙ МОНЕТЫ ОТДЕЛЬНО.
+    //
+    // Среднее по клетке про отдельную монету не говорит почти ничего: при
+    // ошибке клетки ±2 п.п. разброс внутри неё — от 22% (BTC) до 91%
+    // (USELESS), то есть 60-70 пунктов. Панель показывала это среднее всем
+    // строкам разом, и для BTC оно было завышено втрое.
+    //
+    // Числа считаются здесь же и тем же способом, просто не сворачиваются.
+    byCoin: Object.fromEntries(parts.map(x => [x.coin,
+      { pct: Math.round(x.p * 10) / 10, n: x.n }])),
   };
 }
 
@@ -275,7 +285,8 @@ function cellStats(perCoin, lo, hi, deep) {
       const shown = g.lo >= S.gate;
       if (shown) measured++;
       const diff = m.pct - want;
-      cellReport.push({ lo: g.lo, deep: key === 'deep', promised: want, actual: m.pct, se: m.se, coins: m.coins, n: m.n });
+      cellReport.push({ lo: g.lo, deep: key === 'deep', promised: want, actual: m.pct, se: m.se,
+        coins: m.coins, n: m.n, byCoin: m.byCoin });
       // Ошибка РАЗНОСТИ: у зашитого числа она тоже есть. Если её не знаем,
       // берём сегодняшнюю — вдвое осторожнее, чем считать зашитое точным.
       // Ошибка старого замера была посчитана для других весов. Её нельзя

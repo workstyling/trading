@@ -15,6 +15,8 @@
         !Array.isArray(r.missingCoins) || r.missingCoins.length) return null;
     return r;
   }
+  // Столько же наблюдений требует и сам замер, прежде чем считать монету.
+  const MIN_COIN_POINTS = 30;
   const validCell = cell => cell && !cell.thin && finite(cell.actual) && cell.actual >= 0 && cell.actual <= 100 &&
     finite(cell.se) && cell.se >= 0 && finite(cell.coins) && cell.coins >= 12 ? cell : null;
   const fallBand = row => finite(row.dayFallPct) ? [10, 6, 3, 1, 0].find(value => Number(row.dayFallPct) >= value) : null;
@@ -47,13 +49,35 @@
         (days == null ? '' : ', окно наблюдений ' + days + ' сут и растёт') +
         '. Клетки с откатом от 1.5% набирают нужное за 7-14 суток — до тех пор здесь прочерк, а не оценка.');
     }
-    const hour = Math.round(cell.actual * 10) / 10;
+    const groupPct = Math.round(cell.actual * 10) / 10;
     const period = new Date(report.from).toISOString().slice(0, 10) + ' — ' + new Date(report.to).toISOString().slice(0, 10);
-    return { hour, se: Number(cell.se), text: hour.toFixed(1) + '%', color: 'var(--blue)',
-      why: 'Свежая частота касания цели +0.30% за час: ' + hour.toFixed(1) +
-        '% ±' + Number(cell.se).toFixed(1) + ' п.п. (1 стандартная ошибка); ' + cell.coins + ' монет' +
+    // ЧИСЛО САМОЙ МОНЕТЫ, ЕСЛИ ОНО ЕСТЬ.
+    //
+    // Среднее по клетке про отдельную монету не говорит почти ничего: при
+    // ошибке клетки ±2 п.п. разброс внутри неё — от 22% (BTC) до 91%
+    // (USELESS). Показывать BTC семьдесят процентов значит завышать втрое.
+    // Сюда же упирался вопрос «почему таблица не различает монеты»: могла,
+    // просто показывала всем одно и то же.
+    const own = cell.byCoin && cell.byCoin[row.coin];
+    if (own && finite(own.pct) && own.pct >= 0 && own.pct <= 100 && finite(own.n) && own.n >= MIN_COIN_POINTS) {
+      const pct = Math.round(Number(own.pct) * 10) / 10;
+      // Своя ошибка доли, а не ошибка клетки: на тридцати наблюдениях она
+      // около 8 пунктов, и делать вид, что число точное, нельзя.
+      const se = Math.sqrt(pct / 100 * (1 - pct / 100) / Number(own.n)) * 100;
+      return { hour: pct, se, ofCoin: true, group: groupPct,
+        text: pct.toFixed(1) + '%', color: 'var(--blue)',
+        why: 'Свежая частота касания цели +0.30% за час у самой ' + row.coin + ': ' + pct.toFixed(1) +
+          '% ±' + se.toFixed(1) + ' п.п. на ' + own.n + ' наблюдениях, ' + period +
+          '. По всей группе — ' + groupPct.toFixed(1) + '%, но внутри неё монеты расходятся на десятки ' +
+          'пунктов, поэтому здесь число этой монеты. Частота касания — не прибыль: комиссии и спред не вычтены.' };
+    }
+    return { hour: groupPct, se: Number(cell.se), ofCoin: false, group: groupPct,
+      text: groupPct.toFixed(1) + '%', color: 'var(--blue)',
+      why: 'Своих наблюдений по ' + row.coin + ' не набралось, поэтому показана частота всей группы: ' +
+        groupPct.toFixed(1) + '% ±' + Number(cell.se).toFixed(1) + ' п.п. (1 стандартная ошибка); ' + cell.coins + ' монет' +
         (finite(cell.n) ? ', ' + cell.n + ' наблюдений' : '') + ', ' + period +
-        '. Это наблюдение по группе, не вероятность прибыли этой монеты; комиссии и спред не вычтены.' };
+        '. Внутри группы монеты расходятся на десятки пунктов, так что к этой монете число относится ' +
+        'лишь приблизительно. Комиссии и спред не вычтены.' };
   }
   // Базовая частота — клетка «падения почти нет, откат мелкий». Тот же замер,
   // то же окно, та же цель, но без условий панели: сравнивать строку больше не

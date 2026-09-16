@@ -58,3 +58,45 @@ assert(renderRecoveryStatus(check).includes('Показаны свежие на�
 assert(renderRecoveryStatus({ ...check, code: 2, report: { ...report, status: 'incomplete' } }).includes('данных мало'));
 assert(renderRecoveryStatus({ ...check, code: 0, report: { ...report, status: 'no-drift' } }).includes('прибыльность отбора не подтверждена'));
 console.log('Fresh observations, missing cells, stale checks, daily change and non-actionable labels: OK');
+
+// ЧИСЛО МОНЕТЫ ПРОТИВ СРЕДНЕГО ПО ГРУППЕ.
+//
+// Ночная сверка показала разброс внутри одной клетки от 22% (BTC) до 91%
+// (USELESS) при ошибке клетки ±2 п.п. Среднее по группе про отдельную монету
+// не говорит почти ничего, а панель показывала его всем строкам разом — для
+// BTC втрое завышенным. Замер считает монеты поимённо, надо только их взять.
+{
+  const withCoins = { ...report, cells: [
+    { lo: 3, deep: false, actual: 57.7, se: 2.04, coins: 39, n: 8157,
+      byCoin: { BTC: { pct: 22.4, n: 210 }, VVV: { pct: 83.1, n: 96 }, THIN: { pct: 70, n: 12 } } },
+  ] };
+  const data = { recheck: { ...check, report: withCoins }, recoveryMeasuredAt: '2026-09-09', at: now };
+  const at = coin => recoveryObservation({ ...row, coin }, data, now);
+  assert.equal(at('BTC').hour, 22.4);
+  assert.equal(at('BTC').ofCoin, true);
+  assert.equal(at('VVV').hour, 83.1);
+  assert(at('BTC').why.includes('у самой BTC'), at('BTC').why);
+  assert(at('BTC').why.includes('По всей группе — 57.7%'), at('BTC').why);
+  // Своя ошибка доли, а не ошибка клетки: на 210 наблюдениях около 2.9 п.п.
+  assert(Math.abs(at('BTC').se - 2.88) < 0.1, String(at('BTC').se));
+  assert(at('VVV').se > at('BTC').se, 'меньше наблюдений — больше ошибка');
+  // Монета с горсткой наблюдений своего числа не получает
+  assert.equal(at('THIN').hour, 57.7);
+  assert.equal(at('THIN').ofCoin, false);
+  assert(at('THIN').why.includes('Своих наблюдений по THIN не набралось'), at('THIN').why);
+  // И монета, которой в разбивке нет вовсе
+  assert.equal(at('ZZZ').hour, 57.7);
+  assert.equal(at('ZZZ').ofCoin, false);
+  assert(at('ZZZ').why.includes('расходятся на десятки пунктов'), at('ZZZ').why);
+  // Старый отчёт без разбивки продолжает работать по-прежнему
+  assert.equal(recoveryObservation(row, scan, now).hour, 54.2);
+  assert.equal(recoveryObservation(row, scan, now).ofCoin, false);
+  // Испорченная разбивка не пускается в число
+  for (const broken of [{ pct: null, n: 100 }, { pct: 120, n: 100 }, { pct: -1, n: 100 },
+    { pct: 50, n: null }, { pct: 50, n: 29 }]) {
+    const bad = { ...report, cells: [{ lo: 3, deep: false, actual: 57.7, se: 2.04, coins: 39, n: 8157,
+      byCoin: { REZ: broken } }] };
+    const d = { recheck: { ...check, report: bad }, recoveryMeasuredAt: '2026-09-09', at: now };
+    assert.equal(recoveryObservation(row, d, now).hour, 57.7);
+  }
+}
