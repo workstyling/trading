@@ -4406,8 +4406,12 @@ async function journalReconcile({ apply = false } = {}) {
     if (pos.totalSize > 0 && real > 0 && Math.abs(real - pos.totalSize) / pos.totalSize <= 0.05) continue;
     const job = { coin, real, orders: null, error: null };
     try {
-      const raw = await client.listOrders({ limit: '250', product_ids: [coin + '-USD'],
-        order_status: ['FILLED'] });
+      // Спрашиваем обе долларовые пары. Продажа за USDC — такая же продажа,
+      // а журнал знает монету только по паре с USD: списать позицию как
+      // «выход неизвестен» лишь потому, что смотрели не туда, — та же
+      // выдуманная цифра, только с другим знаком.
+      const raw = await client.listOrders({ limit: '250',
+        product_ids: [coin + '-USD', coin + '-USDC'], order_status: ['FILLED'] });
       const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
       job.orders = (parsed.orders || []).map(normalizeOrder);
     } catch (e) { job.error = e.message; }
