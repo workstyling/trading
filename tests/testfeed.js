@@ -87,8 +87,9 @@ console.log('\nПодрезка по размеру');
 {
   const ctx = load('trim');
   // Потолок трогать не будем — проверяем, что счёт идёт по факту размера файла
-  const cut = src.slice(src.indexOf('const size = fs.statSync(FEED_FILE).size;'),
-    src.indexOf('} catch (e) {', src.indexOf('const size = fs.statSync(FEED_FILE).size;')));
+  // Именно подрезка в feedAppend: statSync по ленте есть и в её состоянии
+  const at = src.indexOf('if (size > FEED_MAX_BYTES)');
+  const cut = src.slice(at, src.indexOf('} catch (e) {', at));
   ok(/size > FEED_MAX_BYTES/.test(cut), 'подрезка только при превышении потолка');
   ok(/indexOf\(10/.test(cut), 'режется по границе строки, а не посередине записи');
   ctx.feed(1, [{ coin: 'A', price: 1 }]);

@@ -1027,6 +1027,24 @@ async function cryptorankFetch(endpoint, params = {}) {
 }
 
 // API: CryptoRank Global Market Data (includes Fear & Greed, BTC dominance, etc.)
+// СПИСОК ПАР С БИРЖИ — ВСЕГДА МАССИВОМ.
+//
+// При перегрузке или обслуживании биржа отвечает не массивом, а объектом с
+// сообщением, и .filter на нём падает. В журнале это выглядело как «[score]
+// tick products.filter is not a function»: проход молча пропускался, и
+// отличить сбой биржи от «нечего считать» было нельзя. Девять мест брали
+// список, проверяло одно.
+async function fetchProducts(query = '') {
+  const res = await fetch('https://api.exchange.coinbase.com/products' + query,
+    { headers: { 'User-Agent': 'trading-app/1.0' } });
+  const data = await res.json().catch(() => null);
+  if (!Array.isArray(data)) {
+    throw new Error('биржа не вернула список пар' +
+      (data && data.message ? ': ' + data.message : ' (код ' + res.status + ')'));
+  }
+  return data;
+}
+
 app.get('/api/cryptorank/global', async (req, res) => {
   try {
     const data = await cryptorankFetch('/global');
@@ -1074,8 +1092,7 @@ async function fetchAllCbVolumes() {
   cbVolumeFetching = true;
   console.log('[VOLUMES] Fetching Coinbase volumes...');
   try {
-    const cbRes = await fetch('https://api.exchange.coinbase.com/products');
-    const products = await cbRes.json();
+    const products = await fetchProducts();
     const pairs = products
       .filter(p => p.quote_currency === 'USD' && p.status === 'online')
       .map(p => p.base_currency);
@@ -1135,8 +1152,7 @@ async function runResearchScan() {
   researchScanProgress = 0;
   console.log('[RESEARCH] Scan started...');
   try {
-    const cbRes = await fetch('https://api.exchange.coinbase.com/products');
-    const products = await cbRes.json();
+    const products = await fetchProducts();
     const pairs = products
       .filter(p => p.quote_currency === 'USD' && p.status === 'online')
       .map(p => p.base_currency)
@@ -1228,8 +1244,7 @@ async function runRecoveryScan() {
   try {
 
     // Get Coinbase USD pairs
-    const cbRes = await fetch('https://api.exchange.coinbase.com/products');
-    const products = await cbRes.json();
+    const products = await fetchProducts();
     const pairs = products
       .filter(p => p.quote_currency === 'USD' && p.status === 'online')
       .map(p => p.base_currency);
@@ -1377,8 +1392,7 @@ async function runDipScan() {
   dipScanProgress = 0;
   console.log('[DIP] Scan started...');
   try {
-    const cbRes = await fetch('https://api.exchange.coinbase.com/products');
-    const products = await cbRes.json();
+    const products = await fetchProducts();
     const pairs = products
       .filter(p => p.quote_currency === 'USD' && p.status === 'online')
       .map(p => p.base_currency)
@@ -1605,9 +1619,8 @@ async function rebuildTopLosers() {
     const CB = 'https://api.exchange.coinbase.com';
     const H = { headers: { 'User-Agent': 'trading-app/1.0' } };
     const mcap = await getMcapMap();
-    const prodRes = await fetch(`${CB}/products`, H);
-    const products = await prodRes.json();
-    const pairs = (Array.isArray(products) ? products : [])
+    const products = await fetchProducts();
+    const pairs = products
       .filter(p => p.quote_currency === 'USD' && p.status === 'online' && !p.trading_disabled)
       .map(p => p.id);
     const cands = pairs.filter(id => (mcap[id.replace('-USD', '')]?.mc || 0) >= 30_000_000);
@@ -1906,8 +1919,7 @@ function calcDetailedGainerScore(pct, volUsd, rsi, fromHighPct, emaAligned, volS
 
 async function fetchTopGainers() {
   const CB = 'https://api.exchange.coinbase.com';
-  const prodRes = await fetch(`${CB}/products?type=SPOT`);
-  const products = await prodRes.json();
+  const products = await fetchProducts('?type=SPOT');
   const usdPairs = products.filter(p =>
     p.quote_currency === 'USD' && p.status === 'online' && !p.trading_disabled
   ).map(p => p.id);
@@ -2023,8 +2035,7 @@ async function fetchTrendData(coin) {
 
 async function fetchTopVolume() {
   const CB = 'https://api.exchange.coinbase.com';
-  const prodRes = await fetch(`${CB}/products?type=SPOT`);
-  const products = await prodRes.json();
+  const products = await fetchProducts('?type=SPOT');
   const usdPairs = products.filter(p =>
     p.quote_currency === 'USD' && p.status === 'online' && !p.trading_disabled &&
     !STABLECOINS.has(p.base_currency)
@@ -2990,6 +3001,59 @@ app.post('/api/recheck', (req, res) => {
   res.json({ success: true, started: true, previous: was.at ? { at: was.at, code: was.code } : null });
 });
 
+// Состояние ленты скана.
+//
+// Запись, которую нельзя проверить, — это вера, а не данные: файл лежит на
+// боевой машине, доступа к ней нет, и «пишется ли вообще» иначе не узнать.
+// Через неделю по этой ленте будут считать признаки, и выяснять тогда, что
+// она пустая или рваная, поздно.
+//
+// Файл читается ограниченными кусками: он растёт до сотен мегабайт, и
+// прочитать его целиком ради длины значит уронить сервер той же нехваткой
+// памяти, от которой мы его бережём.
+const FEED_PEEK = 64 * 1024;
+function feedStatus(tail = 0) {
+  let fd = null;
+  try {
+    const size = fs.statSync(FEED_FILE).size;
+    fd = fs.openSync(FEED_FILE, 'r');
+    const head = Buffer.alloc(Math.min(FEED_PEEK, size));
+    fs.readSync(fd, head, 0, head.length, 0);
+    const back = Buffer.alloc(Math.min(FEED_PEEK, size));
+    fs.readSync(fd, back, 0, back.length, Math.max(0, size - back.length));
+    const firstLine = head.toString('utf8').split(String.fromCharCode(10))[0];
+    const lines = back.toString('utf8').split(String.fromCharCode(10)).filter(Boolean);
+    // Последняя строка целая только если кусок кончается переводом строки
+    const whole = back.length < size ? lines.slice(1) : lines;
+    const last = whole[whole.length - 1] || '';
+    const parse = (line) => { try { return JSON.parse(line); } catch { return null; } };
+    const a = parse(firstLine), b = parse(last);
+    const avg = whole.length ? whole.reduce((n, l) => n + l.length + 1, 0) / whole.length : 0;
+    return {
+      bytes: size,
+      linesAbout: avg ? Math.round(size / avg) : 0,
+      first: a ? a.t : null,
+      last: b ? b.t : null,
+      coinsLast: b && Array.isArray(b.r) ? b.r.length : null,
+      // Пустые поля в последнем проходе: их доля показывает, что лента
+      // набирается не только именами монет.
+      blanksLast: b && Array.isArray(b.r)
+        ? b.r.reduce((n, row) => n + row.filter(v => v === null).length, 0) : null,
+      fieldsLast: b && Array.isArray(b.r) ? b.r.reduce((n, row) => n + row.length, 0) : null,
+      ...(tail > 0 ? { tail: whole.slice(-Math.min(tail, 20)) } : {}),
+    };
+  } catch (e) {
+    return { bytes: 0, error: e.code === 'ENOENT' ? 'ленты ещё нет' : e.message };
+  } finally { if (fd !== null) { try { fs.closeSync(fd); } catch { } } }
+}
+app.get('/api/feed', (req, res) => {
+  const deployKey = DEPLOY_KEY || 'trading-deploy-2026';
+  if (!constantTimeTokenEquals(String(req.query.key || req.headers['x-deploy-key'] || ''), deployKey)) {
+    return res.status(403).json({ success: false, error: 'bad key' });
+  }
+  res.json({ success: true, ...feedStatus(Number(req.query.tail) || 0) });
+});
+
 // Сверка открытых позиций журнала с биржей и кошельком.
 //
 // По умолчанию холостая: показывает, что изменилось бы, и ничего не пишет.
@@ -3384,8 +3448,7 @@ function calcDetailedReversalScore(params) {
 
 async function fetchTopRecoveries() {
   const CB = 'https://api.exchange.coinbase.com';
-  const prodRes = await fetch(`${CB}/products?type=SPOT`);
-  const products = await prodRes.json();
+  const products = await fetchProducts('?type=SPOT');
   const usdPairs = products.filter(p =>
     p.quote_currency === 'USD' && p.status === 'online' && !p.trading_disabled
   ).map(p => p.id);
@@ -3740,8 +3803,7 @@ async function runPredictorAllScan(tf = '1h') {
   predictorAllState.tf = tf;
   console.log(`[PREDICTOR-ALL] Scan started on ${tf}`);
   try {
-    const cbRes = await fetch('https://api.exchange.coinbase.com/products');
-    const products = await cbRes.json();
+    const products = await fetchProducts();
     const pairs = products
       .filter(p => p.quote_currency === 'USD' && p.status === 'online')
       .map(p => p.base_currency)
@@ -3938,8 +4000,7 @@ async function runMoonshotsScan(mode = 'swing') {
   st.scanned = 0;
   console.log(`[MOONSHOTS:${mode}] Scan started`);
   try {
-    const cbRes = await fetch('https://api.exchange.coinbase.com/products');
-    const products = await cbRes.json();
+    const products = await fetchProducts();
     const pairs = products
       .filter(p => p.quote_currency === 'USD' && p.status === 'online')
       .map(p => p.base_currency)
