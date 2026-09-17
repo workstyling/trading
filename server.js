@@ -5867,6 +5867,55 @@ const ENTRY_SCAN_INTERVAL_MS = 2 * 60 * 1000;
 const ENTRY_SCAN_MAX_COINS = 60;
 const entryScan = { results: [], at: 0, total: 0, running: false, failedAt: 0, market: null, missed: [] };
 
+// ЛЕНТА СКАНА: то, что по свечам задним числом не восстановить.
+//
+// Ценовые признаки я перебрал — ни один не пережил проверку на второй
+// половине периода. Непроверенным осталось то, чего в свечах нет вовсе:
+// спред, стакан, скорость появления монеты в списке. Задним числом их не
+// возьмёшь: биржа отдаёт историю цен, но не историю стакана. Значит, писать
+// нужно вперёд, и каждый день промедления — день, на который позже придёт
+// ответ.
+//
+// Пишем компактно: одна строка на проход, монеты массивами чисел. Сорок пять
+// монет раз в две минуты — это около мегабайта в сутки. Файл подрезается по
+// размеру, потому что кончившееся место останавливает торговлю, а не только
+// запись.
+const FEED_FILE = path.join(__dirname, 'entry-feed.jsonl');
+const FEED_MAX_BYTES = 200 * 1024 * 1024;
+const FEED_KEEP_BYTES = 150 * 1024 * 1024;
+// Number(null) — это ноль, и он конечен. Через такую проверку неизвестный
+// спред записался бы нулём, то есть идеальным, а неизвестное падение — нулём,
+// то есть «монета на пике». Пустое место обязано остаться пустым.
+const feedNum = (v, k) => v == null || v === '' || typeof v === 'boolean' || !Number.isFinite(Number(v))
+  ? null : Math.round(Number(v) * k) / k;
+const feedPrice = (v) => {
+  const n = feedNum(v, 1e12);
+  return n == null || n === 0 ? n : Number(Number(v).toPrecision(8));
+};
+function feedAppend(at, rows) {
+  try {
+    const line = JSON.stringify({ t: at, r: rows.map(x => [
+      // Цена — значащими цифрами, а не знаками после запятой: у монеты по
+      // 0.00000123 восемь знаков после запятой оставили бы от неё две цифры.
+      x.coin, feedPrice(x.price), feedNum(x.dayFallPct, 100), feedNum(x.pullbackPct, 100),
+      feedNum(x.spreadPct, 1000), feedNum(x.rsi, 10), feedNum(x.chg24Pct, 100), feedNum(x.inListMin, 1),
+    ]) }) + String.fromCharCode(10);
+    fs.appendFileSync(FEED_FILE, line);
+    // Подрезаем редко и по факту размера: держать в памяти весь файл ради
+    // ежеминутной обрезки дороже, чем сам файл.
+    const size = fs.statSync(FEED_FILE).size;
+    if (size > FEED_MAX_BYTES) {
+      const buf = fs.readFileSync(FEED_FILE);
+      const cut = buf.indexOf(10, buf.length - FEED_KEEP_BYTES);
+      fs.writeFileSync(FEED_FILE, buf.subarray(cut > 0 ? cut + 1 : buf.length - FEED_KEEP_BYTES));
+      console.log('[entry-feed] подрезан до ' + Math.round(FEED_KEEP_BYTES / 1048576) + ' МБ');
+    }
+  } catch (e) {
+    // Запись ленты не должна ронять скан: это наблюдение, а не торговля.
+    console.error('[entry-feed]', e.message);
+  }
+}
+
 // Сколько монета уже висит в списке. TAO попал в него 51 раз за 35 часов, и
 // каждое попадание выглядело новым сигналом — хотя это было одно непрерывное
 // падение. Статистически повторы не хуже первых входов, но купить одну монету
@@ -6417,6 +6466,7 @@ async function runEntryScan() {
     entryScan.missed = missed;
     entryScan.at = Date.now();
     entryScan.failedAt = 0;
+    feedAppend(entryScan.at, rows);
     const good = rows.filter(entryPasses).length;
     console.log('[entry-scan] ' + rows.length + '/' + universe.length + ' монет, прошли вход: ' + good +
       (missed.length ? ', не посчитаны: ' + missed.join(',') : ''));
