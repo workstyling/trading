@@ -4404,9 +4404,20 @@ function journalApplySell(pos, fill) {
   const costBasis = pos.restCost * (covered / pos.totalSize);
   const proceeds = fill.usd * (covered / fill.size);
   const realized = proceeds - costBasis;
+  // Пыль — это не «продано больше, чем куплено».
+  //
+  // Размеры приходят с биржи с восемью знаками, и на честном круге сумма
+  // покупок сходится с суммой продаж не до последнего знака: по DASH 7.88
+  // против 7.88 оставили 6e-8 монеты. Прежний относительный порог (1e-9)
+  // на это срабатывал, и чистая сделка получала в журнале оранжевое
+  // «частично» — подпись, утверждающую то, чего не было.
+  //
+  // Меряем в деньгах: непокрытое дешевле цента — это округление, а не
+  // покупка за краем окна. Без цены сравнить не с чем — тогда по-старому.
+  const outsideReal = fill.price > 0 ? outside * fill.price >= 0.01 : outside > fill.size * 1e-9;
   pos.sells.push({ orderId: fill.orderId, price: fill.price, size: fill.size, usd: fill.usd,
     pnl: Math.round(realized * 100) / 100, t: fill.t,
-    ...(outside > fill.size * 1e-9 ? { covered, outside } : {}) });
+    ...(outsideReal ? { covered, outside } : {}) });
   pos.realized += realized;
   pos.totalSize -= covered;
   pos.restCost -= costBasis;

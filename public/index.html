@@ -12931,8 +12931,28 @@ Requirements:
         // Продано больше, чем видно купленного: часть покупок за краем окна
         // ордеров или выключена руками. Считать такое закрытием значит
         // записывать в прибыль деньги, которые на самом деле ещё вложены.
-        const oversold = totalFilled < 0;
+        //
+        // Но минус минусу рознь. Остатки складываются из чисел биржи с восемью
+        // знаками, и на честно закрытой позиции сумма покупок почти никогда не
+        // сходится с суммой продаж до последнего знака: по DASH продажа 7.88
+        // против покупки 7.88 оставила −0.00000006 монеты — четыре
+        // десятитысячных цента, — и записать настоящие +$10.51 было нельзя.
+        //
+        // Настоящая пропавшая покупка — это ордер, а ордера меньше доллара
+        // биржа не принимает. Значит, минус надо мерить в деньгах: центы это
+        // округление, доллары это пропавшая покупка. Порог здесь строже, чем
+        // на плюсовой стороне ($1), и намеренно: лишняя пыль в плюсе занижает
+        // записанную прибыль, а в минусе завышает её ровно на стоимость
+        // недостающих монет.
+        const OVERSOLD_USD = 0.05;
+        // Без цены покупки остаток в деньги не перевести — тогда считаем как
+        // раньше, по количеству: молча пропустить хуже, чем лишний раз не дать.
+        const restPriced = avgBuyPrice > 0;
+        const oversold = restPriced ? restUsd < -OVERSOLD_USD : totalFilled < 0;
         const positionClosed = !oversold && restUsd < 1;
+        // «−0.000000» в строке остатка читается как поломка. Это та же пыль:
+        // показываем ноль, когда остаток не стоит и цента.
+        const filledShown = restPriced && Math.abs(restUsd) < 0.01 ? 0 : totalFilled;
         const canSaveProfit = filledBuys.length > 0 && filledSells.length > 0 && positionClosed;
 
         // Calculate group profit: same logic as USD column (negated totalUSD)
@@ -12959,7 +12979,7 @@ Requirements:
         // перерисовке. На кнопке — короткое «ещё открыта», в подсказке —
         // сколько осталось.
         const openTitle = oversold
-          ? `Продано больше, чем видно купленного: остаток ${fmtSize(totalFilled)} ${coin}. Часть покупок выключена или лежит за краем окна ордеров — записывать такую «прибыль» нельзя, это ещё вложенные деньги.`
+          ? `Продано больше, чем видно купленного: не хватает покупок примерно на $${Math.abs(restUsd).toFixed(2)} (${fmtSize(totalFilled)} ${coin}). Часть покупок выключена или лежит за краем окна ордеров — записывать такую «прибыль» нельзя, это ещё вложенные деньги.`
           : !positionClosed && filledSells.length > 0
             ? `Позиция ещё открыта: осталось ${fmtSize(totalFilled)} ${coin}. Прибыль известна только после полного выхода.`
             : '';
@@ -13004,7 +13024,7 @@ Requirements:
         const isFav = favoriteCoins.has(coin);
         h += `<div class="coin-group" data-coin="${coin}" data-coin-pair="${pair}">
           <h4><span onclick="selectCoinForTrade('${coin}')" title="Выбрать ${coin} и открыть график 15m здесь" style="cursor:pointer;color:var(--blue);">${pair}</span>${todayBadge} <span onclick="toggleFavoriteCoin('${coin}')" title="${isFav ? 'Remove from favorites' : 'Add to favorites'}" style="cursor:pointer;font-size:16px;opacity:${isFav ? '1' : '0.25'};padding:0 6px;color:${isFav ? '#f5c518' : 'inherit'};">★</span><button class="select-coin-btn" onclick="selectCoinForBuy('${coin}')" title="Set for Buy">⬆</button></h4>
-          <div class="balance">Selected: ${fmtSize(totalFilled)} ${coin} <span id="realBal_${coin}" data-live="1" style="color:var(--t2);font-size:10px;">(loading real balance...)</span> ${totalFilled > 0 ? `<button class="sell-all-btn" onclick="sellAllCoin('${pair}', '${totalFilled}', ${avgBuyPrice}, ${totalUSD})">SELL ALL</button> <button class="sell-all-btn mkt" onclick="sellAllMarket('${pair}', '${totalFilled}', '${coin}', ${totalUSD})" title="Продать всё ПО РЫНКУ. Диалог покажет реальную цену исполнения по стакану и прибыль, обновляя их каждую секунду.">SELL MKT</button> <button id="bew_${coin}" onclick="toggleBeWatch('${coin}','${pair}',${totalFilled},${totalUSD})" title="Telegram-алерт, когда Limit P&L дойдёт до 0 (сработает один раз и выключится)" style="padding:3px 8px;border:1px solid ${_beWatches[coin] ? 'var(--yellow)' : 'rgba(255,255,255,0.25)'};border-radius:5px;background:${_beWatches[coin] ? 'rgba(245,197,24,0.15)' : 'transparent'};color:${_beWatches[coin] ? 'var(--yellow)' : '#889'};font-size:10px;font-weight:600;cursor:pointer;">🔔 BE${_beWatches[coin] ? ' ON' : ''}</button>` : ''} <button class="${btnClass}" title="${openTitle}" onclick="saveGroupProfit('${coin}', ${groupProfit.toFixed(2)}, '${filledBuys.map(o => o.order_id).join(',')}', '${filledSells.map(o => o.order_id).join(',')}', ${buyCreatedDate ? `'${buyCreatedDate}'` : 'null'})" ${btnDisabled ? 'disabled' : ''}>${btnText}</button>
+          <div class="balance">Selected: ${fmtSize(filledShown)} ${coin} <span id="realBal_${coin}" data-live="1" style="color:var(--t2);font-size:10px;">(loading real balance...)</span> ${totalFilled > 0 ? `<button class="sell-all-btn" onclick="sellAllCoin('${pair}', '${totalFilled}', ${avgBuyPrice}, ${totalUSD})">SELL ALL</button> <button class="sell-all-btn mkt" onclick="sellAllMarket('${pair}', '${totalFilled}', '${coin}', ${totalUSD})" title="Продать всё ПО РЫНКУ. Диалог покажет реальную цену исполнения по стакану и прибыль, обновляя их каждую секунду.">SELL MKT</button> <button id="bew_${coin}" onclick="toggleBeWatch('${coin}','${pair}',${totalFilled},${totalUSD})" title="Telegram-алерт, когда Limit P&L дойдёт до 0 (сработает один раз и выключится)" style="padding:3px 8px;border:1px solid ${_beWatches[coin] ? 'var(--yellow)' : 'rgba(255,255,255,0.25)'};border-radius:5px;background:${_beWatches[coin] ? 'rgba(245,197,24,0.15)' : 'transparent'};color:${_beWatches[coin] ? 'var(--yellow)' : '#889'};font-size:10px;font-weight:600;cursor:pointer;">🔔 BE${_beWatches[coin] ? ' ON' : ''}</button>` : ''} <button class="${btnClass}" title="${openTitle}" onclick="saveGroupProfit('${coin}', ${groupProfit.toFixed(2)}, '${filledBuys.map(o => o.order_id).join(',')}', '${filledSells.map(o => o.order_id).join(',')}', ${buyCreatedDate ? `'${buyCreatedDate}'` : 'null'})" ${btnDisabled ? 'disabled' : ''}>${btnText}</button>
           ${totalFilled > 0 ? (() => { const _st = sellSteps(coin); return `<span style="margin-left:10px;display:inline-flex;align-items:center;gap:4px;">
             <input type="text" id="limitSellPrice_${coin}" placeholder="Limit price" value="${_st.limit != null ? _st.limit : ''}" oninput="previewLimitSell('${coin}','${totalFilled}',${totalUSD})" style="width:90px;padding:3px 6px;background:var(--s3);border:1px solid var(--b1);border-radius:5px;color:var(--t0);font-family:'JetBrains Mono',monospace;font-size:11px;outline:none;" autocomplete="off">
             <button onclick="sellAllLimit('${pair}','${totalFilled}','${coin}')" style="padding:3px 10px;border:1px solid var(--yellow);border-radius:5px;background:transparent;color:var(--yellow);font-size:10px;font-weight:600;cursor:pointer;">Sell Limit</button>

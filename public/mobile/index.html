@@ -3147,8 +3147,28 @@
         // видно купленного. Часть покупок лежит за краем окна ордеров или
         // выключена на десктопе. Считать такое закрытием значит записать в
         // прибыль деньги, которые ещё вложены.
-        const oversold = totalFilled < 0;
+        //
+        // Но минус минусу рознь. Остатки складываются из чисел биржи с восемью
+        // знаками, и на честно закрытой позиции сумма покупок почти никогда не
+        // сходится с суммой продаж до последнего знака: по DASH продажа 7.88
+        // против покупки 7.88 оставила −0.00000006 монеты — четыре
+        // десятитысячных цента, — и записать настоящие +$10.51 было нельзя.
+        //
+        // Настоящая пропавшая покупка — это ордер, а ордера меньше доллара
+        // биржа не принимает. Значит, минус надо мерить в деньгах: центы это
+        // округление, доллары это пропавшая покупка. Порог здесь строже, чем
+        // на плюсовой стороне ($1), и намеренно: лишняя пыль в плюсе занижает
+        // записанную прибыль, а в минусе завышает её ровно на стоимость
+        // недостающих монет.
+        const OVERSOLD_USD = 0.05;
+        // Без цены покупки остаток в деньги не перевести — тогда считаем как
+        // раньше, по количеству: молча пропустить хуже, чем лишний раз не дать.
+        const restPriced = avgBuy > 0;
+        const oversold = restPriced ? restUsd < -OVERSOLD_USD : totalFilled < 0;
         const positionClosed = !oversold && restUsd < 1;
+        // «−0.000000» в строке остатка читается как поломка. Это та же пыль:
+        // показываем ноль, когда остаток не стоит и цента.
+        const filledShown = restPriced && Math.abs(restUsd) < 0.01 ? 0 : totalFilled;
         const canSaveProfit = filledBuys.length > 0 && filledSells.length > 0 && positionClosed;
         const groupProfit = canSaveProfit ? -totalUSD : 0;
         const profitOrderIds = [...filledBuys, ...filledSells].map(order => order.order_id);
@@ -3160,7 +3180,7 @@
           ? `<button class="mon-profit-btn ${groupProfit >= 0 ? 'profit-positive' : 'profit-negative'}" onclick="saveGroupProfitM('${coin}',${groupProfit.toFixed(2)},'${filledBuys.map(order => order.order_id).join(',')}','${filledSells.map(order => order.order_id).join(',')}')">${savedProfit ? `Update Profit (was ${formatProfitM(savedProfit.profit)}) → ${formatProfitM(groupProfit)}` : `Save Profit ${formatProfitM(groupProfit)}`}</button>`
           // Пропавшая кнопка неотличима от сломанной: говорим, почему её нет.
           : (oversold
-            ? `<div style="font-size:11px;color:#f5843a;margin:6px 0;">Продано больше, чем видно купленного (${fmt(totalFilled)} ${coin}): часть покупок за краем окна ордеров. Записывать нельзя — это ещё вложенные деньги.</div>`
+            ? `<div style="font-size:11px;color:#f5843a;margin:6px 0;">Продано больше, чем видно купленного: не хватает покупок примерно на $${Math.abs(restUsd).toFixed(2)} (${fmt(totalFilled)} ${coin}). Часть покупок за краем окна ордеров. Записывать нельзя — это ещё вложенные деньги.</div>`
             : !positionClosed && filledSells.length > 0
               ? `<div style="font-size:11px;color:var(--t2);margin:6px 0;">Прибыль записывать рано: позиция ещё открыта, осталось ${fmt(totalFilled)} ${coin}</div>`
               : '');
@@ -3181,7 +3201,7 @@
             <div class="monitor-stat"><span class="monitor-stat-label">Bid</span><span class="monitor-stat-val" style="color:var(--green)">$${fmt(bid)}</span></div>
             <div class="monitor-stat"><span class="monitor-stat-label">Ask</span><span class="monitor-stat-val" style="color:var(--loss)">$${fmt(ask)}</span></div>
             <div class="monitor-stat"><span class="monitor-stat-label">Avg Buy</span><span class="monitor-stat-val">$${fmt(avgBuy)}</span></div>
-            <div class="monitor-stat"><span class="monitor-stat-label">Filled</span><span class="monitor-stat-val">${totalFilled.toFixed(totalFilled < 1 ? 6 : 2)}</span></div>
+            <div class="monitor-stat"><span class="monitor-stat-label">Filled</span><span class="monitor-stat-val">${filledShown.toFixed(filledShown < 1 ? 6 : 2)}</span></div>
             <div class="monitor-stat" title="Сумма выбранных покупок с комиссией, до вычета продаж."><span class="monitor-stat-label">Вложено</span><span class="monitor-stat-val">$${buyUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
             <div class="monitor-stat"><span class="monitor-stat-label">Market</span><span class="monitor-stat-val" style="color:${mktColor}">${formatProfitM(marketPnL)}</span></div>
           </div>

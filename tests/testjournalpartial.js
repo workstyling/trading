@@ -110,6 +110,37 @@ console.log('\nЖивой учёт продажи');
   ok(ctx2.journal.closed[0].partial === undefined, 'и неполной не помечается');
 }
 
+console.log('\nПыль — это не «продано больше купленного»');
+{
+  // Размеры приходят с биржи с восемью знаками, и на честном круге сумма
+  // покупок сходится с суммой продаж не до последнего знака: по DASH покупка
+  // 7.88 против продажи 7.88 оставила 6e-8 монеты. Прежний относительный
+  // порог (1e-9) на этом срабатывал, и чистая сделка получала оранжевое
+  // «частично» — подпись, утверждающую то, чего не было.
+  const ctx = load([]);
+  const f = (side, size, usd, price, t, id) => ctx.onFill({ side, product_id: 'DASH-USD', order_id: id,
+    filled_size: String(size), total_value: String(usd), average_filled_price: String(price),
+    created_time: new Date(t).toISOString() });
+  f('BUY', 7.87999994, 451.45, 57.2013, 1, 'b1');
+  f('SELL', 7.88, 461.96, 58.68, 2, 's1');
+  const rec = ctx.journal.closed[0];
+  ok(rec && near(rec.pnl, 10.51, 0.02), 'прибыль по кругу записана целиком', rec ? '$' + rec.pnl : 'записи нет');
+  ok(rec && rec.partial === undefined, 'и «частично» на чистой сделке не появляется');
+  ok(rec && rec.sells[0].outside === undefined, 'непокрытого в продаже не записано');
+
+  // А настоящая непокрытая часть — от цента и выше — помечается по-прежнему
+  const ctx3 = load([]);
+  const f3 = (side, size, usd, price, t, id) => ctx3.onFill({ side, product_id: 'DASH-USD', order_id: id,
+    filled_size: String(size), total_value: String(usd), average_filled_price: String(price),
+    created_time: new Date(t).toISOString() });
+  f3('BUY', 7.88, 451.45, 57.2013, 1, 'b1');
+  f3('SELL', 7.8805, 461.99, 58.68, 2, 's1');
+  const rec3 = ctx3.journal.closed[0];
+  ok(rec3 && rec3.partial === true, 'непокрытое на три копейки всё ещё помечается',
+    '$' + (0.0005 * 58.68).toFixed(3));
+  ok(/outside \* fill\.price >= 0\.01/.test(src), 'порог непокрытого задан в деньгах, а не в монетах');
+}
+
 console.log('\nПочинка вызывается при загрузке');
 ok(/\njournalRepairClosed\(\);/.test(src), 'разовый пересчёт стоит рядом с чтением файла');
 
