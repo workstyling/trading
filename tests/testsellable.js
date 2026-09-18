@@ -103,6 +103,79 @@ function load(balances) {
     ok((await ctx.sellable('X', 'абв')) === null, 'и мусор тоже');
   }
 
+  console.log('\nЛимитная продажа называет убыток словом');
+  {
+    // Окно спрашивало «продать 11 820.90 по $0.2563?» и показывало сумму
+    // сделки. Сумма — не ответ на вопрос, который тут решается: $0.2563 и
+    // $0.2608 на глаз одинаковы, а между ними полсотни долларов и граница
+    // между прибылью и убытком. У стоп-лимита и у продажи по Ask
+    // предупреждение было, у обычной лимитки — нет.
+    const run = async (price, size, cost, avail) => {
+      const shown = [];
+      const ctx = {
+        Number, String, parseFloat, Promise, Math, Boolean,
+        balancesCache: [{ currency: 'USELESS', available: String(avail), hold: '0' }],
+        fmtSize: (n) => String(n),
+        getFeeLimit: () => 0.001, getFeeMarket: () => 0.0015,
+        document: { getElementById: () => ({ value: price }) },
+        showCustomAlert: (t) => shown.push({ kind: 'alert', t }),
+        showOrderError: (t, html) => shown.push({ kind: 'error', t, html }),
+        showConfirmModal: (t, html, yes, no) => shown.push({ kind: 'confirm', t, html, yes, no }),
+        fetch: async () => ({ json: async () => ({ success: false, error: 'тест' }) }),
+        selectedOrders: [], safeStorage: { setItem() {} }, saveSelectedToServer() {},
+        loadLatestOrders: async () => {}, loadUsdBalance() {}, loadVolume30d() {},
+        SELECTED_ORDERS_KEY: 'k', JSON,
+      };
+      vm.createContext(ctx);
+      const si = d.indexOf('async function sellableSize');
+      vm.runInContext(d.slice(si, d.indexOf('\n    }', si) + 6), ctx);
+      const li = d.indexOf('async function sellAllLimit');
+      vm.runInContext(d.slice(li, d.indexOf('\n    }', li) + 6) + ';this.go = sellAllLimit;', ctx);
+      const p = ctx.go('USELESS-USD', size, 'USELESS', cost);
+      // Если спросили про свободный остаток — соглашаемся
+      const less = shown.find(s => s.kind === 'confirm' && /Свободно меньше/.test(s.t));
+      if (less) less.yes();
+      await p;
+      return shown;
+    };
+
+    // Продажа в убыток: 11 820.90 по $0.2563 против затрат $3068.31
+    let shown = await run('0.2563', '11820.9', 3068.31, 11820.9);
+    let c = shown.find(s => s.kind === 'confirm');
+    ok(c && /в убыток/i.test(c.t), 'убыток вынесен в заголовок окна', c && c.t);
+    ok(c && /Зафиксирует убыток/.test(c.html), 'и назван словом в теле');
+    ok(c && /−\$/.test(c.html), 'со знаком минуса', (c.html.match(/−\$[\d.]+/) || [])[0]);
+    ok(c && /%\)/.test(c.html), 'и в процентах тоже');
+    ok(c && /если ордер постоит в стакане/.test(c.html), 'сказано, при какой комиссии это посчитано');
+    ok(c && /заберёт встречную сразу/.test(c.html), 'и второй вариант комиссии тоже назван');
+
+    // Та же позиция в плюс
+    shown = await run('0.2700', '11820.9', 3068.31, 11820.9);
+    c = shown.find(s => s.kind === 'confirm');
+    ok(c && !/в убыток/i.test(c.t), 'прибыльная продажа красным не пугает', c && c.t);
+    ok(c && /Прибыль \+\$/.test(c.html), 'и прибыль названа числом',
+      (c.html.match(/Прибыль \+\$[\d.]+/) || [])[0]);
+
+    // Затраты делятся в той же доле, что и монеты
+    shown = await run('0.2563', '11858.7', 3078.12, 11820.9);
+    c = shown.find(s => s.kind === 'confirm' && !/Свободно меньше/.test(s.t));
+    const num = c && parseFloat((c.html.match(/убыток −\$([\d.]+)/) || [])[1]);
+    // 11820.9 x 0.2563 x (1-0.001) = 3026.67; затраты 3078.12 x (11820.9/11858.7) = 3068.31
+    ok(num && Math.abs(num - 41.64) < 0.1,
+      'убыток посчитан по доле затрат, а не по всей позиции', '−$' + num);
+    // По всей позиции вышло бы −$51.45: на $9.81 больше, чем есть на самом деле
+    ok(num && num < 45, 'иначе он был бы завышен на стоимость непроданных монет', '−$' + num);
+  }
+
+  console.log('\nЗатраты делятся везде, где количество урезано');
+  {
+    for (const fn of ['sellAtCurrentAsk', 'sellAllLimit', 'sellStopInline', 'sellAllMarket']) {
+      const body = d.slice(d.indexOf('function ' + fn), d.indexOf('function ' + fn) + 2800);
+      ok(/const wanted = parseFloat\(size\)|const wanted/.test(body), fn + ': исходное количество запомнено');
+      ok(/\* \(wanted > 0 \? sellable \/ wanted : 0\)/.test(body), fn + ': затраты поделены в той же доле');
+    }
+  }
+
   console.log('\nВсе кнопки продажи идут через одну проверку');
   {
     for (const fn of ['sellAtCurrentAsk', 'sellAllLimit', 'sellStopInline', 'sellAllMarket']) {
@@ -121,18 +194,25 @@ function load(balances) {
 
   console.log('\nТелефон ведёт себя так же');
   {
-    const body = m.slice(m.indexOf('async function sellAtAsk'), m.indexOf('async function cancelOrder'));
-    ok(/let sz = parseFloat\(size\);/.test(body), 'количество можно уменьшить');
-    ok(/Свободно меньше выбранного/.test(body), 'спрашивается тем же вопросом');
-    ok(/sz = avail;[\s\S]{0,60}size = String\(avail\);/.test(body),
-      'и в ордер, и в расчёт прибыли уходит свободное');
-    ok(/Продать свободные/.test(body), 'предложение названо');
-    ok(/нет вовсе/.test(body), 'а когда свободного нет — это ошибка');
+    const helper = m.slice(m.indexOf('async function sellableSizeM'), m.indexOf('async function sellAtAsk'));
+    ok(helper.length > 200, 'проверка вынесена в одну функцию, как на десктопе');
+    ok(/Свободно меньше выбранного/.test(helper), 'спрашивается тем же вопросом');
+    ok(/Продать свободные/.test(helper), 'предложение названо');
+    ok(/нет вовсе/.test(helper), 'а когда свободного нет — это ошибка');
+    ok(/снятая заявка/.test(helper) && /снятая заявка/.test(d), 'причина названа в обеих вёрстках');
     ok(!/Биржа отклоняет такой ордер целиком, поэтому он даже не отправлен/.test(m),
       'мобильная: тупикового окна больше нет');
-    // Обе вёрстки объясняют разницу одинаково: расхождение между ними однажды
-    // уже кончилось тем, что телефон звал покупать запрещённое на десктопе.
-    ok(/снятая заявка/.test(body) && /снятая заявка/.test(d), 'причина названа в обеих вёрстках');
+    // Все три кнопки продажи на телефоне — через неё же
+    for (const fn of ['sellAtAsk', 'sellStopInlineM', 'sellAllMarketM']) {
+      const body = m.slice(m.indexOf('function ' + fn), m.indexOf('function ' + fn) + 1600);
+      ok(/await sellableSizeM\(coin, s(?:z|ize)\)/.test(body), fn + ': спрашивает свободный остаток');
+      ok(/== null\) return;/.test(body), fn + ': и при отказе ордер не уходит');
+    }
+    // Затраты делятся в той же доле — иначе убыток в окне завышен
+    ok((m.match(/parseFloat\(actualCost\) \|\| 0\) \* \(/g) || []).length >= 2,
+      'затраты делятся в той же доле, что и монеты');
+    ok(/cost = \(parseFloat\(cost\) \|\| 0\) \* \(wantedS > 0/.test(m), 'и у стоп-лимита тоже');
+    ok(/let sz = parseFloat\(size\);/.test(m), 'количество на телефоне можно уменьшить');
   }
 
   console.log(bad ? '\nПЛОХО: ' + bad : '\nвсё зелено');

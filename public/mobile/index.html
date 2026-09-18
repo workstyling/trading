@@ -4106,6 +4106,15 @@
         showOrderError('Стоп ниже лимита', 'Стоп должен быть ВЫШЕ лимитной цены, иначе ордер сработает уже после того, как цена прошла лимитную, и не исполнится.');
         return;
       }
+      // Стоп-лимит на выбранное количество биржа отклонит так же, как обычную
+      // лимитку: свободного может быть меньше.
+      const wantedS = parseFloat(size) || 0;
+      const okSizeS = await sellableSizeM(coin, size);
+      if (okSizeS == null) return;
+      size = String(okSizeS);
+      // Затраты в той же доле, что и монеты: иначе предупреждение об убытке
+      // назовёт число, которого в этом ордере нет.
+      cost = (parseFloat(cost) || 0) * (wantedS > 0 ? okSizeS / wantedS : 0);
       // Убыток называется словом: цены сами по себе не говорят, что это минус.
       const qty = parseFloat(size) || 0;
       const spent = parseFloat(cost) || 0;
@@ -4154,9 +4163,15 @@
     }
 
     async function sellAllMarketM(pair, size, coin, actualCost) {
-      const qty = parseFloat(size);
-      if (!(qty > 0)) { toast('Нечего продавать', 'error'); return; }
-      const cost = parseFloat(actualCost) || 0;
+      // Рыночную продажу биржа отклоняет так же целиком: спрашиваем до того,
+      // как открывать окно с расчётом по стакану.
+      const wantedM = parseFloat(size);
+      const okSizeM = await sellableSizeM(coin, size);
+      if (okSizeM == null) return;
+      size = String(okSizeM);                    // именно это уходит в ордер
+      const qty = okSizeM;
+      // Затраты в той же доле, что и монеты.
+      const cost = (parseFloat(actualCost) || 0) * (wantedM > 0 ? okSizeM / wantedM : 0);
       const feePct = parseFloat(tradingSettings.marketFee) || 0.25;
 
       const ov = document.createElement('div');
@@ -4327,6 +4342,49 @@
       };
     }
 
+    // СКОЛЬКО МОНЕТЫ НА САМОМ ДЕЛЕ МОЖНО ОТПРАВИТЬ НА ПРОДАЖУ.
+    //
+    // Выбранное в строке — сумма исполненных покупок. Свободного бывает
+    // меньше по двум причинам: часть висит в открытом ордере (hold), либо
+    // часть уже продана снятой заявкой, чья исполненная доля не попала в
+    // выбранное. Биржа отклоняет ордер целиком, поэтому спрашиваем ДО отправки.
+    //
+    // Раньше тут был тупик: окно говорило «продавать нечего» и закрывалось. Но
+    // продавать как раз есть что — просто меньше, чем считает строка, и человек
+    // оставался с кнопкой, которая не работает и не объясняет, что делать.
+    // Предлагаем то количество, которое пройдёт, и называем разницу.
+    //
+    // Возвращает число для продажи или null, если продавать не надо.
+    async function sellableSizeM(coin, wanted) {
+      const sz = parseFloat(wanted);
+      if (!(sz > 0)) { toast('Нечего продавать', 'error'); return null; }
+      let bal = null;
+      try {
+        const bj = await (await fetch('/get-balances')).json();
+        bal = ((bj && bj.balances) || []).find(b => b.currency === coin) || null;
+      } catch { return sz; }        // баланс не отдали — отказ биржи покажем как есть
+      const avail = bal ? parseFloat(bal.available) : null;
+      if (!(avail != null && Number.isFinite(avail))) return sz;
+      if (avail + 1e-9 >= sz) return sz;
+      const hold = bal && parseFloat(bal.hold) > 0 ? parseFloat(bal.hold) : 0;
+      if (!(avail > 0)) {
+        showOrderError('Продавать нечего',
+          'Свободного <b>' + coin + '</b> нет вовсе' +
+          (hold > 0 ? ': все <b>' + fmt(hold) + '</b> заморожены в открытом ордере. Сними его и повтори.'
+            : '. Обнови страницу — остаток мог измениться.'));
+        return null;
+      }
+      const okLess = await confirmTrade(
+        '<strong>Свободно меньше выбранного</strong><br><br>' +
+        'Выбрано <b>' + fmt(sz) + ' ' + coin + '</b>, свободно <b>' + fmt(avail) + '</b> — на <b>' +
+        fmt(sz - avail) + '</b> меньше.<br><br>' +
+        (hold > 0
+          ? 'Заморожено в открытом ордере: <b>' + fmt(hold) + '</b>. Чтобы продать всё, сначала сними тот ордер.'
+          : 'Разницу, скорее всего, уже продала снятая заявка: её исполненная часть не попала в выбранное.') +
+        '<br><br>Продать свободные <b>' + fmt(avail) + '</b>?');
+      return okLess ? avail : null;
+    }
+
     async function sellAtAsk(pair, size, avgBuyPrice, actualCost) {
       const coin = pair.split('-')[0];
       const buyFee = (tradingSettings.tradeFee || 0.125) / 100;   // комиссия лимитки на покупке
@@ -4345,43 +4403,15 @@
       if (!askPrice) askPrice = monitorPriceCache[pair]?.ask;
       if (!askPrice) { toast('No ask price', 'error'); return; }
 
-      // СКОЛЬКО МОНЕТЫ НА САМОМ ДЕЛЕ МОЖНО ОТПРАВИТЬ НА ПРОДАЖУ.
-      //
-      // Выбранное в строке — сумма исполненных покупок. Свободного бывает
-      // меньше по двум причинам: часть висит в открытом ордере (hold), либо
-      // часть уже продана снятой заявкой, чья исполненная доля не попала в
-      // выбранное. Биржа отклоняет ордер целиком, поэтому спрашиваем ДО.
-      //
-      // Раньше тут был тупик: окно говорило «продавать нечего» и закрывалось.
-      // Но продавать как раз есть что — просто меньше, чем считает строка, и
-      // человек оставался с кнопкой, которая не работает и не объясняет, что
-      // делать. Предлагаем то, что пройдёт, и называем разницу.
-      try {
-        const bj = await (await fetch('/get-balances')).json();
-        const bal = ((bj && bj.balances) || []).find(b => b.currency === coin);
-        const avail = bal ? parseFloat(bal.available) : null;
-        if (avail != null && Number.isFinite(avail) && avail + 1e-9 < sz) {
-          const hold = bal && parseFloat(bal.hold) > 0 ? parseFloat(bal.hold) : 0;
-          if (!(avail > 0)) {
-            showOrderError('Продавать нечего',
-              'Свободного <b>' + coin + '</b> нет вовсе' +
-              (hold > 0 ? ': все <b>' + fmt(hold) + '</b> заморожены в открытом ордере. Сними его и повтори.'
-                : '. Обнови страницу — остаток мог измениться.'));
-            return;
-          }
-          const okLess = await confirmTrade(
-            '<strong>Свободно меньше выбранного</strong><br><br>' +
-            'Выбрано <b>' + fmt(sz) + ' ' + coin + '</b>, свободно <b>' + fmt(avail) + '</b> — на <b>' +
-            fmt(sz - avail) + '</b> меньше.<br><br>' +
-            (hold > 0
-              ? 'Заморожено в открытом ордере: <b>' + fmt(hold) + '</b>. Чтобы продать всё, сначала сними тот ордер.'
-              : 'Разницу, скорее всего, уже продала снятая заявка: её исполненная часть не попала в выбранное.') +
-            '<br><br>Продать свободные <b>' + fmt(avail) + '</b>?');
-          if (!okLess) return;
-          sz = avail;
-          size = String(avail);
-        }
-      } catch { /* баланс не отдали — идём дальше, отказ биржи покажем как есть */ }
+      const okSize = await sellableSizeM(coin, sz);
+      if (okSize == null) return;
+      if (okSize !== sz) {
+        // Затраты делятся в той же доле, что и монеты: иначе прибыль в окне
+        // считается против денег, которых в этом ордере нет.
+        actualCost = (parseFloat(actualCost) || 0) * (sz > 0 ? okSize / sz : 0);
+        sz = okSize;
+        size = String(okSize);
+      }
 
       const effectiveReceived = sz * askPrice * (1 - sellFee);
       // Приоритет — фактические затраты с уплаченной комиссией (total_value_after_fees), как в мониторе
