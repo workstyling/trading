@@ -2803,12 +2803,27 @@ async function checkFilledOrders(fresh) {
         `💰 Total: <b>$${fmtNumTg(val)}</b>\n` +
         `🧾 Fee: $${fmtNumTg(fees)}\n` +
         `🕒 ${o.created_time ? new Date(o.created_time).toISOString().slice(0, 16).replace('T', ' ') + ' UTC' : '—'}`;
-      const sent = await sendTelegram(text, 'HTML');
+      // ОРДЕР ЗАНИМАЕТСЯ ДО ОЖИДАНИЯ, А НЕ ПОСЛЕ.
+      //
+      // Проверка идёт по расписанию раз в полминуты и вдобавок по нажатию
+      // клиента сразу после сделки — два вызова живут одновременно. Между
+      // «этого ордера ещё нет в обработанных» и отметкой стояло ожидание
+      // отправки в Telegram: окно, в которое второй вызов заходил на тот же
+      // ордер. По ARB покупка 2807.03 записалась в журнал дважды, и журнал
+      // держал позицию открытой на $492.63 при пустом кошельке — а в Telegram
+      // на одну покупку пришло два сообщения.
+      //
+      // Отметка синхронная и идёт первой: до неё в этой итерации нет ни
+      // одного await, и второму вызову нечего перехватывать.
       notifiedFills.push(o.order_id);
       changed = true;
-      console.log(`[fill-notify] ${o.product_id} ${o.side} filled, telegram=${sent}`);
-      // Журнал сделок: фиксируем вход/выход с контекстом рынка на момент исполнения
+      // Журнал сделок: фиксируем вход/выход с контекстом рынка на момент
+      // исполнения. Учёт стоит в том же синхронном куске, что и отметка:
+      // если процесс умрёт на отправке сообщения, ордер останется отмеченным,
+      // а в журнал не попадёт уже никогда.
       try { journalOnFill(o); } catch (e) { console.error('[journal] onFill', e.message); }
+      const sent = await sendTelegram(text, 'HTML');
+      console.log(`[fill-notify] ${o.product_id} ${o.side} filled, telegram=${sent}`);
       // Купили — монета в избранном, сторож безубытка включён. Продали —
       // сторож пересчитан по остатку или снят, если вышли полностью.
       try {
@@ -4300,7 +4315,9 @@ function journalReplay(buys, sells) {
     size -= covered; rest -= costBasis; realized += pnl; outsideTotal += outside;
     perSell.push({ orderId: e.orderId, pnl: Math.round(pnl * 100) / 100, covered, outside });
   }
-  return { realized, perSell, outside: outsideTotal };
+  // size и rest нужны для пересчёта ОТКРЫТОЙ позиции: у неё остаток монет и
+  // остаток себестоимости — не итог, а текущее состояние.
+  return { realized, perSell, outside: outsideTotal, size, rest };
 }
 
 // Разовая починка записей, посчитанных до исправления.
@@ -4363,6 +4380,52 @@ function journalUnmarkDustPartial() {
 }
 journalUnmarkDustPartial();
 
+// Разовый пересчёт позиции, в которой один ордер учтён дважды.
+//
+// Два одновременных вызова проверки исполнений записали покупку ARB 2807.03
+// дважды: журнал держал позицию открытой на $492.63, хотя кошелёк по ARB был
+// пуст, а настоящий итог круга — не +$40.29 при открытом остатке, а +$9.53
+// закрытой сделкой. Гонка закрыта, но уже записанное надо привести в порядок:
+// один номер ордера не может быть двумя разными исполнениями.
+//
+// Пересчитываем по тем же ордерам тем же правилом, что и живой учёт, и, если
+// после этого монет не осталось, закрываем позицию — держать открытой пустую
+// значит и дальше показывать вложенными деньги, которых нет.
+function journalDedupeOpen() {
+  let fixed = 0;
+  for (const [coin, pos] of Object.entries(journal.open || {})) {
+    const uniq = (list) => {
+      const seen = new Set(), out = [];
+      for (const x of list || []) { if (seen.has(x.orderId)) continue; seen.add(x.orderId); out.push(x); }
+      return out;
+    };
+    const buys = uniq(pos.buys), sells = uniq(pos.sells);
+    const dropped = (pos.buys || []).length - buys.length + (pos.sells || []).length - sells.length;
+    if (!dropped) continue;
+    const wasSize = pos.totalSize, wasRest = pos.restCost;
+    const again = journalReplay(buys, sells);
+    pos.buys = buys; pos.sells = sells;
+    for (const s of pos.sells) {
+      const r = again.perSell.find(x => x.orderId === s.orderId);
+      if (r) s.pnl = r.pnl;
+    }
+    pos.origSize = buys.reduce((a, x) => a + x.size, 0);
+    pos.costTotal = buys.reduce((a, x) => a + x.usd, 0);
+    pos.totalSize = again.size;
+    pos.restCost = again.rest;
+    pos.realized = again.realized;
+    fixed++;
+    console.log('[journal] ' + coin + ': убрано повторов ордеров ' + dropped +
+      ', остаток ' + wasSize + ' -> ' + pos.totalSize +
+      ', затраты $' + wasRest.toFixed(2) + ' -> $' + pos.restCost.toFixed(2));
+    const lastT = [...buys, ...sells].reduce((m, x) => Math.max(m, x.t || 0), 0) || Date.now();
+    journalCloseIfFlat(coin, pos, lastT);
+  }
+  if (fixed) saveJournal();
+  return fixed;
+}
+journalDedupeOpen();
+
 // Контекст рынка на момент входа — только из уже готовых кешей, без лишних запросов
 function captureEntryContext(coin) {
   const sc = latestScores[coin];
@@ -4392,6 +4455,21 @@ function journalOnFill(o) {
   if (size <= 0 || usd <= 0) return;
   const price = parseFloat(o.average_filled_price) || 0;
   const t = o.created_time ? new Date(o.created_time).getTime() : Date.now();
+
+  // ОДИН ОРДЕР УЧИТЫВАЕТСЯ ОДИН РАЗ, КЕМ БЫ УЧЁТ НИ БЫЛ ВЫЗВАН.
+  //
+  // Защита от повтора стояла только у того, кто вызывает: список обработанных
+  // исполнений. Он не спасал от двух вызовов сразу — по ARB покупка 2807.03
+  // легла в журнал дважды и оставила позицию открытой на $492.63 при пустом
+  // кошельке. Тот вызов исправлен, но деньги считает эта функция, и она
+  // обязана быть защищена сама: сверка с биржей уже проверяет ордер по
+  // номеру, а живой учёт — нет.
+  const already = journal.open[coin] &&
+    [...journal.open[coin].buys, ...journal.open[coin].sells].some(x => x.orderId === o.order_id);
+  if (already) {
+    console.log('[journal] ' + coin + ': ордер ' + String(o.order_id).slice(0, 8) + ' уже учтён — пропуск');
+    return;
+  }
 
   if (o.side === 'BUY') {
     let pos = journal.open[coin];
