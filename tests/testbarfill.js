@@ -13,9 +13,15 @@ const h = fs.readFileSync('public/index.html', 'utf8');
 // Крошечный DOM: шкала, группа монеты и поле лимитки. Больше обработчику не нужно.
 function mkScale({ coin = 'ENA', withInput = true, filled = 100, spent = 2500, buyPrice = 0.25 } = {}) {
   const alerts = [], copied = [], events = [];
+  const classes = [], flashes = [];
   const input = withInput ? {
-    id: 'limitSellPrice_' + coin, value: '',
+    id: 'limitSellPrice_' + coin, value: '', offsetWidth: 90,
     dispatchEvent(e) { events.push(e.type); return true; },
+    classList: {
+      add: (c) => { classes.push(c); flashes.push('+' + c); },
+      remove: (c) => { const i = classes.indexOf(c); if (i >= 0) classes.splice(i, 1); flashes.push('-' + c); },
+      contains: (c) => classes.includes(c),
+    },
   } : null;
   const group = { dataset: { coin } };
   const bar = {
@@ -50,9 +56,11 @@ function mkScale({ coin = 'ENA', withInput = true, filled = 100, spent = 2500, b
   };
   ctx.document.execCommand = ctx.document.execCommand;
   vm.createContext(ctx);
-  // roundToTick — своя, настоящая
+  // roundToTick и подсветка — настоящие, из страницы
   const ri = h.indexOf('function roundToTick');
   vm.runInContext(h.slice(ri, h.indexOf('\n    }', ri) + 6), ctx);
+  const fi = h.indexOf('function flashLimitInput');
+  vm.runInContext(h.slice(fi, h.indexOf('\n    }', fi) + 6), ctx);
   // Обвязка шкалы как есть, обёрнутая в функцию с нашим контейнером
   const from = h.indexOf("const bar = container.querySelector('.price-progress-bar');");
   const to = h.indexOf("      });\n      // Show real balances from cache", from);
@@ -60,7 +68,7 @@ function mkScale({ coin = 'ENA', withInput = true, filled = 100, spent = 2500, b
     h.slice(from, to).replace(/document\.execCommand\('copy'\)/, 'document.execCommand()') +
     '\n};', ctx);
   ctx.wire(container);
-  return { container, input, alerts, copied, events, ctx,
+  return { container, input, alerts, copied, events, ctx, classes, flashes,
     click: (x) => container._h.click({ clientX: x }) };
 }
 
@@ -79,6 +87,34 @@ console.log('\nНажатие ставит цену в поле');
   ok(/В поле лимита/.test(s.alerts[0] || ''), 'сказано, что произошло', s.alerts[0]);
   ok(/этот ордер/.test(s.alerts[0] || '') && /вся выбранная позиция/.test(s.alerts[0] || ''),
     'и оба результата по-прежнему названы');
+  ok(s.classes.includes('limit-set-flash'), 'поле подсвечено — иначе подмена числа в другом углу строки проходит мимо глаза');
+}
+
+console.log('\nПодсветка повторяется на каждом нажатии');
+{
+  // Вторая подсветка нужнее первой: поле уже не пустое, и меняются две цифры
+  // в середине. Пока класс висит, анимация второй раз не запускается — значит
+  // его надо снять и вернуть, и именно в таком порядке.
+  const s = mkScale();
+  s.click(40);
+  s.click(160);
+  ok(s.flashes.join(' ') === '-limit-set-flash +limit-set-flash -limit-set-flash +limit-set-flash',
+    'класс снимается и ставится заново каждый раз', s.flashes.join(' '));
+  ok(s.classes.filter(c => c === 'limit-set-flash').length === 1, 'и не копится по разу за нажатие');
+  ok(/void el\.offsetWidth/.test(h), 'между снятием и возвратом стоит перезапуск анимации');
+  ok(/animation: limitSetFlash/.test(h) && /@keyframes limitSetFlash/.test(h), 'сама анимация описана');
+  // Короткая: это отметка о событии, а не состояние поля
+  const dur = (h.match(/animation: limitSetFlash ([\d.]+)s/) || [])[1];
+  ok(dur && Number(dur) > 0 && Number(dur) <= 1.2, 'и она короткая', dur + 'с');
+}
+
+console.log('\nПодсветка и там, где цену ставят шаги стакана');
+{
+  // Цена приезжает в поле двумя путями: нажатием по шкале и пересчётом по
+  // стакану. Подтверждение должно быть одинаковым, иначе один из путей учит
+  // не доверять полю.
+  ok(/pi\.value = String\(px\.limit\); previewLimitSell\(coin, size, cost\); flashLimitInput\(pi\);/.test(h),
+    'пересчёт по стакану тоже подсвечивает поле');
 }
 
 console.log('\nРазные места шкалы дают разные цены');

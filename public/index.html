@@ -1502,6 +1502,35 @@
       animation: priceFlash 0.5s ease;
     }
 
+    /* Цена, приехавшая в поле сама, обязана себя показать.
+       Поле лимитки стоит в стороне от шкалы: смотришь на полосу, а число
+       меняется в другом углу строки. Особенно при повторном нажатии — поле
+       уже не пустое, меняются две цифры в середине, и подмена проходит мимо
+       глаза. Подсветка короткая: это отметка о событии, а не состояние. */
+    .limit-set-flash {
+      animation: limitSetFlash 0.7s ease;
+    }
+
+    @keyframes limitSetFlash {
+      0% {
+        background: rgba(245, 197, 24, 0.35);
+        border-color: var(--yellow);
+        box-shadow: 0 0 0 3px rgba(245, 197, 24, 0.25);
+      }
+
+      60% {
+        background: rgba(245, 197, 24, 0.16);
+        border-color: var(--yellow);
+        box-shadow: 0 0 0 2px rgba(245, 197, 24, 0.1);
+      }
+
+      100% {
+        background: var(--s3);
+        border-color: var(--b1);
+        box-shadow: none;
+      }
+    }
+
     @keyframes priceFlash {
       0% {
         background: rgba(48, 209, 88, 0.25);
@@ -10201,7 +10230,7 @@
         const pi = document.getElementById('limitSellPrice_' + coin);
         // Цена подставляется в поле обычной лимитки — значит и её результат
         // надо пересчитать, иначе рядом останется число от прежней цены.
-        if (pi) { pi.value = String(px.limit); previewLimitSell(coin, size, cost); }
+        if (pi) { pi.value = String(px.limit); previewLimitSell(coin, size, cost); flashLimitInput(pi); }
         if (info) setLiveHtml(info, sellStepInfoHtml(px.stop, px.limit, size, cost, px.stuck, px.short, px.levels, ladder[1]));
       } catch (e) {
         if (info) info.textContent = 'стакан недоступен';
@@ -10281,6 +10310,19 @@
     // ближайшее число (строку стоп-лимита) и считал его ответом. А это ответ
     // на другой вопрос: там тейкер, потому что сработавший стоп забирает
     // встречную заявку, а простая лимитка стоит в стакане и платит мейкера.
+    // Короткая подсветка поля, в которое цену поставили не руками.
+    //
+    // Класс снимаем перед тем, как поставить: пока он висит, та же анимация
+    // второй раз не запускается — и второе нажатие подряд не мигнуло бы
+    // вовсе, то есть подтверждения не было бы именно там, где оно нужнее
+    // всего: когда поле уже не пустое и меняются две цифры в середине.
+    function flashLimitInput(el) {
+      if (!el || !el.classList) return;
+      el.classList.remove('limit-set-flash');
+      void el.offsetWidth;                       // перезапуск анимации
+      el.classList.add('limit-set-flash');
+    }
+
     function previewLimitSell(coin, size, cost) {
       const el = document.getElementById('limitSellPnl_' + coin);
       const input = document.getElementById('limitSellPrice_' + coin);
@@ -13513,6 +13555,7 @@ Requirements:
             // второй раз рядом: две арифметики по одной позиции однажды
             // разойдутся, и разойдутся молча.
             limitInput.dispatchEvent(new Event('input', { bubbles: true }));
+            flashLimitInput(limitInput);
           }
           const money = value => (value >= 0 ? '+$' : '−$') + Math.abs(value).toFixed(2);
           showCustomAlert((limitInput ? `В поле лимита: $${priceStr}` : `Скопировано: $${priceStr}`) +
