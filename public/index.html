@@ -10394,13 +10394,10 @@
         const data = await res.json();
         if (data.success) {
           showCustomAlert('Order cancelled!');
-          // Remove from selectedOrders
-          const idx = selectedOrders.indexOf(orderId);
-          if (idx > -1) {
-            selectedOrders.splice(idx, 1);
-            saveSelectedOrders();
-          }
-          await loadLatestOrders();
+          // Из выбранного убираем только то, по чему ничего не прошло: снятая
+          // заявка могла успеть продать часть объёма. Список ордеров эта же
+          // проверка и перезагружает свежим.
+          await dropFromSelectedIfEmpty(orderId);
           loadUsdBalance(); // Refresh balance after cancel
         } else {
           showCustomAlert('Error: ' + (data.error || 'Unknown error'), true);
@@ -10410,18 +10407,42 @@
       }
     }
 
+    // СНЯТАЯ ЗАЯВКА МОГЛА УСПЕТЬ ИСПОЛНИТЬСЯ ЧАСТИЧНО.
+    //
+    // Убирать её из выбранного нельзя, пока не видно, сколько по ней прошло:
+    // проданные монеты выпадают из расчёта позиции, и панель предлагает
+    // продать то, чего уже нет. По USELESS так и вышло — 37.80 ушли снятой
+    // заявкой, панель продолжала считать 11858.70, а в кошельке лежало
+    // 11820.90, и биржа отклоняла продажу целиком.
+    //
+    // Смотреть надо ПОСЛЕ отмены и по свежим данным. Прежняя проверка брала
+    // снимок в памяти ДО отмены: он отстаёт до восьми секунд, а исполниться
+    // заявка могла в последнюю секунду перед нажатием. Вторая кнопка отмены,
+    // в таблице ордеров, не проверяла вовсе и снимала из выбранного всегда.
+    async function dropFromSelectedIfEmpty(orderId) {
+      let fresh = null;
+      // Отмена доходит до биржи не мгновенно; ждём, пока статус перестанет
+      // быть «в стакане» — после этого исполненное уже не изменится.
+      for (const wait of [300, 1200]) {
+        await new Promise(r => setTimeout(r, wait));
+        try { await loadLatestOrders(true); } catch { }
+        fresh = (allOrders || []).find(o => o.order_id === orderId);
+        const st = String((fresh && fresh.status) || '').toUpperCase();
+        if (fresh && st !== 'OPEN' && st !== 'PENDING' && st !== 'QUEUED') break;
+      }
+      const filled = fresh ? parseFloat(fresh.filled_size || 0) : NaN;
+      // Ордера не видно — оставляем в выбранном. Потерять исполнение хуже, чем
+      // оставить лишнюю строку: её видно и снять можно руками.
+      if (!Number.isFinite(filled) || filled > 0) return;
+      selectedOrders = selectedOrders.filter(id => id !== orderId);
+      saveSelectedOrders();
+    }
+
     // Cancel order
     async function cancelOrderFromSelected(orderId, coin) {
       if (!confirm(`Cancel ${coin} order ${orderId.slice(0,8)}...?`)) return;
-      // Check if order has any fills before cancelling
-      const order = allOrders.find(o => o.order_id === orderId);
-      const hasFills = order && parseFloat(order.filled_size || 0) > 0;
       await cancelOrder(orderId);
-      // Remove from selected if no fills
-      if (!hasFills) {
-        selectedOrders = selectedOrders.filter(id => id !== orderId);
-        saveSelectedOrders();
-      }
+      await dropFromSelectedIfEmpty(orderId);
     }
 
     async function cancelOrder(orderId) {
@@ -14065,13 +14086,11 @@ Requirements:
             const data = await res.json();
             if (data.success) {
               showCustomAlert('Order cancelled!');
-              // Remove from selectedOrders
-              const idx = selectedOrders.indexOf(orderId);
-              if (idx > -1) {
-                selectedOrders.splice(idx, 1);
-                saveSelectedOrders();
-              }
-              await loadLatestOrders();
+              // Из выбранного убираем только то, по чему ничего не прошло:
+              // снятая заявка могла успеть продать часть объёма, и эти монеты
+              // обязаны остаться в расчёте позиции. Список ордеров эта же
+              // проверка и перезагружает свежим.
+              await dropFromSelectedIfEmpty(orderId);
             } else {
               showCustomAlert('Failed to cancel: ' + (data.error || 'Unknown error'), true);
               btn.disabled = false;

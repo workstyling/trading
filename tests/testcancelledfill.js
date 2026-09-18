@@ -113,5 +113,68 @@ console.log('\nУведомление не выдаёт часть за цело
   ok(/Заявка снята, исполнилось/.test(loop), 'и сказано, какая доля объёма прошла');
 }
 
-console.log(bad ? '\nПЛОХО: ' + bad : '\nвсё зелено');
-process.exit(bad ? 1 : 0);
+(async () => {
+  console.log('\nОтмена не выбрасывает проданное из панели');
+  {
+    // Вторая половина той же ошибки, уже в панели. Кнопка отмены в таблице
+    // ордеров снимала ордер из выбранного ВСЕГДА, а вторая кнопка смотрела на
+    // снимок в памяти ДО отмены — он отстаёт до восьми секунд, а исполниться
+    // заявка могла в последнюю секунду перед нажатием. Проданные монеты
+    // выпадали из расчёта, и панель предлагала продать то, чего уже нет.
+    const h = fs.readFileSync('public/index.html', 'utf8');
+    const i = h.indexOf('async function dropFromSelectedIfEmpty');
+    const j = h.indexOf('\n    }', i) + 6;
+    const mk = (passes) => {
+      let n = 0;
+      const c = { Number, String, parseFloat, Promise, setTimeout,
+        allOrders: [], selectedOrders: ['a', 'b'], saved: 0,
+        loadLatestOrders: async () => { c.allOrders = passes[Math.min(n, passes.length - 1)]; n++; },
+        saveSelectedOrders: () => { c.saved++; } };
+      vm.createContext(c);
+      vm.runInContext(h.slice(i, j) + ';this.drop = dropFromSelectedIfEmpty;', c);
+      return c;
+    };
+    let c = mk([[{ order_id: 'a', status: 'CANCELLED', filled_size: '0' }]]);
+    await c.drop('a');
+    ok(c.selectedOrders.join() === 'b' && c.saved === 1,
+      'снятая заявка без исполнения убирается из выбранного', c.selectedOrders.join());
+
+    c = mk([[{ order_id: 'a', status: 'CANCELLED', filled_size: '37.8' }]]);
+    await c.drop('a');
+    ok(c.selectedOrders.join() === 'a,b' && c.saved === 0,
+      'снятая заявка с проданной частью остаётся — иначе монеты выпадут из расчёта');
+
+    c = mk([[]]);
+    await c.drop('a');
+    ok(c.selectedOrders.join() === 'a,b',
+      'ордера не видно — оставляем: потерять исполнение хуже, чем лишнюю строку');
+
+    // Отмена доходит до биржи не мгновенно: первый ответ ещё «в стакане»
+    c = mk([[{ order_id: 'a', status: 'OPEN', filled_size: '0' }],
+            [{ order_id: 'a', status: 'CANCELLED', filled_size: '37.8' }]]);
+    await c.drop('a');
+    ok(c.selectedOrders.join() === 'a,b',
+      'исполнение, доехавшее вторым ответом, тоже сохраняется');
+
+    // Обе кнопки отмены идут через одну проверку
+    ok(!/const hasFills = order && parseFloat\(order\.filled_size/.test(h),
+      'проверки по устаревшему снимку до отмены не осталось');
+    const calls = (h.match(/await dropFromSelectedIfEmpty\(orderId\)/g) || []).length;
+    ok(calls === 3, 'все три пути отмены проверяют одинаково', 'мест: ' + calls);
+    // Слепого снятия из выбранного не осталось ни в одном из них
+    for (const name of ['cancelOrderAndRemove', 'cancelOrderFromSelected']) {
+      const fn = h.slice(h.indexOf('function ' + name), h.indexOf('function ' + name) + 1200);
+      ok(!/selectedOrders\.splice/.test(fn), name + ': не снимает из выбранного вслепую');
+    }
+    const inline = h.slice(h.indexOf("showCustomAlert('Order cancelled!')", h.indexOf('cancelOrderAndRemove') + 2000));
+    ok(!/selectedOrders\.splice/.test(inline.slice(0, 700)), 'кнопка в таблице тоже');
+
+    // На телефоне отмена выбранного не трогает вовсе — там этой дыры нет
+    const m = fs.readFileSync('public/mobile/index.html', 'utf8');
+    const mc = m.slice(m.indexOf('async function cancelOrder(id)'), m.indexOf('async function cancelOrder(id)') + 600);
+    ok(!/selectedOrders/.test(mc), 'телефон при отмене выбранное не трогает — правка ему не нужна');
+  }
+
+  console.log(bad ? '\nПЛОХО: ' + bad : '\nвсё зелено');
+  process.exit(bad ? 1 : 0);
+})();
