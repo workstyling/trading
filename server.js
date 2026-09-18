@@ -4333,6 +4333,36 @@ function journalRepairClosed() {
 }
 journalRepairClosed();
 
+// Разовая чистка ложной пометки «частично».
+//
+// Пометка ставилась, когда непокрытая часть продажи была больше миллиардной
+// доли её размера. По DASH это оказались 6e-8 монеты — четыре десятитысячных
+// цента, то есть округление биржи, а не покупка за краем окна ордеров. Порог
+// исправлен, но запись с ложной пометкой уже лежит в файле и продолжает
+// показывать в панели оранжевое «частично» на чистой сделке.
+//
+// Трогаем только те записи, где непокрытое названо числом и это число не
+// стоит и цента. Записи с неизвестным выходом помечены по другой причине —
+// там продано меньше купленного, и пометка правдива.
+function journalUnmarkDustPartial() {
+  let cleaned = 0;
+  for (const rec of journal.closed || []) {
+    if (!rec.partial || rec.unknownExit) continue;
+    const marked = (rec.sells || []).filter(s => s.outside > 0);
+    if (!marked.length) continue;
+    if (marked.some(s => !(s.price > 0) || s.outside * s.price >= 0.01)) continue;
+    const were = marked.map(s => s.outside).join(',');
+    for (const s of marked) { delete s.covered; delete s.outside; }
+    delete rec.partial;
+    cleaned++;
+    console.log('[journal] снята ложная пометка «частично» с ' + rec.coin +
+      ': непокрыто ' + were + ' — это округление');
+  }
+  if (cleaned) saveJournal();
+  return cleaned;
+}
+journalUnmarkDustPartial();
+
 // Контекст рынка на момент входа — только из уже готовых кешей, без лишних запросов
 function captureEntryContext(coin) {
   const sc = latestScores[coin];

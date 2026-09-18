@@ -39,7 +39,8 @@ function load(closed, open = {}) {
   vm.createContext(ctx);
   const i = src.indexOf('// Пересчёт записи по её же ордерам');
   const j = src.indexOf('function journalStats()');
-  vm.runInContext(src.slice(i, j) + ';this.replay = journalReplay; this.repair = journalRepairClosed; this.onFill = journalOnFill;', ctx);
+  vm.runInContext(src.slice(i, j) + ';this.replay = journalReplay; this.repair = journalRepairClosed;' +
+    ' this.unmark = journalUnmarkDustPartial; this.onFill = journalOnFill;', ctx);
   return ctx;
 }
 
@@ -139,6 +140,43 @@ console.log('\nПыль — это не «продано больше купле
   ok(rec3 && rec3.partial === true, 'непокрытое на три копейки всё ещё помечается',
     '$' + (0.0005 * 58.68).toFixed(3));
   ok(/outside \* fill\.price >= 0\.01/.test(src), 'порог непокрытого задан в деньгах, а не в монетах');
+}
+
+console.log('\nСнятие ложной пометки с уже записанного');
+{
+  // Порог исправлен, но запись с ложной пометкой уже лежит в файле и
+  // продолжает показывать оранжевое «частично» на чистой сделке. Настоящая
+  // запись с боевого сервера: DASH 09-17, куплено 7.88050094, продано
+  // 7.880501 — разница 6e-8 монеты, четыре десятитысячных цента.
+  const DASH = {
+    coin: 'DASH', pnl: 10.51, pnlPct: 2.33, costTotal: 451.45, holdH: 0.4, partial: true,
+    entryAt: 1789660000000, closedAt: 1789661440000,
+    buys: [{ orderId: 'b1', price: 57.2013, size: 7.88050094, usd: 451.45, t: 1789660000000 }],
+    sells: [{ orderId: 's1', price: 58.68, size: 7.880501, usd: 461.96, pnl: 10.51,
+      covered: 7.88050094, outside: 5.999999963535174e-8, t: 1789661440000 }],
+  };
+  const ctx = load([DASH, O, VTHO]);
+  const cleaned = ctx.journal.closed.find(x => x.coin === 'DASH');
+  ok(cleaned.partial === undefined, 'ложная пометка снята при загрузке');
+  ok(cleaned.sells[0].outside === undefined && cleaned.sells[0].covered === undefined,
+    'и числа непокрытого убраны — их нечем объяснить');
+  ok(cleaned.pnl === 10.51, 'прибыль при этом не тронута');
+  const o = ctx.journal.closed.find(x => x.coin === 'O');
+  ok(o.partial === true && o.sells[0].outside > 0, 'настоящая неполная запись помечена по-прежнему',
+    '$' + (o.sells[0].outside * o.sells[0].price).toFixed(0) + ' непокрыто');
+
+  // Запись с неизвестным выходом помечена по другой причине: там продано
+  // МЕНЬШЕ купленного, и «частично» правдиво. Её трогать нельзя.
+  const CRO = { coin: 'CRO', pnl: 5.31, pnlPct: 0.21, costTotal: 2491.03, holdH: 177,
+    partial: true, unknownExit: true, unknownCost: 1197.5, entryAt: 1, closedAt: 2,
+    buys: [{ orderId: 'b1', price: 0.06, size: 41421.9, usd: 2491.03, t: 1 }],
+    sells: [{ orderId: 's1', price: 0.0605, size: 21516.2, usd: 1301.62, pnl: 5.31, t: 2 }] };
+  const ctx2 = load([CRO]);
+  ok(ctx2.journal.closed[0].partial === true, 'у записи с неизвестным выходом пометка остаётся');
+  ok(ctx2.saved === undefined, 'и файл ради неё не переписывается');
+
+  // Чистка не должна идти по кругу: она пишет в файл
+  ok(ctx.unmark() === 0, 'второй проход уже нечего снимать');
 }
 
 console.log('\nПочинка вызывается при загрузке');
