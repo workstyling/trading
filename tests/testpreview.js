@@ -64,8 +64,11 @@ ok(/\+\$/.test(txt()) && /var\(--green\)/.test(el.innerHTML), 'плюс и зе�
 
 console.log('\nСвязи в разметке');
 ok(/id="limitSellPnl_\$\{coin\}"/.test(h), 'место под результат есть');
-ok(/oninput="previewLimitSell\('\$\{coin\}','\$\{totalFilled\}',\$\{totalUSD\}\)"/.test(h),
-  'ввод пересчитывает');
+// Считает по ПРОДАВАЕМОМУ количеству, а не по выбранному в таблице: иначе
+// число рядом с полем относится к одному объёму, а в ордер уходит другой —
+// на экране −$40.22, в подтверждении −$41.64.
+ok(/oninput="previewLimitSell\('\$\{coin\}','\$\{sellNow\}',\$\{sellNowCost\}\)"/.test(h),
+  'ввод пересчитывает — и по тому же количеству, что уйдёт в ордер');
 ok(/pi\.value = String\(px\.limit\); previewLimitSell\(coin, size, cost\);/.test(h),
   'подстановка цены шагами тоже пересчитывает');
 ok(/container\.querySelectorAll\('\[id\^="limitSellPnl_"\]'\)/.test(h),

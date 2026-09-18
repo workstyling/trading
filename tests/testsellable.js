@@ -176,6 +176,44 @@ function load(balances) {
     }
   }
 
+  console.log('\nПанель считает по продаваемому количеству, а не по выбранному');
+  {
+    // «Выбрано» — сумма выбранных ордеров, и она бывает больше кошелька: по
+    // USELESS 11 858.70 против 11 820.90. Кнопки брали табличное число, и на
+    // каждую продажу выскакивало окно про расхождение — при том что человек
+    // продавал ровно то, что у него есть. А числа рядом с полем лимитки
+    // считались от одного количества, тогда как в ордер уходило другое: на
+    // экране −$40.22, в подтверждении −$41.64.
+    const pick = (selected, wallet) => Math.min(selected, wallet);
+    ok(pick(11858.7, 11820.9) === 11820.9, 'берётся кошелёк, когда его меньше');
+    // Больше выбранного не берём: в кошельке могут лежать монеты не из этой
+    // позиции, и «продать всё» не должно означать «продать и их».
+    ok(pick(11858.7, 50000) === 11858.7, 'и выбранное, когда кошелёк больше');
+    const share = (cost, sell, sel) => sel > 0 ? cost * (sell / sel) : 0;
+    ok(Math.abs(share(3078.12, 11820.9, 11858.7) - 3068.31) < 0.05,
+      'затраты делятся в той же доле', '$' + share(3078.12, 11820.9, 11858.7).toFixed(2));
+
+    ok(/const sellNow = Number\.isFinite\(walletFree\) \? Math\.min\(totalFilled, walletFree\) : totalFilled;/.test(d),
+      'продаваемое количество считается один раз на группу');
+    ok(/const sellNowCost = totalFilled > 0 \? totalUSD \* \(sellNow \/ totalFilled\) : 0;/.test(d),
+      'и его доля затрат тоже');
+    // Все кнопки и подписи в строке монеты берут его, а не табличное число
+    for (const call of ['sellAllCoin', 'sellAllMarket', 'sellAllLimit', 'sellStopInline',
+                        'previewLimitSell', 'recalcSellSteps', 'bumpSellStep', 'sellStepInfoHtml']) {
+      const uses = d.match(new RegExp(call + "\\([^)]{0,160}", 'g')) || [];
+      const row = uses.find(u => /sellNow|totalFilled|totalUSD/.test(u));
+      ok(row && /sellNow/.test(row) && !/totalFilled|totalUSD/.test(row),
+        call + ': берёт продаваемое количество', row && row.slice(0, 70));
+    }
+    // Расхождение объяснено прямо в строке, а не только в окне при нажатии
+    ok(/продать можно \$\{fmtSize\(sellNow\)\} — на \$\{fmtSize\(shortBy\)\} меньше/.test(d),
+      'разница названа в самой строке монеты');
+    ok(/const shortBy = totalFilled - sellNow;/.test(d), 'и посчитана явно');
+    // Кнопки исчезают, когда продавать нечего, а не предлагают ноль
+    ok(/\$\{sellNow > 0 \? `<button class="sell-all-btn"/.test(d),
+      'при нулевом остатке кнопок продажи нет');
+  }
+
   console.log('\nВсе кнопки продажи идут через одну проверку');
   {
     for (const fn of ['sellAtCurrentAsk', 'sellAllLimit', 'sellStopInline', 'sellAllMarket']) {

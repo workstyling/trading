@@ -13142,6 +13142,34 @@ Requirements:
               : `Save Profit ${profitText}`);
         const btnClass = `save-profit-btn ${groupProfit >= 0 ? 'profit-positive' : 'profit-negative'}`;
 
+        // СКОЛЬКО ЭТОЙ МОНЕТЫ РЕАЛЬНО МОЖНО ПРОДАТЬ ПРЯМО СЕЙЧАС.
+        //
+        // «Выбрано» — это сумма выбранных ордеров, и она бывает больше того,
+        // что лежит в кошельке: часть могла уйти снятой заявкой, чья
+        // исполненная доля не попала в выбранное, или висеть в открытом ордере.
+        //
+        // Кнопки должны предлагать именно это число, а не табличное. Иначе
+        // «продать всё» означает объём, который биржа отклонит, и на каждую
+        // продажу выскакивает окно про расхождение — при том что человек и
+        // правда продаёт ровно то, что у него есть. И числа рядом с полем
+        // лимитки считались от одного количества, а в ордер уходило другое:
+        // на экране −$40.22, в подтверждении −$41.64.
+        //
+        // Больше выбранного не берём: в кошельке могут лежать монеты не из
+        // этой позиции, и «продать всё» не должно означать «продать и их».
+        const walletRow = (balancesCache || []).find(h => h.currency === coin);
+        const walletFree = walletRow ? parseFloat(walletRow.available) : null;
+        const sellNow = Number.isFinite(walletFree) ? Math.min(totalFilled, walletFree) : totalFilled;
+        // Затраты — в той же доле, что и монеты: иначе прибыль считается против
+        // денег, которых в ордере нет.
+        const sellNowCost = totalFilled > 0 ? totalUSD * (sellNow / totalFilled) : 0;
+        // Расхождение объясняем прямо в строке: два числа рядом без объяснения
+        // выглядят как ошибка приложения, а не как проданная часть позиции.
+        const shortBy = totalFilled - sellNow;
+        const shortNote = shortBy > 0 && totalFilled > 0
+          ? ` <span style="color:#f5843a;font-size:10px;" title="Выбранные ордера дают ${fmtSize(totalFilled)}, а свободно ${fmtSize(sellNow)}. Разницу либо уже продала снятая заявка, чья исполненная часть не попала в выбранное, либо она висит в открытом ордере. Кнопки продажи считают по свободному.">продать можно ${fmtSize(sellNow)} — на ${fmtSize(shortBy)} меньше</span>`
+          : '';
+
         // Check if any order was created today
         const today = new Date().toDateString();
         const hasToday = orders.some(o => o.created_time && new Date(o.created_time).toDateString() === today);
@@ -13174,28 +13202,28 @@ Requirements:
         const isFav = favoriteCoins.has(coin);
         h += `<div class="coin-group" data-coin="${coin}" data-coin-pair="${pair}">
           <h4><span onclick="selectCoinForTrade('${coin}')" title="Выбрать ${coin} и открыть график 15m здесь" style="cursor:pointer;color:var(--blue);">${pair}</span>${todayBadge} <span onclick="toggleFavoriteCoin('${coin}')" title="${isFav ? 'Remove from favorites' : 'Add to favorites'}" style="cursor:pointer;font-size:16px;opacity:${isFav ? '1' : '0.25'};padding:0 6px;color:${isFav ? '#f5c518' : 'inherit'};">★</span><button class="select-coin-btn" onclick="selectCoinForBuy('${coin}')" title="Set for Buy">⬆</button></h4>
-          <div class="balance">Selected: ${fmtSize(filledShown)} ${coin} <span id="realBal_${coin}" data-live="1" style="color:var(--t2);font-size:10px;">(loading real balance...)</span> ${totalFilled > 0 ? `<button class="sell-all-btn" onclick="sellAllCoin('${pair}', '${totalFilled}', ${avgBuyPrice}, ${totalUSD})">SELL ALL</button> <button class="sell-all-btn mkt" onclick="sellAllMarket('${pair}', '${totalFilled}', '${coin}', ${totalUSD})" title="Продать всё ПО РЫНКУ. Диалог покажет реальную цену исполнения по стакану и прибыль, обновляя их каждую секунду.">SELL MKT</button> <button id="bew_${coin}" onclick="toggleBeWatch('${coin}','${pair}',${totalFilled},${totalUSD})" title="Telegram-алерт, когда Limit P&L дойдёт до 0 (сработает один раз и выключится)" style="padding:3px 8px;border:1px solid ${_beWatches[coin] ? 'var(--yellow)' : 'rgba(255,255,255,0.25)'};border-radius:5px;background:${_beWatches[coin] ? 'rgba(245,197,24,0.15)' : 'transparent'};color:${_beWatches[coin] ? 'var(--yellow)' : '#889'};font-size:10px;font-weight:600;cursor:pointer;">🔔 BE${_beWatches[coin] ? ' ON' : ''}</button>` : ''} <button class="${btnClass}" title="${openTitle}" onclick="saveGroupProfit('${coin}', ${groupProfit.toFixed(2)}, '${filledBuys.map(o => o.order_id).join(',')}', '${filledSells.map(o => o.order_id).join(',')}', ${buyCreatedDate ? `'${buyCreatedDate}'` : 'null'})" ${btnDisabled ? 'disabled' : ''}>${btnText}</button>
-          ${totalFilled > 0 ? (() => { const _st = sellSteps(coin); return `<span style="margin-left:10px;display:inline-flex;align-items:center;gap:4px;">
-            <input type="text" id="limitSellPrice_${coin}" placeholder="Limit price" value="${_st.limit != null ? _st.limit : ''}" oninput="previewLimitSell('${coin}','${totalFilled}',${totalUSD})" style="width:90px;padding:3px 6px;background:var(--s3);border:1px solid var(--b1);border-radius:5px;color:var(--t0);font-family:'JetBrains Mono',monospace;font-size:11px;outline:none;" autocomplete="off">
-            <button onclick="sellAllLimit('${pair}','${totalFilled}','${coin}',${totalUSD})" style="padding:3px 10px;border:1px solid var(--yellow);border-radius:5px;background:transparent;color:var(--yellow);font-size:10px;font-weight:600;cursor:pointer;">Sell Limit</button>
+          <div class="balance">Selected: ${fmtSize(filledShown)} ${coin} <span id="realBal_${coin}" data-live="1" style="color:var(--t2);font-size:10px;">(loading real balance...)</span>${shortNote} ${sellNow > 0 ? `<button class="sell-all-btn" onclick="sellAllCoin('${pair}', '${sellNow}', ${avgBuyPrice}, ${sellNowCost})">SELL ALL</button> <button class="sell-all-btn mkt" onclick="sellAllMarket('${pair}', '${sellNow}', '${coin}', ${sellNowCost})" title="Продать всё ПО РЫНКУ. Диалог покажет реальную цену исполнения по стакану и прибыль, обновляя их каждую секунду.">SELL MKT</button> <button id="bew_${coin}" onclick="toggleBeWatch('${coin}','${pair}',${totalFilled},${totalUSD})" title="Telegram-алерт, когда Limit P&L дойдёт до 0 (сработает один раз и выключится)" style="padding:3px 8px;border:1px solid ${_beWatches[coin] ? 'var(--yellow)' : 'rgba(255,255,255,0.25)'};border-radius:5px;background:${_beWatches[coin] ? 'rgba(245,197,24,0.15)' : 'transparent'};color:${_beWatches[coin] ? 'var(--yellow)' : '#889'};font-size:10px;font-weight:600;cursor:pointer;">🔔 BE${_beWatches[coin] ? ' ON' : ''}</button>` : ''} <button class="${btnClass}" title="${openTitle}" onclick="saveGroupProfit('${coin}', ${groupProfit.toFixed(2)}, '${filledBuys.map(o => o.order_id).join(',')}', '${filledSells.map(o => o.order_id).join(',')}', ${buyCreatedDate ? `'${buyCreatedDate}'` : 'null'})" ${btnDisabled ? 'disabled' : ''}>${btnText}</button>
+          ${sellNow > 0 ? (() => { const _st = sellSteps(coin); return `<span style="margin-left:10px;display:inline-flex;align-items:center;gap:4px;">
+            <input type="text" id="limitSellPrice_${coin}" placeholder="Limit price" value="${_st.limit != null ? _st.limit : ''}" oninput="previewLimitSell('${coin}','${sellNow}',${sellNowCost})" style="width:90px;padding:3px 6px;background:var(--s3);border:1px solid var(--b1);border-radius:5px;color:var(--t0);font-family:'JetBrains Mono',monospace;font-size:11px;outline:none;" autocomplete="off">
+            <button onclick="sellAllLimit('${pair}','${sellNow}','${coin}',${sellNowCost})" style="padding:3px 10px;border:1px solid var(--yellow);border-radius:5px;background:transparent;color:var(--yellow);font-size:10px;font-weight:600;cursor:pointer;">Sell Limit</button>
             <span id="limitSellPnl_${coin}" data-live="1" style="font-size:10px;"></span>
           </span>
           <div style="margin-top:7px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
             <span class="step-group" title="Глубина стопа в стакане: −1 это лучший бид, −2 второй и так далее. Мельче −1 нельзя: уровень 0 — лучший ask, то есть выше рынка, а стоп продажи срабатывает при движении цены ВНИЗ к нему — такой ордер биржа отклонит. Срабатывание идёт по последней цене сделки, и только после него в стакан уходит лимитка.">
               <span class="step-lbl">стоп</span>
-              <button class="step-btn" onclick="bumpSellStep('${coin}','${pair}','stop',1,'${totalFilled}',${totalUSD})" title="ближе к лучшему ask">+</button>
-              <input type="number" id="sellStepStop_${coin}" value="${_st.sd}" min="-499" max="-1" step="1" onchange="recalcSellSteps('${coin}','${pair}','${totalFilled}',${totalUSD})" class="step-inp">
-              <button class="step-btn" onclick="bumpSellStep('${coin}','${pair}','stop',-1,'${totalFilled}',${totalUSD})" title="глубже в биды">−</button>
+              <button class="step-btn" onclick="bumpSellStep('${coin}','${pair}','stop',1,'${sellNow}',${sellNowCost})" title="ближе к лучшему ask">+</button>
+              <input type="number" id="sellStepStop_${coin}" value="${_st.sd}" min="-499" max="-1" step="1" onchange="recalcSellSteps('${coin}','${pair}','${sellNow}',${sellNowCost})" class="step-inp">
+              <button class="step-btn" onclick="bumpSellStep('${coin}','${pair}','stop',-1,'${sellNow}',${sellNowCost})" title="глубже в биды">−</button>
             </span>
             <span class="step-group" title="Глубина лимитной цены. Всегда минимум на шаг глубже стопа: стоп обязан сработать раньше, чем цена дойдёт до лимитной, иначе лимитка уйдёт в стакан по цене, которой там уже нет. Меняешь стоп — лимит подстраивается сам.">
               <span class="step-lbl">ask</span>
-              <button class="step-btn" onclick="bumpSellStep('${coin}','${pair}','ask',1,'${totalFilled}',${totalUSD})" title="ближе к лучшему ask">+</button>
-              <input type="number" id="sellStepAsk_${coin}" value="${_st.ld}" min="-500" max="-2" step="1" onchange="recalcSellSteps('${coin}','${pair}','${totalFilled}',${totalUSD})" class="step-inp">
-              <button class="step-btn" onclick="bumpSellStep('${coin}','${pair}','ask',-1,'${totalFilled}',${totalUSD})" title="глубже в биды">−</button>
+              <button class="step-btn" onclick="bumpSellStep('${coin}','${pair}','ask',1,'${sellNow}',${sellNowCost})" title="ближе к лучшему ask">+</button>
+              <input type="number" id="sellStepAsk_${coin}" value="${_st.ld}" min="-500" max="-2" step="1" onchange="recalcSellSteps('${coin}','${pair}','${sellNow}',${sellNowCost})" class="step-inp">
+              <button class="step-btn" onclick="bumpSellStep('${coin}','${pair}','ask',-1,'${sellNow}',${sellNowCost})" title="глубже в биды">−</button>
             </span>
-            <button onclick="recalcSellSteps('${coin}','${pair}','${totalFilled}',${totalUSD})" title="Пересчитать по текущему стакану" style="padding:5px 10px;border:1px solid var(--b1);border-radius:6px;background:transparent;color:var(--t2);font-size:13px;cursor:pointer;">⟳</button>
-            <button onclick="sellStopInline('${pair}','${totalFilled}','${coin}',${totalUSD})" title="Поставить стоп-лимит на весь объём по этим числам" style="padding:6px 14px;border:none;border-radius:6px;background:linear-gradient(135deg,#f5c518,#d99e00);color:#1a1a1a;font-size:12px;font-weight:700;cursor:pointer;">Sell Stop</button>
-            <span id="sellStepInfo_${coin}" data-live="1" data-size="${totalFilled}" data-cost="${totalUSD}" style="font-size:11px;color:var(--t2);" title="Глубина в стакане: −1 лучший бид, дальше вниз. Стоп срабатывает по последней цене сделки, и только тогда выставляется лимитка.">${_st.stop != null && _st.limit != null ? sellStepInfoHtml(_st.stop, _st.limit, totalFilled, totalUSD, _st.stuck, _st.short, _st.levels, _st.ref) : '0 = лучший ask · нажми ⟳'}</span>
+            <button onclick="recalcSellSteps('${coin}','${pair}','${sellNow}',${sellNowCost})" title="Пересчитать по текущему стакану" style="padding:5px 10px;border:1px solid var(--b1);border-radius:6px;background:transparent;color:var(--t2);font-size:13px;cursor:pointer;">⟳</button>
+            <button onclick="sellStopInline('${pair}','${sellNow}','${coin}',${sellNowCost})" title="Поставить стоп-лимит на весь объём по этим числам" style="padding:6px 14px;border:none;border-radius:6px;background:linear-gradient(135deg,#f5c518,#d99e00);color:#1a1a1a;font-size:12px;font-weight:700;cursor:pointer;">Sell Stop</button>
+            <span id="sellStepInfo_${coin}" data-live="1" data-size="${sellNow}" data-cost="${sellNowCost}" style="font-size:11px;color:var(--t2);" title="Глубина в стакане: −1 лучший бид, дальше вниз. Стоп срабатывает по последней цене сделки, и только тогда выставляется лимитка.">${_st.stop != null && _st.limit != null ? sellStepInfoHtml(_st.stop, _st.limit, sellNow, sellNowCost, _st.stuck, _st.short, _st.levels, _st.ref) : '0 = лучший ask · нажми ⟳'}</span>
           </div>` ; })() : ''}</div>
 
           <table class="profit-table" data-pair="${pair}" data-filled="${totalFilled}" data-usd="${totalUSD}" data-avgbuy="${avgBuyPrice}">
