@@ -13132,8 +13132,17 @@ Requirements:
         //
         // Если монеты в кошельке нет — позиция закрыта, сколько бы ни
         // насчитала таблица. Это не догадка, это состояние счёта.
-        const walletRow = (balancesCache || []).find(h => h.currency === coin);
-        const walletFree = walletRow ? parseFloat(walletRow.available) + parseFloat(walletRow.hold || 0) : null;
+        // ОТСУТСТВИЕ МОНЕТЫ В СПИСКЕ — ЭТО НОЛЬ, А НЕ «НЕИЗВЕСТНО».
+        //
+        // Биржа не отдаёт счета с нулевым остатком, и сервер отсеивает
+        // оставшиеся: проданной до конца монеты в списке нет вовсе. Проверка
+        // искала строку кошелька, не находила и считала остаток неизвестным —
+        // то есть ровно на полностью проданной позиции, ради которой всё это и
+        // делалось, она молчала. По USELESS кнопка так и осталась серой.
+        const walletKnown = Array.isArray(balancesCache) && balancesCache.length > 0;
+        const walletRow = walletKnown ? balancesCache.find(h => h.currency === coin) : null;
+        const walletFree = !walletKnown ? null
+          : walletRow ? parseFloat(walletRow.available) + parseFloat(walletRow.hold || 0) : 0;
         const walletEmpty = Number.isFinite(walletFree) && restPriced && walletFree * avgBuyPrice < 1;
         const positionClosed = !oversold && (restUsd < 1 || walletEmpty);
         // «−0.000000» в строке остатка читается как поломка. Это та же пыль:
@@ -13244,7 +13253,7 @@ Requirements:
         // Здесь нужен именно СВОБОДНЫЙ остаток: замороженное в открытом ордере
         // на бирже не продать. Признак закрытой позиции выше считается по
         // всему кошельку — там вопрос другой: есть монета вообще или нет.
-        const walletAvail = walletRow ? parseFloat(walletRow.available) : null;
+        const walletAvail = !walletKnown ? null : walletRow ? parseFloat(walletRow.available) : 0;
         const sellNow = Number.isFinite(walletAvail) ? Math.min(totalFilled, walletAvail) : totalFilled;
         // Затраты — в той же доле, что и монеты: иначе прибыль считается против
         // денег, которых в ордере нет.
@@ -13805,7 +13814,18 @@ Requirements:
       } catch {}
     }
     function applyRealBalances() {
-      if (!balancesCache) return;
+      if (!Array.isArray(balancesCache)) return;
+      // Монет с нулевым остатком в списке нет вовсе: биржа их не отдаёт, а
+      // сервер отсеивает. Без этого строка навсегда оставалась «loading real
+      // balance...» — продал всё, а панель до перезагрузки уверяет, что ещё
+      // грузится, и отличить это от настоящей загрузки нечем.
+      const seen = new Set(balancesCache.map(h => h.currency));
+      document.querySelectorAll('[id^="realBal_"]').forEach(el => {
+        const cur = el.id.slice('realBal_'.length);
+        if (seen.has(cur)) return;
+        setText(el, '| Real: 0');
+        if (el.style.color !== 'var(--t1)') el.style.color = 'var(--t1)';
+      });
       balancesCache.forEach(h => {
         const el = document.getElementById('realBal_' + h.currency);
         if (el) {

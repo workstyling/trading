@@ -196,7 +196,9 @@ function load(balances) {
     // Здесь именно СВОБОДНЫЙ остаток: замороженное в открытом ордере не продать.
     ok(/const sellNow = Number\.isFinite\(walletAvail\) \? Math\.min\(totalFilled, walletAvail\) : totalFilled;/.test(d),
       'продаваемое количество считается один раз на группу');
-    ok(/const walletAvail = walletRow \? parseFloat\(walletRow\.available\) : null;/.test(d),
+    // Свободное, а не весь кошелёк; и отсутствие монеты в списке — это ноль,
+    // а не «неизвестно»: счета с нулевым остатком биржа не отдаёт вовсе.
+    ok(/const walletAvail = !walletKnown \? null : walletRow \? parseFloat\(walletRow\.available\) : 0;/.test(d),
       'и берётся из свободного, а не из всего кошелька');
     ok(/const sellNowCost = totalFilled > 0 \? totalUSD \* \(sellNow \/ totalFilled\) : 0;/.test(d),
       'и его доля затрат тоже');

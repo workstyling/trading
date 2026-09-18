@@ -81,6 +81,36 @@ console.log('\nЗакрытие подтверждает кошелёк, а пр
   ok(closed(37.8, 0.25917736, null) === false, 'без данных кошелька — как раньше, по остатку');
   ok(closed(37.8, 0.25917736, 37.8) === false, 'монета на месте — позиция открыта');
 
+  // ОТСУТСТВИЕ МОНЕТЫ В СПИСКЕ — ЭТО НОЛЬ.
+  //
+  // Биржа не отдаёт счета с нулевым остатком, и сервер отсеивает оставшиеся:
+  // проданной до конца монеты в списке нет вовсе. Проверка искала строку
+  // кошелька, не находила и считала остаток неизвестным — то есть молчала
+  // ровно на той позиции, ради которой делалась.
+  const wallet = (cache, coin) => {
+    const known = Array.isArray(cache) && cache.length > 0;
+    const row = known ? cache.find(h => h.currency === coin) : null;
+    return !known ? null : row ? parseFloat(row.available) + parseFloat(row.hold || 0) : 0;
+  };
+  const cacheNow = [{ currency: 'ENA', available: '14374.9', hold: '0' }];
+  ok(wallet(cacheNow, 'USELESS') === 0, 'проданной монеты в списке нет — значит её ноль');
+  ok(wallet(cacheNow, 'ENA') === 14374.9, 'а лежащая на счету читается как есть');
+  ok(wallet(null, 'USELESS') === null, 'список ещё не загружен — остаток неизвестен');
+  ok(wallet([], 'USELESS') === null, 'пустой список тоже считаем незагруженным, а не пустым кошельком');
+  ok(closed(37.8, 0.25917736, wallet(cacheNow, 'USELESS')) === true,
+    'на настоящем списке кошелька позиция USELESS закрывается');
+  ok(wallet([{ currency: 'CRO', available: '0', hold: '1000' }], 'CRO') === 1000,
+    'замороженное в ордере входит в остаток');
+  for (const [name, h] of [['index.html', d], ['mobile/index.html', m]]) {
+    ok(/const walletKnown = Array\.isArray\((balancesCache|coinBalances)\) && \1\.length > 0;/.test(h),
+      name + ': загруженность списка проверяется отдельно');
+    ok(/: walletRow \? parseFloat\(walletRow\.available\) \+ parseFloat\(walletRow\.hold \|\| 0\) : 0;/.test(h),
+      name + ': отсутствие монеты в списке читается нулём');
+  }
+  // Строка остатка не должна навсегда застревать на «загружается»
+  ok(/\| Real: 0/.test(d), 'десктоп: у проданной монеты показывается ноль, а не «loading»');
+  ok(/querySelectorAll\('\[id\^="realBal_"\]'\)/.test(d), 'и это делается для всех строк, а не только найденных');
+
   // ЗАЩИТА, РАДИ КОТОРОЙ ЗАПРЕТ И СТАВИЛСЯ, ОСТАЁТСЯ.
   // По CRO продана половина, вторая лежит в кошельке на $1292.
   ok(closed(21516.2, 0.06004784, 21516.2) === false,

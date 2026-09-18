@@ -3187,9 +3187,14 @@
         // продавшая часть объёма, в выбранное не попадает, и позиция выглядит
         // открытой на монеты, которых давно нет: по USELESS осталось 37.80 при
         // пустом кошельке, и записать прибыль было нельзя.
-        const walletRow = (coinBalances || []).find(b => b.currency === coin);
-        const walletTotal = walletRow
-          ? parseFloat(walletRow.available) + parseFloat(walletRow.hold || 0) : null;
+        // Отсутствие монеты в списке — это ноль, а не «неизвестно»: биржа не
+        // отдаёт счета с нулевым остатком, и проданной до конца монеты там нет
+        // вовсе. Иначе проверка молчала бы ровно на той позиции, ради которой
+        // она и сделана.
+        const walletKnown = Array.isArray(coinBalances) && coinBalances.length > 0;
+        const walletRow = walletKnown ? coinBalances.find(b => b.currency === coin) : null;
+        const walletTotal = !walletKnown ? null
+          : walletRow ? parseFloat(walletRow.available) + parseFloat(walletRow.hold || 0) : 0;
         const walletEmpty = Number.isFinite(walletTotal) && restPriced && walletTotal * avgBuy < 1;
         const positionClosed = !oversold && (restUsd < 1 || walletEmpty);
         // «−0.000000» в строке остатка читается как поломка. Это та же пыль:
