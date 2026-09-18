@@ -13494,8 +13494,29 @@ Requirements:
             document.execCommand('copy');
             document.body.removeChild(ta);
           } catch {}
+          // ЦЕНА СРАЗУ ВСТАЁТ В ПОЛЕ ЛИМИТКИ.
+          //
+          // Шкала отвечает на один вопрос: по какой цене сколько выйдет. Ответ
+          // нужен ровно в одном месте — в поле, из которого ставится продажа.
+          // Носить его туда руками через буфер значит каждый раз давать
+          // промахнуться мимо знака: 0.25755 и 0.2563 на глаз почти одно и то
+          // же, а разница между ними — восемь долларов на позиции.
+          //
+          // Поле живёт у монеты, а не у ордера: шкал в группе столько, сколько
+          // строк, а продажа у них общая.
+          const barCoin = container.closest('.coin-group')?.dataset.coin;
+          const limitInput = barCoin ? document.getElementById('limitSellPrice_' + barCoin) : null;
+          if (limitInput) {
+            limitInput.value = priceStr;
+            // Соседнее число пересчитывает свой обработчик — у него свои
+            // размер и затраты. Вызываем его, а не считаем те же деньги
+            // второй раз рядом: две арифметики по одной позиции однажды
+            // разойдутся, и разойдутся молча.
+            limitInput.dispatchEvent(new Event('input', { bubbles: true }));
+          }
           const money = value => (value >= 0 ? '+$' : '−$') + Math.abs(value).toFixed(2);
-          showCustomAlert(`Скопировано: $${priceStr} — taker ${(getFeeMarket() * 100).toFixed(3)}% · этот ордер: ${money(profit)}` +
+          showCustomAlert((limitInput ? `В поле лимита: $${priceStr}` : `Скопировано: $${priceStr}`) +
+            ` — taker ${(getFeeMarket() * 100).toFixed(3)}% · этот ордер: ${money(profit)}` +
             (groupProfit == null ? '' : ` · вся выбранная позиция: ${money(groupProfit)}`));
         });
       });
