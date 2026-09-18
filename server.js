@@ -2766,13 +2766,54 @@ function autoBeWatch(coin, productId, orders) {
 // fresh обходит кеш ордеров. Клиент дёргает проверку сразу после сделки, а
 // восьмисекундный снимок сделан ДО неё: нового ордера в нём нет, и проверять
 // нечего — сторож встал бы только следующим циклом, через полминуты.
+// ОТМЕНЁННЫЙ ОРДЕР ТОЖЕ МОГ ЧАСТИЧНО ИСПОЛНИТЬСЯ.
+//
+// Учёт брал только status === 'FILLED'. Заявка, которая успела продать часть
+// объёма и была снята, получает статус CANCELLED — и вся проданная по ней
+// часть не попадала никуда: ни в уведомление, ни в журнал, ни в сверку.
+// Деньги уходили и приходили молча.
+//
+// Это и есть источник «выходов с неизвестной ценой». В окне ордеров лежат
+// CP на $629.44, CRO на $1199.12, PUMP на $1184.88, AVAX на $116.64 — все
+// CANCELLED с исполненной частью, и все четыре позиции журнал списал как
+// «продано неизвестно по чём». Ничего неизвестного в них не было.
+//
+// Считаем ордер, когда его исполненная часть окончательна: FILLED, либо
+// снятый или истёкший с ненулевым исполнением. Открытую заявку с частичным
+// исполнением брать нельзя — она ещё доисполнится, и записанное число
+// устареет в ту же минуту.
+const ORDER_DONE = new Set(['FILLED', 'CANCELLED', 'EXPIRED']);
+// Метка разовой отсечки истории, живёт в списке обработанных исполнений.
+const PARTIAL_BASELINE = '#partial-fills-baselined';
+function hasRealFill(o) {
+  if (!o || !ORDER_DONE.has(o.status)) return false;
+  return o.status === 'FILLED' || parseFloat(o.filled_size) > 0;
+}
+// Заказанный объём — из той настройки ордера, в которой он есть.
+function orderBaseSize(o) {
+  const cfg = (o && o.order_configuration) || {};
+  for (const k of Object.keys(cfg)) {
+    const v = cfg[k] && cfg[k].base_size;
+    if (v != null && v !== '' && parseFloat(v) > 0) return parseFloat(v);
+  }
+  return 0;
+}
+// Исполнилась часть, а не весь заказанный объём — это надо назвать словом:
+// «SELL FILLED» на снятой заявке, продавшей треть, читается как полный выход.
+function isPartialFill(o) {
+  if (!o || o.status === 'FILLED') return false;
+  const want = orderBaseSize(o);
+  const got = parseFloat(o.filled_size) || 0;
+  return got > 0 && (want === 0 || got < want * 0.999);
+}
+
 async function checkFilledOrders(fresh) {
   try {
     let orders;
     const now = Date.now();
     if (!fresh && ordersCache.data && (now - ordersCache.ts) < ORDERS_CACHE_TTL) orders = ordersCache.data;
     else { orders = await getLatestOrders(); ordersCache = { data: orders, ts: now }; }
-    const filled = orders.filter(o => o.status === 'FILLED');
+    const filled = orders.filter(o => hasRealFill(o));
     if (!fillBaselineDone) {
       // первый прогон после старта: существующие FILLED помечаем без уведомлений (не спамим историей)
       filled.forEach(o => { if (!notifiedFills.includes(o.order_id)) notifiedFills.push(o.order_id); });
@@ -2787,6 +2828,28 @@ async function checkFilledOrders(fresh) {
       reconcileBeWatches().catch(() => { });
       return;
     }
+    // РАСШИРЕНИЕ ФИЛЬТРА НЕ ДОЛЖНО ЗАДНИМ ЧИСЛОМ ВЫСТРЕЛИТЬ ПО ИСТОРИИ.
+    //
+    // Снятые заявки с частичным исполнением лежат в окне месяцами, и в список
+    // обработанных они не попадали никогда. В первый же проход после правки
+    // все двенадцать выглядели бы новыми: двенадцать сообщений в Telegram и
+    // позиция по CAP, открытая покупкой от 21 августа, которой в кошельке нет.
+    //
+    // Помечаем разом то, что уже лежит в окне, и запоминаем, что пометили —
+    // метка живёт в том же файле обработанных, который переживает выкладку.
+    // Историю чинит сверка с биржей: она смотрит на состояние позиции, а не
+    // на событие, и добавляет только то, что случилось после входа.
+    if (!notifiedFills.includes(PARTIAL_BASELINE)) {
+      let marked = 0;
+      for (const o of filled) {
+        if (o.status === 'FILLED') continue;        // такие учитывались и раньше
+        if (!notifiedFills.includes(o.order_id)) { notifiedFills.push(o.order_id); marked++; }
+      }
+      notifiedFills.push(PARTIAL_BASELINE);
+      notifiedFills = notifiedFills.slice(-800);
+      try { fs.writeFileSync(NOTIFIED_FILE, JSON.stringify(notifiedFills)); } catch { }
+      console.log('[fill-notify] снятые заявки с частичным исполнением взяты за основу: ' + marked);
+    }
     let changed = false;
     for (const o of filled) {
       if (notifiedFills.includes(o.order_id)) continue;
@@ -2795,9 +2858,13 @@ async function checkFilledOrders(fresh) {
       const val = parseFloat(o.total_value) || 0;
       const fees = parseFloat(o.total_fees) || 0;
       const coin = (o.product_id || '').replace('-USD', '');
+      // Снятая заявка, продавшая треть объёма, — это не «SELL FILLED».
+      const part = isPartialFill(o);
+      const want = orderBaseSize(o);
       const text =
-        `${isBuy ? '🟢 <b>BUY FILLED</b>' : '🔴 <b>SELL FILLED</b>'} — <b>${o.product_id}</b>\n` +
+        `${isBuy ? '🟢 <b>BUY' : '🔴 <b>SELL'} ${part ? 'ЧАСТИЧНО' : 'FILLED'}</b> — <b>${o.product_id}</b>\n` +
         `━━━━━━━━━━━━━━━━━━\n` +
+        (part ? `⚠️ Заявка снята, исполнилось ${want > 0 ? fmtNumTg(size / want * 100, 0) + '% объёма' : 'частично'}\n` : '') +
         `📦 Size: <b>${fmtNumTg(size, size < 1 ? 6 : 2)} ${coin}</b>\n` +
         `💵 Price: <b>$${fmtPxTg(o.average_filled_price)}</b>\n` +
         `💰 Total: <b>$${fmtNumTg(val)}</b>\n` +
@@ -4590,10 +4657,16 @@ async function journalReconcile({ apply = false } = {}) {
       // а журнал знает монету только по паре с USD: списать позицию как
       // «выход неизвестен» лишь потому, что смотрели не туда, — та же
       // выдуманная цифра, только с другим знаком.
+      // И снятые заявки тоже. Заявка, успевшая продать часть объёма и снятая,
+      // получает статус CANCELLED — спрашивать только FILLED значит не найти
+      // ровно те продажи, из-за которых позиция и разошлась с кошельком, и
+      // списать их как «выход с неизвестной ценой». Все четыре таких списания
+      // ($2477) лежали в окне снятыми заявками.
       const raw = await client.listOrders({ limit: '250',
-        product_ids: [coin + '-USD', coin + '-USDC'], order_status: ['FILLED'] });
+        product_ids: [coin + '-USD', coin + '-USDC'],
+        order_status: ['FILLED', 'CANCELLED', 'EXPIRED'] });
       const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
-      job.orders = (parsed.orders || []).map(normalizeOrder);
+      job.orders = (parsed.orders || []).map(normalizeOrder).filter(hasRealFill);
     } catch (e) { job.error = e.message; }
     jobs.push(job);
   }

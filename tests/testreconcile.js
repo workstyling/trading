@@ -43,6 +43,10 @@ function load({ wallet = [], orders = [], fail = false, open = { X: position() }
     client: { listOrders: async () => { if (fail) throw new Error('биржа молчит'); return { orders }; } },
   };
   vm.createContext(ctx);
+  // Отбор состоявшихся исполнений общий с живым учётом: сверка обязана видеть
+  // снятые заявки с проданной частью — из-за них позиция и расходится.
+  const hi = src.indexOf('const ORDER_DONE = new Set(');
+  vm.runInContext(src.slice(hi, src.indexOf('async function checkFilledOrders(')), ctx);
   const i = src.indexOf('function journalApplySell(');
   const j = src.indexOf('async function journalOpenLive(');
   vm.runInContext(src.slice(i, j) + ';this.reconcile = journalReconcile; this.stats = journalStats;', ctx);
@@ -75,6 +79,31 @@ function load({ wallet = [], orders = [], fail = false, open = { X: position() }
     ok(rec && near(rec.pnl, 100), 'прибыль посчитана из найденного ордера, а не выдумана', rec && '$' + rec.pnl);
     ok(rec && !rec.unknownExit, 'выход известен, пометки нет');
     ok(out.report[0].added.length === 1 && out.report[0].added[0].side === 'SELL', 'в отчёте видно, что догрузилось');
+  }
+
+  console.log('\nСнятая заявка с проданной частью тоже находится');
+  {
+    // Ровно та причина, по которой позиции расходились с кошельком: заявка
+    // успела продать часть объёма и была снята, получив статус CANCELLED.
+    // Прежде сверка спрашивала только FILLED и не находила НИЧЕГО — а потом
+    // списывала позицию как «выход с неизвестной ценой». Так ушли CP, CRO,
+    // PUMP и AVAX на $2477, хотя все четыре продажи лежали в окне.
+    const cancelled = { ...order('c1', 'SELL', 400, 440, now - 3600000),
+      status: 'CANCELLED', order_configuration: { limit_limit_gtc: { base_size: '1000' } } };
+    const ctx = load({ wallet: [{ currency: 'X', total: '600' }], orders: [cancelled] });
+    const out = await ctx.reconcile({ apply: true });
+    const pos = ctx.journal.open.X;
+    ok(pos && pos.totalSize === 600, 'проданная часть учтена, остаток сошёлся с кошельком',
+      pos && String(pos.totalSize));
+    ok(pos && near(pos.realized, 40), 'и прибыль по ней посчитана по настоящей цене', pos && '$' + pos.realized.toFixed(2));
+    ok(!pos.unknownCost, 'списывать вслепую больше нечего');
+    ok(out.report[0].added.length === 1, 'в отчёте видно, что нашлось');
+    // А снятая заявка, где не исполнилось ничего, по-прежнему не ордер
+    const empty = { ...order('c2', 'SELL', 0, 0, now - 3600000), status: 'CANCELLED',
+      filled_size: '0', total_value: '0' };
+    const ctx2 = load({ wallet: [], orders: [empty] });
+    await ctx2.reconcile({ apply: true });
+    ok(ctx2.journal.closed[0].unknownExit === true, 'пустая снятая заявка позицию не закрывает по цене');
   }
 
   console.log('\nПропавшая покупка тоже догружается');
