@@ -9723,6 +9723,49 @@
     }
 
     // Sell at current ask price (your price, waits for buyer)
+    // СКОЛЬКО МОНЕТЫ НА САМОМ ДЕЛЕ МОЖНО ОТПРАВИТЬ НА ПРОДАЖУ.
+    //
+    // Выбранное в таблице — это сумма исполненных покупок. Свободный остаток
+    // бывает меньше по двум причинам: часть висит в открытом ордере (hold),
+    // либо часть уже продана снятой заявкой, чья исполненная доля не попала в
+    // выбранное. Биржа отклоняет ордер целиком, поэтому спрашиваем ДО отправки.
+    //
+    // Раньше здесь был тупик: окно говорило «продавать нечего» и закрывалось.
+    // Но продавать как раз есть что — просто на 37.80 монеты меньше, чем
+    // считает панель, и человек оставался с кнопкой, которая не работает и не
+    // объясняет, что делать. Предлагаем то количество, которое пройдёт, и
+    // называем разницу: решение остаётся за человеком, а не подменяется молча.
+    //
+    // Возвращает число для продажи или null, если продавать не надо.
+    async function sellableSize(coin, wanted) {
+      const sz0 = parseFloat(wanted);
+      if (!(sz0 > 0)) { showCustomAlert('Нечего продавать', true); return null; }
+      const bal = (balancesCache || []).find(h => h.currency === coin);
+      const avail = bal ? parseFloat(bal.available) : null;
+      // Баланса не видно — не мешаем: биржа ответит сама, и её ответ показан.
+      if (!(avail != null && Number.isFinite(avail))) return sz0;
+      if (avail + 1e-9 >= sz0) return sz0;
+      const hold = bal && parseFloat(bal.hold) > 0 ? parseFloat(bal.hold) : 0;
+      if (!(avail > 0)) {
+        showOrderError('Продавать нечего',
+          `Свободного <b>${coin}</b> нет вовсе` +
+          (hold > 0 ? `: все <b>${fmtSize(hold)}</b> заморожены в открытом ордере. Сними его и повтори.`
+            : '. Обнови страницу — остаток мог измениться.'));
+        return null;
+      }
+      const gap = sz0 - avail;
+      const okBtn = await new Promise(resolve => {
+        showConfirmModal('Свободно меньше выбранного',
+          `Выбрано <b>${fmtSize(sz0)} ${coin}</b>, свободно <b>${fmtSize(avail)}</b> — на <b>${fmtSize(gap)}</b> меньше.<br><br>` +
+          (hold > 0
+            ? `Заморожено в открытом ордере: <b>${fmtSize(hold)}</b>. Чтобы продать всё, сначала сними тот ордер.`
+            : `Разницу, скорее всего, уже продала снятая заявка: её исполненная часть не попала в выбранное.`) +
+          `<br><br>Биржа отклонит ордер на выбранное количество целиком. Продать свободные <b>${fmtSize(avail)}</b>?`,
+          () => resolve(true), () => resolve(false));
+      });
+      return okBtn ? avail : null;
+    }
+
     async function sellAtCurrentAsk(productId, size, avgBuyPrice, actualCost) {
       const coin = productId.split('-')[0];
       try {
@@ -9733,25 +9776,15 @@
         const askPrice = parseFloat(tickerData && tickerData.ask);
         if (!askPrice) throw new Error('биржа не отдала цену ask');
 
-        // Проверяем СВОБОДНЫЙ остаток, а не выбранное в таблице. Выбранное —
-        // это сумма исполненных покупок; если часть монеты уже висит в
-        // открытом ордере продажи (hold), Coinbase отклоняет продажу целиком.
-        const sz0 = parseFloat(size);
-        const bal = (balancesCache || []).find(h => h.currency === coin);
-        const avail = bal ? parseFloat(bal.available) : null;
-        if (avail != null && Number.isFinite(avail) && avail + 1e-9 < sz0) {
-          const hold = bal && parseFloat(bal.hold) > 0 ? parseFloat(bal.hold) : 0;
-          showOrderError('Продавать нечего',
-            `Выбрано <b>${fmtSize(sz0)} ${coin}</b>, а свободно только <b>${fmtSize(avail)}</b>` +
-            (hold > 0 ? ` — ещё <b>${fmtSize(hold)}</b> заморожено в открытом ордере` : '') +
-            `.<br><br>Биржа отклоняет такой ордер целиком, поэтому он даже не отправлен. ` +
-            (hold > 0 ? 'Сними открытый ордер продажи и повтори.' : 'Обнови страницу — остаток мог измениться.'));
-          return;
-        }
+        // Продаём столько, сколько свободно: выбранное в таблице может быть
+        // больше, и биржа отклонила бы ордер целиком.
+        const sellable = await sellableSize(coin, size);
+        if (sellable == null) return;
+        size = String(sellable);
 
         const buyFee = tradingSettings.tradeFee / 100;      // limit fee used at purchase
         const sellFee = tradingSettings.marketFee / 100;    // taker fee (worst case for sell)
-        const sz = parseFloat(size);
+        const sz = sellable;
         const effectiveReceived = askPrice * sz * (1 - sellFee);
         // Приоритет — фактические затраты с уплаченной комиссией (total_value_after_fees), как в колонке LIMIT
         const costBasis = actualCost > 0 ? actualCost
@@ -9830,8 +9863,13 @@
     }
 
     async function sellAllMarket(productId, size, coin, actualCost) {
-      const qty = parseFloat(size);
-      if (!(qty > 0)) { showCustomAlert('Нечего продавать', true); return; }
+      // Рыночную продажу биржа отклоняет так же целиком: спрашиваем до того,
+      // как открывать окно с расчётом по стакану, иначе оно посчитает объём,
+      // который всё равно не уйдёт.
+      const sellable = await sellableSize(coin, size);
+      if (sellable == null) return;
+      size = String(sellable);                  // именно это уходит в ордер
+      const qty = sellable;
       const cost = parseFloat(actualCost) || 0;
 
       const overlay = document.createElement('div');
@@ -10248,6 +10286,11 @@
         showOrderError('Стоп ниже лимита', 'Стоп должен быть ВЫШЕ лимитной цены, иначе ордер сработает уже после того, как цена прошла лимитную, и не исполнится.');
         return;
       }
+      // Стоп-лимит на выбранное количество биржа отклонит так же, как обычную
+      // лимитку: свободного может быть меньше.
+      const sellable = await sellableSize(coin, size);
+      if (sellable == null) return;
+      size = String(sellable);
       // Убыток в окне подтверждения обязан быть назван словом. Стоп-лимит
       // часто и ставят ради выхода в минус — это законное намерение, — но
       // нажать его случайно, глядя на одни цены, слишком легко: числа
@@ -10349,6 +10392,11 @@
         showCustomAlert('Enter a valid limit price', true);
         return;
       }
+      // Столько же, сколько свободно: лимитку на выбранное количество биржа
+      // отклонит целиком, и до этой правки кнопка просто не работала.
+      const sellable = await sellableSize(coin, size);
+      if (sellable == null) return;
+      size = String(sellable);
       const usd = (parseFloat(size) * parseFloat(price)).toFixed(2);
       showConfirmModal(
         'Confirm Limit Sell',
