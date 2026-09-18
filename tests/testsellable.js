@@ -193,8 +193,11 @@ function load(balances) {
     ok(Math.abs(share(3078.12, 11820.9, 11858.7) - 3068.31) < 0.05,
       'затраты делятся в той же доле', '$' + share(3078.12, 11820.9, 11858.7).toFixed(2));
 
-    ok(/const sellNow = Number\.isFinite\(walletFree\) \? Math\.min\(totalFilled, walletFree\) : totalFilled;/.test(d),
+    // Здесь именно СВОБОДНЫЙ остаток: замороженное в открытом ордере не продать.
+    ok(/const sellNow = Number\.isFinite\(walletAvail\) \? Math\.min\(totalFilled, walletAvail\) : totalFilled;/.test(d),
       'продаваемое количество считается один раз на группу');
+    ok(/const walletAvail = walletRow \? parseFloat\(walletRow\.available\) : null;/.test(d),
+      'и берётся из свободного, а не из всего кошелька');
     ok(/const sellNowCost = totalFilled > 0 \? totalUSD \* \(sellNow \/ totalFilled\) : 0;/.test(d),
       'и его доля затрат тоже');
     // Все кнопки и подписи в строке монеты берут его, а не табличное число

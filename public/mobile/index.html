@@ -2389,6 +2389,22 @@
         document.getElementById('headerBalance').textContent = '$' + usdBalance.toFixed(2);
         updateUsd();
       }
+      loadCoinBalances();
+    }
+
+    // Остатки монет в кошельке — то же, что на десктопе.
+    //
+    // Нужны монитору, чтобы понимать, закрыта позиция или нет: сумма выбранных
+    // ордеров это арифметика, а кошелёк — состояние счёта. Без них телефон
+    // считал позицию открытой на монеты, которых давно нет, и запись прибыли
+    // не включалась — а на десктопе включалась. Расхождение вёрсток однажды
+    // уже кончилось тем, что телефон звал покупать запрещённое.
+    let coinBalances = null;
+    async function loadCoinBalances() {
+      try {
+        const r = await (await fetch('/get-balances')).json();
+        if (r && Array.isArray(r.balances)) coinBalances = r.balances;
+      } catch { /* не отдали — монитор просто посчитает как раньше */ }
     }
 
     // ── Load settings ──
@@ -3165,19 +3181,39 @@
         // раньше, по количеству: молча пропустить хуже, чем лишний раз не дать.
         const restPriced = avgBuy > 0;
         const oversold = restPriced ? restUsd < -OVERSOLD_USD : totalFilled < 0;
-        const positionClosed = !oversold && restUsd < 1;
+        // КОШЕЛЁК ЗНАЕТ ПРАВДУ ЛУЧШЕ, ЧЕМ СУММА ВЫБРАННЫХ ОРДЕРОВ.
+        //
+        // Остаток по выбранным ордерам — арифметика, а не факт. Снятая заявка,
+        // продавшая часть объёма, в выбранное не попадает, и позиция выглядит
+        // открытой на монеты, которых давно нет: по USELESS осталось 37.80 при
+        // пустом кошельке, и записать прибыль было нельзя.
+        const walletRow = (coinBalances || []).find(b => b.currency === coin);
+        const walletTotal = walletRow
+          ? parseFloat(walletRow.available) + parseFloat(walletRow.hold || 0) : null;
+        const walletEmpty = Number.isFinite(walletTotal) && restPriced && walletTotal * avgBuy < 1;
+        const positionClosed = !oversold && (restUsd < 1 || walletEmpty);
         // «−0.000000» в строке остатка читается как поломка. Это та же пыль:
         // показываем ноль, когда остаток не стоит и цента.
         const filledShown = restPriced && Math.abs(restUsd) < 0.01 ? 0 : totalFilled;
         const canSaveProfit = filledBuys.length > 0 && filledSells.length > 0 && positionClosed;
-        const groupProfit = canSaveProfit ? -totalUSD : 0;
+        // ПРИБЫЛЬ СЧИТАЕТСЯ ПО ПРОДАННОЙ ДОЛЕ, А НЕ ПО ВСЕЙ ПОКУПКЕ.
+        //
+        // «Сколько вышло минус сколько вошло» верно ровно тогда, когда продано
+        // всё купленное. Осталась непроданная часть — и вычитается
+        // себестоимость монет, которых в этой сделке не продавали. Полная
+        // продажа даёт долю, равную единице, и прежняя формула получается сама.
+        const sellFilled = buyFilled - totalFilled;
+        const soldShare = buyFilled > 0 ? Math.min(1, Math.max(0, sellFilled / buyFilled)) : 1;
+        const sellUSD = buyUSD - totalUSD;
+        const groupProfit = canSaveProfit ? sellUSD - buyUSD * soldShare : 0;
+        const partialExit = canSaveProfit && soldShare < 0.9999;
         const profitOrderIds = [...filledBuys, ...filledSells].map(order => order.order_id);
         const savedProfit = profitHistory.find(entry => {
           const savedIds = [...(entry.buyOrders || []), ...(entry.sellOrders || [])];
           return profitOrderIds.some(id => savedIds.includes(id));
         });
         const profitButton = canSaveProfit
-          ? `<button class="mon-profit-btn ${groupProfit >= 0 ? 'profit-positive' : 'profit-negative'}" onclick="saveGroupProfitM('${coin}',${groupProfit.toFixed(2)},'${filledBuys.map(order => order.order_id).join(',')}','${filledSells.map(order => order.order_id).join(',')}')">${savedProfit ? `Update Profit (was ${formatProfitM(savedProfit.profit)}) → ${formatProfitM(groupProfit)}` : `Save Profit ${formatProfitM(groupProfit)}`}</button>`
+          ? `<button class="mon-profit-btn ${groupProfit >= 0 ? 'profit-positive' : 'profit-negative'}" onclick="saveGroupProfitM('${coin}',${groupProfit.toFixed(2)},'${filledBuys.map(order => order.order_id).join(',')}','${filledSells.map(order => order.order_id).join(',')}')">${savedProfit ? `Update Profit (was ${formatProfitM(savedProfit.profit)}) → ${formatProfitM(groupProfit)}` : `Save Profit${partialExit ? ' · по проданному' : ''} ${formatProfitM(groupProfit)}`}</button>${partialExit ? `<div style="font-size:10px;color:var(--t2);margin:4px 0 0;">Продано ${(soldShare * 100).toFixed(2)}% купленного, в кошельке монеты уже нет — записывается результат проданного: выручка $${sellUSD.toFixed(2)} минус себестоимость этой доли $${(buyUSD * soldShare).toFixed(2)}.</div>` : ''}`
           // Пропавшая кнопка неотличима от сломанной: говорим, почему её нет.
           : (oversold
             ? `<div style="font-size:11px;color:#f5843a;margin:6px 0;">Продано больше, чем видно купленного: не хватает покупок примерно на $${Math.abs(restUsd).toFixed(2)} (${fmt(totalFilled)} ${coin}). Часть покупок за краем окна ордеров. Записывать нельзя — это ещё вложенные деньги.</div>`

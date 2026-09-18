@@ -13123,14 +13123,40 @@ Requirements:
         // раньше, по количеству: молча пропустить хуже, чем лишний раз не дать.
         const restPriced = avgBuyPrice > 0;
         const oversold = restPriced ? restUsd < -OVERSOLD_USD : totalFilled < 0;
-        const positionClosed = !oversold && restUsd < 1;
+        // КОШЕЛЁК ЗНАЕТ ПРАВДУ ЛУЧШЕ, ЧЕМ СУММА ВЫБРАННЫХ ОРДЕРОВ.
+        //
+        // Остаток по выбранным ордерам — это арифметика, а не факт. Снятая
+        // заявка, продавшая часть объёма, в выбранное не попадает, и позиция
+        // выглядит открытой на монеты, которых давно нет: по USELESS осталось
+        // 37.80 при пустом кошельке, и записать прибыль было нельзя.
+        //
+        // Если монеты в кошельке нет — позиция закрыта, сколько бы ни
+        // насчитала таблица. Это не догадка, это состояние счёта.
+        const walletRow = (balancesCache || []).find(h => h.currency === coin);
+        const walletFree = walletRow ? parseFloat(walletRow.available) + parseFloat(walletRow.hold || 0) : null;
+        const walletEmpty = Number.isFinite(walletFree) && restPriced && walletFree * avgBuyPrice < 1;
+        const positionClosed = !oversold && (restUsd < 1 || walletEmpty);
         // «−0.000000» в строке остатка читается как поломка. Это та же пыль:
         // показываем ноль, когда остаток не стоит и цента.
         const filledShown = restPriced && Math.abs(restUsd) < 0.01 ? 0 : totalFilled;
         const canSaveProfit = filledBuys.length > 0 && filledSells.length > 0 && positionClosed;
 
-        // Calculate group profit: same logic as USD column (negated totalUSD)
-        const groupProfit = canSaveProfit ? -totalUSD : 0;
+        // ПРИБЫЛЬ СЧИТАЕТСЯ ПО ПРОДАННОЙ ДОЛЕ, А НЕ ПО ВСЕЙ ПОКУПКЕ.
+        //
+        // «Сколько вышло минус сколько вошло» верно ровно тогда, когда продано
+        // всё купленное. Стоит остаться непроданной части — и вычитается
+        // себестоимость монет, которых в этой сделке не продавали: по CRO это
+        // давало −$1291.91 там, где половина позиции ещё лежала в кошельке.
+        //
+        // Себестоимость делим в той же доле, в какой продано. Полная продажа —
+        // это доля, равная единице, и прежняя формула получается сама собой.
+        const sellFilled = buyFilled - totalFilled;
+        const soldShare = buyFilled > 0 ? Math.min(1, Math.max(0, sellFilled / buyFilled)) : 1;
+        const sellUSD = buyUSD - totalUSD;
+        const groupProfit = canSaveProfit ? sellUSD - buyUSD * soldShare : 0;
+        // Продано не всё, но позицию закрыл кошелёк: записывается результат
+        // проданного, и на кнопке это должно быть видно.
+        const partialExit = canSaveProfit && soldShare < 0.9999;
 
         const groupProfitFmt = groupProfit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         const profitText = canSaveProfit ? ((groupProfit >= 0 ? '+' : '') + '$' + groupProfitFmt) : '';
@@ -13188,14 +13214,16 @@ Requirements:
             ? (missed.length
               ? `Позиция считается открытой на ${fmtSize(totalFilled)} ${coin}, но по этой монете найдено ${missed.length} исполнен${missed.length === 1 ? 'ие' : 'ия'} вне выбранного. Нажми «учесть» слева — возможно, круг уже закрыт.`
               : `Позиция ещё открыта: осталось ${fmtSize(totalFilled)} ${coin}. Прибыль известна только после полного выхода.`)
-            : '';
+            : partialExit
+              ? `Продано ${(soldShare * 100).toFixed(2)}% купленного, в кошельке монеты уже нет — записывается результат проданного: выручка $${sellUSD.toFixed(2)} минус себестоимость этой доли $${(buyUSD * soldShare).toFixed(2)}. Остальное продано ордером вне выбранного; нажми «учесть», чтобы взять и его цену.`
+              : '';
         const btnText = alreadySaved
           ? `Update Profit (was ${savedProfitText}) → ${profitText}`
           : (oversold
             ? `Save Profit — не сходится`
             : !positionClosed && filledSells.length > 0
               ? (missed.length ? `Save Profit — есть неучтённое` : `Save Profit — ещё открыта`)
-              : `Save Profit ${profitText}`);
+              : `Save Profit${partialExit ? ' · по проданному' : ''} ${profitText}`);
         const btnClass = `save-profit-btn ${groupProfit >= 0 ? 'profit-positive' : 'profit-negative'}`;
 
         // СКОЛЬКО ЭТОЙ МОНЕТЫ РЕАЛЬНО МОЖНО ПРОДАТЬ ПРЯМО СЕЙЧАС.
@@ -13213,9 +13241,11 @@ Requirements:
         //
         // Больше выбранного не берём: в кошельке могут лежать монеты не из
         // этой позиции, и «продать всё» не должно означать «продать и их».
-        const walletRow = (balancesCache || []).find(h => h.currency === coin);
-        const walletFree = walletRow ? parseFloat(walletRow.available) : null;
-        const sellNow = Number.isFinite(walletFree) ? Math.min(totalFilled, walletFree) : totalFilled;
+        // Здесь нужен именно СВОБОДНЫЙ остаток: замороженное в открытом ордере
+        // на бирже не продать. Признак закрытой позиции выше считается по
+        // всему кошельку — там вопрос другой: есть монета вообще или нет.
+        const walletAvail = walletRow ? parseFloat(walletRow.available) : null;
+        const sellNow = Number.isFinite(walletAvail) ? Math.min(totalFilled, walletAvail) : totalFilled;
         // Затраты — в той же доле, что и монеты: иначе прибыль считается против
         // денег, которых в ордере нет.
         const sellNowCost = totalFilled > 0 ? totalUSD * (sellNow / totalFilled) : 0;
