@@ -57,6 +57,57 @@ assert(renderRecoveryStatus(null).includes('прочерк'));
 assert(renderRecoveryStatus(check).includes('Показаны свежие наблюдения'));
 assert(renderRecoveryStatus({ ...check, code: 2, report: { ...report, status: 'incomplete' } }).includes('данных мало'));
 assert(renderRecoveryStatus({ ...check, code: 0, report: { ...report, status: 'no-drift' } }).includes('прибыльность отбора не подтверждена'));
+
+// ОДНА НЕДОКАЧАННАЯ МОНЕТА НЕ ГАСИТ ОЦЕНКУ ВСЕЙ ПАНЕЛИ.
+//
+// Любое имя в «не докачалось» обнуляло отчёт целиком, и панель ставила
+// прочерк всем монетам сразу. Так и вышло из-за одного USD1 — стейблкоина,
+// которого в скане нет вовсе: 52 монеты остались без оценки при одиннадцати
+// тысячах наблюдений в мелких клетках.
+//
+// Недокачанная монета просто не попадает в выборку, а достаточность каждой
+// клетки проверяется отдельно: не меньше двенадцати монет в ней.
+{
+  const sized = { ...report, coins: 52 };
+  const rep = missing => ({ ...scan, recheck: { ...check, report: { ...sized, missingCoins: missing } } });
+  assert.equal(measure(rep([])).hour, 54.2, 'без пропусков оценка есть');
+  assert.equal(measure(rep(['USD1'])).hour, 54.2, 'один пропуск из 52 оценку не гасит');
+  assert.equal(measure(rep(['A', 'B', 'C', 'D', 'E'])).hour, 54.2, 'пять из 52 — тоже');
+  // Больше десятой части корзины — это уже не та совокупность
+  assert.equal(measure(rep(['A', 'B', 'C', 'D', 'E', 'F'])).hour, null, 'шесть из 52 гасят');
+  assert.equal(measure(rep(Array.from({ length: 30 }, (_, i) => 'C' + i))).hour, null, 'массовый сбой гасит');
+  // Малая корзина: допуск не опускается ниже двух
+  const small = { ...report, coins: 8 };
+  assert.equal(recoveryObservation(row,
+    { ...scan, recheck: { ...check, report: { ...small, missingCoins: ['A', 'B'] } } }, now).hour, 54.2,
+    'в маленькой корзине допуск не меньше двух');
+  assert.equal(recoveryObservation(row,
+    { ...scan, recheck: { ...check, report: { ...small, missingCoins: ['A', 'B', 'C'] } } }, now).hour, null);
+  // Размер корзины не назван — держимся прежней строгости
+  assert.equal(measure({ ...scan, recheck: { ...check, report: { ...report, missingCoins: ['BTC'] } } }).hour, null,
+    'без числа монет допуска нет');
+  // Пропущенное обязано быть названо, а не проглочено молча
+  const said = renderRecoveryStatus({ ...check, report: { ...sized, missingCoins: ['USD1'] } }, now);
+  assert(/Не докачалось монет: 1 \(USD1\)/.test(said), said);
+  assert(!/Не докачалось/.test(renderRecoveryStatus({ ...check, report: sized }, now)),
+    'когда всё скачалось — лишней строки нет');
+}
+
+// Списки стейблкоинов не должны расходиться: скан исключал USD1, а сверка
+// сетки брала его в корзину и не могла скачать свечи.
+{
+  const fs = require('fs');
+  const { STABLE } = require('../src/scalp/scanner');
+  for (const coin of ['USD1', 'RLUSD', 'USDG', 'ALUSD', 'MUSD', 'USDT', 'USDC']) {
+    assert(STABLE.has(coin), 'в общем списке стейблов нет ' + coin);
+  }
+  const srv = fs.readFileSync('server.js', 'utf8');
+  assert(/const \{ STABLE: STABLECOINS \} = require\('\.\/src\/scalp\/scanner'\)/.test(srv),
+    'server.js обязан брать список оттуда же, а не держать свою копию');
+  assert(!/const STABLECOINS = new Set\(/.test(srv), 'второй копии списка не осталось');
+  const rc = fs.readFileSync('scripts/recheck-recovery.js', 'utf8');
+  assert(/\{ STABLE \} = require\(/.test(rc), 'сверка берёт тот же список');
+}
 console.log('Fresh observations, missing cells, stale checks, daily change and non-actionable labels: OK');
 
 // ЧИСЛО МОНЕТЫ ПРОТИВ СРЕДНЕГО ПО ГРУППЕ.

@@ -1138,7 +1138,10 @@ setInterval(fetchAllCbVolumes, 30 * 60 * 1000);
 // API: Research - 100% Coinbase data
 let researchCache = { data: null, ts: 0 };
 const RESEARCH_CACHE_TTL = 300000; // 5 minutes
-const STABLECOINS = new Set(['USDT','USDC','DAI','BUSD','TUSD','GUSD','USDP','FRAX','LUSD','CRVUSD','PYUSD','EURC','FDUSD','USDS','USDM','ALUSD','SUSD','MUSD','DOLA','RAI','EUR','GBP','CBETH','PAXG','WBTC','USD1','RLUSD','USDG']);
+// Список один на всё приложение — он же у сверки сетки. Своя копия здесь
+// разошлась с общей, и сверка брала в корзину монеты, которые скан исключает:
+// свечи по ним не качались, и одно такое имя гасило оценку всей панели.
+const { STABLE: STABLECOINS } = require('./src/scalp/scanner');
 
 // Research data cache (from background scan)
 let researchCoinsCache = [];

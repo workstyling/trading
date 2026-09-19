@@ -12,9 +12,26 @@
         !Number.isFinite(referenceAt) || !finite(r.to) || !finite(r.from) ||
         r.from < referenceAt + 86400000 || r.from >= r.to || r.to > now + 60000 ||
         now - r.to > 48 * 3600000 || !Array.isArray(r.cells) ||
-        !Array.isArray(r.missingCoins) || r.missingCoins.length) return null;
+        !Array.isArray(r.missingCoins) || r.missingCoins.length > missingAllowed(r)) return null;
     return r;
   }
+  // СКОЛЬКО НЕДОКАЧАННЫХ МОНЕТ ОТЧЁТ ЕЩЁ ПЕРЕЖИВАЕТ.
+  //
+  // Прежде не переживал ни одной: любое имя в «не докачалось» обнуляло весь
+  // отчёт, и панель ставила прочерк всем монетам сразу. Так и вышло — из-за
+  // одного USD1, стейблкоина, которого в скане нет вовсе, панель осталась без
+  // оценок на 52 монетах, при том что в мелких клетках было по одиннадцать
+  // тысяч наблюдений на полусотне монет.
+  //
+  // Недокачанная монета просто не попадает в выборку, а достаточность каждой
+  // клетки и без того проверяется отдельно: не меньше двенадцати монет в ней.
+  // Поэтому единичные пропуски терпим, а массовый сбой загрузки — нет: там
+  // отчёт уже не про ту совокупность, о которой думаешь.
+  //
+  // Размер корзины отчёт называет сам. Если не назвал — держимся прежней
+  // строгости: допуск в долях от неизвестного числа это не допуск.
+  const missingAllowed = report =>
+    finite(report.coins) ? Math.max(2, Math.round(Number(report.coins) * 0.1)) : 0;
   // Столько же наблюдений требует и сам замер, прежде чем считать монету.
   const MIN_COIN_POINTS = 30;
   const validCell = cell => cell && !cell.thin && finite(cell.actual) && cell.actual >= 0 && cell.actual <= 100 &&
@@ -407,12 +424,19 @@
     const days = report && finite(report.from) && finite(report.to)
       ? Math.round((report.to - report.from) / 86400000 * 10) / 10 : null;
     const window = days == null ? '' : ' Окно наблюдений ' + days + ' сут и растёт.';
+    // Пропущенные монеты не гасят отчёт, но замолчать их нельзя: измерение
+    // прошло не по всей корзине, и знать об этом надо.
+    const missed = report && Array.isArray(report.missingCoins) && report.missingCoins.length
+      ? ' Не докачалось монет: ' + report.missingCoins.length + ' (' +
+        report.missingCoins.slice(0, 3).map(escapeHtml).join(', ') +
+        (report.missingCoins.length > 3 ? ' и др.' : '') + ') — они в замер не вошли.'
+      : '';
     if (report && report.status === 'drift') {
-      message = 'Историческая сетка разошлась с проверкой. Показаны свежие наблюдения; где данных мало — прочерк.' + window;
+      message = 'Историческая сетка разошлась с проверкой. Показаны свежие наблюдения; где данных мало — прочерк.' + window + missed;
     } else if (report && report.status === 'incomplete') {
-      message = 'Свежие наблюдения: для части групп данных мало — показан прочерк.';
+      message = 'Свежие наблюдения: для части групп данных мало — показан прочерк.' + window + missed;
     } else if (report && report.status === 'no-drift') {
-      message = 'Показана свежая частота цели за час; прибыльность отбора не подтверждена.';
+      message = 'Показана свежая частота цели за час; прибыльность отбора не подтверждена.' + missed;
       color = 'var(--t2)';
     } else if (check && check.current && check.code !== 0) {
       message = 'Свежая проверка не завершилась — оценка недоступна.';

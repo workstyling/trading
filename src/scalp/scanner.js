@@ -11,9 +11,19 @@ const CB = 'https://api.exchange.coinbase.com';
 const H = { headers: { 'User-Agent': 'trading-app/1.0' } };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
+// ОДИН СПИСОК СТЕЙБЛКОИНОВ НА ВСЁ ПРИЛОЖЕНИЕ.
+//
+// Их было два: этот и свой в server.js. Списки разошлись — в серверном
+// появились USD1, RLUSD, USDG, ALUSD, MUSD, в этом нет. Скан монету исключал,
+// а сверка сетки брала её в корзину, не могла скачать её свечи и записывала в
+// «не докачалось». Одного такого имени хватало, чтобы панель объявила
+// «свежая проверка не завершилась» и поставила прочерк ВСЕМ пятидесяти двум
+// монетам — включая клетки с одиннадцатью тысячами наблюдений.
+//
+// Список теперь один и живёт здесь; server.js и сверка берут его отсюда.
 const STABLE = new Set(['USDT', 'USDC', 'DAI', 'BUSD', 'TUSD', 'GUSD', 'USDP', 'FRAX', 'LUSD',
-  'CRVUSD', 'PYUSD', 'EURC', 'FDUSD', 'USDS', 'USDM', 'SUSD', 'DOLA', 'RAI', 'EUR', 'GBP',
-  'CBETH', 'PAXG', 'WBTC']);
+  'CRVUSD', 'PYUSD', 'EURC', 'FDUSD', 'USDS', 'USDM', 'ALUSD', 'SUSD', 'MUSD', 'DOLA', 'RAI',
+  'EUR', 'GBP', 'CBETH', 'PAXG', 'WBTC', 'USD1', 'RLUSD', 'USDG']);
 
 /** Режим рынка: цена BTC против EMA20 на часовых свечах */
 async function fetchBtcRegime() {
