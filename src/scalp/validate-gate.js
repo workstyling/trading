@@ -3,7 +3,8 @@
 /**
  * Reproducible historical check for the structural scalp gate.
  *
- * Usage: node src/scalp/validate-gate.js [days=7] [minVolume=500000] [maxCoins=110]
+ * Usage: node src/scalp/validate-gate.js [days=7] [minVolume=500000] [maxCoins=110] [feeSidePct]
+ * feeSidePct overrides the local fee for a replay of another deployment.
  *
  * The live spread check cannot be replayed from OHLCV history because Coinbase
  * does not expose historical bid/ask snapshots. This tool therefore reports a
@@ -26,11 +27,7 @@ const MIN_VOL = positiveNumber(process.argv[3], 500e3);
 const MAX_COINS = positiveInt(process.argv[4], 110);
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-const STABLE = new Set([
-  'USDT', 'USDC', 'DAI', 'BUSD', 'TUSD', 'GUSD', 'USDP', 'FRAX', 'LUSD',
-  'CRVUSD', 'PYUSD', 'EURC', 'FDUSD', 'USDS', 'USDM', 'SUSD', 'DOLA', 'RAI',
-  'EUR', 'GBP', 'CBETH', 'PAXG', 'WBTC',
-]);
+const { STABLE } = require('./scanner');
 
 function positiveInt(value, fallback) {
   const n = Number.parseInt(value, 10);
@@ -54,7 +51,13 @@ function configuredExit() {
   try { settings = JSON.parse(fs.readFileSync(path.join(ROOT, 'settings.json'), 'utf8')); } catch { }
   const targetPct = Number.isFinite(Number(paper.targetPct)) ? Number(paper.targetPct) : 2;
   const slPct = Number.isFinite(Number(paper.slPct)) ? Number(paper.slPct) : 6;
-  const feeSidePct = Number.isFinite(Number(settings.tradeFee)) ? Number(settings.tradeFee) : 0.125;
+  const feeOverride = process.argv[5];
+  if (feeOverride != null && (!String(feeOverride).trim() || !Number.isFinite(Number(feeOverride)) ||
+      Number(feeOverride) < 0 || Number(feeOverride) >= 100)) {
+    throw new Error('feeSidePct must be a number from 0 (inclusive) to 100 (exclusive).');
+  }
+  const feeSidePct = feeOverride != null ? Number(feeOverride)
+    : Number.isFinite(Number(settings.tradeFee)) ? Number(settings.tradeFee) : 0.125;
   return { targetPct, slPct, feeSidePct: Math.max(0, feeSidePct) };
 }
 

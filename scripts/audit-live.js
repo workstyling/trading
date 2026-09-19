@@ -9,7 +9,7 @@ let fails = 0, checks = 0;
 
 function ok(cond, name, detail) {
   checks++;
-  if (!cond) fails++;
+  if (!cond) { fails++; process.exitCode = 1; }
   console.log('  ' + (cond ? 'ok  ' : 'FAIL') + '  ' + name + (detail ? '   ' + detail : ''));
 }
 async function j(url) {
@@ -31,7 +31,7 @@ function ema(v, p) {
   console.log('=== СКАНЕР ===');
   const scan = await j(BASE + '/api/scalp-scan');
   ok(!!scan && scan.success, 'эндпоинт отвечает');
-  if (!scan) return;
+  if (!scan || !scan.success) return;
   ok(scan.total > 50, 'просканировано монет', scan.scanned + '/' + scan.total);
   // Скан идёт минуты, и попасть в его середину легко. Тогда режим ещё null,
   // результатов ноль, и дальше скрипт разбивался на scan.regime.above —
@@ -40,7 +40,8 @@ function ema(v, p) {
   if (scan.running || scan.scanned !== scan.total || !scan.regime) {
     console.log('\n  СКАН ЕЩЁ ИДЁТ (' + scan.scanned + '/' + scan.total +
       '), проверять нечего. Повтори через минуту.');
-    process.exit(2);
+    process.exitCode = 2;
+    return;
   }
   ok(scan.scanned === scan.total, 'проход завершён полностью');
   ok(scan.agoSec != null && scan.agoSec < 300, 'скан свежий', scan.agoSec + 'с назад');
@@ -128,7 +129,10 @@ function ema(v, p) {
     // Формулировка менялась дважды; проверяем суть, а не точную фразу:
     // задание обязано привязать прогон к отпечатку либо честно сказать, что
     // подходящего прогона нет.
-    ok(/validation[^.]*for this fingerprint|No historical validation for this gate code/i.test(b),
+    const hasHistorical = !!(lab.historical && lab.historical.overall && lab.historical.overall.n);
+    const namesHistorical = /(?:Historical|structural) validation for this fingerprint/i.test(b);
+    const explainsMissing = /No historical validation for this gate code|No reproducible historical validation matches this exact gate fingerprint|saved validation is for other gate code|validation exists for this fingerprint but describes another experiment|saved validation is too small/i.test(b);
+    ok(hasHistorical ? namesHistorical : explainsMissing && !namesHistorical,
       'задание называет историческую проверку своего отпечатка');
     ok(!/Backtest over \d+ days/.test(b), 'статического эталона в задании нет');
     ok((b.match(/�/g) || []).length === 0, 'нет битых символов');
@@ -163,4 +167,4 @@ function ema(v, p) {
 
   console.log('\n' + '='.repeat(60));
   console.log(fails === 0 ? 'ВСЕ ' + checks + ' ПРОВЕРОК ПРОШЛИ' : fails + ' ИЗ ' + checks + ' ПРОВЕРОК УПАЛИ');
-})().catch(e => console.error('ошибка аудита', e.message));
+})().catch(e => { process.exitCode = 1; console.error('ошибка аудита', e.message); });

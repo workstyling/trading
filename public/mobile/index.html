@@ -7001,7 +7001,7 @@
         const head2 =
           '<tr style="color:var(--t2);font-size:9px;text-transform:uppercase;letter-spacing:0.3px;">' +
           '<th style="text-align:left;padding:4px;">монета</th>' +
-          '<th style="text-align:right;padding:4px 3px;width:60px;" title="Свежая доля касаний цели +0.30% за час по группе. Прочерк — данных недостаточно.">цель 1ч · группа</th>' +
+          '<th style="text-align:right;padding:4px 3px;width:60px;" title="Частота касания цели +0.30% за час по монете. Если своих наблюдений мало, показана частота группы с подписью «группа». Прочерк — данных недостаточно.">цель 1ч</th>' +
           '<th style="text-align:right;padding:4px 3px;width:50px;" title="Расстояние до максимума за последние 30 минут.">откат</th>' +
           '<th style="text-align:right;padding:4px;width:58px;" title="Изменение цены за 24 часа. Падение от суточного пика указано в подсказке строки.">за сутки</th></tr>';
         const swingMark = (x) => {
@@ -7060,7 +7060,8 @@
             '<span data-bookshare="' + safe + '"></span>' +
             '<span style="color:var(--t2);font-size:9px;margin-left:5px;white-space:nowrap;">$' + price(x.price) + '</span>' +
             '<br><span style="color:var(--t2);font-size:9px;">' + sub + '<br>' + conditions + '</span></td>' +
-            num((edge.above ? String.fromCharCode(9650) + ' ' : '') + rec.text,
+            num((edge.above ? String.fromCharCode(9650) + ' ' : '') + rec.text +
+              (rec.ofCoin === false ? '<small style="display:block;font-size:8px;font-weight:400;">группа</small>' : ''),
               rowColor, true) +
             num(x.pullbackPct == null ? '—' : x.pullbackPct + '%') +
             num(recoveryDayChange(x)) + '</tr>';

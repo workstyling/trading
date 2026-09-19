@@ -15910,7 +15910,7 @@ Requirements:
         const head2 =
           '<tr style="color:var(--t2);font-size:9px;text-transform:uppercase;letter-spacing:0.4px;">' +
           '<th style="text-align:left;padding:3px 6px;">монета</th>' +
-          '<th style="text-align:right;padding:3px 6px;" title="Свежая доля касаний цели +0.30% за час по группе. Прочерк — данных недостаточно.">цель 1ч · группа</th>' +
+          '<th style="text-align:right;padding:3px 6px;" title="Частота касания цели +0.30% за час по монете. Если своих наблюдений мало, показана частота группы с подписью «группа». Прочерк — данных недостаточно.">цель 1ч</th>' +
           '<th style="text-align:right;padding:3px 6px;" title="Расстояние до максимума за последние 30 минут.">откат</th>' +
           '<th style="text-align:right;padding:3px 6px;" title="Изменение цены за 24 часа. Падение от суточного пика указано в подсказке строки.">за сутки</th>' +
           '<th style="text-align:right;padding:3px 6px;">RSI</th>' +
@@ -15961,7 +15961,8 @@ Requirements:
             '<span data-bookshare="' + safe + '" data-live="1"></span>' +
             '<br><span style="color:var(--t2);font-size:9px;white-space:nowrap;">$' + price(x.price) + '</span>' +
             '<br><span style="color:var(--t2);font-size:9px;">от пика ' + (x.dayFallPct == null ? '—' : '−' + x.dayFallPct + '%') + '</span></td>' +
-            num((edge.above ? String.fromCharCode(9650) + ' ' : '') + rec.text,
+            num((edge.above ? String.fromCharCode(9650) + ' ' : '') + rec.text +
+              (rec.ofCoin === false ? '<small style="display:block;font-size:8px;font-weight:400;">группа</small>' : ''),
               rowColor, true) +
             num(x.pullbackPct == null ? '—' : x.pullbackPct + '%') +
             num(recoveryDayChange(x)) +

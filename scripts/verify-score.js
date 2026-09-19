@@ -57,13 +57,21 @@ function recompute(r, regimeAbove) {
 
 (async () => {
   const r = await fetch(BASE + '/api/scalp-scan', H);
+  if (!r.ok) throw new Error('HTTP ' + r.status);
   const scan = await r.json();
+  if (!scan || !scan.success || !Array.isArray(scan.results)) throw new Error('Некорректный ответ сканера');
+  if (scan.running || scan.scanned !== scan.total || !scan.regime) {
+    console.log('Скан ещё не завершён; повторите проверку после обновления.');
+    process.exitCode = 2;
+    return;
+  }
+  if (!scan.results.length) throw new Error('Скан завершён без результатов');
   const above = scan.regime.above && scan.regime.ret7 > 0;   // режим = час И неделя
   console.log('Режим:', above ? 'открыт' : 'закрыт', '(' + scan.regime.distPct + '%)');
-  console.log('Проверяем', Math.min(scan.results.length, 20), 'монет\n');
+  console.log('Проверяем', scan.results.length, 'монет\n');
   console.log('МОНЕТА    СЕРВЕР   МОЙ ДИАПАЗОН   ГЕЙТ   ВЕРДИКТ');
   let bad = 0, checked = 0;
-  for (const x of scan.results.slice(0, 20)) {
+  for (const x of scan.results) {
     const { lo, hi } = recompute(x, above);
     const ok = x.score >= lo && x.score <= hi;
     checked++;
@@ -81,12 +89,17 @@ function recompute(r, regimeAbove) {
   console.log('\n=== ИНВАРИАНТЫ ШКАЛЫ ===');
   const all = scan.results;
   const gap = all.filter(x => x.score > 74 && x.score < 86 && above);
+  bad += gap.length;
   console.log('  значений в мёртвой зоне 75-85:', gap.length, gap.length === 0 ? '(верно)' : '(ОШИБКА)');
   const entries = all.filter(x => x.pass);
+  bad += entries.filter(x => x.score < 86).length;
   console.log('  вход при балле ниже 86:', entries.filter(x => x.score < 86).length, '(должно быть 0)');
   const notEntry = all.filter(x => !x.pass && x.score >= 86);
+  bad += notEntry.length;
   console.log('  балл 86+ без входа:', notEntry.length, '(должно быть 0)');
   if (!above) {
+    bad += all.filter(x => x.score > 60).length;
     console.log('  при закрытом режиме выше 60:', all.filter(x => x.score > 60).length, '(должно быть 0)');
   }
-})().catch(e => console.error('ошибка', e.message));
+  if (bad) process.exitCode = 1;
+})().catch(e => { process.exitCode = 1; console.error('ошибка', e.message); });

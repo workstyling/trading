@@ -45,6 +45,14 @@ const scan = { success: true, at: now, serverNow: now, gate: { fallPct: 3, sprea
     assert(box.innerHTML.includes('кандидат'));
     assert(!box.innerHTML.includes('data-entry-state="confirmed"'));
     assert(!view.recoverySignalRows(possible.results, possible)[0].buySignal, 'orange must not authorize a purchase');
+    assert(box.innerHTML.includes('>группа</small>'), 'a group estimate must be visibly identified');
+    payload = { ...possible, recheck: { ...possible.recheck, report: { ...possible.recheck.report,
+      cells: possible.recheck.report.cells.map(c => c.lo === 10
+        ? { ...c, byCoin: { SIGNAL: { pct: 80, n: 100 } } } : c),
+    } } };
+    await render();
+    assert(!box.innerHTML.includes('>группа</small>'), 'an individual estimate is not labelled as a group');
+    assert(box.innerHTML.includes('80.0%'), 'the individual frequency is shown');
     for (const change of [{ at: now - 300001 }, { recheck: null }, { staleSince: now }, { gate: null },
       ...[{ spreadPct: null }, { spreadPct: 0.301 }, { chg24Pct: -10 }, { price: null }]
         .map(over => ({ results: [{ ...possible.results[0], ...over }] }))]) {
