@@ -82,7 +82,23 @@ function comparison(main, control, pick = markout) {
   };
 }
 
-function assessTake(take, controls) {
+// РЕШЕНИЕ ПРИНИМАЕТСЯ ОДИН РАЗ И БОЛЬШЕ НЕ ПЕРЕСМАТРИВАЕТСЯ.
+//
+// Пороги здесь зашиты до того, как пришли данные, — в этом весь смысл. Но
+// состояние пересчитывалось на каждом запросе по всей накопленной выборке, и
+// значимость проверялась ПЕРЕД точкой сдачи. Значит выборку можно было
+// копить дальше и ждать, пока разница случайно перевалит за две ошибки: на
+// 139 исходах она уже 1.4 ошибки и колеблется. Это ровно та ошибка, ради
+// которой пороги и записывались заранее, — только сделанная самим кодом.
+//
+// Теперь вердикт запечатывается, как только выполнено одно из двух условий:
+// разница значима, либо исходов набрано столько, что дальше не ждём. После
+// этого числа продолжают считаться и показываться, а слово — нет.
+//
+// Это не блокирует навсегда: счёт ведётся по текущему правилу входа, и смена
+// правила начинает новую проверку с чистого листа. Новое утверждение требует
+// новых данных, а не ещё одного взгляда на прежние.
+function assessTake(take, controls, sealed) {
   const checked = take.filter(t => t.outcomeVersion === 4);
   const checkedControl = controls.filter(t => t.outcomeVersion === 4);
   const c = comparison(checked, checkedControl);
@@ -92,7 +108,8 @@ function assessTake(take, controls) {
     controlN: c.controlN, recordedN: take.length, pending: take.length - checked.length,
     diff: c.diff, se: c.se, state: 'ждём', comparison: c,
   };
-  if (c.n < out.needN || c.hours < out.needHours || c.controlN < out.needControl || c.se == null) {
+  const enough = !(c.n < out.needN || c.hours < out.needHours || c.controlN < out.needControl || c.se == null);
+  if (!enough) {
     out.why = 'сопоставимых исходов «брать» ' + c.n + '/' + out.needN + ', часов ' + c.hours + '/' + out.needHours +
       ', контроль ' + c.controlN + '/' + out.needControl;
   } else if (c.significant) {
@@ -103,6 +120,20 @@ function assessTake(take, controls) {
     out.why = c.n + ' сопоставимых исходов, разница ' + c.diff + ' ±' + c.se + ' п.п.';
   } else {
     out.why = 'разница ' + c.diff + ' ±' + c.se + ' п.п., в пределах погрешности';
+  }
+  // Запечатанное решение старше пересчитанного: оно принято на той выборке,
+  // на какой и должно было, и позднейшие наблюдения его не отменяют.
+  if (sealed && sealed.state) {
+    out.sealed = { state: sealed.state, at: sealed.at || null, n: sealed.n ?? null,
+      diff: sealed.diff ?? null, se: sealed.se ?? null };
+    out.stateNow = out.state;
+    out.state = sealed.state;
+    out.why = 'решение принято на ' + (sealed.n ?? '?') + ' исходах (разница ' + sealed.diff + ' ±' + sealed.se +
+      ') и больше не пересматривается. Сейчас накоплено ' + c.n + ', разница ' + c.diff + ' ±' + c.se +
+      ' — это уже наблюдение, а не проверка.';
+  } else if (out.state !== 'ждём') {
+    // Терминальное состояние, которое каллеру надо сохранить.
+    out.seal = { state: out.state, at: Date.now(), n: c.n, diff: c.diff, se: c.se };
   }
   return out;
 }

@@ -208,7 +208,12 @@ const t = (at, m60, hit, control) => ({
     ok(r.decision.needN === 40 && r.decision.giveUpN === 120, 'пороги названы числами',
       r.decision.needN + '/' + r.decision.giveUpN);
 
+    // Каждый следующий сценарий — отдельный мир: решение запечатывается на
+    // время жизни сервера, и переносить печать из чужого набора данных нельзя.
+    const freshWorld = () => { ctx.entryPaper.decisions = {}; };
+
     // Набралось, и «брать» уверенно лучше контроля
+    freshWorld();
     trades = [];
     for (let i = 0; i < 45; i++) trades.push(mkTake(2 + (i % 3) * 0.1, 1000 + i * 7));
     for (let i = 0; i < 45; i++) trades.push(mark(t(1000 + i * 7, -1 + (i % 3) * 0.1, false, true)));
@@ -217,6 +222,7 @@ const t = (at, m60, hit, control) => ({
     ok(r.decision.state === 'лучше контроля', 'уверенный плюс относится ко всему правилу', r.decision.state + ': ' + r.decision.why);
 
     // Набралось, и «брать» уверенно ХУЖЕ
+    freshWorld();
     trades = [];
     for (let i = 0; i < 45; i++) trades.push(mkTake(-3 + (i % 3) * 0.1, 1000 + i * 7));
     for (let i = 0; i < 45; i++) trades.push(mark(t(1000 + i * 7, 1 + (i % 3) * 0.1, true, true)));
@@ -225,6 +231,7 @@ const t = (at, m60, hit, control) => ({
     ok(r.decision.state === 'хуже контроля', 'уверенный минус относится ко всему правилу', r.decision.state);
 
     // Набралось много, а разницы нет — порог не подтвердился
+    freshWorld();
     trades = [];
     for (let i = 0; i < 130; i++) trades.push(mkTake((i % 5) * 0.02 - 0.04, 1000 + i * 7));
     for (let i = 0; i < 130; i++) trades.push(mark(t(1000 + i * 7, (i % 5) * 0.02 - 0.04, false, true)));
@@ -232,6 +239,32 @@ const t = (at, m60, hit, control) => ({
     r = await report(ctx);
     ok(r.decision.state === 'преимущество не подтверждено',
       'сто двадцать сделок без разницы → порог уходит, как ушёл балл ВХОД', r.decision.state + ': ' + r.decision.why);
+
+    // РЕШЕНИЕ НЕЛЬЗЯ ДОЖДАТЬСЯ, ПРОДОЛЖАЯ КОПИТЬ ДАННЫЕ.
+    //
+    // Значимость проверялась ПЕРЕД точкой сдачи, а состояние пересчитывалось
+    // на каждом запросе по всей выборке. Значит после сдачи можно было копить
+    // дальше и ждать, пока разница случайно перевалит за две ошибки. В живом
+    // журнале это и стояло: 139 исходов при пороге 120, разница 1.4 ошибки.
+    trades = [];
+    for (let i = 0; i < 200; i++) trades.push(mkTake(5 + (i % 3) * 0.1, 1000 + i * 7));
+    for (let i = 0; i < 200; i++) trades.push(mark(t(1000 + i * 7, -5 + (i % 3) * 0.1, false, true)));
+    ctx.entryPaper.trades = trades;
+    r = await report(ctx);
+    ok(r.decision.state === 'преимущество не подтверждено',
+      'после сдачи позднейшая значимость вердикт не отменяет', r.decision.state);
+    ok(r.decision.stateNow === 'лучше контроля',
+      'но пересчитанное состояние показано отдельно, а не спрятано', r.decision.stateNow);
+    ok(r.decision.sealed && r.decision.sealed.n === 130,
+      'видно, на скольких исходах решали', r.decision.sealed && String(r.decision.sealed.n));
+    ok(/больше не пересматривается/.test(r.decision.why), 'и сказано почему');
+    ok(ctx.entryPaper.decisions && Object.keys(ctx.entryPaper.decisions).length === 1,
+      'печать одна и привязана к правилу');
+    // Смена правила начинает новую проверку — это законный путь, а не обход
+    freshWorld();
+    r = await report(ctx);
+    ok(r.decision.state === 'лучше контроля',
+      'на чистом листе то же самое даёт свой ответ', r.decision.state);
   }
 
   console.log('\nОбе вёрстки берут честную ошибку');

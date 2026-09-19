@@ -6782,6 +6782,31 @@ function saveEntryPaper() {
   } catch (e) { console.error('[entry-paper] save', e.message); }
 }
 
+// ВЕРДИКТ ПРЕДРЕГИСТРИРОВАННОЙ ПРОВЕРКИ ЗАПЕЧАТЫВАЕТСЯ.
+//
+// Пороги зашиты до прихода данных — в этом весь смысл. Но состояние
+// пересчитывалось на каждом запросе по всей накопленной выборке, и значимость
+// проверялась ПЕРЕД точкой сдачи: выборку можно было копить дальше и ждать,
+// пока разница случайно перевалит за две ошибки. Это ровно та ошибка, ради
+// которой пороги и записывались заранее.
+//
+// Печать хранится рядом со сделками и привязана к правилу входа: смена
+// правила начинает новую проверку с чистого листа, а старая печать остаётся
+// историей этого правила.
+function entryDecision(take, ctrl) {
+  const seals = entryPaper.decisions || (entryPaper.decisions = {});
+  const out = entryJournal.assessTake(take, ctrl, seals[ENTRY_RULE]);
+  if (out.seal && !seals[ENTRY_RULE]) {
+    seals[ENTRY_RULE] = { ...out.seal, rule: ENTRY_RULE };
+    saveEntryPaper();
+    console.log('[entry-paper] решение по правилу ' + ENTRY_RULE + ' зафиксировано: ' +
+      out.seal.state + ' на ' + out.seal.n + ' исходах (разница ' + out.seal.diff + ' ±' + out.seal.se + ')');
+    // Отдаём уже запечатанным, чтобы первый же ответ не отличался от следующих.
+    return entryJournal.assessTake(take, ctrl, seals[ENTRY_RULE]);
+  }
+  return out;
+}
+
 // Открываем сделки по монетам, которые только что вошли в список, и по одной
 // КОНТРОЛЬНОЙ монете ниже порога.
 //
@@ -7016,7 +7041,7 @@ app.get('/api/entry-paper', (req, res) => {
       риск: group(known.filter(t => Math.abs(t.chg24) >= 10)) || { n: 0 },
       безХода: group(done.filter(t => !entryJournal.finite(t.chg24) || !entryJournal.finite(t.pullback))) || { n: 0 },
     },
-    decision: entryJournal.assessTake(take, ctrl),
+    decision: entryDecision(take, ctrl),
     byFall: [
       { label: '<3%', ...(group(done.filter(t => t.dayFall < 3)) || { n: 0 }) },
       { label: '3-6%', ...(group(done.filter(t => t.dayFall >= 3 && t.dayFall < 6)) || { n: 0 }) },
