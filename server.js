@@ -1035,14 +1035,21 @@ async function cryptorankFetch(endpoint, params = {}) {
 // отличить сбой биржи от «нечего считать» было нельзя. Девять мест брали
 // список, проверяло одно.
 async function fetchProducts(query = '') {
-  const res = await fetch('https://api.exchange.coinbase.com/products' + query,
-    { headers: { 'User-Agent': 'trading-app/1.0' } });
-  const data = await res.json().catch(() => null);
-  if (!Array.isArray(data)) {
+  // Короткий отказ Coinbase не должен пропускать весь десятиминутный цикл.
+  // Повторяем только временные HTTP-ошибки; после трёх попыток данные
+  // остаются неизвестными и вызывающий код получает прежний явный отказ.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const res = await fetch('https://api.exchange.coinbase.com/products' + query,
+      { headers: { 'User-Agent': 'trading-app/1.0' }, signal: AbortSignal.timeout(10000) });
+    const data = await res.json().catch(() => null);
+    if (res.ok && Array.isArray(data)) return data;
+    if (attempt < 2 && [429, 502, 503, 504].includes(res.status)) {
+      await sleep((attempt + 1) * 1000);
+      continue;
+    }
     throw new Error('биржа не вернула список пар' +
       (data && data.message ? ': ' + data.message : ' (код ' + res.status + ')'));
   }
-  return data;
 }
 
 app.get('/api/cryptorank/global', async (req, res) => {

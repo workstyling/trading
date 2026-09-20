@@ -10,18 +10,24 @@ let bad = 0;
 const ok = (c, m, x) => { if (!c) bad++; console.log('  ' + (c ? 'ok  ' : 'ПЛОХО') + '  ' + m + (x ? '   ' + x : '')); };
 const src = fs.readFileSync('server.js', 'utf8').split('\r\n').join('\n');
 
-function load(answer, status = 200) {
-  const calls = [];
-  const ctx = { console, Array, Error, Number, String,
+function load(answer, status = 200, replies = null) {
+  const calls = [], delays = [];
+  const ctx = { console, Array, Error, Number, String, AbortSignal,
+    sleep: async ms => { delays.push(ms); },
     fetch: async (url, opts) => {
+      const reply = replies && replies[Math.min(calls.length, replies.length - 1)];
+      const code = reply ? reply.status : status;
+      const body = reply ? reply.body : answer;
       calls.push({ url, opts });
-      return { status, json: async () => (typeof answer === 'function' ? answer() : answer) };
+      return { status: code, ok: code >= 200 && code < 300,
+        json: async () => (typeof body === 'function' ? body() : body) };
     } };
   vm.createContext(ctx);
   const i = src.indexOf('async function fetchProducts(');
   const j = src.indexOf('\n}', i) + 2;
   vm.runInContext(src.slice(i, j) + ';this.get = fetchProducts;', ctx);
   ctx.calls = calls;
+  ctx.delays = delays;
   return ctx;
 }
 
@@ -57,6 +63,29 @@ function load(answer, status = 200) {
     let msg = null;
     try { await broken.get(); } catch (e) { msg = e.message; }
     ok(msg && /не вернула список пар/.test(msg), 'нечитаемый ответ — та же понятная ошибка', msg);
+  }
+
+  console.log('\nВременный отказ не пропускает весь цикл');
+  {
+    for (const status of [429, 502, 503, 504]) {
+      const ctx = load(null, 200, [
+        { status, body: { message: 'temporary failure' } },
+        { status: 200, body: [{ id: 'BTC-USD' }] },
+      ]);
+      const got = await ctx.get('?type=SPOT');
+      ok(got[0].id === 'BTC-USD' && ctx.calls.length === 2, 'восстановление после HTTP ' + status);
+      ok(ctx.delays.join(',') === '1000', 'перед повтором есть пауза');
+      ok(ctx.calls.every(c => c.url.endsWith('?type=SPOT')), 'параметры запроса сохраняются');
+    }
+    const limited = load({ message: 'rate limit exceeded' }, 429);
+    let rejected = false;
+    try { await limited.get(); } catch { rejected = true; }
+    ok(rejected && limited.calls.length === 3, 'постоянный отказ прекращается после трёх попыток');
+    ok(limited.delays.join(',') === '1000,2000', 'ожидание растёт, бесконечных повторов нет');
+    const forbidden = load([], 403);
+    rejected = false;
+    try { await forbidden.get(); } catch { rejected = true; }
+    ok(rejected && forbidden.calls.length === 1, 'постоянная HTTP-ошибка не принимается за данные и не повторяется');
   }
 
   console.log('\nВсе места берут список одинаково');
