@@ -64,7 +64,7 @@
         ? Math.round((report.to - report.from) / 86400000 * 10) / 10 : null;
       return unknown('Недостаточно свежих наблюдений: монет ' + have + ' из 12' +
         (days == null ? '' : ', окно наблюдений ' + days + ' сут и растёт') +
-        '. Клетки с откатом от 1.5% набирают нужное за 7-14 суток — до тех пор здесь прочерк, а не оценка.');
+        '. Нужны минимум 12 монет с 30 наблюдениями в этой группе; срок накопления заранее неизвестен.');
     }
     const groupPct = Math.round(cell.actual * 10) / 10;
     const period = new Date(report.from).toISOString().slice(0, 10) + ' — ' + new Date(report.to).toISOString().slice(0, 10);
@@ -286,13 +286,8 @@
     const fall = gate && finite(gate.fallPct) ? Number(gate.fallPct) + '%' : 'неизвестен';
     const spread = gate && finite(gate.spreadPct) ? Number(gate.spreadPct) + '%' : 'неизвестен';
     const fresh = recoveryScanFresh(scan);
-    return '<div style="font-size:10px;line-height:1.5;margin-bottom:7px;color:var(--t1);">' +
-      '<b>Параметры входа:</b> от пика ≥' + fall + ' · спред ≤' + spread +
-      ' · −10% &lt; за сутки &lt; +10% · скан ≤5 мин.<br>' +
-      '<span style="border-left:3px solid #00ffa8;padding-left:5px;color:#00ffa8;">Зелёная рамка — подтверждены параметры и прибыльность группы</span><br>' +
-      '<span style="border-left:3px solid var(--entry-possible);padding-left:5px;color:var(--entry-possible);">Оранжевая рамка — параметры подходят, прибыльность не подтверждена</span>' +
-      '</div><details style="font-size:10px;line-height:1.5;margin-bottom:7px;color:var(--t2);">' +
-      '<summary style="cursor:pointer;color:var(--t1);">Когда появится сигнал покупки' +
+    return '<details class="recovery-help" data-recovery-detail="rules">' +
+      '<summary>Условия покупки и обозначения' +
       (fresh ? '' : ' · скан не готов или устарел') + '</summary>' +
       '<div style="padding:5px 0;">' +
       '1. Падение от максимума за сутки — от <b>' + fall + '</b>; спред — не больше <b>' + spread + '</b>.<br>' +
@@ -302,7 +297,7 @@
       '<b style="color:#00ffa8;">Подтверждённый вход: зелёная рамка и «брать» с целью и сроком, вверху списка.</b> ' +
       'Это прохождение правил алгоритма, не гарантия прибыли.<br>' +
       '<b style="color:var(--entry-possible);">Возможный вход: оранжевая рамка.</b> Параметры монеты подходят, свежая частота цели выше базы больше чем на две погрешности и минимум на 3 п.п., но проверка доходности ещё не пройдена. Покупка не разрешена.<br>' +
-      'Без свежей оценки или при ходе за сутки от ±10% рамки входа нет. «Максимум» отмечает только частоту цели. Нажатие на строку открывает график.<br>' +
+      'Без свежей оценки или при ходе за сутки от ±10% рамки входа нет. Серые строки — остальные монеты, красная отметка — повышенный риск. Нажатие на строку открывает график.<br>' +
       'Проверка доходности обновляется отдельным пересчётом; накопление часовой статистики само по себе покупку не разрешает.' +
       '</div></details>';
   }
@@ -329,9 +324,10 @@
       'Это измерение периода, а не приговор правилу: исходная сетка мерилась на растущем рынке, здесь окно падающего.',
       'Пересчёт: node scripts/measure-net.js',
     ].filter(Boolean).join(String.fromCharCode(10));
-    const box = (color, border, bg, html) => '<div title="' + escapeHtml(details) +
+    const box = (color, border, bg, html, summary) => '<details class="recovery-proof" data-recovery-detail="profit" title="' + escapeHtml(details) +
       '" style="font-size:10px;line-height:1.45;margin-bottom:6px;padding:5px 7px;border-radius:6px;' +
-      'background:' + bg + ';border:1px solid ' + border + ';color:' + color + ';">' + html + '</div>';
+      'background:' + bg + ';border:1px solid ' + border + ';color:' + color + ';"><summary>' + summary +
+      '<span class="recovery-detail-hint">Подробности</span></summary><div class="recovery-detail-body">' + html + '</div></details>';
     if (buy.length) {
       // Разрешение выдаётся клетке, а не монете: строки этих клеток помечены
       // словом «брать» вместе с горизонтом и целью выхода.
@@ -340,14 +336,16 @@
           (buy.length < 5 ? ' клетки' : ' клеток')) + '.</b> ' +
         'Плюс после комиссий модели и на поиске, и на проверке (' + escapeHtml(String(net.from)) + ' — ' +
         escapeHtml(String(net.to)) + '). В таблице такие строки помечены словом «брать» с горизонтом и целью. ' +
-        'Остальные строки — наблюдение. ' + (recoveryScanFresh(scan) ? '' : 'Скан не готов или устарел: сигналы покупки отключены.'));
+        'Остальные строки — наблюдение. ' + (recoveryScanFresh(scan) ? '' : 'Скан не готов или устарел: сигналы покупки отключены.'),
+        recoveryScanFresh(scan) ? 'Проверку прошли группы: ' + buy.length : 'Скан устарел — сигналы покупки отключены');
     }
     return box('#ff9f9f', 'rgba(255,107,107,0.35)', 'rgba(255,107,107,0.10)',
       '<b>Покупать по этому списку нельзя.</b> Прогон по свечам ' + escapeHtml(String(net.from)) + ' — ' +
       escapeHtml(String(net.to)) + ': отбор давал <b>' + pct(net.panel) + '</b> за сделку против <b>' +
       pct(net.control) + '</b> у случайного входа. Из ' + net.modes + ' режимов (горизонты 1/4/12/24 ч) ' +
       (okModes ? 'окупились ' + okModes : 'не окупился <b>ни один</b>') +
-      '. Ни одна клетка не прошла порог покупки. Это список наблюдения, а не список покупки.');
+      '. Ни одна клетка не прошла порог покупки. Это список наблюдения, а не список покупки.',
+      'Покупки не подтверждены. Оранжевые — наблюдение.');
   }
   // Цвета объясняются один раз — в блоке правил, где рядом нарисованы сами
   // рамки. Здесь они дублировались словами, и над таблицей из двенадцати
@@ -355,14 +353,9 @@
   function renderRecoveryLegend(scan, now = scanNow(scan)) {
     const base = recoveryBaseline(scan, now);
     if (!base) return '';
-    return '<div style="font-size:10px;line-height:1.4;margin-bottom:6px;color:var(--t2);">' +
-      '<b>▲ у процента</b> — свежая частота цели выше базы <b>' +
-      base.pct.toFixed(1) + '%</b> (монеты почти без падения) больше чем на две погрешности. ' +
-      'Это «чаще доходит до цели», а не разрешение покупать.' +
-      '<br><b>Выше частота — не лучше.</b> Проверка вне выборки: на горизонте четырёх часов ' +
-      'верхняя пятина монет по частоте дала <b>−0.33%</b> за сделку против <b>−0.14%</b> у нижней. ' +
-      'Монета касается цели чаще потому, что сильнее дёргается, и чаще достаёт до стопа. ' +
-      'Поэтому список идёт не по частоте, а по свежести: новые пересечения сверху.</div>';
+    return '<div class="recovery-legend" title="Частота касания цели +0.30% за час до комиссий. ▲ означает превышение базы больше двух погрешностей и минимум на 3 п.п. Это не оценка прибыли.">' +
+      '<b>▲</b> — частота выше базы ' + base.pct.toFixed(1) + '%, не разрешение покупать. ' +
+      'Внутри групп — по свежести.</div>';
   }
   function recoveryVerdict(row, gate, observation, buyCell) {
     const out = (tier, label, why, risk = false) => ({ tier, label, why,
@@ -427,9 +420,9 @@
     // Пропущенные монеты не гасят отчёт, но замолчать их нельзя: измерение
     // прошло не по всей корзине, и знать об этом надо.
     const missed = report && Array.isArray(report.missingCoins) && report.missingCoins.length
-      ? ' Не докачалось монет: ' + report.missingCoins.length + ' (' +
+      ? ' Неполная история: ' + report.missingCoins.length + ' (' +
         report.missingCoins.slice(0, 3).map(escapeHtml).join(', ') +
-        (report.missingCoins.length > 3 ? ' и др.' : '') + ') — они в замер не вошли.'
+        (report.missingCoins.length > 3 ? ' и др.' : '') + ') — они в исторический замер не вошли. Это отдельно от текущего скана.'
       : '';
     if (report && report.status === 'drift') {
       message = 'Историческая сетка разошлась с проверкой. Показаны свежие наблюдения; где данных мало — прочерк.' + window + missed;
@@ -441,7 +434,26 @@
     } else if (check && check.current && check.code !== 0) {
       message = 'Свежая проверка не завершилась — оценка недоступна.';
     }
-    return '<div style="font-size:10px;line-height:1.4;margin-bottom:6px;color:' + color + ';">' + message + '</div>';
+    const thin = report ? report.cells.filter(cell => !validCell(cell)).length : 0;
+    const summary = report ? 'Статистика: ' + (days == null ? '' : days + ' сут') +
+      (thin ? ' · групп без оценки: ' + thin : ' · оценки доступны') +
+      (report.missingCoins.length ? ' · история неполная' : '') : 'Свежая оценка недоступна';
+    return '<details class="recovery-quality" data-recovery-detail="quality" style="color:' + (report ? 'var(--t2)' : color) + ';">' +
+      '<summary>' + summary + '</summary><div class="recovery-detail-body">' + message + '</div></details>';
+  }
+  function renderRecoveryMissing(scan) {
+    if (!Array.isArray(scan.missed) || !scan.missed.length) return '';
+    const names = scan.missed.map(escapeHtml).join(', ');
+    return '<details class="recovery-missing" data-recovery-detail="missing"><summary>Текущий скан: нет данных по ' + names + '</summary>' +
+      '<div class="recovery-detail-body">' + scan.missed.map(coin => '<div><b>' + escapeHtml(coin) + '</b>: ' +
+        escapeHtml(scan.missedDetails && scan.missedDetails[coin] || 'Биржа не вернула достаточно данных.') + '</div>').join('') +
+      'Это не значит, что условия перестали выполняться. Повторная проверка — в следующем скане.</div></details>';
+  }
+  function recoveryDetailsState(box) {
+    return box.querySelectorAll ? Array.from(box.querySelectorAll('details[data-recovery-detail][open]'), el => el.dataset.recoveryDetail) : [];
+  }
+  function restoreRecoveryDetails(box, open) {
+    if (box.querySelectorAll) for (const el of box.querySelectorAll('details[data-recovery-detail]')) el.open = open.includes(el.dataset.recoveryDetail);
   }
   function renderEntryJournal(pj) {
     const esc = escapeHtml;
@@ -498,6 +510,7 @@
     recoveryVerdict, recoveryDayChange, recoveryBaseline, recoveryEdge, recoveryOrder, recoveryPeak, recoveryPeakMark, renderRecoveryTieNote, recoveryBuyCell,
     recoveryFresh, recoveryHeldNote,
     recoverySignalRows, renderRecoveryRules, recoveryRowMark, renderRecoveryGroups,
+    renderRecoveryMissing, recoveryDetailsState, restoreRecoveryDetails,
     escapeRecoveryText: escapeHtml };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else Object.assign(root, api);

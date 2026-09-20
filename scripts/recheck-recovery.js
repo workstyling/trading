@@ -4,7 +4,7 @@
 // Запуск: node scripts/recheck-recovery.js [дней] [--cache-only]
 const fs = require('fs');
 const path = require('path');
-const { sampleWindows } = require('../src/recovery/recheck');
+const { sampleWindows, historyReady } = require('../src/recovery/recheck');
 
 const CB = 'https://api.exchange.coinbase.com';
 const H = { headers: { 'User-Agent': 'trading-app/1.0' } };
@@ -80,9 +80,11 @@ function paceDown() { pace = Math.max(Math.round(pace * 0.97), 320); }
 
 async function candles(pair, fromMs, toMs) {
   const out = [];
+  let complete = true;
   let cur = fromMs;
   while (cur < toMs) {
     const end = Math.min(toMs, cur + 299 * 300_000);
+    let loaded = false;
     // Биржа отвечает отказом при частых запросах. Без повтора кусок ряда
     // просто пропадал, и монета выглядела так, будто по ней нет истории: на
     // одном прогоне так «исчезли» двадцать три монеты из шестидесяти.
@@ -90,22 +92,27 @@ async function candles(pair, fromMs, toMs) {
     for (let attempt = 0; attempt < 4; attempt++) {
       try {
         const r = await fetch(`${CB}/products/${pair}/candles?granularity=300` +
-          `&start=${new Date(cur).toISOString()}&end=${new Date(end).toISOString()}`, H);
+          `&start=${new Date(cur).toISOString()}&end=${new Date(end).toISOString()}`,
+          { ...H, signal: AbortSignal.timeout(15000) });
         if (r.ok) {
           const raw = await r.json();
-          if (Array.isArray(raw)) for (const c of raw) out.push({ t: +c[0], lo: +c[1], hi: +c[2], cl: +c[4] });
-          paceDown();
-          break;
+          if (Array.isArray(raw)) {
+            for (const c of raw) out.push({ t: +c[0], lo: +c[1], hi: +c[2], cl: +c[4] });
+            loaded = true;
+            paceDown();
+            break;
+          }
         }
       } catch { }
       paceUp();
       await sleep([1000, 3000, 8000, 0][attempt]);
     }
+    if (!loaded) complete = false;
     await sleep(pace);
     cur = end;
   }
   const seen = new Set();
-  return out.filter(c => c.t && !seen.has(c.t) && seen.add(c.t)).sort((a, b) => a.t - b.t);
+  return { complete, rows: out.filter(c => c.t && !seen.has(c.t) && seen.add(c.t)).sort((a, b) => a.t - b.t) };
 }
 
 // Доли по монетам: среднее и ошибка среднего ПО МОНЕТАМ, не по точкам
@@ -191,8 +198,8 @@ function cellStats(perCoin, lo, hi, deep) {
   if (!Number.isFinite(trained)) throw new Error('неизвестна дата исходного замера');
   const from = Math.max(to - DAYS * 86400000, trained + 86400000);
   const downloadFrom = from - 86400000;
-  const stale = cs => !cs || !cs.length || cs[0].t * 1000 > downloadFrom + 3600000 ||
-    to - (cs[cs.length - 1].t + 300) * 1000 > 15 * 60000;
+  const verifiedDownloads = new Set();
+  const stale = (cs, coin) => !historyReady(cs, downloadFrom, to, verifiedDownloads.has(coin));
   const fetchCoin = async (coin, pair, tag) => {
     if (process.argv.includes('--cache-only')) return false;
     process.stdout.write('\r  качаю ' + coin + ' ' + tag + ' (темп ' + pace + ' мс)        ');
@@ -200,8 +207,9 @@ function cellStats(perCoin, lo, hi, deep) {
     const needsHistory = !old.length || old[0].t * 1000 > downloadFrom + 3600000;
     const start = needsHistory ? downloadFrom : Math.max(downloadFrom, old[old.length - 1].t * 1000 - 300000);
     const got = await candles(pair, start, to);
-    const merged = [...new Map([...old, ...got].map(c => [c.t, c])).values()].sort((a, b) => a.t - b.t);
-    if (got.length && merged.length >= 252 && !stale(merged)) {
+    const merged = [...new Map([...old, ...got.rows].map(c => [c.t, c])).values()].sort((a, b) => a.t - b.t);
+    if (got.complete && historyReady(merged, downloadFrom, to, true)) {
+      verifiedDownloads.add(coin);
       cache[coin] = merged;
       try { fs.writeFileSync(CACHE, JSON.stringify(cache)); } catch { }
       return true;
@@ -212,7 +220,7 @@ function cellStats(perCoin, lo, hi, deep) {
   let k = 0, failed = [];
   for (const { coin, pair } of basket) {
     k++;
-    if (!stale(cache[coin])) continue;
+    if (!stale(cache[coin], coin)) continue;
     if (!await fetchCoin(coin, pair, '(' + k + '/' + basket.length + ')')) failed.push({ coin, pair });
   }
   // Второй заход по недокачанным: к концу прогона темп уже подстроен, и то,
@@ -232,7 +240,7 @@ function cellStats(perCoin, lo, hi, deep) {
   let evaluatedFrom = Infinity, evaluatedTo = 0;
   for (const { coin } of basket) {
     const cs = cache[coin];
-    if (stale(cs)) continue;
+    if (stale(cs, coin)) continue;
     const rows = sampleWindows(cs, { from, to, need: NEED });
     if (!rows.length) continue;
     evaluatedFrom = Math.min(evaluatedFrom, rows[0].at);

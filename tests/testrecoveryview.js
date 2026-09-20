@@ -20,7 +20,8 @@ assert.equal(measure(scan, { ...row, pullbackPct: 1.5 }).hour, null);
   const thin = measure(scan, { ...row, pullbackPct: 1.5 }).why;
   assert(thin.includes('монет 3 из 12'), thin);
   assert(/окно наблюдений 3 сут и растёт/.test(thin), thin);
-  assert(/7-14 суток/.test(thin), thin);
+  assert(thin.includes('12 монет с 30 наблюдениями'), thin);
+  assert(thin.includes('срок накопления заранее неизвестен'), thin);
   // Клетки нет в отчёте вовсе — тоже с числом, а не молча
   const none = measure(scan, { ...row, dayFallPct: 6 }).why;
   assert(none.includes('монет 0 из 12'), none);
@@ -88,8 +89,8 @@ assert(renderRecoveryStatus({ ...check, code: 0, report: { ...report, status: 'n
     'без числа монет допуска нет');
   // Пропущенное обязано быть названо, а не проглочено молча
   const said = renderRecoveryStatus({ ...check, report: { ...sized, missingCoins: ['USD1'] } }, now);
-  assert(/Не докачалось монет: 1 \(USD1\)/.test(said), said);
-  assert(!/Не докачалось/.test(renderRecoveryStatus({ ...check, report: sized }, now)),
+  assert(/Неполная история: 1 \(USD1\)/.test(said), said);
+  assert(!/Неполная история/.test(renderRecoveryStatus({ ...check, report: sized }, now)),
     'когда всё скачалось — лишней строки нет');
 }
 

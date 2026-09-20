@@ -1,0 +1,30 @@
+.recovery-proof,
+.recovery-quality,
+.recovery-help,
+.recovery-missing {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 11px;
+  line-height: 1.5;
+  margin-bottom: 7px;
+}
+.recovery-proof > summary,
+.recovery-quality > summary,
+.recovery-help > summary,
+.recovery-missing > summary {
+  cursor: pointer;
+  padding: 3px 0;
+}
+.recovery-proof > summary { font-size: 11px; font-weight: 700; }
+.recovery-proof > summary:focus-visible,
+.recovery-quality > summary:focus-visible,
+.recovery-help > summary:focus-visible,
+.recovery-missing > summary:focus-visible {
+  outline: 1px solid var(--entry-possible);
+  outline-offset: 3px;
+}
+.recovery-detail-hint { font-size: 10px; font-weight: 400; margin-left: 8px; }
+.recovery-detail-body { padding: 7px 0 3px; }
+.recovery-help, .recovery-legend { color: var(--t2); }
+.recovery-legend { font-size: 10px; line-height: 1.5; margin-bottom: 5px; }
+.recovery-missing { color: var(--entry-possible); }
+.recovery-proof[open] .recovery-detail-hint { display: none; }

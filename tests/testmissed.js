@@ -20,27 +20,32 @@ console.log('\nПовтор запроса к бирже');
   const i = src.indexOf('async function cbTry(url) {');
   ok(i > 0, 'общий помощник с повтором есть');
   const body = src.slice(i, src.indexOf('\n}', i));
-  ok(/for \(let a = 0; a < 2; a\+\+\)/.test(body), 'ровно один повтор, а не бесконечный цикл');
-  ok(/setTimeout\(s, 400\)/.test(body), 'между попытками есть пауза');
-
   // Проверяем поведением
-  const ctx = { DIP_H: {}, setTimeout, Promise, console };
+  const waits = [], timeouts = [];
+  const ctx = { DIP_H: {}, setTimeout: (done, ms) => { waits.push(ms); done(); }, Promise, console,
+    AbortSignal: { timeout: ms => { timeouts.push(ms); return { timeout: ms }; } } };
   vm.createContext(ctx);
   vm.runInContext(src.slice(i, src.indexOf('\n}', i) + 2) + ';this.cbTry = cbTry;', ctx);
 
   (async () => {
     let calls = 0;
-    ctx.fetch = async () => { calls++; return { ok: calls > 1 }; };
+    ctx.fetch = async (_url, opts) => { calls++; ok(opts.signal.timeout === 8000, 'запрос ограничен по времени'); return { ok: calls > 1, status: 429 }; };
     const r = await ctx.cbTry('x');
     ok(r && r.ok && calls === 2, 'первый отказ не хоронит запрос — второй заход выручает', 'обращений ' + calls);
 
     calls = 0;
-    ctx.fetch = async () => { calls++; return { ok: false }; };
-    ok(await ctx.cbTry('x') === null && calls === 2, 'два отказа подряд — честный null, а не вечные попытки');
+    waits.length = 0;
+    ctx.fetch = async () => { calls++; return { ok: false, status: 503 }; };
+    ok(await ctx.cbTry('x') === null && calls === 3, 'три временных отказа — null, а не вечные попытки');
+    ok(waits.join(',') === '1000,2000', 'между повторами возрастающие паузы');
+
+    calls = 0;
+    ctx.fetch = async () => { calls++; return { ok: false, status: 404 }; };
+    ok(await ctx.cbTry('x') === null && calls === 1, 'постоянная ошибка не повторяется');
 
     calls = 0;
     ctx.fetch = async () => { calls++; throw new Error('сеть'); };
-    ok(await ctx.cbTry('x') === null && calls === 2, 'обрыв сети тоже переживается и не роняет скан');
+    ok(await ctx.cbTry('x') === null && calls === 3, 'обрыв сети тоже переживается и не роняет скан');
 
     console.log('\nПотеря видна, а не молчит');
     {
@@ -67,8 +72,9 @@ console.log('\nПовтор запроса к бирже');
       ok(/out\.results = out\.results\.filter\(r => !STABLECOINS\.has\(r\.coin\)\)/.test(src),
         'скальп-таблица тоже отбрасывает стейблы без смены отпечатка гейта');
       ok(/if \(!sig\) \{ missed\.push\(coin\); return; \}/.test(src), 'нет данных — монета в списке потерь');
-      ok(/catch \{ missed\.push\(coin\);/.test(src), 'и исключение тоже, а не просто проглатывается');
+      ok(/catch \{ missedDetails\[coin\] = [^;]+; missed\.push\(coin\);/.test(src), 'исключение даёт причину и имя пропущенной монеты');
       ok(/missed: entryScan\.missed \|\| \[\]/.test(src), 'список уходит в ответ панели');
+      ok(/missedDetails: entryScan\.missedDetails \|\| \{\}/.test(src), 'причины тоже уходят в ответ');
       ok(/не посчитаны: ' \+ missed\.join/.test(src), 'и пишется в журнал сервера');
       // Помощник обязан использоваться там, где раньше был голый fetch
       ok(/const r = await cbTry\(`\$\{DIP_CB\}\/products\/\$\{coin\}-USD\/candles/.test(src), 'свечи тянутся с повтором');

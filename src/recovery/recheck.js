@@ -28,4 +28,14 @@ function sampleWindows(candles, { from, to, need = 0.30 }) {
   return rows;
 }
 
-module.exports = { distances, sampleWindows };
+// An empty interval in a successful candle response means no trades occurred.
+// It does not mean the download failed. Without verified requests, keep the
+// conservative boundary checks for old cache files.
+function historyReady(candles, from, to, requestsComplete = false) {
+  if (!Array.isArray(candles) || candles.length < 252) return false;
+  if (requestsComplete) return true;
+  return candles[0].t * 1000 <= from + 3600000 &&
+    to - (candles[candles.length - 1].t + 300) * 1000 <= 15 * 60000;
+}
+
+module.exports = { distances, sampleWindows, historyReady };

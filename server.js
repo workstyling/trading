@@ -2932,7 +2932,9 @@ const RECOVERY_CHECK_VERSION = 2;
 function recheckStamp() {
   try { return JSON.parse(fs.readFileSync(RECHECK_STAMP, 'utf8')) || {}; } catch { return {}; }
 }
-function recoveryRecheck(force) {
+let recoveryRecheckActive = false;
+function recoveryRecheck(force, { notify = true } = {}) {
+  if (recoveryRecheckActive) return false;
   const st = recheckStamp();
   // Перезапусков за день бывает много (каждая выкатка), а замер тяжёлый
   if (!force && st.version === RECOVERY_CHECK_VERSION && Date.now() - (st.at || 0) < RECHECK_EVERY_H * 3600 * 1000) return;
@@ -2951,11 +2953,13 @@ function recoveryRecheck(force) {
   // один, с внятной ошибкой, и торговля этого не замечает.
   const p = require('child_process').spawn(process.execPath,
     ['--max-old-space-size=320', 'scripts/recheck-recovery.js'], { cwd: __dirname });
+  recoveryRecheckActive = true;
   let out = '';
   p.stdout.on('data', d => { out += d; });
   p.stderr.on('data', d => { out += d; });
-  p.on('error', (e) => console.error('[recovery-check] не запустился:', e.message));
+  p.on('error', (e) => { recoveryRecheckActive = false; console.error('[recovery-check] не запустился:', e.message); });
   p.on('close', async (code) => {
+    recoveryRecheckActive = false;
     const mins = Math.round((Date.now() - started) / 60000);
     let report = null;
     try {
@@ -2974,7 +2978,7 @@ function recoveryRecheck(force) {
     // памяти, не докачать свечи, быть убитым выкаткой. Слать про упавший
     // замер «сетка разошлась с рынком» значит врать — и ровно этим приучать
     // не верить сообщениям.
-    if (code !== 0) {
+    if (notify && code !== 0) {
       const drifted = /РАЗОШЛОСЬ/.test(out);
       await sendTelegram(code === 2
         ? '⚠️ Сверка сетки неполная: не хватает свежих наблюдений во всех клетках.\n\n' + tail
@@ -2991,6 +2995,7 @@ function recoveryRecheck(force) {
           'Это не расхождение, а сбой самого замера: сетку он не проверил.\n\n' + tail);
     }
   });
+  return true;
 }
 // Проверяем часто, а работу делает отметка времени: сверка идёт, если с
 // прошлой прошло больше RECHECK_EVERY_H часов.
@@ -3089,8 +3094,8 @@ app.post('/api/recheck', (req, res) => {
     return res.status(403).json({ success: false, error: 'bad key' });
   }
   const was = recheckStamp();
-  recoveryRecheck(true);
-  res.json({ success: true, started: true, previous: was.at ? { at: was.at, code: was.code } : null });
+  const started = req.query.notify === '0' ? recoveryRecheck(true, { notify: false }) : recoveryRecheck(true);
+  res.json({ success: true, started: !!started, previous: was.at ? { at: was.at, code: was.code } : null });
 });
 
 // Состояние ленты скана.
@@ -6128,7 +6133,7 @@ function microScalpEntryValue(row) {
 // минуты дают 0.54 — треть устаревания снимается почти даром.
 const ENTRY_SCAN_INTERVAL_MS = 2 * 60 * 1000;
 const ENTRY_SCAN_MAX_COINS = 60;
-const entryScan = { results: [], at: 0, total: 0, running: false, failedAt: 0, market: null, missed: [] };
+const entryScan = { results: [], at: 0, total: 0, running: false, failedAt: 0, market: null, missed: [], missedDetails: {} };
 
 // ЛЕНТА СКАНА: то, что по свечам задним числом не восстановить.
 //
@@ -6214,7 +6219,7 @@ function saveEntrySince() {
 // за 12 дней: упавшие от суточного максимума более чем на 10% возвращались к
 // цене входа плюс комиссия в течение часа в 86% случаев и ни разу не зависли
 // за трое суток. Упавшие менее чем на 1% — 52% за час и 2.4% зависших.
-// Запрос к бирже с одним повтором.
+// До трёх попыток при временном отказе; каждая ограничена восемью секундами.
 //
 // Скан делает около ста двадцати обращений каждые две минуты, и часть их
 // биржа отклоняет. Одного отказа хватало, чтобы монета молча исчезла из
@@ -6222,21 +6227,23 @@ function saveEntrySince() {
 // притом что падение, спред и объём у него не менялись вовсе. Для панели,
 // которая говорит, что покупать, исчезнувший кандидат это не мелочь.
 async function cbTry(url) {
-  for (let a = 0; a < 2; a++) {
+  for (let a = 0; a < 3; a++) {
     try {
-      const r = await fetch(url, DIP_H);
+      const r = await fetch(url, { ...DIP_H, signal: AbortSignal.timeout(8000) });
       if (r.ok) return r;
+      if (![429, 502, 503, 504].includes(r.status)) return null;
     } catch { }
-    if (a === 0) await new Promise(s => setTimeout(s, 400));
+    if (a < 2) await new Promise(s => setTimeout(s, (a + 1) * 1000));
   }
   return null;
 }
 
-async function entrySignals(coin) {
+async function entrySignals(coin, onMissing = () => {}) {
+  const unavailable = reason => { onMissing(reason); return null; };
   const r = await cbTry(`${DIP_CB}/products/${coin}-USD/candles?granularity=300`);
-  if (!r) return null;
+  if (!r) return unavailable('Биржа не вернула свечи после повторных запросов.');
   const raw = await r.json();
-  if (!Array.isArray(raw) || raw.length < 30) return null;
+  if (!Array.isArray(raw) || raw.length < 30) return unavailable('Мало свечей для расчёта: нужно не менее 30.');
   // [time, low, high, open, close, volume], новые вперёд
   // Свежесть ряда. Свечи приходят новыми вперёд, и если по монете давно не
   // было сделок, верхняя окажется вчерашней — а считалась бы за текущую цену.
@@ -6244,10 +6251,10 @@ async function entrySignals(coin) {
   // 10.6 минуты), но монеты в списке меняются, и молча считать вчерашнее
   // сегодняшним нельзя.
   const newest = Number(raw[0] && raw[0][0]) * 1000;
-  if (!(newest > 0) || Date.now() - newest > 20 * 60_000) return null;
+  if (!(newest > 0) || Date.now() - newest > 20 * 60_000) return unavailable('Нет свежих свечей: последняя старше 20 минут или её время неизвестно.');
   const rows = raw.slice(0, 288).map(x => ({ t: Number(x[0]) * 1000, lo: Number(x[1]), hi: Number(x[2]), cl: Number(x[4]) }))
     .filter(x => x.lo > 0 && x.hi > 0 && x.cl > 0);
-  if (rows.length < 30) return null;
+  if (rows.length < 30) return unavailable('Мало корректных свечей для расчёта: нужно не менее 30.');
   const price = rows[0].cl;
 
   // Суточный ход монеты — для общего направления рынка. Опорную свечу ищем по
@@ -6583,6 +6590,7 @@ async function runEntryScan() {
     // места: монета исчезает из списка, и отличить «условия перестали
     // выполняться» от «биржа не ответила» нельзя ни с экрана, ни из логов.
     const missed = [];
+    const missedDetails = {};
     for (let i = 0; i < universe.length; i += 3) {
       const batch = universe.slice(i, i + 3);
       await Promise.all(batch.map(async ({ coin, volume }) => {
@@ -6593,7 +6601,9 @@ async function runEntryScan() {
           // измерили, а не за реальные издержки. Обогнать десятку они не могли
           // в принципе. Цена честности — второй запрос на монету: 100 обращений
           // на скан вместо 50, около 0.83 в секунду при лимите биржи в 10.
-          const [sig, sp] = await Promise.all([entrySignals(coin), entrySpread(coin)]);
+          const [sig, sp] = await Promise.all([
+            entrySignals(coin, reason => { missedDetails[coin] = reason; }), entrySpread(coin),
+          ]);
           if (!sig) { missed.push(coin); return; }
           // Спред пока неизвестен — считаем ядро балла. Полный балл добираем
           // только для прошедших порог: тикер на все шестьдесят монет удвоил
@@ -6602,7 +6612,7 @@ async function runEntryScan() {
             pullbackPct: sig.pullbackPct, rsi: sig.rsi5,
             spreadPct: sp, vol24: volume, checks: [],
           });
-          if (!value) { missed.push(coin); return; }
+          if (!value) { missedDetails[coin] = 'Недостаточно данных для расчёта.'; missed.push(coin); return; }
           rows.push({
             coin, pair: coin + '-USD', price: sig.price, vol24: volume, chg24Pct: sig.chg24Pct,
             dayCoverH: sig.dayCoverH,
@@ -6611,7 +6621,7 @@ async function runEntryScan() {
             runupPct: sig.runupPct, runup: runupOdds(sig.runupPct),
             entryValue: value,
           });
-        } catch { missed.push(coin); /* одна монета не должна ронять весь скан */ }
+        } catch { missedDetails[coin] = 'Ошибка загрузки или разбора данных биржи.'; missed.push(coin); }
       }));
       await new Promise(r => setTimeout(r, 250));
     }
@@ -6687,8 +6697,11 @@ async function runEntryScan() {
     // Пустой результат при непустой вселенной — это отказ биржи, а не «нет
     // кандидатов». Затирать им удачный скан нельзя: панель показала бы
     // «первый скан после запуска» и выглядела бы работающей.
-    if (!rows.length && universe.length && entryScan.results.length) {
+    if (!rows.length && universe.length) {
       entryScan.failedAt = Date.now();
+      if (!entryScan.at) entryScan.total = universe.length;
+      entryScan.missed = missed;
+      entryScan.missedDetails = missedDetails;
       console.error('[entry-scan] ни одной монеты из ' + universe.length + ' — прежний результат сохранён');
       return;
     }
@@ -6727,6 +6740,7 @@ async function runEntryScan() {
     entryScan.results = rows;
     entryScan.total = universe.length;
     entryScan.missed = missed;
+    entryScan.missedDetails = missedDetails;
     entryScan.at = Date.now();
     entryScan.failedAt = 0;
     feedAppend(entryScan.at, rows);
@@ -6734,6 +6748,7 @@ async function runEntryScan() {
     console.log('[entry-scan] ' + rows.length + '/' + universe.length + ' монет, прошли вход: ' + good +
       (missed.length ? ', не посчитаны: ' + missed.join(',') : ''));
   } catch (e) {
+    entryScan.failedAt = Date.now();
     console.error('[entry-scan]', e.message);
   } finally {
     entryScan.running = false;
@@ -7092,6 +7107,7 @@ function entryScanResponse(now = Date.now()) {
     // истории не хватило. Без этого монета просто исчезает из списка, и
     // отличить «условия перестали выполняться» от «данных не пришло» нельзя.
     missed: entryScan.missed || [],
+    missedDetails: entryScan.missedDetails || {},
     recoveryMeasuredAt: RECOVERY_MEASURED_AT,
     recoverySample: RECOVERY_SAMPLE,
     // Прибыльность отбора после издержек: панель обязана говорить это сама,

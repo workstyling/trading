@@ -10,6 +10,7 @@
   <link
     href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&family=Inter:wght@300;400;500;600;700&display=swap"
     rel="stylesheet">
+  <link rel="stylesheet" href="/css/recovery-panel.css">
   <style>
     /* ═══════════════════════════════════════
        PREMIUM TECH-NOIR DESIGN SYSTEM
@@ -15847,6 +15848,7 @@ Requirements:
         trackFreshness('entryAgo', j);
         const rows = j.results || [];
         const gate = ENTRY_MIN(j);
+        const openDetails = recoveryDetailsState(box);
         const good = rows.filter(x => entryPassesUi(x, gate));
         const head = '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:6px;">' +
           '<span style="color:var(--t1);font-weight:700;font-size:12px;" title="Свежая частота касания цели +0.30% за час по глубине падения и отката. Это не вероятность чистой прибыли. Качество отбора проверяется в журнале ниже. Исторический замер ' + (j.recoveryMeasuredAt || '—') + ', наблюдений ' + (j.recoverySample || '—') + '; его проценты не подменяют свежие данные.">Рейтинг отката</span>' +
@@ -15861,9 +15863,11 @@ Requirements:
           // Отвалившийся скан обязан быть видимым: устаревший список выглядит
           // рабочим, и по нему можно купить по цене, которой уже нет.
           (j.staleSince ? '<span style="color:#ff6b6b;font-weight:700;"> · биржа не ответила, список устарел</span>' : '') +
-          '</span></div>';
+          '</span></div>' + renderRecoveryMissing(j);
         if (!rows.length) {
-          box.innerHTML = head + renderRecoveryStatus(j.recheck, j.serverNow) + '<div style="color:var(--t2);font-size:11px;">Первый скан после запуска…</div>';
+          box.innerHTML = head + renderRecoveryStatus(j.recheck, j.serverNow) + '<div style="color:var(--t2);font-size:11px;">' +
+            (j.staleSince ? 'Обновление не удалось; сигналы покупки отключены. Ожидается следующий скан.' : 'Первый скан после запуска…') + '</div>';
+          restoreRecoveryDetails(box, openDetails);
           return;
         }
         // Общее направление рынка — строка над таблицей.
@@ -15983,6 +15987,7 @@ Requirements:
           (!good.length ? '<div style="color:var(--t2);font-size:10px;margin-top:5px;">Порог не взял никто — монеты показаны в остальных.</div>' : '') +
           '<div id="entryPaper" style="margin-top:6px;padding-top:5px;border-top:1px solid var(--b1);font-size:10px;color:var(--t2);"></div>';
 
+        restoreRecoveryDetails(box, openDetails);
         // Доли портфеля рисуются после разметки: кошелёк живёт своим циклом
         try { paintBookShares(); } catch { }
 
