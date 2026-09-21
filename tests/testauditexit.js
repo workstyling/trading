@@ -49,6 +49,15 @@ async function run(file, overrides = {}) {
       file + ': low score cannot authorize entry even when formula matches');
   }
   assert.equal(await run('scripts/audit-live.js', { '/products/BTC-USD/candles': null }), 1, 'unexpected calculation error fails');
+  assert.equal(await run('scripts/audit-live.js', { '/products/BTC-USD/candles': [] }), 1, 'empty BTC history must not pass the audit');
+  const hour = Math.floor(Date.now() / 3600000) * 3600;
+  const moving = Array.from({ length: 40 }, (_, i) => [hour - (39 - i) * 3600, 99, 105, 100, i === 39 ? 105 : 100]);
+  const captured = { ...scan(), regime: { above: true, ret7: 1, price: 101, distPct: 0.9, at: Date.now() } };
+  assert.equal(await run('scripts/audit-live.js', { '/api/scalp-scan': captured, '/products/BTC-USD/candles': moving }), 0,
+    'moving open candle is compared on the scanner price, not a later price');
+  assert.equal(await run('scripts/audit-live.js', {
+    '/api/scalp-scan': { ...captured, regime: { ...captured.regime, distPct: 2 } }, '/products/BTC-USD/candles': moving,
+  }), 1, 'an incorrect BTC calculation still fails on the same snapshot');
   assert.equal(await run('scripts/audit-live.js', { '/api/lab': { ...lab(), brief: 'Details. '.repeat(50) } }), 1,
     'missing validation explanation fails');
   assert.equal(await run('scripts/audit-live.js', { '/api/lab': {

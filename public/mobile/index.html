@@ -1532,6 +1532,7 @@
     }
   </style>
   <script src="/js/recovery-journal.js"></script>
+  <script src="/js/orders-freshness.js"></script>
 </head>
 <body>
   <!-- Header -->
@@ -1559,6 +1560,7 @@
   </div>
 
   <!-- Tabs -->
+  <div id="ordersFreshness" role="status" hidden style="padding:7px 10px;margin:8px 10px;border:1px solid #f5c51855;border-radius:6px;background:#f5c5180d;color:#f5c518;font-size:11px;line-height:1.5;"></div>
   <div class="tabs">
     <button class="tab active" data-tab="trade">Trade</button>
     <button class="tab" data-tab="orders">Orders</button>
@@ -2983,8 +2985,9 @@
 
     // ── Orders ──
     async function loadOrders(fresh) {
-      const r = await api('/get-latest-orders' + (fresh ? '?fresh=1' : ''));
-      if (r.success) {
+      const r = await api('/get-latest-orders' + (fresh ? '?fresh=1' : ''), { signal: AbortSignal.timeout(10000) });
+      updateOrdersFreshnessStatus(document.getElementById('ordersFreshness'), r);
+      if (r.success && Array.isArray(r.orders)) {
         allOrders = r.orders;
         renderOrders();
         // Auto-add new orders created via mobile to selected

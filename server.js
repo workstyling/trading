@@ -869,19 +869,21 @@ app.get('/get-latest-orders', async (req, res) => {
     // filled_size, total_value и комиссию не мгновенно, и восьмисекундный кеш
     // успевал заморозить полупустой снимок на два цикла опроса.
     const fresh = req.query.fresh === '1';
-    if (!fresh && ordersCache.data && (now - ordersCache.ts) < ORDERS_CACHE_TTL) {
-      return res.json({ success: true, orders: ordersCache.data });
+    if (!fresh && !ordersCache.stale && ordersCache.data && (now - ordersCache.ts) < ORDERS_CACHE_TTL) {
+      return res.json({ success: true, orders: ordersCache.data, stale: false, updatedAt: ordersCache.ts });
     }
     const orders = await getLatestOrders();
     ordersCache = { data: orders, ts: now };
-    res.json({ success: true, orders });
+    res.json({ success: true, orders, stale: false, updatedAt: now });
   } catch (error) {
-    console.error('Error fetching orders:', error);
-    // Return stale cache on error instead of failing
+    const message = String(error && error.message || error).split('\n')[0].slice(0, 240);
+    console.error('Error fetching orders:', message);
+    // Preserve the last snapshot, but never present a failed refresh as fresh.
     if (ordersCache.data) {
-      return res.json({ success: true, orders: ordersCache.data });
+      ordersCache.stale = true;
+      return res.json({ success: true, orders: ordersCache.data, stale: true, updatedAt: ordersCache.ts || null });
     }
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json({ success: false, error: message, stale: true, updatedAt: null });
   }
 });
 

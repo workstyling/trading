@@ -66,17 +66,24 @@ function ema(v, p) {
   console.log('\n=== РЕЖИМ, НЕЗАВИСИМЫЙ ПЕРЕСЧЁТ ===');
   const bd = await j(CB + '/products/BTC-USD/candles?granularity=3600');
   const bc = bd.filter(x => x[4] > 0).map(x => ({ t: x[0], c: x[4] })).sort((a, b) => a.t - b.t);
-  const be = ema(bc.map(x => x.c), 20);
-  const mine = (bc[bc.length - 1].c / be - 1) * 100;
+  if (bc.length < 20) throw new Error('Not enough BTC candles for an independent EMA20 check');
   const regimeAt = Number(scan.regime.at || scan.at || 0);
   const regimeAgeSec = regimeAt > 0 ? Math.max(0, Math.round((Date.now() - regimeAt) / 1000)) : null;
-  if (regimeAgeSec != null && regimeAgeSec <= 60) {
-  ok(Math.abs(mine - scan.regime.distPct) < 0.3, 'запас BTC сходится',
-
-    'панель ' + scan.regime.distPct + '% / расчёт ' + mine.toFixed(2) + '%');
-  ok((mine > 0) === scan.regime.above, 'сторона EMA20 определена верно');
+  const sameHour = bc.length && bc[bc.length - 1].t === Math.floor(regimeAt / 3600000) * 3600;
+  if (regimeAgeSec != null && regimeAgeSec <= 60 && sameHour) {
+    // The open hourly candle keeps changing. Recompute its EMA contribution
+    // with the price captured by the scanner, so both sides use one snapshot.
+    const price = scan.regime.price;
+    const closes = bc.map(x => x.c);
+    closes[closes.length - 1] = price;
+    const be = ema(closes, 20);
+    const mine = (price / be - 1) * 100;
+    ok(typeof price === 'number' && price > 0 && Math.abs(mine - scan.regime.distPct) < 0.051, 'запас BTC сходится',
+      'панель ' + scan.regime.distPct + '% / расчёт на цене скана ' + mine.toFixed(2) + '%');
+    ok((mine > 0) === scan.regime.above, 'сторона EMA20 определена верно');
   } else {
-    console.log('  skip  BTC EMA20 recomputation deferred: snapshot ' + (regimeAgeSec == null ? 'unknown' : regimeAgeSec + 's') + ' old');
+    console.log('  skip  BTC EMA20 recomputation deferred: snapshot ' + (regimeAgeSec == null ? 'unknown' : regimeAgeSec + 's') +
+      ' old' + (sameHour ? '' : ', hourly candle differs'));
   }
 
   console.log('\n=== ЛАБОРАТОРИЯ ===');
