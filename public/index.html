@@ -15941,7 +15941,7 @@ Requirements:
           const edge = recoveryEdge(rec, recoveryBaseline(j));
           // Верхняя клетка из показанных: одинаково зелёные восемь строк не
           // выделяют ничего, а гейт по падению сам отбирает клетки выше базы.
-                    // Пометки «максимум» нет: выше частота не лучше, см. recoveryOrder
+                    // Частота не меняет цвет статуса покупки.
           const peak = false;
           const safe = String(x.coin).replace(/[^A-Z0-9]/gi, '');
           const held = x.inListMin == null ? null
@@ -15975,7 +15975,7 @@ Requirements:
             '<br><span style="color:var(--t2);font-size:9px;font-weight:400;">' + (x.spreadPct == null ? '—' : x.spreadPct + '%') + '</span></td>' +
             num(held || '—', recoveryFresh(x) ? 'var(--entry-confirmed)' : 'var(--t2)', recoveryFresh(x)) + '</tr>';
         };
-        // Одинаковые группы на компьютере и телефоне; показываем весь скан.
+        // Статус → цель 1ч по убыванию → свежесть; одинаково на компьютере и телефоне.
         const ranked = rows.slice().sort((a, b) =>
           recoveryOrder(b, j, verdict(b), recoveryObservation(b, j)) -
           recoveryOrder(a, j, verdict(a), recoveryObservation(a, j)));

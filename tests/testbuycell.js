@@ -123,7 +123,7 @@ console.log('\nПорядок: разрешённые сверху');
   const ord = (x, data = scan) => recoveryOrder(x, data, verdict(x, data), recoveryObservation(x, data, now), now);
   ok(ord(row()) > ord(row({ dayFallPct: 4 })), 'строка «брать» выше измеренной «наблюдать»');
   ok(ord(row()) > 2000, 'и вообще выше всех');
-  ok(ord(row({ chg24Pct: -14 })) === -1, 'риск остаётся внизу');
+  ok(ord(row({ chg24Pct: -14 })) < ord(row({ dayFallPct: 4 })), 'риск остаётся ниже кандидатов');
 }
 
 console.log('\nОбе вёрстки');

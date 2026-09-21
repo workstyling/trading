@@ -80,6 +80,26 @@ const scan = { success: true, at: now, serverNow: now, gate: { fallPct: 3, sprea
     assert(box.innerHTML.includes('Покупать · 1'));
     assert(box.innerHTML.includes('Кандидаты · покупка не разрешена · 1'));
     assert(box.innerHTML.includes('Остальные · 19'));
+    // Older high-frequency candidates must lead newer lower-frequency ones.
+    // Equal displayed percentages use age; a confirmed row without an estimate stays first.
+    const descending = [
+      { coin: 'LOW', pct: 71.9, inListMin: 1 },
+      { coin: 'TIEOLD', pct: 83.5, inListMin: 2700 },
+      { coin: 'HIGH', pct: 91.9, inListMin: 840 },
+      { coin: 'TIENEW', pct: 83.5, inListMin: 2 },
+    ];
+    payload = { ...mixed, results: [
+      ...descending.map(item => ({ ...mixed.results[1], coin: item.coin, inListMin: item.inListMin })),
+      mixed.results[0], mixed.results[2],
+    ], recheck: { ...mixed.recheck, report: { ...mixed.recheck.report,
+      cells: mixed.recheck.report.cells.map(group => group.lo === 6 ? { ...group,
+        byCoin: Object.fromEntries(descending.map(item => [item.coin, { pct: item.pct, n: 300 }])),
+      } : group),
+    } } };
+    await render();
+    assert.deepEqual(Array.from(box.innerHTML.matchAll(/onclick="selectCoinForTradeM?\('([^']+)'\)/g), m => m[1]),
+      ['BUY', 'HIGH', 'TIENEW', 'TIEOLD', 'LOW', 'NOPRICE']);
+    assert.equal((box.innerHTML.match(/data-entry-state="possible"/g) || []).length, 4);
     assert(src.includes('tr[data-entry-state="confirmed"] { --entry-border: var(--entry-confirmed); }'));
     assert(src.includes('tr[data-entry-state="possible"] { --entry-border: var(--entry-possible); }'));
     for (const side of ['top', 'bottom', 'left', 'right']) assert(src.includes('border-' + side + ':'), side);

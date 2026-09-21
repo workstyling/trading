@@ -78,27 +78,24 @@ console.log('\nПорог: две ошибки разности и не мень
     'в подсказке названо, с чем сравнили');
 }
 
-console.log('\nПорядок строк: по свежести, а не по частоте');
+console.log('\nПорядок строк: статус, частота по убыванию, затем свежесть');
 {
-  // Сортировать по частоте было первым побуждением, и проверка вне выборки
-  // его отменила: на горизонте четырёх часов верхняя пятина монет по частоте
-  // дала -0.332% за сделку против -0.143% у нижней (разница -0.188 ±0.064).
-  // Монета касается цели чаще потому, что сильнее дёргается, — и чаще
-  // достаёт до стопа. Список по частоте показывал бы на худшее.
   const fresh = row({ coin: 'NEW', dayFallPct: 4, inListMin: 2 });
   const hourOld = row({ coin: 'OLD', dayFallPct: 12, inListMin: 60 });
   const dayOld = row({ coin: 'STALE', dayFallPct: 12, inListMin: 1260 });
-  ok(order(fresh) > order(hourOld), 'свежее пересечение выше давнего');
+  ok(order(hourOld) > order(fresh), 'более высокая частота выше свежего сигнала');
   ok(order(hourOld) > order(dayOld), 'и между давними — кто новее');
-  ok(order(row({ coin: 'A', dayFallPct: 12, inListMin: 30 })) <
+  ok(order(row({ coin: 'A', dayFallPct: 12, inListMin: 30 })) >
      order(row({ coin: 'B', dayFallPct: 4, inListMin: 10 })),
-    'высокая частота сама по себе наверх не поднимает');
-  ok(order(row({ dayFallPct: 12, inListMin: 30 })) === order(row({ dayFallPct: 4, inListMin: 30 })),
-    'при равной свежести частота на порядок не влияет вовсе');
-  ok(order(row({ dayFallPct: 12, inListMin: 1, chg24Pct: -14 })) === -1, 'риск уходит вниз');
+    'внутри статуса процент важнее возраста');
+  ok(order(row({ dayFallPct: 12, inListMin: 30 })) > order(row({ dayFallPct: 4, inListMin: 30 })),
+    'при равной свежести процент идёт по убыванию');
+  ok(order(row({ dayFallPct: 12, inListMin: 1, chg24Pct: -14 })) < order(fresh), 'риск ниже кандидатов');
   ok(order(fresh) > order(row({ dayFallPct: 12, inListMin: 1, chg24Pct: -14 })), 'и ниже любого кандидата');
   ok(order(row({ coin: 'NOTIME', dayFallPct: 12, inListMin: null })) < order(dayOld),
-    'без времени в списке — в самый низ');
+    'при равном проценте неизвестный возраст ниже известного');
+  ok(order(row({ pullbackPct: 2, inListMin: 0 })) < order(row({ chg24Pct: -14 })),
+    'в остальных измеренный процент выше свежего прочерка');
 }
 
 console.log('\nНадбавки за откат больше нет');
@@ -106,7 +103,7 @@ console.log('\nНадбавки за откат больше нет');
   // Раньше при равной частоте вперёд шёл более глубокий откат: в
   // историческом замере он добавлял 11-18 пунктов к частоте касания. Но
   // частота и деньги — разные вещи, а прибыльности у глубокого отката никто
-  // не подтверждал. Порядок теперь событийный, и таких надбавок в нём нет.
+  // не подтверждал. Дополнительной надбавки за глубину в порядке нет.
   // Сравниваем внутри одной клетки: откат от 1.5% переносит строку в другую,
   // и разница вышла бы из-за клетки, а не из-за надбавки.
   const deeper = row({ coin: 'DEEP', pullbackPct: 1.4, inListMin: 30 });
@@ -140,8 +137,8 @@ console.log('\nПометка «максимум» молчит, когда ни
   ok(recoveryPeakMark(two, scan, now).show === true, 'две тоже помечаются');
   const three = [...two, row({ coin: 'XLM', dayFallPct: 13 })];
   ok(recoveryPeakMark(three, scan, now).show === false, 'трое и больше — пометки нет', String(recoveryPeakMark(three, scan, now).count));
-  ok(renderRecoveryTieNote(three, scan, now).includes('Верхние <b>3</b> строки'),
-    'вместо неё сказано, сколько строк неразличимы');
+  ok(renderRecoveryTieNote(three, scan, now).includes('<b>3</b> строки'),
+    'вместо неё сказано, сколько строк с равным процентом');
   ok(renderRecoveryTieNote(three, scan, now).includes('79.1%'), 'и названа их общая частота');
   ok(renderRecoveryTieNote(two, scan, now) === '', 'когда пометка есть, подписи нет');
   ok(renderRecoveryTieNote([], scan, now) === '', 'пустой список молчит');
