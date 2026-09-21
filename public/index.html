@@ -1267,7 +1267,7 @@
 
     .price-progress-info {
       position: relative;
-      height: 18px;
+      height: 30px;
       margin-top: 8px;
       font-size: 10px;
       overflow: visible;
@@ -1317,6 +1317,7 @@
 
     .info-target {
       color: var(--green);
+      top: 14px;
     }
 
     .info-order {
@@ -9757,6 +9758,26 @@
         return null;
       }
       const gap = sz0 - avail;
+      // СВОБОДНОГО НА КОПЕЙКИ — ЭТО НЕ «ПРОДАТЬ ЧАСТЬ».
+      //
+      // По VVV свободными оставались 0.001 монеты при 100.465 в открытом
+      // ордере, и стоп-лимит ушёл на три цента. Предлагать такую сделку
+      // бессмысленно: комиссия съест её целиком, а позиция останется
+      // открытой. Когда свободное не стоит и доллара — это отказ с
+      // объяснением, а не выбор.
+      // Цена берётся из того же кеша, что и колонки таблицы. Нет цены —
+      // проверку пропускаем: молча блокировать продажу из-за незнания нельзя.
+      // Кеш объявлен ниже по файлу: к моменту нажатия он есть, но ронять
+      // продажу из-за порядка объявлений нельзя — это деньги, а не вёрстка.
+      const px = typeof lastPricesCache !== 'undefined' ? lastPricesCache[coin + '-USD'] : null;
+      const price = px ? (parseFloat(px.bestBid) || 0) : 0;
+      if (price > 0 && avail * price < 1) {
+        showOrderError('Почти всё заморожено',
+          `Свободно всего <b>${fmtSize(avail)} ${coin}</b> — это $${(avail * price).toFixed(2)}, ` +
+          `остальные <b>${fmtSize(hold)}</b> заняты открытым ордером продажи.<br><br>` +
+          'Биржа не примет второй ордер на те же монеты. Сними открытый ордер — и тогда продавай всё разом.');
+        return null;
+      }
       const okBtn = await new Promise(resolve => {
         showConfirmModal('Свободно меньше выбранного',
           `Выбрано <b>${fmtSize(sz0)} ${coin}</b>, свободно <b>${fmtSize(avail)}</b> — на <b>${fmtSize(gap)}</b> меньше.<br><br>` +
@@ -13253,11 +13274,21 @@ Requirements:
         //
         // Больше выбранного не берём: в кошельке могут лежать монеты не из
         // этой позиции, и «продать всё» не должно означать «продать и их».
-        // Здесь нужен именно СВОБОДНЫЙ остаток: замороженное в открытом ордере
-        // на бирже не продать. Признак закрытой позиции выше считается по
-        // всему кошельку — там вопрос другой: есть монета вообще или нет.
+        // БЕРЁМ ВЕСЬ КОШЕЛЁК, А НЕ ТОЛЬКО СВОБОДНОЕ.
+        //
+        // Здесь стоял свободный остаток, и это оказалось дорогой ошибкой. Пока
+        // висит открытый ордер продажи, свободного нет: по VVV в кошельке
+        // лежало 100.466, из них 100.465 заморожено заявкой, свободно 0.001 —
+        // и кнопка «Sell Stop» молча предложила стоп-лимит на 0.001 монеты.
+        // Он исполнился на три цента, а позиция осталась открытой.
+        //
+        // Заморозка — не «этих монет нет», а «сначала сними ту заявку». Это
+        // разговор, а не молчаливое урезание до пыли: окно перед отправкой
+        // сравнит со свободным остатком, назовёт заморозку и скажет, что
+        // делать. Урезав здесь, мы это окно и обошли — оно не видело
+        // расхождения, потому что расхождение уже было спрятано.
         const walletAvail = !walletKnown ? null : walletRow ? parseFloat(walletRow.available) : 0;
-        const sellNow = Number.isFinite(walletAvail) ? Math.min(totalFilled, walletAvail) : totalFilled;
+        const sellNow = Number.isFinite(walletFree) ? Math.min(totalFilled, walletFree) : totalFilled;
         // Затраты — в той же доле, что и монеты: иначе прибыль считается против
         // денег, которых в ордере нет.
         const sellNowCost = totalFilled > 0 ? totalUSD * (sellNow / totalFilled) : 0;
@@ -13265,7 +13296,18 @@ Requirements:
         // выглядят как ошибка приложения, а не как проданная часть позиции.
         const shortBy = totalFilled - sellNow;
         const shortNote = shortBy > 0 && totalFilled > 0
-          ? ` <span style="color:#f5843a;font-size:10px;" title="Выбранные ордера дают ${fmtSize(totalFilled)}, а свободно ${fmtSize(sellNow)}. Разницу либо уже продала снятая заявка, чья исполненная часть не попала в выбранное, либо она висит в открытом ордере. Кнопки продажи считают по свободному.">продать можно ${fmtSize(sellNow)} — на ${fmtSize(shortBy)} меньше</span>`
+          ? ` <span style="color:#f5843a;font-size:10px;" title="Выбранные ордера дают ${fmtSize(totalFilled)}, а в кошельке ${fmtSize(sellNow)}. Разницу, скорее всего, уже продала снятая заявка, чья исполненная часть не попала в выбранное. Кнопки продажи считают по кошельку.">в кошельке ${fmtSize(sellNow)} — на ${fmtSize(shortBy)} меньше</span>`
+          : '';
+        // ЗАМОРОЖЕННОЕ В ОТКРЫТОМ ОРДЕРЕ — ОТДЕЛЬНАЯ ИСТОРИЯ.
+        //
+        // Это не «монет нет», а «сначала сними ту заявку», и разница видна
+        // только здесь: с экрана открытый ордер и проданные монеты выглядят
+        // одинаково — просто «продать нельзя». Пока это молчало, кнопка
+        // Sell Stop уходила на свободный остаток в 0.001 монеты.
+        const heldNow = Number.isFinite(walletAvail) && Number.isFinite(walletFree)
+          ? Math.max(0, walletFree - walletAvail) : 0;
+        const heldNote = heldNow > 0 && sellNow > 0
+          ? ` <span style="color:var(--yellow);font-size:10px;" title="Эти монеты заняты открытым ордером продажи и на биржу вторым ордером не уйдут. Чтобы продать всё разом, сначала сними тот ордер — кнопки продажи предупредят об этом перед отправкой.">заморожено ${fmtSize(Math.min(heldNow, sellNow))} в открытом ордере</span>`
           : '';
 
 
@@ -13301,7 +13343,7 @@ Requirements:
         const isFav = favoriteCoins.has(coin);
         h += `<div class="coin-group" data-coin="${coin}" data-coin-pair="${pair}">
           <h4><span onclick="selectCoinForTrade('${coin}')" title="Выбрать ${coin} и открыть график 15m здесь" style="cursor:pointer;color:var(--blue);">${pair}</span>${todayBadge} <span onclick="toggleFavoriteCoin('${coin}')" title="${isFav ? 'Remove from favorites' : 'Add to favorites'}" style="cursor:pointer;font-size:16px;opacity:${isFav ? '1' : '0.25'};padding:0 6px;color:${isFav ? '#f5c518' : 'inherit'};">★</span><button class="select-coin-btn" onclick="selectCoinForBuy('${coin}')" title="Set for Buy">⬆</button></h4>
-          <div class="balance">Selected: ${fmtSize(filledShown)} ${coin} <span id="realBal_${coin}" data-live="1" style="color:var(--t2);font-size:10px;">(loading real balance...)</span>${shortNote}${missedNote} ${sellNow > 0 ? `<button class="sell-all-btn" onclick="sellAllCoin('${pair}', '${sellNow}', ${avgBuyPrice}, ${sellNowCost})">SELL ALL</button> <button class="sell-all-btn mkt" onclick="sellAllMarket('${pair}', '${sellNow}', '${coin}', ${sellNowCost})" title="Продать всё ПО РЫНКУ. Диалог покажет реальную цену исполнения по стакану и прибыль, обновляя их каждую секунду.">SELL MKT</button> <button id="bew_${coin}" onclick="toggleBeWatch('${coin}','${pair}',${totalFilled},${totalUSD})" title="Telegram-алерт, когда Limit P&L дойдёт до 0 (сработает один раз и выключится)" style="padding:3px 8px;border:1px solid ${_beWatches[coin] ? 'var(--yellow)' : 'rgba(255,255,255,0.25)'};border-radius:5px;background:${_beWatches[coin] ? 'rgba(245,197,24,0.15)' : 'transparent'};color:${_beWatches[coin] ? 'var(--yellow)' : '#889'};font-size:10px;font-weight:600;cursor:pointer;">🔔 BE${_beWatches[coin] ? ' ON' : ''}</button>` : ''} <button class="${btnClass}" title="${openTitle}" onclick="saveGroupProfit('${coin}', ${groupProfit.toFixed(2)}, '${filledBuys.map(o => o.order_id).join(',')}', '${filledSells.map(o => o.order_id).join(',')}', ${buyCreatedDate ? `'${buyCreatedDate}'` : 'null'})" ${btnDisabled ? 'disabled' : ''}>${btnText}</button>
+          <div class="balance">Selected: ${fmtSize(filledShown)} ${coin} <span id="realBal_${coin}" data-live="1" style="color:var(--t2);font-size:10px;">(loading real balance...)</span>${shortNote}${heldNote}${missedNote} ${sellNow > 0 ? `<button class="sell-all-btn" onclick="sellAllCoin('${pair}', '${sellNow}', ${avgBuyPrice}, ${sellNowCost})">SELL ALL</button> <button class="sell-all-btn mkt" onclick="sellAllMarket('${pair}', '${sellNow}', '${coin}', ${sellNowCost})" title="Продать всё ПО РЫНКУ. Диалог покажет реальную цену исполнения по стакану и прибыль, обновляя их каждую секунду.">SELL MKT</button> <button id="bew_${coin}" onclick="toggleBeWatch('${coin}','${pair}',${totalFilled},${totalUSD})" title="Telegram-алерт, когда Limit P&L дойдёт до 0 (сработает один раз и выключится)" style="padding:3px 8px;border:1px solid ${_beWatches[coin] ? 'var(--yellow)' : 'rgba(255,255,255,0.25)'};border-radius:5px;background:${_beWatches[coin] ? 'rgba(245,197,24,0.15)' : 'transparent'};color:${_beWatches[coin] ? 'var(--yellow)' : '#889'};font-size:10px;font-weight:600;cursor:pointer;">🔔 BE${_beWatches[coin] ? ' ON' : ''}</button>` : ''} <button class="${btnClass}" title="${openTitle}" onclick="saveGroupProfit('${coin}', ${groupProfit.toFixed(2)}, '${filledBuys.map(o => o.order_id).join(',')}', '${filledSells.map(o => o.order_id).join(',')}', ${buyCreatedDate ? `'${buyCreatedDate}'` : 'null'})" ${btnDisabled ? 'disabled' : ''}>${btnText}</button>
           ${sellNow > 0 ? (() => { const _st = sellSteps(coin); return `<span style="margin-left:10px;display:inline-flex;align-items:center;gap:4px;">
             <input type="text" id="limitSellPrice_${coin}" placeholder="Limit price" value="${_st.limit != null ? _st.limit : ''}" oninput="previewLimitSell('${coin}','${sellNow}',${sellNowCost})" style="width:90px;padding:3px 6px;background:var(--s3);border:1px solid var(--b1);border-radius:5px;color:var(--t0);font-family:'JetBrains Mono',monospace;font-size:11px;outline:none;" autocomplete="off">
             <button onclick="sellAllLimit('${pair}','${sellNow}','${coin}',${sellNowCost})" style="padding:3px 10px;border:1px solid var(--yellow);border-radius:5px;background:transparent;color:var(--yellow);font-size:10px;font-weight:600;cursor:pointer;">Sell Limit</button>
@@ -13352,7 +13394,8 @@ Requirements:
           const orderId = o.order_id ? o.order_id.slice(0, 8) + '...' : '-';
           const side = o.side || '-';
           const sideClass = side.toLowerCase() === 'buy' ? 'side-buy' : 'side-sell';
-          const orderType = o.order_configuration?.market_market_ioc ? 'Market' : 'Limit';
+          const orderType = o.order_type === 'STOP_LIMIT' || o.stop_price ? 'Stop Limit'
+            : o.order_configuration?.market_market_ioc ? 'Market' : 'Limit';
           const filledVal = parseFloat(o.filled_size) || 0;
           const filled = filledVal ? fmtSize(filledVal) : '0';
           const limit = o.limit_price ? fmtPrice(o.limit_price) : '-';
@@ -13524,7 +13567,7 @@ Requirements:
             <td class="${sideClass}">${side.toLowerCase()}</td>
             <td style="color:${orderType === 'Market' ? '#f87171' : '#4ade80'}">${orderType}</td>
             <td>${filled}</td>
-            <td>${limit}</td>
+            <td>${limit}${Number(o.stop_price) > 0 ? `<div style="font-size:9px;color:var(--t2)">стоп ${fmtPrice(o.stop_price)}</div>` : ''}</td>
             <td>${avgPrice}</td>
             <td>$${usd}</td>
             <td><span class="${pctClass}">${pct}%</span></td>
@@ -13537,7 +13580,7 @@ Requirements:
         h += '</tbody></table>';
 
         // Add price progress bars for selected BUY orders (one bar per order)
-        const pendingSell = orders.find(o => o.side === 'SELL' && (parseFloat(o.filled_size) || 0) === 0);
+        const pendingSell = orders.find(o => o.side === 'SELL' && o.status === 'OPEN');
         // Get selected order IDs (support both array and legacy single value)
         let selectedBarOrderIds = barSelectedOrders[coin];
         if (!Array.isArray(selectedBarOrderIds)) {
@@ -13553,7 +13596,12 @@ Requirements:
           const buyPrice = parseFloat(buyOrder.average_filled_price) || 0;
           const filledSize = parseFloat(buyOrder.filled_size) || 0;
           const orderIdShort = buyOrder.order_id ? buyOrder.order_id.slice(0, 6) : '';
-          const targetSellPrice = pendingSell ? parseFloat(pendingSell.limit_price) : (buyPrice * (1 + tradingSettings.sellMarkup / 100));
+          const rawTarget = pendingSell ? Number(pendingSell.limit_price) : (buyPrice * (1 + Number(tradingSettings.sellMarkup) / 100));
+          const targetSellPrice = Number.isFinite(rawTarget) && rawTarget > 0 ? rawTarget : null;
+          const isStopTarget = pendingSell && (pendingSell.order_type === 'STOP_LIMIT' || pendingSell.stop_price);
+          const targetTitle = pendingSell
+            ? `${isStopTarget ? 'Стоп-лимит' : 'Лимитная продажа'}: лимит ${targetSellPrice === null ? 'неизвестен' : '$' + fmtPrice(targetSellPrice)}${Number(pendingSell.stop_price) > 0 ? ', стоп $' + fmtPrice(pendingSell.stop_price) : ''}. Изменение цены от покупки, без комиссий.`
+            : 'Цель по настройке наценки. Изменение цены от покупки, без комиссий.';
           const buyFeeP = getFeeLimit();
           const sellFeeP = getFeeMarket();
           // Безубыток по фактическим затратам (total_value_after_fees) — та же точка, где колонка LIMIT = 0
@@ -13564,14 +13612,14 @@ Requirements:
 
           if (buyPrice > 0) {
             const currentAsk = bestAsk > 0 ? bestAsk : buyPrice;
-            const targetPct = ((targetSellPrice - buyPrice) / buyPrice * 100);
+            const targetPct = targetSellPrice === null ? 0 : ((targetSellPrice - buyPrice) / buyPrice * 100);
             // Вся ось — изменение ЦЕНЫ от покупки: маркер, hover, цель и
             // безубыток. Чистая доходность живёт только в суммах подсказки.
             const currentPct = ((currentAsk - buyPrice) / buyPrice * 100);
 
-            const rightMax = targetPct + 1;
-            const baseLeft = -(targetPct + 1);
-            const leftMax = Math.min(baseLeft, currentPct - 0.5);
+            const extent = Math.max(1, Math.abs(targetPct) + 1);
+            const rightMax = Math.max(extent, currentPct + 0.5, breakevenPct + 0.5);
+            const leftMax = Math.min(-extent, currentPct - 0.5, breakevenPct - 0.5);
             const totalRange = rightMax - leftMax;
 
             const centerPos = (0 - leftMax) / totalRange * 100;
@@ -13588,7 +13636,7 @@ Requirements:
 
             const currentLabelPos = Math.max(14, currentPos);
             h += `
-            <div class="price-progress-container" id="progress_${coin}_${idx}" data-pair="${pair}" data-buy-price="${buyPrice}" data-target-price="${targetSellPrice}" data-breakeven-pct="${breakevenPct}" data-order-id="${buyOrder.order_id}" data-filled="${filledSize}" data-spent="${actualCost}" data-fee="${buyFeeP}" data-sell-fee="${sellFeeP}" data-left-max="${leftMax}" data-right-max="${rightMax}">
+            <div class="price-progress-container" id="progress_${coin}_${idx}" data-pair="${pair}" data-buy-price="${buyPrice}" data-target-price="${targetSellPrice ?? ''}" data-breakeven-pct="${breakevenPct}" data-order-id="${buyOrder.order_id}" data-filled="${filledSize}" data-spent="${actualCost}" data-fee="${buyFeeP}" data-sell-fee="${sellFeeP}" data-left-max="${leftMax}" data-right-max="${rightMax}">
               <div class="price-progress-top">
                 <span class="info-order" style="left:0;color:#888;font-size:9px;">#${orderIdShort}</span>
                 <span class="info-current ${isProfit ? 'profit' : 'loss'}" style="left:${currentLabelPos}%" title="Изменение цены от покупки. Результат с комиссиями — при наведении на шкалу.">${currentPct >= 0 ? '+' : ''}${currentPct.toFixed(2)}%</span>
@@ -13600,13 +13648,13 @@ Requirements:
                 <div class="price-progress-fill" style="left:${fillLeft}%;width:${fillWidth}%;background:${progressColor}"></div>
                 <div class="price-marker center-marker" style="left:${centerPos}%"></div>
                 <div class="price-marker breakeven-marker" style="left:${breakevenPos}%" title="Breakeven +${breakevenPct.toFixed(2)}%"></div>
-                <div class="price-marker target-marker" style="left:${targetPos}%"></div>
+                <div class="price-marker target-marker" style="left:${targetPos}%;visibility:${targetSellPrice === null ? 'hidden' : 'visible'};background:${targetPct < 0 ? 'var(--loss)' : 'var(--green)'}" title="${targetTitle}"></div>
                 <div class="price-marker current-marker" style="left:${currentPos}%"></div>
               </div>
               <div class="price-progress-info">
                 <span class="info-loss">${leftMax.toFixed(1)}%</span>
                 <span class="info-buy" style="left:${centerPos}%">$${fmtPrice(buyPrice)}</span>
-                <span class="info-target" style="left:${targetPos}%">+${targetPct.toFixed(2)}%</span>
+                <span class="info-target" style="left:${targetSellPrice === null ? 90 : Math.max(8, Math.min(92, targetPos))}%;color:${targetPct < 0 ? 'var(--loss)' : 'var(--green)'}" title="${targetTitle}">${targetSellPrice === null ? 'Лимит: —' : (isStopTarget ? 'Лимит ' : '') + (targetPct >= 0 ? '+' : '') + targetPct.toFixed(2) + '%'}</span>
               </div>
             </div>`;
           }
@@ -14027,7 +14075,8 @@ Requirements:
         progressBars.forEach(progressEl => {
           if (bestAsk > 0) {
             const buyPrice = parseFloat(progressEl.dataset.buyPrice) || 0;
-            const targetSellPrice = parseFloat(progressEl.dataset.targetPrice) || 0;
+            const rawTarget = Number(progressEl.dataset.targetPrice);
+            const targetSellPrice = Number.isFinite(rawTarget) && rawTarget > 0 ? rawTarget : null;
             const buyFee = getFeeLimit();
             const sellFee = getFeeMarket();
             const filledQty = parseFloat(progressEl.dataset.filled) || 0;
@@ -14039,14 +14088,14 @@ Requirements:
               const costBasis = (filledQty > 0 && realCost > 0)
                 ? realCost / filledQty
                 : buyPrice * (1 + buyFee);
-              const targetPct = ((targetSellPrice - buyPrice) / buyPrice * 100);
+              const targetPct = targetSellPrice === null ? 0 : ((targetSellPrice - buyPrice) / buyPrice * 100);
               const currentPct = ((bestAsk - buyPrice) / buyPrice * 100);
               const breakevenPrice = costBasis / (1 - sellFee);
               const breakevenPct = ((breakevenPrice - buyPrice) / buyPrice * 100);
 
-              const rightMax = targetPct + 1;
-              const baseLeft = -(targetPct + 1);
-              const leftMax = Math.min(baseLeft, currentPct - 0.5);
+              const extent = Math.max(1, Math.abs(targetPct) + 1);
+              const rightMax = Math.max(extent, currentPct + 0.5, breakevenPct + 0.5);
+              const leftMax = Math.min(-extent, currentPct - 0.5, breakevenPct - 0.5);
               const totalRange = rightMax - leftMax;
 
               const centerPos = (0 - leftMax) / totalRange * 100;
@@ -14086,11 +14135,14 @@ Requirements:
                 breakevenMarker.style.left = breakevenPos + '%';
                 breakevenMarker.title = 'Breakeven ' + (breakevenPct >= 0 ? '+' : '') + breakevenPct.toFixed(2) + '%';
               }
-              if (targetMarker) targetMarker.style.left = targetPos + '%';
+              if (targetMarker) {
+                targetMarker.style.left = targetPos + '%';
+                targetMarker.style.visibility = targetSellPrice === null ? 'hidden' : 'visible';
+              }
               const infoBuy = progressEl.querySelector('.info-buy');
               const infoTarget = progressEl.querySelector('.info-target');
               if (infoBuy) infoBuy.style.left = centerPos + '%';
-              if (infoTarget) infoTarget.style.left = targetPos + '%';
+              if (infoTarget) infoTarget.style.left = (targetSellPrice === null ? 90 : Math.max(8, Math.min(92, targetPos))) + '%';
               // Hover читает ту же область шкалы, что и обновлённый маркер,
               // в том числе после расширения диапазона при падении цены.
               progressEl.dataset.leftMax = leftMax;
@@ -14267,7 +14319,7 @@ Requirements:
 
         // Позиция открытого лимитника в стакане (#1 = лучший bid/ask) — обновляется каждые 3с
         let posBadge = '';
-        if (status === 'OPEN' && limitPrice !== '-') {
+        if (status === 'OPEN' && limitPrice !== '-' && type !== 'STOP_LIMIT' && !o.stop_price) {
           const cKey = `${pair}|${limitPrice}|${side}`;
           const cch = window.__orderPosCache && window.__orderPosCache[cKey];
           posBadge = ` <span class="${cch ? cch.cls : 'order-pos'}" data-pair="${pair}" data-limit="${limitPrice}" data-side="${side}" title="Позиция твоего ордера в стакане: #1 = лучший ${side === 'BUY' ? 'bid' : 'ask'}">${cch ? cch.text : '…'}</span>`;
@@ -14284,7 +14336,7 @@ Requirements:
           <td>${date}</td>
           <td>${size}</td>
           <td>${filled}</td>
-          <td>${limitPrice !== '-' ? parseFloat(limitPrice).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 8 }) : '-'}</td>
+          <td>${limitPrice !== '-' ? parseFloat(limitPrice).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 8 }) : '-'}${Number(o.stop_price) > 0 ? `<div style="font-size:9px;color:var(--t2)">стоп ${fmtPrice(o.stop_price)}</div>` : ''}</td>
           <td>${avgPrice !== '-' ? parseFloat(avgPrice).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 8 }) : '-'}</td>
           <td>${value}</td>
           <td><span class="${doneClass}">${filledPct}%</span></td>
@@ -18948,7 +19000,7 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
       if (!modal) return;
 
       const cfg = o.order_configuration || {};
-      const ltd = cfg.limit_limit_gtc || cfg.limit_limit_gtd || cfg.limit_limit_fok || {};
+      const ltd = cfg.stop_limit_stop_limit_gtc || cfg.stop_limit_stop_limit_gtd || cfg.limit_limit_gtc || cfg.limit_limit_gtd || cfg.limit_limit_fok || {};
       const mkt = cfg.market_market_ioc || {};
 
       const pair = o.product_id || '—';

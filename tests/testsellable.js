@@ -24,6 +24,7 @@ function load(balances) {
     showCustomAlert: (t) => asked.push({ kind: 'alert', t }),
     showOrderError: (t, html) => asked.push({ kind: 'error', t, html }),
     showConfirmModal: (t, html, yes, no) => { asked.push({ kind: 'confirm', t, html, yes, no }); },
+    lastPricesCache: {},
   };
   vm.createContext(ctx);
   const i = d.indexOf('async function sellableSize');
@@ -85,6 +86,39 @@ function load(balances) {
     ok(ctx.asked[0] && ctx.asked[0].kind === 'error', 'и это ошибка, а не выбор');
     ok(/нет вовсе/.test(ctx.asked[0].html), 'сказано прямо');
     ok(/1000/.test(ctx.asked[0].html), 'и названо, сколько заморожено');
+  }
+
+  console.log('\nСТОП-ЛИМИТ НА 0.001 МОНЕТЫ — ТОТ САМЫЙ СЛУЧАЙ');
+  {
+    // По VVV в кошельке лежало 100.466, из них 100.465 заморожено открытой
+    // заявкой, свободно 0.001. Панель урезала предлагаемый объём до свободного
+    // ЕЩЁ ДО окна — и окно не увидело расхождения, потому что расхождение уже
+    // было спрятано. Кнопка «Sell Stop» ушла на 0.001 монеты, ордер исполнился
+    // на три цента, позиция осталась открытой.
+    const ctx = load([{ currency: 'VVV', available: '0.001', hold: '100.465' }]);
+    ctx.lastPricesCache['VVV-USD'] = { bestBid: '32.4793' };
+    const got = await ctx.sellable('VVV', '100.465');
+    ok(got === null, 'сделка на три цента не предлагается вовсе', String(got));
+    const e = ctx.asked[0];
+    ok(e && e.kind === 'error', 'это отказ с объяснением, а не выбор', e && e.kind);
+    ok(e && /Почти всё заморожено/.test(e.t), 'названо, что произошло', e && e.t);
+    ok(e && /100\.465/.test(e.html), 'сказано, сколько занято ордером');
+    ok(e && /\$0\.03/.test(e.html), 'и сколько стоит свободный остаток',
+      e && (e.html.match(/\$[\d.]+/) || [])[0]);
+    ok(e && /[Сс]ними/.test(e.html), 'и что делать, чтобы продать всё');
+
+    // А заметная свободная часть по-прежнему предлагается
+    const big = load([{ currency: 'VVV', available: '50', hold: '50.465' }]);
+    big.lastPricesCache['VVV-USD'] = { bestBid: '32.4793' };
+    const p = big.sellable('VVV', '100.465');
+    big.answer(true);
+    ok((await p) === 50, 'половину позиции продать всё ещё можно');
+
+    // Цены нет — молча не блокируем
+    const noPx = load([{ currency: 'VVV', available: '0.001', hold: '100.465' }]);
+    const p2 = noPx.sellable('VVV', '100.465');
+    noPx.answer(true);
+    ok((await p2) === 0.001, 'без цены проверку пропускаем, а не запрещаем наугад');
   }
 
   console.log('\nБаланса не видно — не мешаем');
@@ -193,13 +227,13 @@ function load(balances) {
     ok(Math.abs(share(3078.12, 11820.9, 11858.7) - 3068.31) < 0.05,
       'затраты делятся в той же доле', '$' + share(3078.12, 11820.9, 11858.7).toFixed(2));
 
-    // Здесь именно СВОБОДНЫЙ остаток: замороженное в открытом ордере не продать.
-    ok(/const sellNow = Number\.isFinite\(walletAvail\) \? Math\.min\(totalFilled, walletAvail\) : totalFilled;/.test(d),
+    // Берётся ВЕСЬ кошелёк, а не свободная часть: заморозка в открытом ордере
+    // — это «сними ту заявку», а не «этих монет нет». Урезание здесь обходило
+    // окно, которое об этом и предупреждает.
+    ok(/const sellNow = Number\.isFinite\(walletFree\) \? Math\.min\(totalFilled, walletFree\) : totalFilled;/.test(d),
       'продаваемое количество считается один раз на группу');
-    // Свободное, а не весь кошелёк; и отсутствие монеты в списке — это ноль,
-    // а не «неизвестно»: счета с нулевым остатком биржа не отдаёт вовсе.
-    ok(/const walletAvail = !walletKnown \? null : walletRow \? parseFloat\(walletRow\.available\) : 0;/.test(d),
-      'и берётся из свободного, а не из всего кошелька');
+    ok(/const walletFree = !walletKnown \? null[\s\S]{0,120}parseFloat\(walletRow\.available\) \+ parseFloat\(walletRow\.hold \|\| 0\) : 0;/.test(d),
+      'и включает замороженное — это тоже твои монеты');
     ok(/const sellNowCost = totalFilled > 0 \? totalUSD \* \(sellNow \/ totalFilled\) : 0;/.test(d),
       'и его доля затрат тоже');
     // Все кнопки и подписи в строке монеты берут его, а не табличное число
@@ -211,8 +245,13 @@ function load(balances) {
         call + ': берёт продаваемое количество', row && row.slice(0, 70));
     }
     // Расхождение объяснено прямо в строке, а не только в окне при нажатии
-    ok(/продать можно \$\{fmtSize\(sellNow\)\} — на \$\{fmtSize\(shortBy\)\} меньше/.test(d),
+    ok(/в кошельке \$\{fmtSize\(sellNow\)\} — на \$\{fmtSize\(shortBy\)\} меньше/.test(d),
       'разница названа в самой строке монеты');
+    // Заморозка — отдельная строка: с экрана «продано» и «занято ордером»
+    // выглядят одинаково, а делать с ними надо разное.
+    ok(/заморожено \$\{fmtSize\(Math\.min\(heldNow, sellNow\)\)\} в открытом ордере/.test(d),
+      'заморожённое в открытом ордере названо отдельно');
+    ok(/\$\{shortNote\}\$\{heldNote\}/.test(d), 'и стоит в той же строке монеты');
     ok(/const shortBy = totalFilled - sellNow;/.test(d), 'и посчитана явно');
     // Кнопки исчезают, когда продавать нечего, а не предлагают ноль
     ok(/\$\{sellNow > 0 \? `<button class="sell-all-btn"/.test(d),

@@ -925,8 +925,9 @@ async function getLatestOrders() {
 
 function normalizeOrder(order) {
   {
-    const limitConfig = order.order_configuration?.limit_limit_gtc;
-    const marketConfig = order.order_configuration?.market_market_ioc;
+    const config = order.order_configuration || {};
+    const stopConfig = config.stop_limit_stop_limit_gtc || config.stop_limit_stop_limit_gtd;
+    const limitConfig = stopConfig || config.limit_limit_gtc || config.limit_limit_gtd || config.limit_limit_fok;
 
     return {
       order_id: order.order_id,
@@ -958,6 +959,7 @@ function normalizeOrder(order) {
         ? (order.total_value_after_fees || order.filled_value || '0')
         : String(partialValue(order)),
       limit_price: limitConfig?.limit_price || null,
+      stop_price: stopConfig?.stop_price || null,
       order_configuration: order.order_configuration
     };
   }

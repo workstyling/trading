@@ -15,6 +15,7 @@ function fragment(pattern, description) {
   return found[0];
 }
 const initialSource = fragment(/selectedBuyOrders\.forEach\(\(buyOrder, idx\) => \{[\s\S]*?\n        \}\);/, 'initial progress rendering');
+const pendingSource = fragment(/const pendingSell = orders\.find\([^\n]+\);/, 'open sell selection');
 const updateSource = fragment(/progressBars\.forEach\(progressEl => \{[\s\S]*?\n        \}\);/, 'progress quote update');
 const updateSelector = fragment(/const progressBars = document\.querySelectorAll\([^\n]+\);/, 'progress quote pair selection');
 const hoverSource = fragment(/document\.querySelectorAll\('\.price-progress-container'\)\.forEach\(container => \{[\s\S]*?\n      \}\);/, 'hover event wiring');
@@ -39,7 +40,9 @@ function nodeFromTag(markup, className) {
     const colon = declaration.indexOf(':');
     if (colon >= 0) style[declaration.slice(0, colon).trim()] = declaration.slice(colon + 1).trim();
   }
-  return { style, className: tag[0].match(/class="([^"]*)"/)[1], innerHTML: '', textContent: '',
+  const textStart = tag.index + tag[0].length;
+  const textContent = markup.slice(textStart, markup.indexOf('<', textStart));
+  return { style, className: tag[0].match(/class="([^"]*)"/)[1], innerHTML: '', textContent,
     childNodes: [], firstChild: null, offsetWidth: 320 };
 }
 function progressDOM(markup, groupNode) {
@@ -69,20 +72,21 @@ const originalOrder = {
   filled_size: '1402.45', total_value: '639.50',
 };
 async function setup({order = originalOrder, orders = [order], visibleOrders = orders,
+  sellOrders = [],
   group = {filled: orders.reduce((sum, item) => sum + Number(item.filled_size), 0),
     usd: orders.reduce((sum, item) => sum + Number(item.total_value), 0)},
   ask = 0.454, marketFee = 0.15, tradeFee = 0.075, tickDec = 12, coin = 'TEST'} = {}) {
   const settings = {sellMarkup: 1, marketFee, tradeFee};
   const pair = coin + '-USD';
   const context = vm.createContext({
-    selectedBuyOrders: visibleOrders, pendingSell: null, coin, pair, tradingSettings: settings,
+    selectedBuyOrders: visibleOrders, orders: [...orders, ...sellOrders], coin, pair, tradingSettings: settings,
     bestAsk: ask, fmtPrice: value => String(value),
     priceTick: async () => tickDec,
     showCustomAlert: () => {},
     fetch: () => { throw new Error('Network must not be used by price-progress tests'); },
     setTimeout: () => { throw new Error('Timers must not be used by price-progress tests'); },
   });
-  vm.runInContext(helpers, context);
+  vm.runInContext(helpers + '\n' + pendingSource, context);
   const markup = vm.runInContext("let h = '';\n" + initialSource + '\nh;', context);
   const groupNode = {table: group ? {dataset: {...group}} : null,
     querySelector(selector) { return selector === '.profit-table' ? this.table : null; }};
@@ -125,6 +129,49 @@ async function setup({order = originalOrder, orders = [order], visibleOrders = o
 }
 
 async function main() {
+  const server = fs.readFileSync(path.join(__dirname, '../server.js'), 'utf8');
+  const normalizer = vm.createContext({});
+  vm.runInContext(server.match(/function partialValue[\s\S]*?\n}/)[0] + '\n' +
+    server.match(/function normalizeOrder[\s\S]*?\n}/)[0], normalizer);
+  const buy = {order_id: '516617-fixture', side: 'BUY', status: 'FILLED', average_filled_price: '0.39128765', filled_size: '10', total_value: '3.9158'};
+  const stopOrder = normalizer.normalizeOrder({side: 'SELL', status: 'OPEN', order_type: 'STOP_LIMIT',
+    order_configuration: {stop_limit_stop_limit_gtc: {limit_price: '0.39457', stop_price: '0.39458', base_size: '10'}}});
+  const stopCase = await setup({order: buy, sellOrders: [stopOrder], ask: Number(buy.average_filled_price) * 1.0122});
+  assert.ok(stopCase.markup.includes('Лимит +0.84%'), 'Screenshot stop limit displays its real price change');
+  assert.ok(stopCase.markup.includes('стоп $0.39458'), 'Trigger price is identified separately from the limit');
+  assert.ok(!/NaN|Infinity/.test(stopCase.markup), 'Screenshot stop limit has finite labels and coordinates');
+  near(Number(stopCase.dom.container.dataset.targetPrice), 0.39457, 'Target uses limit price, not trigger price');
+  for (const price of [Number(buy.average_filled_price) * 1.0122, 0.45, 0.35]) {
+    stopCase.update(price);
+    near(stopCase.hoverMarker().hoverPrice, price, 'Stop-limit marker still maps to the live Ask');
+    for (const name of ['center-marker', 'current-marker', 'target-marker', 'breakeven-marker']) {
+      const position = parseFloat(stopCase.dom.byClass[name].style.left);
+      assert.ok(position >= 0 && position <= 100, 'Stop-limit scale includes ' + name);
+    }
+  }
+  const lossStop = await setup({order: buy, sellOrders: [{...stopOrder, filled_size: '2', limit_price: '0.35'}], ask: 0.37});
+  assert.ok(lossStop.markup.includes('Лимит -10.55%'), 'Partially filled open stop below purchase has a negative label');
+  assert.ok(!lossStop.markup.includes('+-'), 'Negative stop never receives a double sign');
+  const initialLossPosition = lossStop.dom.byClass['target-marker'].style.left;
+  lossStop.update(0.37);
+  assert.equal(lossStop.dom.byClass['target-marker'].style.left, initialLossPosition, 'Stop-loss scale agrees after update');
+  near(lossStop.hoverMarker().hoverPrice, 0.37, 'Stop-loss axis preserves the actual Ask');
+  const ignoredSells = await setup({order: buy, sellOrders: [
+    {...stopOrder, status: 'CANCELLED', limit_price: '0.1'},
+    {...stopOrder, status: 'FILLED', limit_price: '0.2'},
+    {...stopOrder, filled_size: '2'},
+  ]});
+  near(Number(ignoredSells.dom.container.dataset.targetPrice), 0.39457, 'Closed sells cannot override an open partial sell');
+  for (const invalid of [null, undefined, '', 'junk', 'Infinity', '0', '-1']) {
+    const unknown = await setup({order: buy, sellOrders: [{...stopOrder, limit_price: invalid}], ask: 0.4});
+    assert.ok(unknown.markup.includes('Лимит: —'), 'Unknown limit is explicitly unavailable');
+    assert.ok(!/NaN|Infinity/.test(unknown.markup), 'Invalid limit never contaminates the scale');
+    assert.equal(unknown.dom.byClass['target-marker'].style.visibility, 'hidden', 'Unknown limit does not invent a target');
+    unknown.update(0.42);
+    assert.equal(unknown.dom.byClass['target-marker'].style.visibility, 'hidden', 'Unknown target stays hidden after quote update');
+    near(unknown.hoverMarker().hoverPrice, 0.42, 'Missing target does not break live price coordinates');
+  }
+
   const screenshot = await setup();
   const first = screenshot.hoverMarker();
   near(first.hoverPrice, 0.454, 'Initial marker is the actual Ask, not a net-price coordinate');
@@ -243,10 +290,12 @@ async function main() {
       css + '\nbody{display:block;padding:70px 24px;min-height:600px}.coin-group{max-width:760px;margin:40px auto}.fixture-heading{font-size:14px;margin-bottom:70px}</style></head><body>' +
       '<div class="coin-group"><div class="fixture-heading">XAN · Ask $0.01165 · 164431.4 units · $1939.67 invested</div>' +
       '<table class="profit-table" data-pair="XAN-USD" data-filled="164431.4" data-usd="1939.67"></table>' +
-      xan.markup + '<div id="copyResult"></div></div><script>' + fixtureCode + '</script></body></html>', 'utf8');
+      xan.markup + '<h3>Stop Limit · +1.22% Ask · limit $0.39457 · stop $0.39458</h3>' + stopCase.markup +
+      '<h3>Stop Limit below purchase · partially filled</h3>' + lossStop.markup +
+      '<div id="copyResult"></div></div><script>' + fixtureCode + '</script></body></html>', 'utf8');
     console.log('Browser fixture: ' + fixturePath);
   }
 
-  console.log('price-progress: production render/update/hover, fee changes, multi-order/group PnL and exact-pair regressions passed');
+  console.log('price-progress: stop-limit normalization/targets, missing prices, production render/update/hover, fee changes, multi-order/group PnL and exact-pair regressions passed');
 }
 main().catch(error => { console.error(error.stack || error.message); process.exitCode = 1; });
