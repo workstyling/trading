@@ -10654,7 +10654,32 @@
     // Track which BUY orders are selected for progress bar per coin { "BTC": ["order_id1", "order_id2"], ... }
     const BAR_SELECTED_KEY = 'barSelectedOrders';
     let barSelectedOrders = JSON.parse(safeStorage.getItem(BAR_SELECTED_KEY) || '{}');
-    function saveBarSelection() { safeStorage.setItem(BAR_SELECTED_KEY, JSON.stringify(barSelectedOrders)); }
+    const BAR_MANUAL_KEY = 'barManualChoices';
+    const barManualChoices = JSON.parse(safeStorage.getItem(BAR_MANUAL_KEY) || '{}');
+    function saveBarSelection() {
+      safeStorage.setItem(BAR_SELECTED_KEY, JSON.stringify(barSelectedOrders));
+      safeStorage.setItem(BAR_MANUAL_KEY, JSON.stringify(barManualChoices));
+    }
+
+    function autoSelectFilledBars(orders) {
+      let changed = false;
+      for (const order of orders) {
+        const price = Number(order.average_filled_price);
+        const size = Number(order.filled_size);
+        if (order.side !== 'BUY' || !order.order_id || !order.product_id ||
+          !Number.isFinite(price) || price <= 0 || !Number.isFinite(size) || size <= 0 ||
+          barManualChoices[order.order_id] === false) continue;
+        const coin = order.product_id.split('-')[0];
+        if (!Array.isArray(barSelectedOrders[coin])) {
+          barSelectedOrders[coin] = barSelectedOrders[coin] ? [barSelectedOrders[coin]] : [];
+        }
+        if (!barSelectedOrders[coin].includes(order.order_id)) {
+          barSelectedOrders[coin].push(order.order_id);
+          changed = true;
+        }
+      }
+      if (changed) saveBarSelection();
+    }
 
     // ========== TRACKED ORDERS (1H+ Signal Tracking) ==========
     const TRACKED_ORDERS_KEY = 'trackedOrders';
@@ -13005,6 +13030,8 @@ Requirements:
         return;
       }
 
+      autoSelectFilledBars(selected);
+
       // Group by coin
       const byCoin = {};
       selected.forEach(o => {
@@ -13538,11 +13565,7 @@ Requirements:
           const isSelected = selectedOrders.includes(o.order_id);
           // Bar selector - only for BUY orders, multiple selection allowed
           let barCell = '';
-          if (isBuy) {
-            if (!barSelectedOrders[coin]) {
-              barSelectedOrders[coin] = [o.order_id]; // Auto-select first BUY as array
-              saveBarSelection();
-            }
+          if (isBuy && filledVal > 0) {
             const isBarActive = Array.isArray(barSelectedOrders[coin])
               ? barSelectedOrders[coin].includes(o.order_id)
               : barSelectedOrders[coin] === o.order_id;
@@ -13715,6 +13738,7 @@ Requirements:
             }
             // Toggle selection
             const isNowActive = sel.classList.toggle('active');
+            barManualChoices[orderId] = isNowActive;
             if (isNowActive) {
               if (!barSelectedOrders[coin].includes(orderId)) {
                 barSelectedOrders[coin].push(orderId);

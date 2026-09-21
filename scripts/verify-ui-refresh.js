@@ -41,6 +41,7 @@ function browserAssertions() {
   let bestAsk = 0.7516;
   let selectedOrders = [orderId];
   const barSelectedOrders = {TEST: [orderId]};
+  const barManualChoices = {};
   let savedSelections = 0, savedBars = 0, renderedBars = 0, copiedPrices = 0;
   const saveSelectedOrders = () => { savedSelections++; };
   const saveBarSelection = () => { savedBars++; };
@@ -138,6 +139,7 @@ function browserAssertions() {
     assertSame(selectedOrders.length, 0, 'Desktop: one order click toggles selection exactly once');
     desktop.querySelector('.bar-selector').click();
     check(savedBars === 1 && renderedBars === 1 && barSelectedOrders.TEST.length === 0, 'Desktop: one bar click invokes exactly one handler');
+    assertSame(barManualChoices[orderId], false, 'Desktop: manually hiding a bar saves an explicit opt-out');
     desktop.querySelector('.price-progress-container').dispatchEvent(new MouseEvent('click', {clientX: rect.left + rect.width / 2}));
     assertSame(copiedPrices, 1, 'Desktop: one progress click invokes exactly one copy callback');
     setLiveHtml(liveInfo, '<span class="position">Position <b>9</b></span>');
