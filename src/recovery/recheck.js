@@ -38,4 +38,22 @@ function historyReady(candles, from, to, requestsComplete = false) {
     to - (candles[candles.length - 1].t + 300) * 1000 <= 15 * 60000;
 }
 
-module.exports = { distances, sampleWindows, historyReady };
+// Product metadata can fail before candle downloads even start. Bound and
+// retry those requests too; HTML errors and malformed JSON are not a basket.
+async function fetchMetadata(url, valid, {fetchImpl = fetch,
+  wait = ms => new Promise(resolve => setTimeout(resolve, ms))} = {}) {
+  let reason = '';
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try {
+      const response = await fetchImpl(url, {headers: {'User-Agent': 'trading-app/1.0'}, signal: AbortSignal.timeout(15000)});
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      const data = await response.json();
+      if (!valid(data)) throw new Error('неполный или неверный ответ');
+      return data;
+    } catch (error) { reason = error.message; }
+    if (attempt < 3) await wait([1000, 3000, 8000][attempt]);
+  }
+  throw new Error('Coinbase ' + new URL(url).pathname + ': ' + reason);
+}
+
+module.exports = { distances, sampleWindows, historyReady, fetchMetadata };

@@ -247,6 +247,7 @@
   function renderRecoveryGroups(sorted, scan, renderRow, columns) {
     const gate = { fall: scan.gate && scan.gate.fallPct, spread: scan.gate && scan.gate.spreadPct };
     const groups = { confirmed: [], possible: [], none: [] };
+    const candidatesKnown = recoveryScanFresh(scan, scanNow(scan)) && !!recoveryBaseline(scan);
     for (const row of sorted) {
       const observation = recoveryObservation(row, scan);
       const verdict = recoveryVerdict(row, gate, observation, recoveryBuyCell(row, scan));
@@ -259,10 +260,11 @@
     ].map(([state, label, color]) => {
       const rows = groups[state];
       const empty = state === 'confirmed' ? 'Сейчас нет подтверждённых сигналов покупки.'
-        : state === 'possible' ? 'Сейчас нет кандидатов.' : '';
+        : state === 'possible' ? (candidatesKnown ? 'Сейчас нет кандидатов.'
+          : 'Кандидаты не определены: свежая оценка недоступна.') : '';
       return '<tr data-entry-group="' + state + '"><th colspan="' + columns +
         '" style="text-align:left;padding:10px 6px 5px;font-size:11px;color:' + color + ';">' +
-        label + ' · ' + rows.length + '</th></tr>' +
+        label + ' · ' + (state === 'possible' && !candidatesKnown ? '—' : rows.length) + '</th></tr>' +
         (rows.length ? rows.map(renderRow).join('') : empty ? '<tr><td colspan="' + columns +
           '" style="padding:4px 6px;font-size:10px;color:var(--t2);">' + empty + '</td></tr>' : '');
     }).join('');
@@ -421,9 +423,20 @@
       message = 'Свежая проверка не завершилась — оценка недоступна.';
     }
     const thin = report ? report.cells.filter(cell => !validCell(cell)).length : 0;
+    if (check && check.running) {
+      message += ' Пересчёт выполняется.';
+    } else if (check && check.lastAttempt && check.lastAttempt.ok === false) {
+      message += ' Последний пересчёт завершился с ошибкой.';
+      if (report) message += ' Показана предыдущая оценка в пределах срока свежести.';
+      if (finite(check.nextAt)) message += ' Повторная попытка примерно через ' +
+        Math.max(0, Math.ceil((check.nextAt - now) / 60000)) + ' мин.';
+      if (check.lastAttempt.error) message += ' Причина: ' + escapeHtml(check.lastAttempt.error);
+    }
     const summary = report ? 'Статистика: ' + (days == null ? '' : days + ' сут') +
       (thin ? ' · групп без оценки: ' + thin : ' · оценки доступны') +
-      (report.missingCoins.length ? ' · история неполная' : '') : 'Свежая оценка недоступна';
+      (report.missingCoins.length ? ' · история неполная' : '') +
+      (check.running ? ' · обновляется' : check.lastAttempt?.ok === false ? ' · повтор после сбоя' : '')
+      : check && check.running ? 'Пересчёт статистики · оценка пока недоступна' : 'Свежая оценка недоступна';
     return '<details class="recovery-quality" data-recovery-detail="quality" style="color:' + (report ? 'var(--t2)' : color) + ';">' +
       '<summary>' + summary + '</summary><div class="recovery-detail-body">' + message + '</div></details>';
   }
@@ -496,7 +509,7 @@
     recoveryVerdict, recoveryDayChange, recoveryBaseline, recoveryEdge, recoveryOrder, recoveryPeak, recoveryPeakMark, renderRecoveryTieNote, recoveryBuyCell,
     recoveryFresh, recoveryHeldNote,
     recoverySignalRows, renderRecoveryRules, recoveryRowMark, renderRecoveryGroups,
-    renderRecoveryMissing, recoveryDetailsState, restoreRecoveryDetails,
+    renderRecoveryMissing, recoveryDetailsState, restoreRecoveryDetails, freshRecoveryReport,
     escapeRecoveryText: escapeHtml };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else Object.assign(root, api);

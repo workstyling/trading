@@ -160,14 +160,15 @@ console.log('\nСверка сетки возврата');
   ok(/ENTRY_GATE_FALL/.test(rc), 'порог берётся из кода, а не вписан числом');
 
   ok(/setInterval\(\(\) => recoveryRecheck\(false\)/.test(src), 'сверка запускается сама');
-  ok(/Date\.now\(\) - \(st\.at \|\| 0\) < RECHECK_EVERY_H/.test(src),
-    'но не на каждый перезапуск — их за день много');
+  const checkState = read(path.join('src', 'recovery', 'check-state.js'));
+  ok(/Date\.now\(\) < nextCheckAt\(st, RECHECK_EVERY_H\)/.test(src),
+    'расписание учитывает успешный отчёт и повтор после сбоя');
   // Прежде сверка стартовала «через 12 минут после запуска, дальше раз в три
   // часа», и оба таймера обнулялись выкаткой. В день с частыми выкатками она
   // не запускалась НИ РАЗУ — а молчащий сторож неотличим от исправного.
   ok(/setInterval\(\(\) => recoveryRecheck\(false\), 10 \* 60 \* 1000\)/.test(src),
     'работу делает отметка времени, а не таймер от запуска');
-  ok(/Date\.now\(\) - \(st\.startedAt \|\| 0\) < 40 \* 60 \* 1000/.test(src),
+  ok(/stamp\.startedAt \+ INTERRUPTED_MS/.test(checkState) && /INTERRUPTED_MS = 40 \* 60 \* 1000/.test(checkState),
     'а начатый и убитый выкаткой замер не перезапускается бесконечно');
   ok(/recheck: \(\(\) => \{ const s = recheckStamp\(\)/.test(src),
     'и снаружи видно, когда сверка последний раз доходила до конца');

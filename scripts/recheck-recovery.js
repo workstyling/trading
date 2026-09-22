@@ -4,7 +4,7 @@
 // Запуск: node scripts/recheck-recovery.js [дней] [--cache-only]
 const fs = require('fs');
 const path = require('path');
-const { sampleWindows, historyReady } = require('../src/recovery/recheck');
+const { sampleWindows, historyReady, fetchMetadata } = require('../src/recovery/recheck');
 
 const CB = 'https://api.exchange.coinbase.com';
 const H = { headers: { 'User-Agent': 'trading-app/1.0' } };
@@ -170,13 +170,17 @@ function cellStats(perCoin, lo, hi, deep) {
   if (S.grid.length < 4) { console.log('ПЛОХО: не разобрал таблицу в server.js'); process.exit(1); }
 
   // ── корзина: та же, что у панели ─────────────────────────────────────────
-  const prods = await (await fetch(`${CB}/products`, H)).json();
-  if (!Array.isArray(prods)) throw new Error('биржа не вернула список продуктов');
+  const prods = await fetchMetadata(`${CB}/products`, data => Array.isArray(data) &&
+    data.some(p => p && p.id && p.quote_currency === 'USD' && p.status === 'online'));
   const usd = prods.filter(p => p.quote_currency === 'USD' && p.status === 'online' && !p.trading_disabled);
   // Объёмы одним запросом по всем парам. Раньше бралась первая сотня с
   // хвостиком из списка бирж в её произвольном порядке — это не «самые
   // ликвидные», а «те, что оказались в начале», и корзина выходила случайной.
-  const stats = await (await fetch(`${CB}/products/stats`, H)).json();
+  const stats = await fetchMetadata(`${CB}/products/stats`, data => data && typeof data === 'object' &&
+    !Array.isArray(data) && Object.values(data).some(s => {
+      const day = s && (s.stats_24hour || s);
+      return day && Number(day.volume) > 0 && Number(day.last) > 0;
+    }));
   const vols = [];
   for (const p of usd) {
     const st = stats[p.id];

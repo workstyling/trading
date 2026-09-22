@@ -67,6 +67,7 @@ const read = p => fs.readFileSync(p, 'utf8').replace(/\r\n/g, '\n');
   // Manual diagnostics can run quietly without disabling scheduled alerts.
   let child, spawned = 0, notified = 0, written;
   const recheckCtx = vm.createContext({ Date, JSON, RECHECK_STAMP: 'unused', RECOVERY_CHECK_VERSION: 2,
+    ...require('../src/recovery/check-state'),
     RECHECK_EVERY_H: 22, recheckStamp: () => ({}), __dirname: '.', process: { execPath: 'node' },
     console: { log() {}, error() {} }, fs: { writeFileSync: (_file, text) => { written = JSON.parse(text); } },
     sendTelegram: async () => { notified++; }, require: name => {
@@ -86,6 +87,16 @@ const read = p => fs.readFileSync(p, 'utf8').replace(/\r\n/g, '\n');
   assert.equal(recheckCtx.recoveryRecheck(true), true);
   await child.listeners('close')[0](2);
   assert.equal(notified, 1, 'normal scheduled notifications remain enabled');
+
+  const recentFailure = {version: 2, at: Date.now() - 10 * 60000, report: null, code: 1};
+  recheckCtx.recheckStamp = () => recentFailure;
+  assert.equal(recheckCtx.recoveryRecheck(false, {notify: false}), false, 'scheduler waits between retries');
+  recheckCtx.recheckStamp = () => ({...recentFailure, at: Date.now() - 31 * 60000});
+  assert.equal(recheckCtx.recoveryRecheck(false, {notify: false}), true, 'actual scheduler retries a failed run without waiting 22 hours');
+  child.stderr.emit('data', 'Coinbase /products: HTTP 502\n');
+  await child.listeners('close')[0](1);
+  assert.equal(written.lastAttempt.error, 'Coinbase /products: HTTP 502', 'failure diagnostic survives the log ring');
+  assert.equal(written.lastAttempt.ok, false);
 
   const missing = view.renderRecoveryMissing({ missed: ['ZAMA'], missedDetails: { ZAMA: '<bad>' } });
   assert(missing.includes('Текущий скан: нет данных по ZAMA'));

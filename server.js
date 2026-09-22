@@ -7,6 +7,7 @@ const crypto = require('crypto');
 const { RESTClient } = require('./cb/dist/rest/index.js');
 const predictor = require('./src/predictor');
 const { recoverySignalRows } = require('./public/js/recovery-journal');
+const { nextCheckAt, finishCheck } = require('./src/recovery/check-state');
 
 // ХВОСТ ЖУРНАЛА В ПАМЯТИ.
 //
@@ -2940,12 +2941,9 @@ let recoveryRecheckActive = false;
 function recoveryRecheck(force, { notify = true } = {}) {
   if (recoveryRecheckActive) return false;
   const st = recheckStamp();
-  // Перезапусков за день бывает много (каждая выкатка), а замер тяжёлый
-  if (!force && st.version === RECOVERY_CHECK_VERSION && Date.now() - (st.at || 0) < RECHECK_EVERY_H * 3600 * 1000) return;
-  // Замер идёт минутами и умирает вместе с процессом при выкатке. Без отметки
-  // о НАЧАЛЕ череда перезапусков запускала бы его снова и снова, и он не
-  // доходил бы до конца ни разу.
-  if (!force && Date.now() - (st.startedAt || 0) < 40 * 60 * 1000) return;
+  // Успешный отчёт обновляется раз в 22 часа. Сбой повторяем через 30 минут;
+  // незавершённый при перезапуске процесс — через 40 минут после начала.
+  if (!force && Date.now() < nextCheckAt(st, RECHECK_EVERY_H)) return false;
   const started = Date.now();
   try { fs.writeFileSync(RECHECK_STAMP, JSON.stringify({ ...st, startedAt: started })); } catch { }
   // ПОТОЛОК ПАМЯТИ У ДОЧЕРНЕГО ПРОЦЕССА.
@@ -2961,7 +2959,7 @@ function recoveryRecheck(force, { notify = true } = {}) {
   let out = '';
   p.stdout.on('data', d => { out += d; });
   p.stderr.on('data', d => { out += d; });
-  p.on('error', (e) => { recoveryRecheckActive = false; console.error('[recovery-check] не запустился:', e.message); });
+  p.on('error', (e) => { out += '\n' + e.message; console.error('[recovery-check] не запустился:', e.message); });
   p.on('close', async (code) => {
     recoveryRecheckActive = false;
     const mins = Math.round((Date.now() - started) / 60000);
@@ -2970,9 +2968,10 @@ function recoveryRecheck(force, { notify = true } = {}) {
       const line = out.split('\n').find(line => line.startsWith('RECHECK_RESULT '));
       if (line) report = JSON.parse(line.slice('RECHECK_RESULT '.length));
     } catch { }
-    try { fs.writeFileSync(RECHECK_STAMP, JSON.stringify({ at: Date.now(), startedAt: started, code, mins,
-      version: RECOVERY_CHECK_VERSION, report })); } catch { }
     const tail = out.trim().split('\n').slice(-16).join('\n');
+    const state = finishCheck(st, {at: Date.now(), startedAt: started, code, report,
+      error: out.trim().split('\n').filter(Boolean).slice(-1)[0]});
+    try { fs.writeFileSync(RECHECK_STAMP, JSON.stringify(state)); } catch { }
     console.log('[recovery-check] код ' + code + ', ' + mins + ' мин\n' + tail);
     // Молчим, когда сетка держится: сообщение раз в сутки «всё как было»
     // перестают читать, и настоящее пройдёт мимо вместе с ним.
@@ -7124,9 +7123,11 @@ function entryScanResponse(now = Date.now()) {
     // Когда ночная сверка последний раз доходила до конца и с каким исходом.
     // Молчащий сторож неотличим от сторожа, у которого всё в порядке, — пусть
     // его работа будет видна снаружи.
-    recheck: (() => { const s = recheckStamp(); return s.at ? {
+    recheck: (() => { const s = recheckStamp(); return s.at || s.startedAt ? {
       at: s.at, code: s.code, mins: s.mins, current: s.version === RECOVERY_CHECK_VERSION,
       report: s.version === RECOVERY_CHECK_VERSION ? s.report : null,
+      running: recoveryRecheckActive, startedAt: s.startedAt || null,
+      lastAttempt: s.lastAttempt || null, nextAt: recoveryRecheckActive ? null : nextCheckAt(s, RECHECK_EVERY_H),
     } : null; })(),
     gate: { fallPct: ENTRY_GATE_FALL, spreadPct: ENTRY_GATE_SPREAD },
     scanning: entryScan.running,
