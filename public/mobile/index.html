@@ -2812,10 +2812,7 @@
       if (r.success) {
         toast('Buy order placed!');
         favoriteAfterOrder(coin);
-        if (r.order_id && !selectedOrders.includes(r.order_id)) {
-          selectedOrders.push(r.order_id);
-          saveSelectedToServer();
-        }
+        selectNewOrderM(r.order_id);
         refreshAfterTradeM(r.order_id);
       } else toast(r.error || 'Failed', 'error');
     }
@@ -2915,10 +2912,7 @@
           ov.remove();
           toast('Куплено по рынку');
           favoriteAfterOrder(coin);
-          if (r.orderId && !selectedOrders.includes(r.orderId)) {
-            selectedOrders.push(r.orderId);
-            saveSelectedToServer();
-          }
+          selectNewOrderM(r.orderId);
           refreshAfterTradeM(r.orderId);
         } else {
           toast((r && r.error) || 'Не удалось', 'error');
@@ -2949,10 +2943,7 @@
       document.getElementById('btnSell').textContent = 'SELL';
       if (r.success) {
         toast('Sell order placed!');
-        if (r.order_id && !selectedOrders.includes(r.order_id)) {
-          selectedOrders.push(r.order_id);
-          saveSelectedToServer();
-        }
+        selectNewOrderM(r.order_id);
         refreshAfterTradeM(r.order_id);
       } else toast(r.error || 'Failed', 'error');
     }
@@ -2975,10 +2966,7 @@
       if (r.success) {
         toast('Limit order placed!');
         favoriteAfterOrder(coin);
-        if (r.order_id && !selectedOrders.includes(r.order_id)) {
-          selectedOrders.push(r.order_id);
-          saveSelectedToServer();
-        }
+        selectNewOrderM(r.order_id);
         refreshAfterTradeM(r.order_id);
       } else toast(r.error || 'Failed', 'error');
     }
@@ -3344,8 +3332,11 @@
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ productId: pair, size: size, price: price })
       });
-      if (r.success) { toast('Sell order created!'); loadOrders().then(updateMonitor); }
-      else toast(r.error || (r.details?.error_response?.message) || 'Failed', 'error');
+      if (r.success) {
+        toast('Sell order created!');
+        selectNewOrderM(r.order_id || (r.order && r.order.order_id));
+        loadOrders().then(updateMonitor);
+      } else toast(r.error || (r.details?.error_response?.message) || 'Failed', 'error');
     }
 
     // Продажа всей позиции ПО РЫНКУ с живым пересчётом, как на десктопе.
@@ -4188,7 +4179,7 @@
         if (!j.success) { showOrderError('Стоп не поставлен', j.error || 'Биржа отклонила ордер'); return; }
         toast(coin + ': стоп-лимит на $' + fmt(st.stop));
         const id = j.order_id || (j.order && j.order.order_id);
-        if (id && !selectedOrders.includes(id)) { selectedOrders.push(id); saveSelectedToServer(); }
+        selectNewOrderM(id);
         if (typeof loadOrders === 'function') loadOrders();
       } catch (e) { showOrderError('Стоп не поставлен', e.message); }
     }
@@ -4318,10 +4309,7 @@
           ov.remove();
           toast('Продано по рынку');
           // Как на десктопе: без ордера продажи круг сделки не замыкается.
-          if (r.orderId && !selectedOrders.includes(r.orderId)) {
-            selectedOrders.push(r.orderId);
-            saveSelectedToServer();
-          }
+          selectNewOrderM(r.orderId);
           refreshAfterTradeM(r.orderId);
         } else {
           toast((r && r.error) || 'Не удалось', 'error');
@@ -4598,9 +4586,57 @@
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ productId: pair, size: size, price: fmtPriceForOrder(askPrice) })
       });
-      if (r.success) { toast('Sell at Ask placed!'); loadOrders().then(updateMonitor); }
-      else showOrderError('Биржа отклонила продажу',
+      if (r.success) {
+        toast('Sell at Ask placed!');
+        selectNewOrderM(r.order_id || (r.order && r.order.order_id));
+        loadOrders().then(updateMonitor);
+      } else showOrderError('Биржа отклонила продажу',
         'Ордер НЕ создан. Причина от Coinbase:<br><br><b>' + ((r && r.error) || 'без объяснения') + '</b>');
+    }
+
+    // НОВЫЙ ОРДЕР СРАЗУ ОТМЕЧЕН, СНЯТЫЙ ПУСТОЙ — СРАЗУ СНЯТ.
+    //
+    // Позиция в панели считается по отмеченным ордерам. Если только что
+    // созданный ордер не отметить, круг сделки не замкнётся: покупка есть, а
+    // продажи в расчёте нет. Часть путей это делала, часть нет — и на телефоне
+    // одна и та же сделка выглядела по-разному в зависимости от того, какой
+    // кнопкой её поставили.
+    function selectNewOrderM(id) {
+      if (!id || selectedOrders.includes(id)) return;
+      selectedOrders.push(id);
+      saveSelectedToServer();
+    }
+    // Обратное действие, и оно НЕ симметрично: снимать из отмеченных можно
+    // только то, по чему ничего не прошло. Снятая заявка могла успеть
+    // исполниться частично, и эти монеты обязаны остаться в расчёте позиции —
+    // на десктопе ровно на этом терялись проданные монеты.
+    //
+    // Смотрим ПОСЛЕ отмены и по свежим данным: снимок в памяти отстаёт, а
+    // исполниться заявка могла в последнюю секунду перед нажатием.
+    async function dropFromSelectedIfEmptyM(id) {
+      let fresh = null;
+      for (const wait of [300, 1200]) {
+        await new Promise(r => setTimeout(r, wait));
+        try { await loadOrders(); } catch { }
+        fresh = (allOrders || []).find(o => o.order_id === id);
+        const st = String((fresh && fresh.status) || '').toUpperCase();
+        if (fresh && st !== 'OPEN' && st !== 'PENDING' && st !== 'QUEUED') break;
+      }
+      // Снимаем только с окончательного и заведомо пустого ордера. Пустое
+      // поле filled_size — это «неизвестно», а не ноль: parseFloat превращал
+      // его в NaN, а «|| 0» превратил бы в ноль и снял отметку с ордера, про
+      // который мы ничего не знаем.
+      const terminal = fresh && ['CANCELLED', 'EXPIRED', 'FAILED', 'FILLED']
+        .includes(String(fresh.status || '').toUpperCase());
+      const filled = fresh && fresh.filled_size != null && String(fresh.filled_size).trim() !== ''
+        ? Number(fresh.filled_size) : NaN;
+      // Ордера не видно — оставляем отмеченным: потерять исполнение хуже, чем
+      // оставить лишнюю строку, которую видно и можно снять галочкой.
+      if (!terminal || filled !== 0) return;
+      selectedOrders = selectedOrders.filter(x => x !== id);
+      saveSelectedToServer();
+      if (typeof renderOrders === 'function') renderOrders();
+      if (typeof updateMonitor === 'function') updateMonitor();
     }
 
     async function cancelOrder(id) {
@@ -4611,8 +4647,12 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ orderId: id })
       });
-      if (r.success) { toast('Order cancelled'); loadOrders(); loadBalance(); }
-      else toast(r.error || 'Failed', 'error');
+      if (r.success) {
+        toast('Order cancelled');
+        // Список ордеров перечитывает сама проверка — ей нужны свежие данные.
+        await dropFromSelectedIfEmptyM(id);
+        loadBalance();
+      } else toast(r.error || 'Failed', 'error');
     }
 
     // ── Profit ──
@@ -5817,11 +5857,7 @@
               const orderText = `Buy Order Placed: ${cryptoSize} ${coin} @ $${limitPrice}`;
               toast(orderText);
               favoriteAfterOrder(coin);
-              const newOrderId = data.order_id;
-              if (newOrderId && !selectedOrders.includes(newOrderId)) {
-                selectedOrders.push(newOrderId);
-                saveSelectedToServer();
-              }
+              selectNewOrderM(data.order_id);
               loadBalance();
               setTimeout(() => { loadOrders().then(updateMonitor); }, 1000);
             } else {

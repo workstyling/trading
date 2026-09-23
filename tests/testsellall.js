@@ -57,6 +57,8 @@ async function checkUi(mobile) {
   for (const name of ['cancelOrdersQuiet' + suffix, 'waitForFreeBalance' + suffix]) {
     vm.runInContext(extract(html, name), ctx);
   }
+  // Отметка нового ордера — тоже сосед: пути продажи зовут её после создания.
+  if (mobile) vm.runInContext(extractPlain(html, 'selectNewOrderM'), ctx);
   for (const name of ['openSellsFor' + suffix, 'orderBaseSize']) {
     const code = extractPlain(html, name);
     assert(code, name);
