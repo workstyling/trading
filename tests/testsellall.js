@@ -8,6 +8,14 @@ const extract = (source, name) => {
   assert(start >= 0, name);
   return source.slice(start, source.indexOf('\n    }', start) + 6);
 };
+// Обычные функции рядом: «продать всё» при заморозке снимает мешающий ордер,
+// и для этого ему нужны соседи — поиск открытых продаж, снятие пачкой,
+// ожидание освобождения остатка.
+const extractPlain = (source, name) => {
+  const start = source.indexOf('    function ' + name + '(');
+  if (start < 0) return '';
+  return source.slice(start, source.indexOf('\n    }', start) + 6);
+};
 const balances = (available, hold) => [{ currency: 'AURORA', available, hold }];
 
 async function checkUi(mobile) {
@@ -40,9 +48,18 @@ async function checkUi(mobile) {
     showConfirmModal: (title, html, yes, no) => { confirmations.push(title + html); (approve ? yes : no)(); },
     showOrderError: (title, html) => errors.push(title + html),
     showCustomAlert() {}, toast() {}, setTimeout: fn => fn(),
-    selectedOrders: [], loadOrders: async () => {}, updateMonitor() {},
+    selectedOrders: [], allOrders: [], Set, loadOrders: async () => {}, updateMonitor() {},
     loadLatestOrders: async () => {}, loadUsdBalance() {},
   });
+  const suffix = mobile ? 'M' : '';
+  for (const name of ['cancelOrdersQuiet' + suffix, 'waitForFreeBalance' + suffix]) {
+    vm.runInContext(extract(html, name), ctx);
+  }
+  for (const name of ['openSellsFor' + suffix, 'orderBaseSize']) {
+    const code = extractPlain(html, name);
+    assert(code, name);
+    vm.runInContext(code, ctx);
+  }
   for (const name of [helper, ask, all]) vm.runInContext(extract(html, name), ctx);
   const run = async (wallet, extra = {}) => {
     requests.length = confirmations.length = errors.length = 0;
