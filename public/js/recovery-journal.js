@@ -530,6 +530,17 @@
         ' исходов, ' + dec.haveHours + '/' + dec.needHours + ' общих ч';
       notes.push('Сейчас: ' + dec.why);
     }
+    // Повтор на свежих данных — отдельной строкой. Его вердикт не отменяет и
+    // не подменяет исходный: исходная проверка закрыта, это новая.
+    const rep = pj.replication;
+    if (rep && rep.state) {
+      const start = Number.isFinite(Number(rep.since))
+        ? new Date(Number(rep.since)).toISOString().slice(0, 16).replace('T', ' ') + ' UTC' : '?';
+      line += '<br><b>Повтор на свежих данных: ' + esc(rep.state) + '</b> · ' + rep.haveN + '/' + rep.needN +
+        ' исходов с ' + esc(start);
+      notes.push('Повтор ' + (rep.id || '') + ': те же правило и пороги, считаются только сделки, ' +
+        'открытые с ' + start + '. Причина: ' + (rep.reason || '') + '. Сейчас: ' + (rep.why || ''));
+    }
     const left = pj.remeasure ? pj.remeasure.left : 0;
     if (left) line += ' · перепроверка свечей: осталось ' + left;
     if (overall && overall.hitUnknown) line += ' · неизвестен исход цели у ' + overall.hitUnknown + ' записей';
