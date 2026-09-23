@@ -109,6 +109,20 @@
   // никуда не падала. Правило то же, что у сторожа сетки: две ошибки разности
   // И не меньше трёх пунктов — иначе подсветка загорается от шума, а гореть
   // всё время значит не гореть вовсе.
+  // Порог берётся из замера, который лежит в ответе сервера, а не зашит здесь:
+  // своё число вместо измеренного — это уже мнение. Нет замера — нет и метки.
+  function steepPullback(row, scan) {
+    const m = scan && scan.pullbackNet && scan.pullbackNet.steep;
+    if (!m || m.verdict !== 'хуже' || !finite(m.at) || !finite(row.pullbackPct)) return null;
+    if (Number(row.pullbackPct) < Number(m.at)) return null;
+    const h = m.hour || {};
+    return { at: Number(m.at), why: 'Откат ' + Number(row.pullbackPct).toFixed(2) + '% — от ' +
+      Number(m.at) + '% и глубже измеренно хуже остального списка: ' +
+      (finite(h.band) ? Number(h.band).toFixed(3) + '% ±' + Number(h.bandSe).toFixed(3) : '?') +
+      ' за час против ' + (finite(h.base) ? Number(h.base).toFixed(3) + '% ±' + Number(h.baseSe).toFixed(3) : '?') +
+      ' у мелкого отката, разница ' + (finite(h.diff) ? Number(h.diff).toFixed(3) + ' ±' + Number(h.se).toFixed(3) : '?') +
+      '. Замер вне выборки, издержки внутри. Резкий провал — не скидка, а продавец в стакане.' };
+  }
   function recoveryEdge(observation, baseline) {
     if (!observation || observation.hour == null || !baseline) return { above: false, why: '' };
     const diff = Math.round((observation.hour - baseline.pct) * 10) / 10;
@@ -234,6 +248,22 @@
     if (!recoveryScanFresh(scan, now) || !finite(row.price) || row.price <= 0 || verdict.tier < 2) return plain;
     if (verdict.tier === 4) return { ...plain, state: 'confirmed',
       why: 'Зелёная рамка: вход подтверждён правилами и проверкой доходности группы. Это не гарантия прибыли.' };
+    // РЕЗКИЙ ОТКАТ — ИЗМЕРЕННО ХУДШЕЕ, А НЕ КАНДИДАТ.
+    //
+    // Замер по 81 монете за месяц, проверка на отложенной половине периода:
+    // среди монет, прошедших гейт, откат от 3% даёт −0.537% ±0.094 за час
+    // против −0.280% ±0.006 у мелкого. Разница −0.257 ±0.094 — 2.7 ошибки.
+    // На четырёх часах тот же знак. Сходится с отдельным замером быстрых
+    // падений: чем резче провал, тем хуже исход.
+    //
+    // Такая строка не может быть кандидатом: оранжевая рамка зовёт смотреть
+    // именно туда, куда смотреть измеренно не надо. Прятать её тоже нельзя —
+    // помечаем и называем причину.
+    const steep = steepPullback(row, scan);
+    if (steep) {
+      return { state: 'none', label: 'резкий откат', color: '#ff6b6b',
+        bg: 'background:rgba(255,107,107,0.08);', why: steep.why };
+    }
     const edge = recoveryEdge(observation, recoveryBaseline(scan, now));
     if (!edge.above) return plain;
     // Было «возможная покупка». Строкой выше панель говорит, что покупать по
