@@ -409,6 +409,7 @@ app.post('/api/market-sell', async (req, res) => {
     console.log('Market sell created, ID:', orderId);
     ordersCache.ts = 0; // сбрасываем кеш: иначе список ордеров ещё 8с без продажи
     balanceCache.ts = 0;
+    balancesCache.ts = 0;
     res.json({ success: true, orderId });
   } catch (error) {
     console.error('Market sell error:', error.message);
@@ -516,6 +517,7 @@ app.post('/create-sell-order', async (req, res) => {
     console.log('Sell order created, ID:', orderId);
     ordersCache.ts = 0; // invalidate cache
     balanceCache.ts = 0;
+    balancesCache.ts = 0;
     res.json({ success: true, order: parsed, order_id: orderId });
   } catch (error) {
     console.error('Error creating sell order:', error);
@@ -535,6 +537,7 @@ app.post('/cancel-order', async (req, res) => {
     console.log('Cancel response:', response);
     ordersCache.ts = 0; // invalidate cache
     balanceCache.ts = 0;
+    balancesCache.ts = 0;
     res.json({ success: true, response });
   } catch (error) {
     console.error('Error cancelling order:', error);
@@ -601,22 +604,23 @@ async function fetchAccountBalances() {
     if (cursor) params.cursor = cursor;
     const result = await client.listAccounts(params);
     const data = typeof result === 'string' ? JSON.parse(result) : result;
-    accounts.push(...(data.accounts || []));
+    if (!data || !Array.isArray(data.accounts)) throw new Error('Coinbase did not return account balances');
+    if (data.has_next && (!data.cursor || data.cursor === cursor)) throw new Error('Coinbase returned an incomplete account list');
+    accounts.push(...data.accounts);
     cursor = data.has_next ? data.cursor : null;
   } while (cursor);
 
   return accounts
-    .filter(a => {
-      const avail = parseFloat(a.available_balance?.value || 0);
-      const hold = parseFloat(a.hold?.value || 0);
-      return (avail + hold) > 0;
+    .map(a => {
+      const available = Number(a.available_balance?.value);
+      const hold = Number(a.hold?.value);
+      if (!a.currency || a.available_balance?.value == null || a.hold?.value == null ||
+          !Number.isFinite(available) || available < 0 || !Number.isFinite(hold) || hold < 0) {
+        throw new Error('Coinbase returned an invalid account balance');
+      }
+      return { currency: a.currency, available, hold, total: available + hold };
     })
-    .map(a => ({
-      currency: a.currency,
-      available: parseFloat(a.available_balance?.value || 0),
-      hold: parseFloat(a.hold?.value || 0),
-      total: parseFloat(a.available_balance?.value || 0) + parseFloat(a.hold?.value || 0)
-    }));
+    .filter(a => a.total > 0);
 }
 
 // Pre-fetch on startup
@@ -625,15 +629,18 @@ fetchAccountBalances().then(b => { balancesCache = { data: b, ts: Date.now() }; 
 app.get('/get-balances', async (req, res) => {
   try {
     const now = Date.now();
-    if (balancesCache.data && (now - balancesCache.ts) < BALANCES_CACHE_TTL) {
-      return res.json({ success: true, balances: balancesCache.data });
+    const fresh = req.query.fresh === '1';
+    if (!fresh && !balancesCache.stale && balancesCache.data && (now - balancesCache.ts) < BALANCES_CACHE_TTL) {
+      return res.json({ success: true, balances: balancesCache.data, stale: false, updatedAt: balancesCache.ts });
     }
     const balances = await fetchAccountBalances();
-    balancesCache = { data: balances, ts: now };
-    res.json({ success: true, balances });
+    balancesCache = { data: balances, ts: Date.now() };
+    res.json({ success: true, balances, stale: false, updatedAt: balancesCache.ts });
   } catch (e) {
-    if (balancesCache.data) return res.json({ success: true, balances: balancesCache.data });
-    res.json({ success: false, error: e.message });
+    balancesCache.stale = true;
+    if (balancesCache.data) return res.json({ success: true, balances: balancesCache.data, stale: true,
+      updatedAt: balancesCache.ts, error: e.message });
+    res.json({ success: false, stale: true, error: e.message });
   }
 });
 
@@ -757,6 +764,7 @@ app.post('/create-market-buy-order', async (req, res) => {
     console.log('Market buy created, ID:', orderId);
     ordersCache.ts = 0;
     balanceCache.ts = 0;
+    balancesCache.ts = 0;
     res.json({ success: true, orderId });
   } catch (error) {
     console.error('Market buy error:', error.message);
@@ -852,6 +860,7 @@ app.post('/create-buy-order', async (req, res) => {
     console.log('Order created successfully, ID:', orderId);
     ordersCache.ts = 0; // invalidate cache
     balanceCache.ts = 0;
+    balancesCache.ts = 0;
     res.json({ success: true, order: parsed, order_id: orderId });
   } catch (error) {
     console.error('Error creating buy order:', error);
@@ -4954,7 +4963,7 @@ async function placeLimitSell(productId, size, price) {
     }
   };
   const orderId = parseOrderResponse(await client.createOrder(orderData));
-  ordersCache.ts = 0; balanceCache.ts = 0;
+  ordersCache.ts = 0; balanceCache.ts = 0; balancesCache.ts = 0;
   return orderId;
 }
 
@@ -4966,7 +4975,7 @@ async function placeMarketSell(productId, size) {
     order_configuration: { market_market_ioc: { base_size: parseFloat(size).toFixed(baseDecimals) } }
   };
   const orderId = parseOrderResponse(await client.createOrder(orderData));
-  ordersCache.ts = 0; balanceCache.ts = 0;
+  ordersCache.ts = 0; balanceCache.ts = 0; balancesCache.ts = 0;
   return orderId;
 }
 

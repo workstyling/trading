@@ -9741,15 +9741,36 @@
     // называем разницу: решение остаётся за человеком, а не подменяется молча.
     //
     // Возвращает число для продажи или null, если продавать не надо.
-    async function sellableSize(coin, wanted) {
+    async function sellableSize(coin, wanted, { requireAll = false, price: quotePrice = 0 } = {}) {
       const sz0 = parseFloat(wanted);
-      if (!(sz0 > 0)) { showCustomAlert('Нечего продавать', true); return null; }
-      const bal = (balancesCache || []).find(h => h.currency === coin);
-      const avail = bal ? parseFloat(bal.available) : null;
-      // Баланса не видно — не мешаем: биржа ответит сама, и её ответ показан.
-      if (!(avail != null && Number.isFinite(avail))) return sz0;
+      if (!Number.isFinite(sz0) || !(sz0 > 0)) { showCustomAlert('Нечего продавать', true); return null; }
+      let wallet;
+      try {
+        const response = await fetch('/get-balances?fresh=1', { signal: AbortSignal.timeout(10000) });
+        const data = await response.json();
+        if (!response.ok || !data.success || data.stale || !Array.isArray(data.balances)) throw new Error('Баланс недоступен');
+        wallet = data.balances;
+        balancesCache = wallet;
+      } catch {
+        showOrderError('Баланс не проверен', 'Не удалось получить свежий свободный остаток. Продажа не отправлена. Повтори после обновления баланса.');
+        return null;
+      }
+      const bal = wallet.find(h => h.currency === coin);
+      const avail = bal ? Number(bal.available) : 0;
+      const hold = bal ? Number(bal.hold) : 0;
+      if (!Number.isFinite(avail) || avail < 0 || !Number.isFinite(hold) || hold < 0 ||
+          (bal && (bal.available == null || bal.hold == null))) {
+        showOrderError('Баланс не проверен', 'Биржа вернула неполный остаток. Продажа не отправлена.');
+        return null;
+      }
       if (avail + 1e-9 >= sz0) return sz0;
-      const hold = bal && parseFloat(bal.hold) > 0 ? parseFloat(bal.hold) : 0;
+      if (requireAll && hold > 0) {
+        showOrderError('Продать всё сейчас нельзя',
+          `Выбрано <b>${fmtSize(sz0)} ${coin}</b>, свободно <b>${fmtSize(avail)}</b>, ` +
+          `заморожено в открытом ордере <b>${fmtSize(hold)}</b>.<br><br>` +
+          'Сначала сними открытый ордер продажи и повтори. SELL ALL не уменьшает объём до свободной части. Новый ордер не создан.');
+        return null;
+      }
       if (!(avail > 0)) {
         showOrderError('Продавать нечего',
           `Свободного <b>${coin}</b> нет вовсе` +
@@ -9770,12 +9791,13 @@
       // Кеш объявлен ниже по файлу: к моменту нажатия он есть, но ронять
       // продажу из-за порядка объявлений нельзя — это деньги, а не вёрстка.
       const px = typeof lastPricesCache !== 'undefined' ? lastPricesCache[coin + '-USD'] : null;
-      const price = px ? (parseFloat(px.bestBid) || 0) : 0;
+      const price = Number(quotePrice) > 0 ? Number(quotePrice) : px ? (parseFloat(px.bestBid) || 0) : 0;
       if (price > 0 && avail * price < 1) {
-        showOrderError('Почти всё заморожено',
+        showOrderError(hold > 0 ? 'Почти всё заморожено' : 'Свободен только малый остаток',
           `Свободно всего <b>${fmtSize(avail)} ${coin}</b> — это $${(avail * price).toFixed(2)}, ` +
-          `остальные <b>${fmtSize(hold)}</b> заняты открытым ордером продажи.<br><br>` +
-          'Биржа не примет второй ордер на те же монеты. Сними открытый ордер — и тогда продавай всё разом.');
+          (hold > 0 ? `остальные <b>${fmtSize(hold)}</b> заняты открытым ордером продажи.<br><br>` +
+            'Сними открытый ордер — и тогда продавай всё разом.' : 'проверь уже исполненные продажи и выбранные ордера.') +
+          '<br>Новый ордер не создан.');
         return null;
       }
       const okBtn = await new Promise(resolve => {
@@ -9790,7 +9812,7 @@
       return okBtn ? avail : null;
     }
 
-    async function sellAtCurrentAsk(productId, size, avgBuyPrice, actualCost) {
+    async function sellAtCurrentAsk(productId, size, avgBuyPrice, actualCost, requireAll = false) {
       const coin = productId.split('-')[0];
       try {
         // Через общий кеш: он единственный ходит на биржу с таймаутом. Здесь
@@ -9800,10 +9822,10 @@
         const askPrice = parseFloat(tickerData && tickerData.ask);
         if (!askPrice) throw new Error('биржа не отдала цену ask');
 
-        // Продаём столько, сколько свободно: выбранное в таблице может быть
-        // больше, и биржа отклонила бы ордер целиком.
+        // Свежий остаток проверяется до подтверждения. SELL ALL не предлагает
+        // частичную продажу, если остальные монеты заняты открытым ордером.
         const wanted = parseFloat(size);
-        const sellable = await sellableSize(coin, size);
+        const sellable = await sellableSize(coin, size, { requireAll, price: askPrice });
         if (sellable == null) return;
         // Затраты делятся в той же доле, что и монеты: иначе прибыль считается
         // против денег, которых в этом ордере нет.
@@ -9895,7 +9917,7 @@
       // как открывать окно с расчётом по стакану, иначе оно посчитает объём,
       // который всё равно не уйдёт.
       const wanted = parseFloat(size);
-      const sellable = await sellableSize(coin, size);
+      const sellable = await sellableSize(coin, size, { requireAll: true });
       if (sellable == null) return;
       size = String(sellable);                  // именно это уходит в ордер
       const qty = sellable;
@@ -10120,7 +10142,7 @@
     }
 
     async function sellAllCoin(productId, size, avgBuyPrice, actualCost) {
-      await sellAtCurrentAsk(productId, size, avgBuyPrice, actualCost);
+      await sellAtCurrentAsk(productId, size, avgBuyPrice, actualCost, true);
     }
 
 
@@ -10320,7 +10342,7 @@
       // Стоп-лимит на выбранное количество биржа отклонит так же, как обычную
       // лимитку: свободного может быть меньше.
       const wanted = parseFloat(size);
-      const sellable = await sellableSize(coin, size);
+      const sellable = await sellableSize(coin, size, { requireAll: true });
       if (sellable == null) return;
       // Затраты в той же доле, что и монеты: иначе предупреждение об убытке
       // назовёт число, которого в этом ордере нет.
@@ -10430,7 +10452,7 @@
       // Столько же, сколько свободно: лимитку на выбранное количество биржа
       // отклонит целиком, и до этой правки кнопка просто не работала.
       const wanted = parseFloat(size);
-      const sellable = await sellableSize(coin, size);
+      const sellable = await sellableSize(coin, size, { requireAll: true });
       if (sellable == null) return;
       // Затраты делятся в той же доле, что и монеты: продаём меньше — и денег
       // в этой части сделки меньше. Иначе убыток считается против денег,

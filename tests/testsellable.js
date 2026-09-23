@@ -18,7 +18,8 @@ const m = fs.readFileSync('public/mobile/index.html', 'utf8');
 function load(balances) {
   const asked = [];
   const ctx = {
-    Number, String, parseFloat, Promise, Boolean,
+    Number, String, parseFloat, Promise, Boolean, AbortSignal,
+    fetch: async () => ({ ok: true, json: async () => ({ success: true, balances, stale: false }) }),
     balancesCache: balances,
     fmtSize: (n) => String(n),
     showCustomAlert: (t) => asked.push({ kind: 'alert', t }),
@@ -31,7 +32,14 @@ function load(balances) {
   vm.runInContext(d.slice(i, d.indexOf('\n    }', i) + 6) + ';this.sellable = sellableSize;', ctx);
   ctx.asked = asked;
   // Отвечаем на окно подтверждения, как ответил бы человек
-  ctx.answer = (yes) => { const c = asked.find(a => a.kind === 'confirm'); if (c) (yes ? c.yes : c.no)(); };
+  ctx.answer = async (yes) => {
+    for (let i = 0; i < 10; i++) {
+      const c = asked.find(a => a.kind === 'confirm');
+      if (c) { (yes ? c.yes : c.no)(); return; }
+      await Promise.resolve();
+    }
+    throw new Error('Confirmation did not open');
+  };
   return ctx;
 }
 
@@ -49,7 +57,7 @@ function load(balances) {
     // Настоящие числа USELESS
     const ctx = load([{ currency: 'USELESS', available: '11820.9', hold: '0' }]);
     const p = ctx.sellable('USELESS', '11858.7');
-    ctx.answer(true);
+    await ctx.answer(true);
     const got = await p;
     ok(got === 11820.9, 'продаём свободное, а не выбранное', String(got));
     const c = ctx.asked[0];
@@ -63,7 +71,7 @@ function load(balances) {
   {
     const ctx = load([{ currency: 'USELESS', available: '11820.9', hold: '0' }]);
     const p = ctx.sellable('USELESS', '11858.7');
-    ctx.answer(false);
+    await ctx.answer(false);
     ok((await p) === null, 'при отказе ордер не уходит');
   }
 
@@ -71,7 +79,7 @@ function load(balances) {
   {
     const ctx = load([{ currency: 'CRO', available: '600', hold: '400' }]);
     const p = ctx.sellable('CRO', '1000');
-    ctx.answer(true);
+    await ctx.answer(true);
     ok((await p) === 600, 'свободное всё равно можно продать');
     const c = ctx.asked[0];
     ok(c && /заморожено/i.test(c.html), 'заморозка названа');
@@ -111,23 +119,23 @@ function load(balances) {
     const big = load([{ currency: 'VVV', available: '50', hold: '50.465' }]);
     big.lastPricesCache['VVV-USD'] = { bestBid: '32.4793' };
     const p = big.sellable('VVV', '100.465');
-    big.answer(true);
+    await big.answer(true);
     ok((await p) === 50, 'половину позиции продать всё ещё можно');
 
     // Цены нет — молча не блокируем
     const noPx = load([{ currency: 'VVV', available: '0.001', hold: '100.465' }]);
     const p2 = noPx.sellable('VVV', '100.465');
-    noPx.answer(true);
+    await noPx.answer(true);
     ok((await p2) === 0.001, 'без цены проверку пропускаем, а не запрещаем наугад');
   }
 
-  console.log('\nБаланса не видно — не мешаем');
+  console.log('\nБаланс отсутствует или повреждён — продажа не отправляется');
   {
     const ctx = load([]);
-    ok((await ctx.sellable('X', '100')) === 100, 'без баланса пропускаем: биржа ответит сама');
-    ok(ctx.asked.length === 0, 'и не спрашиваем впустую');
+    ok((await ctx.sellable('X', '100')) === null, 'без остатка продажа запрещена');
+    ok(ctx.asked.length === 1 && ctx.asked[0].kind === 'error', 'причина показана');
     const nan = load([{ currency: 'X', available: 'нет', hold: '0' }]);
-    ok((await nan.sellable('X', '100')) === 100, 'нечитаемый баланс тоже не блокирует');
+    ok((await nan.sellable('X', '100')) === null, 'нечитаемый баланс блокирует продажу');
   }
 
   console.log('\nНечего продавать');
@@ -147,15 +155,19 @@ function load(balances) {
     const run = async (price, size, cost, avail) => {
       const shown = [];
       const ctx = {
-        Number, String, parseFloat, Promise, Math, Boolean,
+        Number, String, parseFloat, Promise, Math, Boolean, AbortSignal,
         balancesCache: [{ currency: 'USELESS', available: String(avail), hold: '0' }],
         fmtSize: (n) => String(n),
         getFeeLimit: () => 0.001, getFeeMarket: () => 0.0015,
         document: { getElementById: () => ({ value: price }) },
         showCustomAlert: (t) => shown.push({ kind: 'alert', t }),
         showOrderError: (t, html) => shown.push({ kind: 'error', t, html }),
-        showConfirmModal: (t, html, yes, no) => shown.push({ kind: 'confirm', t, html, yes, no }),
-        fetch: async () => ({ json: async () => ({ success: false, error: 'тест' }) }),
+        showConfirmModal: (t, html, yes, no) => {
+          shown.push({ kind: 'confirm', t, html, yes, no });
+          if (/Свободно меньше/.test(t)) yes();
+        },
+        fetch: async () => ({ ok: true, json: async () => ({ success: true, stale: false,
+          balances: [{ currency: 'USELESS', available: String(avail), hold: '0' }] }) }),
         selectedOrders: [], safeStorage: { setItem() {} }, saveSelectedToServer() {},
         loadLatestOrders: async () => {}, loadUsdBalance() {}, loadVolume30d() {},
         SELECTED_ORDERS_KEY: 'k', JSON,
@@ -166,9 +178,6 @@ function load(balances) {
       const li = d.indexOf('async function sellAllLimit');
       vm.runInContext(d.slice(li, d.indexOf('\n    }', li) + 6) + ';this.go = sellAllLimit;', ctx);
       const p = ctx.go('USELESS-USD', size, 'USELESS', cost);
-      // Если спросили про свободный остаток — соглашаемся
-      const less = shown.find(s => s.kind === 'confirm' && /Свободно меньше/.test(s.t));
-      if (less) less.yes();
       await p;
       return shown;
     };
@@ -262,7 +271,7 @@ function load(balances) {
   {
     for (const fn of ['sellAtCurrentAsk', 'sellAllLimit', 'sellStopInline', 'sellAllMarket']) {
       const body = d.slice(d.indexOf('function ' + fn), d.indexOf('function ' + fn) + 2500);
-      ok(/const sellable = await sellableSize\(coin, size\);/.test(body) && /if \(sellable == null\) return;/.test(body),
+      ok(/const sellable = await sellableSize\(coin, size,/.test(body) && /if \(sellable == null\) return;/.test(body),
         fn + ': спрашивает свободный остаток');
       ok(/size = String\(sellable\)/.test(body), fn + ': и в ордер уходит именно оно');
     }
@@ -287,7 +296,7 @@ function load(balances) {
     // Все три кнопки продажи на телефоне — через неё же
     for (const fn of ['sellAtAsk', 'sellStopInlineM', 'sellAllMarketM']) {
       const body = m.slice(m.indexOf('function ' + fn), m.indexOf('function ' + fn) + 1600);
-      ok(/await sellableSizeM\(coin, s(?:z|ize)\)/.test(body), fn + ': спрашивает свободный остаток');
+      ok(/await sellableSizeM\(coin, s(?:z|ize),/.test(body), fn + ': спрашивает свободный остаток');
       ok(/== null\) return;/.test(body), fn + ': и при отказе ордер не уходит');
     }
     // Затраты делятся в той же доле — иначе убыток в окне завышен

@@ -3300,7 +3300,7 @@
           const totalFilledStr = totalFilled.toFixed(totalFilled < 1 ? 8 : 6);
           const _st = sellStepsM(coin);
           html += `<div data-render-key="monitor-sell" style="margin-top:8px;display:flex;gap:6px;">
-            <button class="mon-sell-btn all" style="flex:1;padding:10px;" onclick="sellAtAsk('${pair}','${totalFilledStr}',${avgBuy},${totalUSD})">SELL ALL ${coin}</button>
+            <button class="mon-sell-btn all" style="flex:1;padding:10px;" onclick="sellAllAtAskM('${pair}','${totalFilledStr}',${avgBuy},${totalUSD})" title="Продать всю выбранную позицию лимитным ордером по Ask">SELL ALL ${coin}</button>
             <button class="mon-sell-btn mkt" style="flex:0 0 96px;padding:10px;" onclick="sellAllMarketM('${pair}','${totalFilledStr}','${coin}',${totalUSD})">SELL MKT</button>
           </div>
           <div class="step-row" data-render-key="monitor-steps">
@@ -4155,7 +4155,7 @@
       // Стоп-лимит на выбранное количество биржа отклонит так же, как обычную
       // лимитку: свободного может быть меньше.
       const wantedS = parseFloat(size) || 0;
-      const okSizeS = await sellableSizeM(coin, size);
+      const okSizeS = await sellableSizeM(coin, size, { requireAll: true });
       if (okSizeS == null) return;
       size = String(okSizeS);
       // Затраты в той же доле, что и монеты: иначе предупреждение об убытке
@@ -4212,7 +4212,7 @@
       // Рыночную продажу биржа отклоняет так же целиком: спрашиваем до того,
       // как открывать окно с расчётом по стакану.
       const wantedM = parseFloat(size);
-      const okSizeM = await sellableSizeM(coin, size);
+      const okSizeM = await sellableSizeM(coin, size, { requireAll: true });
       if (okSizeM == null) return;
       size = String(okSizeM);                    // именно это уходит в ордер
       const qty = okSizeM;
@@ -4401,23 +4401,49 @@
     // Предлагаем то количество, которое пройдёт, и называем разницу.
     //
     // Возвращает число для продажи или null, если продавать не надо.
-    async function sellableSizeM(coin, wanted) {
+    async function sellableSizeM(coin, wanted, { requireAll = false, price: quotePrice = 0 } = {}) {
       const sz = parseFloat(wanted);
-      if (!(sz > 0)) { toast('Нечего продавать', 'error'); return null; }
+      if (!Number.isFinite(sz) || !(sz > 0)) { toast('Нечего продавать', 'error'); return null; }
       let bal = null;
       try {
-        const bj = await (await fetch('/get-balances')).json();
-        bal = ((bj && bj.balances) || []).find(b => b.currency === coin) || null;
-      } catch { return sz; }        // баланс не отдали — отказ биржи покажем как есть
-      const avail = bal ? parseFloat(bal.available) : null;
-      if (!(avail != null && Number.isFinite(avail))) return sz;
+        const response = await fetch('/get-balances?fresh=1', { signal: AbortSignal.timeout(10000) });
+        const bj = await response.json();
+        if (!response.ok || !bj.success || bj.stale || !Array.isArray(bj.balances)) throw new Error('Баланс недоступен');
+        coinBalances = bj.balances;
+        bal = bj.balances.find(b => b.currency === coin) || null;
+      } catch {
+        showOrderError('Баланс не проверен', 'Не удалось получить свежий свободный остаток. Продажа не отправлена. Повтори после обновления баланса.');
+        return null;
+      }
+      const avail = bal ? Number(bal.available) : 0;
+      const hold = bal ? Number(bal.hold) : 0;
+      if (!Number.isFinite(avail) || avail < 0 || !Number.isFinite(hold) || hold < 0 ||
+          (bal && (bal.available == null || bal.hold == null))) {
+        showOrderError('Баланс не проверен', 'Биржа вернула неполный остаток. Продажа не отправлена.');
+        return null;
+      }
       if (avail + 1e-9 >= sz) return sz;
-      const hold = bal && parseFloat(bal.hold) > 0 ? parseFloat(bal.hold) : 0;
+      if (requireAll && hold > 0) {
+        showOrderError('Продать всё сейчас нельзя',
+          'Выбрано <b>' + fmt(sz) + ' ' + coin + '</b>, свободно <b>' + fmt(avail) + '</b>, ' +
+          'заморожено в открытом ордере <b>' + fmt(hold) + '</b>.<br><br>' +
+          'Сначала сними открытый ордер продажи и повтори. SELL ALL не уменьшает объём до свободной части. Новый ордер не создан.');
+        return null;
+      }
       if (!(avail > 0)) {
         showOrderError('Продавать нечего',
           'Свободного <b>' + coin + '</b> нет вовсе' +
           (hold > 0 ? ': все <b>' + fmt(hold) + '</b> заморожены в открытом ордере. Сними его и повтори.'
             : '. Обнови страницу — остаток мог измениться.'));
+        return null;
+      }
+      const px = monitorPriceCache[coin + '-USD'];
+      const price = Number(quotePrice) > 0 ? Number(quotePrice) : Number(px && (px.bid || px.ask)) || 0;
+      if (price > 0 && avail * price < 1) {
+        showOrderError(hold > 0 ? 'Почти всё заморожено' : 'Свободен только малый остаток',
+          'Свободно всего <b>' + fmt(avail) + ' ' + coin + '</b> — это $' + (avail * price).toFixed(2) + '. ' +
+          (hold > 0 ? 'Заморожено в открытом ордере <b>' + fmt(hold) + '</b>. Сними его и повтори.'
+            : 'Проверь уже исполненные продажи и выбранные ордера.') + '<br>Новый ордер не создан.');
         return null;
       }
       const okLess = await confirmTrade(
@@ -4431,7 +4457,11 @@
       return okLess ? avail : null;
     }
 
-    async function sellAtAsk(pair, size, avgBuyPrice, actualCost) {
+    async function sellAllAtAskM(pair, size, avgBuyPrice, actualCost) {
+      await sellAtAsk(pair, size, avgBuyPrice, actualCost, true);
+    }
+
+    async function sellAtAsk(pair, size, avgBuyPrice, actualCost, requireAll = false) {
       const coin = pair.split('-')[0];
       const buyFee = (tradingSettings.tradeFee || 0.125) / 100;   // комиссия лимитки на покупке
       const sellFee = (tradingSettings.marketFee || 0.25) / 100;  // комиссия рынка на продаже
@@ -4449,7 +4479,7 @@
       if (!askPrice) askPrice = monitorPriceCache[pair]?.ask;
       if (!askPrice) { toast('No ask price', 'error'); return; }
 
-      const okSize = await sellableSizeM(coin, sz);
+      const okSize = await sellableSizeM(coin, sz, { requireAll, price: askPrice });
       if (okSize == null) return;
       if (okSize !== sz) {
         // Затраты делятся в той же доле, что и монеты: иначе прибыль в окне
