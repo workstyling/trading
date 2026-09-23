@@ -9767,16 +9767,19 @@
     // секунду числится замороженным. Ждём именно освобождения, а не «сколько-то
     // времени» — иначе продажа уйдёт на старый свободный остаток.
     async function waitForFreeBalance(coin, need) {
-      let last = { avail: 0, hold: 0 };
+      let last = null;
       for (const wait of [400, 900, 1500, 2500]) {
         await new Promise(r => setTimeout(r, wait));
         try {
           const response = await fetch('/get-balances?fresh=1', { signal: AbortSignal.timeout(10000) });
           const data = await response.json();
-          if (!response.ok || !data.success || !Array.isArray(data.balances)) continue;
-          balancesCache = data.balances;
+          if (!response.ok || !data.success || data.stale || !Array.isArray(data.balances)) continue;
           const b = data.balances.find(h => h.currency === coin);
-          last = { avail: b ? Number(b.available) || 0 : 0, hold: b ? Number(b.hold) || 0 : 0 };
+          const avail = b ? Number(b.available) : 0, hold = b ? Number(b.hold) : 0;
+          if (!Number.isFinite(avail) || avail < 0 || !Number.isFinite(hold) || hold < 0 ||
+              (b && (b.available == null || b.hold == null))) continue;
+          balancesCache = data.balances;
+          last = { avail, hold };
           if (last.avail + 1e-9 >= need) return last;
         } catch { /* следующая попытка */ }
       }
@@ -9819,7 +9822,7 @@
         // Предлагаем то, за чем и нажимали: снять мешающий ордер и продать
         // всё. Снятие — действие, поэтому спрашиваем и называем, что снимаем.
         const blockers = openSellsFor(coin);
-        const blocked = blockers.reduce((a, o) => a + (orderBaseSize(o) || 0), 0);
+        const blocked = blockers.reduce((a, o) => a + Math.max(0, (Number(orderBaseSize(o)) || 0) - (Number(o.filled_size) || 0)), 0);
         const okCancel = blockers.length > 0 && await new Promise(resolve => {
           showConfirmModal('Снять открытый ордер и продать всё?',
             `Выбрано <b>${fmtSize(sz0)} ${coin}</b>, свободно <b>${fmtSize(avail)}</b> — остальное держ` +
@@ -9847,7 +9850,18 @@
         }
         const freed = await waitForFreeBalance(coin, sz0);
         try { await loadLatestOrders(true); } catch { }
+        if (!freed) {
+          showOrderError('Баланс после отмены не проверен',
+            'Не удалось получить свежий остаток после запроса отмены. Новый ордер не создан. Обнови баланс и список ордеров перед повтором.');
+          return null;
+        }
         if (freed.avail + 1e-9 >= sz0) return sz0;
+        if (freed.hold > 0) {
+          showOrderError('Монеты ещё заморожены',
+            `Свободно <b>${fmtSize(freed.avail)} ${coin}</b>, заморожено <b>${fmtSize(freed.hold)}</b>. ` +
+            'Биржа пока не подтвердила освобождение всего объёма. Проверь статус отмены и повтори. Новый ордер не создан.');
+          return null;
+        }
         // Пока ордер стоял, часть успела продаться: позиция стала меньше, и
         // «всё» теперь другое число. Считать его здесь нельзя — панель
         // пересчитает по свежим ордерам.
@@ -10649,10 +10663,12 @@
         const st = String((fresh && fresh.status) || '').toUpperCase();
         if (fresh && st !== 'OPEN' && st !== 'PENDING' && st !== 'QUEUED') break;
       }
-      const filled = fresh ? parseFloat(fresh.filled_size || 0) : NaN;
+      const terminal = fresh && ['CANCELLED', 'EXPIRED', 'FAILED', 'FILLED'].includes(String(fresh.status || '').toUpperCase());
+      const filled = fresh && fresh.filled_size != null && String(fresh.filled_size).trim() !== ''
+        ? Number(fresh.filled_size) : NaN;
       // Ордера не видно — оставляем в выбранном. Потерять исполнение хуже, чем
       // оставить лишнюю строку: её видно и снять можно руками.
-      if (!Number.isFinite(filled) || filled > 0) return;
+      if (!terminal || filled !== 0) return;
       selectedOrders = selectedOrders.filter(id => id !== orderId);
       saveSelectedOrders();
     }

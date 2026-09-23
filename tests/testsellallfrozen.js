@@ -27,7 +27,7 @@ function load({ avail, hold, orders = [], cancelOk = true, freedAfter = null, an
   const cancelled = [];
   let balCalls = 0;
   const ctx = {
-    Number, String, parseFloat, Promise, Math, Set, JSON, setTimeout,
+    Number, String, parseFloat, Promise, Math, Set, JSON, setTimeout: fn => fn(),
     AbortSignal: { timeout: () => ({}) },
     allOrders: orders, balancesCache: [], fmtSize: n => String(n),
     showCustomAlert: (t) => log.push({ k: 'alert', t }),
@@ -140,8 +140,8 @@ function load({ avail, hold, orders = [], cancelOk = true, freedAfter = null, an
   console.log('\nОжидание освобождения, а не «подождём немного»');
   {
     ok(/async function waitForFreeBalance/.test(h), 'освобождение ждут отдельной функцией');
-    const body = h.slice(h.indexOf('async function waitForFreeBalance'),
-      h.indexOf('async function waitForFreeBalance') + 1200);
+    const start = h.indexOf('async function waitForFreeBalance');
+    const body = h.slice(start, h.indexOf('\n    }', start) + 6);
     ok(/if \(last\.avail \+ 1e-9 >= need\) return last;/.test(body),
       'ждём именно нужного остатка, а не времени');
     ok(/\[400, 900, 1500, 2500\]/.test(body), 'с возрастающими паузами и конечным числом попыток');

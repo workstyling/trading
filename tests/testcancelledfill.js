@@ -149,7 +149,7 @@ console.log('\nУведомление не выдаёт часть за цело
     const j = h.indexOf('\n    }', i) + 6;
     const mk = (passes) => {
       let n = 0;
-      const c = { Number, String, parseFloat, Promise, setTimeout,
+      const c = { Number, String, parseFloat, Promise, setTimeout: fn => fn(),
         allOrders: [], selectedOrders: ['a', 'b'], saved: 0,
         loadLatestOrders: async () => { c.allOrders = passes[Math.min(n, passes.length - 1)]; n++; },
         saveSelectedOrders: () => { c.saved++; } };
@@ -178,6 +178,19 @@ console.log('\nУведомление не выдаёт часть за цело
     await c.drop('a');
     ok(c.selectedOrders.join() === 'a,b',
       'исполнение, доехавшее вторым ответом, тоже сохраняется');
+
+    for (const order of [
+      { status: 'OPEN', filled_size: '0' }, { status: 'PENDING', filled_size: '0' },
+      { status: 'QUEUED', filled_size: '0' }, { status: 'CANCEL_QUEUED', filled_size: '0' },
+      { status: 'CANCELLED' }, { status: 'CANCELLED', filled_size: null },
+      { status: 'CANCELLED', filled_size: '' }, { status: 'CANCELLED', filled_size: 'bad' },
+      { filled_size: '0' },
+    ]) {
+      c = mk([[{ order_id: 'a', ...order }]]);
+      await c.drop('a');
+      ok(c.selectedOrders.join() === 'a,b' && c.saved === 0,
+        'незавершённая отмена или неизвестное исполнение сохраняет ордер', JSON.stringify(order));
+    }
 
     // Обе кнопки отмены идут через одну проверку
     ok(!/const hasFills = order && parseFloat\(order\.filled_size/.test(h),

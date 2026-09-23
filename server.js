@@ -527,21 +527,46 @@ app.post('/create-sell-order', async (req, res) => {
 
 // API: Cancel order
 app.post('/cancel-order', async (req, res) => {
+  let attempted = false;
   try {
     const { orderId } = req.body || {};
     if (!hasValidOrderId(orderId)) {
       return invalidOrderInput(res, 'A valid order ID is required');
     }
     console.log('Cancelling order:', orderId);
+    attempted = true;
     const response = await client.cancelOrders({ order_ids: [orderId] });
     console.log('Cancel response:', response);
-    ordersCache.ts = 0; // invalidate cache
-    balanceCache.ts = 0;
-    balancesCache.ts = 0;
+    // HTTP 200 подтверждает доставку запроса, а результат отмены находится
+    // в results для конкретного ордера. SDK возвращает тело строкой.
+    let data;
+    try { data = typeof response === 'string' ? JSON.parse(response) : response; }
+    catch { data = null; }
+    const matches = Array.isArray(data?.results)
+      ? data.results.filter(result => result && result.order_id === orderId) : [];
+    if (matches.length !== 1 || typeof matches[0].success !== 'boolean') {
+      return res.status(502).json({ success: false,
+        error: 'Биржа не подтвердила отмену этого ордера. Обнови список и проверь его статус перед повторной продажей.' });
+    }
+    if (!matches[0].success) {
+      const reason = matches[0].failure_reason;
+      const detail = typeof reason === 'string' ? reason
+        : reason?.message || reason?.error_details || 'причина не указана';
+      return res.status(409).json({ success: false,
+        error: `Биржа не отменила ордер: ${detail}. Обнови список и проверь его статус.` });
+    }
     res.json({ success: true, response });
   } catch (error) {
     console.error('Error cancelling order:', error);
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json({ success: false,
+      error: `Не удалось подтвердить отмену ордера: ${error.message}. Обнови список и проверь его статус.` });
+  } finally {
+    // Даже при потерянном ответе биржа могла уже принять отмену.
+    if (attempted) {
+      ordersCache.ts = 0;
+      balanceCache.ts = 0;
+      balancesCache.ts = 0;
+    }
   }
 });
 

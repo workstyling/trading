@@ -4422,16 +4422,19 @@
     // Биржа освобождает монеты не мгновенно: ждём именно освобождения, иначе
     // продажа уйдёт на старый свободный остаток.
     async function waitForFreeBalanceM(coin, need) {
-      let last = { avail: 0, hold: 0 };
+      let last = null;
       for (const wait of [400, 900, 1500, 2500]) {
         await new Promise(r => setTimeout(r, wait));
         try {
           const response = await fetch('/get-balances?fresh=1', { signal: AbortSignal.timeout(10000) });
           const bj = await response.json();
-          if (!response.ok || !bj.success || !Array.isArray(bj.balances)) continue;
-          coinBalances = bj.balances;
+          if (!response.ok || !bj.success || bj.stale || !Array.isArray(bj.balances)) continue;
           const b = bj.balances.find(x => x.currency === coin);
-          last = { avail: b ? Number(b.available) || 0 : 0, hold: b ? Number(b.hold) || 0 : 0 };
+          const avail = b ? Number(b.available) : 0, hold = b ? Number(b.hold) : 0;
+          if (!Number.isFinite(avail) || avail < 0 || !Number.isFinite(hold) || hold < 0 ||
+              (b && (b.available == null || b.hold == null))) continue;
+          coinBalances = bj.balances;
+          last = { avail, hold };
           if (last.avail + 1e-9 >= need) return last;
         } catch { /* следующая попытка */ }
       }
@@ -4467,7 +4470,7 @@
         // оставались 0.01 монеты из 33 630, и такие продажи уже уходили на
         // биржу по два цента.
         const blockers = openSellsForM(coin);
-        const blocked = blockers.reduce((a, o) => a + (orderBaseSize(o) || 0), 0);
+        const blocked = blockers.reduce((a, o) => a + Math.max(0, (Number(orderBaseSize(o)) || 0) - (Number(o.filled_size) || 0)), 0);
         const okCancel = blockers.length > 0 && await confirmTrade(
           '<strong>Снять открытый ордер и продать всё?</strong><br><br>' +
           'Выбрано <b>' + fmt(sz) + ' ' + coin + '</b>, свободно <b>' + fmt(avail) + '</b> — остальное держ' +
@@ -4493,7 +4496,18 @@
         }
         const freed = await waitForFreeBalanceM(coin, sz);
         try { await loadOrders(); } catch { }
+        if (!freed) {
+          showOrderError('Баланс после отмены не проверен',
+            'Не удалось получить свежий остаток после запроса отмены. Новый ордер не создан. Обнови баланс и список ордеров перед повтором.');
+          return null;
+        }
         if (freed.avail + 1e-9 >= sz) return sz;
+        if (freed.hold > 0) {
+          showOrderError('Монеты ещё заморожены',
+            'Свободно <b>' + fmt(freed.avail) + ' ' + coin + '</b>, заморожено <b>' + fmt(freed.hold) + '</b>. ' +
+            'Биржа пока не подтвердила освобождение всего объёма. Проверь статус отмены и повтори. Новый ордер не создан.');
+          return null;
+        }
         showOrderError('Ордер снят, монет стало меньше',
           'Свободно <b>' + fmt(freed.avail) + ' ' + coin + '</b> из <b>' + fmt(sz) + '</b>' +
           (freed.hold > 0 ? ', ещё <b>' + fmt(freed.hold) + '</b> заморожено' : '') +

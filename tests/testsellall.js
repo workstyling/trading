@@ -24,9 +24,9 @@ async function checkUi(mobile) {
   const ask = mobile ? 'sellAtAsk' : 'sellAtCurrentAsk';
   const all = mobile ? 'sellAllAtAskM' : 'sellAllCoin';
   const requests = [], confirmations = [], errors = [];
-  let response, httpOk = true, approve = true;
+  let response, httpOk = true, approve = true, balanceReplies = null, balanceCalls = 0;
   const post = async (url, opts) => {
-    assert.equal(url, '/create-sell-order');
+    assert(['/create-sell-order', '/cancel-order'].includes(url));
     requests.push({ url, body: JSON.parse(opts.body) });
     return { success: true };
   };
@@ -40,8 +40,10 @@ async function checkUi(mobile) {
       if (opts?.method === 'POST') return { json: async () => post(url, opts) };
       assert.equal(url, '/get-balances?fresh=1');
       assert(opts.signal, 'balance request is bounded');
-      if (response instanceof Error) throw response;
-      return { ok: httpOk, json: async () => response };
+      balanceCalls++;
+      const next = balanceReplies ? (balanceReplies.length > 1 ? balanceReplies.shift() : balanceReplies[0]) : response;
+      if (next instanceof Error) throw next;
+      return { ok: httpOk, json: async () => next };
     },
     api: post,
     confirmTrade: async html => { confirmations.push(html); return approve; },
@@ -62,6 +64,7 @@ async function checkUi(mobile) {
   }
   for (const name of [helper, ask, all]) vm.runInContext(extract(html, name), ctx);
   const run = async (wallet, extra = {}) => {
+    balanceReplies = null;
     requests.length = confirmations.length = errors.length = 0;
     response = { success: true, stale: false, balances: wallet, ...extra };
     await ctx[all]('AURORA-USD', '33630.56', 0.09669, 3256.71);
@@ -110,13 +113,48 @@ async function checkUi(mobile) {
   await run(balances(33630.57, 0));
   assert.equal(requests.length, 0, 'declining confirmation cannot place an order');
 
+  approve = true;
+  const runAfterCancel = async replies => {
+    requests.length = confirmations.length = errors.length = balanceCalls = 0;
+    ctx.allOrders = [
+      { order_id: 'sell-a', product_id: 'AURORA-USD', side: 'SELL', status: 'OPEN', filled_size: '2',
+        order_configuration: { limit_limit_gtc: { base_size: '20000' } } },
+      { order_id: 'sell-b', product_id: 'AURORA-USD', side: 'SELL', status: 'OPEN', filled_size: '3',
+        order_configuration: { limit_limit_gtc: { base_size: '13635.56' } } },
+    ];
+    balanceReplies = [{ success: true, stale: false, balances: balances(0.01, 33630.56) }, ...replies];
+    await ctx[all]('AURORA-USD', '33630.56', 0.09669, 3256.71);
+    assert.equal(requests.filter(r => r.url === '/cancel-order').length, 2);
+    assert.match(confirmations[0], /на <b>33630\.56<\/b>/, 'open quantities are added numerically, excluding fills');
+    return requests.filter(r => r.url === '/create-sell-order');
+  };
+  const released = { success: true, stale: false, balances: balances(33630.57, 0) };
+  for (const bad of [
+    { ...released, stale: true }, new Error('timeout'), { ...released, success: false },
+    { ...released, balances: balances(Infinity, 0) }, { ...released, balances: balances(33630.57, null) },
+  ]) {
+    const sales = await runAfterCancel([bad]);
+    assert.equal(sales.length, 0, 'cancel followed by stale/malformed/unavailable balance must not permit a sale');
+    assert.equal(balanceCalls, 5, 'bounded retries after the initial balance');
+    assert.match(errors[0], /Баланс после отмены не проверен/);
+    assert(!errors[0].includes('часть успела продаться'), 'missing data must not be described as a fill');
+  }
+  let sales = await runAfterCancel([{ ...released, stale: true }, released]);
+  assert.equal(balanceCalls, 3, 'stale reply is skipped until a valid live reply arrives');
+  assert.equal(sales.length, 1);
+  assert.equal(Number(sales[0].body.size), 33630.56);
+  sales = await runAfterCancel([{ success: true, stale: false, balances: balances(0.01, 33630.56) }]);
+  assert.equal(sales.length, 0);
+  assert.match(errors[0], /Монеты ещё заморожены/);
+  assert(!errors[0].includes('часть успела продаться'));
+
   // All-position market and stop/limit buttons must use the same hold protection.
   const grouped = mobile ? ['sellAllMarketM', 'sellStopInlineM'] : ['sellAllMarket', 'sellAllLimit', 'sellStopInline'];
   for (const name of grouped) {
     assert.match(extract(html, name), /await sellableSizeM?\(coin, size, \{ requireAll: true \}\)/, name);
   }
   assert(html.includes('onclick="' + all + '('), 'visible SELL ALL button calls the tested wrapper');
-  console.log((mobile ? 'Mobile' : 'Desktop') + ': full sale, held dust, partial fills, fresh balance, failure and decline: OK');
+  console.log((mobile ? 'Mobile' : 'Desktop') + ': full sale, cancellation, stale/recovered balance, remaining holds, partial fills and decline: OK');
 }
 
 async function checkBalanceApi() {
