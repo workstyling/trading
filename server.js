@@ -2824,11 +2824,42 @@ function orderBaseSize(o) {
 }
 // Исполнилась часть, а не весь заказанный объём — это надо назвать словом:
 // «SELL FILLED» на снятой заявке, продавшей треть, читается как полный выход.
+// Заказанная СУММА — для рыночных ордеров, где объём в монетах не задан.
+function orderQuoteSize(o) {
+  const cfg = (o && o.order_configuration) || {};
+  for (const k of Object.keys(cfg)) {
+    const v = cfg[k] && cfg[k].quote_size;
+    if (v != null && v !== '' && parseFloat(v) > 0) return parseFloat(v);
+  }
+  return 0;
+}
+// РЫНОЧНЫЙ ОРДЕР ЗАКАЗАН ДЕНЬГАМИ, А НЕ МОНЕТАМИ.
+//
+// Coinbase исполняет рыночный ордер как IOC: неисполненный хвост он снимает,
+// и полностью исполненная покупка получает статус CANCELLED — не потому, что
+// что-то не вышло, а потому что так устроен этот тип ордера. Объёма в монетах
+// у неё нет вовсе: в настройке лежит quote_size, то есть сумма.
+//
+// Прежняя проверка не находила base_size, считала «раз объём неизвестен, а
+// заявка снята — значит частично» и слала «BUY ЧАСТИЧНО» на покупку, где из
+// заказанных $3303.32 потрачено $3303.317. Треть цента недобора — это полное
+// исполнение, а сообщение пугало и заставляло идти проверять биржу.
+//
+// Меряем тем же, чем заказано: объём — объёмом, сумму — деньгами. А если не
+// названо ни то ни другое, судить не по чему: молчим о частичности, но само
+// уведомление уходит.
 function isPartialFill(o) {
   if (!o || o.status === 'FILLED') return false;
-  const want = orderBaseSize(o);
   const got = parseFloat(o.filled_size) || 0;
-  return got > 0 && (want === 0 || got < want * 0.999);
+  if (!(got > 0)) return false;
+  const want = orderBaseSize(o);
+  if (want > 0) return got < want * 0.999;
+  const quote = orderQuoteSize(o);
+  if (quote > 0) {
+    const spent = parseFloat(o.total_value) || parseFloat(o.filled_value) || 0;
+    return spent > 0 && spent < quote * 0.999;
+  }
+  return false;
 }
 
 async function checkFilledOrders(fresh) {
@@ -2884,11 +2915,17 @@ async function checkFilledOrders(fresh) {
       const coin = (o.product_id || '').replace('-USD', '');
       // Снятая заявка, продавшая треть объёма, — это не «SELL FILLED».
       const part = isPartialFill(o);
+      // Доля считается тем же, чем заказан ордер: объём — объёмом, сумма —
+      // деньгами. Рыночный ордер заказан деньгами, и делить его размер на ноль
+      // нечем — раньше в таком случае оставалось безликое «частично».
       const want = orderBaseSize(o);
+      const wantQuote = want > 0 ? 0 : orderQuoteSize(o);
+      const partShare = want > 0 ? size / want : wantQuote > 0 ? val / wantQuote : null;
       const text =
         `${isBuy ? '🟢 <b>BUY' : '🔴 <b>SELL'} ${part ? 'ЧАСТИЧНО' : 'FILLED'}</b> — <b>${o.product_id}</b>\n` +
         `━━━━━━━━━━━━━━━━━━\n` +
-        (part ? `⚠️ Заявка снята, исполнилось ${want > 0 ? fmtNumTg(size / want * 100, 0) + '% объёма' : 'частично'}\n` : '') +
+        (part ? `⚠️ Заявка снята, исполнилось ${partShare != null
+          ? fmtNumTg(partShare * 100, 0) + (want > 0 ? '% объёма' : '% заказанной суммы') : 'частично'}\n` : '') +
         `📦 Size: <b>${fmtNumTg(size, size < 1 ? 6 : 2)} ${coin}</b>\n` +
         `💵 Price: <b>$${fmtPxTg(o.average_filled_price)}</b>\n` +
         `💰 Total: <b>$${fmtNumTg(val)}</b>\n` +
