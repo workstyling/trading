@@ -7338,6 +7338,21 @@
         for (const e of bids) { const p = +e[0], s = +e[1]; if (p >= mid * 0.98) dBuy += p * s; }
         for (const e of asks) { const p = +e[0], s = +e[1]; if (p <= mid * 1.02) dSell += p * s; }
         const tot = dBuy + dSell, bp = tot ? Math.round(dBuy / tot * 100) : 50;
+
+        // ОБЪЁМ ЗА СУТКИ — рядом с глубиной стакана.
+        //
+        // Глубина ±2% говорит, сколько можно взять прямо сейчас, объём за сутки —
+        // насколько монета вообще торгуется. Вместе видно, не упрётся ли
+        // позиция в тонкий рынок на выходе. Биржа отдаёт объём в монетах,
+        // переводим в доллары по последней цене. Кеш минута: за минуту суточный
+        // объём не меняется, а строка пересчитывается раз в пять секунд.
+        let vol24 = null;
+        try {
+          const st = await cbGet(`https://api.exchange.coinbase.com/products/${coin}-USD/stats`, 60000);
+          const v = parseFloat(st && st.volume), last = parseFloat(st && st.last);
+          if (v > 0 && last > 0) vol24 = v * last;
+        } catch { }
+        const volHtml = `<span title="Объём торгов за 24 часа по этой паре, в долларах">vol24: <b style="color:var(--t1);">${vol24 != null ? fmtVolShort(vol24) : '—'}</b></span>`;
         // Сколько уровней ask съест покупка на введённую сумму (сценарий taker)
         const usd = parseFloat((document.getElementById('buyUsdAmount')?.value || '0').replace(/[$,]/g, '')) || 0;
         let impact = '';
@@ -7380,7 +7395,7 @@
             }
           }
         }
-        setLiveHtml(el, `<span title="Глубина стакана в ±2% от цены: биды/аски">стакан ±2%: <span style="color:var(--green);font-weight:600;">${fmtVolShort(dBuy)}</span><span style="color:#555;">/</span><span style="color:#f55;font-weight:600;">${fmtVolShort(dSell)}</span></span>`
+        setLiveHtml(el, volHtml + `<span title="Глубина стакана в ±2% от цены: биды/аски">стакан ±2%: <span style="color:var(--green);font-weight:600;">${fmtVolShort(dBuy)}</span><span style="color:#555;">/</span><span style="color:#f55;font-weight:600;">${fmtVolShort(dSell)}</span></span>`
           + `<span class="tv-depthbar" style="width:70px;"><i style="width:${bp}%"></i></span>`
           // Куски рисуем ВСЕГДА: пустые они держат ширину, и строка не
           // перестраивается на каждом пересчёте.
