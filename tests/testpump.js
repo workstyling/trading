@@ -50,6 +50,17 @@ for (const f of ['public/index.html', 'public/mobile/index.html']) {
   const s = fs.readFileSync(f, 'utf8');
   ok(s.includes('recoveryPumpMark(x)') && s.includes('recoveryPumpNote(x)'), f + ': пометка и подсказка на месте');
 }
+// Порядок: внутри одного статуса строка без разгона выше помеченной, даже
+// если у помеченной процент больше; статус и измеренность старше разгона.
+{
+  const now = Date.now();
+  const scan = { at: now, serverNow: now, recoveryMeasuredAt: '2026-09-09', entryNet: { buyCells: [] } };
+  const order = (row, hour) => R.recoveryOrder(row, scan, { tier: 1, label: 'наблюдать' }, { hour }, now);
+  const clean = { coin: 'A', price: 1, inListMin: 5 }, hot = { coin: 'B', price: 1, inListMin: 5, pump: p };
+  ok(order(clean, 72) > order(hot, 89.7), 'без разгона выше помеченной с большим процентом');
+  ok(order(hot, 89.7) > order({ ...clean }, null), 'измеренная помеченная выше неизмеренной чистой: прочерк не плюс');
+  ok(order(hot, 80) > order({ ...hot, coin: 'C' }, 75), 'среди помеченных — по проценту');
+}
 // Пометка не влезает в разрешение покупки: verdict и рамка её не читают
 const src = fs.readFileSync('public/js/recovery-journal.js', 'utf8');
 const verdictBody = src.slice(src.indexOf('function recoveryVerdict'), src.indexOf('function', src.indexOf('function recoveryVerdict') + 10));
