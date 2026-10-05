@@ -60,6 +60,14 @@ for (const f of ['public/index.html', 'public/mobile/index.html']) {
   ok(order(clean, 72) > order(hot, 89.7), 'без разгона выше помеченной с большим процентом');
   ok(order(hot, 89.7) > order({ ...clean }, null), 'измеренная помеченная выше неизмеренной чистой: прочерк не плюс');
   ok(order(hot, 80) > order({ ...hot, coin: 'C' }, 75), 'среди помеченных — по проценту');
+  // Спред — издержка каждой сделки: дешевле выше, даже при меньшем проценте
+  ok(order({ ...clean, spreadPct: 0.055 }, 72) > order({ ...clean, coin: 'D', spreadPct: 0.198 }, 77.6), 'дешёвый спред выше дорогого с большим процентом');
+  ok(order({ ...clean, spreadPct: 0.1 }, 72) > order({ ...clean, coin: 'E', spreadPct: null }, 90), 'неизвестный спред ниже любого известного');
+  ok(order({ ...clean, spreadPct: 0.1 }, 80) > order({ ...clean, coin: 'F', spreadPct: 0.1 }, 75), 'при равном спреде — по проценту');
+  // Монета, уже занимающая пятую часть портфеля, ниже чистой
+  ok(order({ ...clean, spreadPct: 0.1 }, 72) > order({ ...clean, coin: 'G', spreadPct: 0.024, bookPct: 25 }, 86.4), 'перегруженная портфелем ниже, даже с лучшим спредом и процентом');
+  ok(order({ ...clean, spreadPct: 0.1, bookPct: 5 }, 72) === order({ ...clean, spreadPct: 0.1, bookPct: null }, 72), 'малая доля и неизвестный кошелёк — нейтральны');
+  ok(order(hot, 89.7) < order({ ...clean, spreadPct: 0.198 }, 72), 'разгон старше спреда: помеченная ниже дорогой чистой');
 }
 // Пометка не влезает в разрешение покупки: verdict и рамка её не читают
 const src = fs.readFileSync('public/js/recovery-journal.js', 'utf8');

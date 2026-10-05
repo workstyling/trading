@@ -16195,7 +16195,11 @@ Requirements:
             '<br><span style="color:var(--t2);font-size:9px;font-weight:400;">' + (x.spreadPct == null ? '—' : x.spreadPct + '%') + '</span></td>' +
             num(held || '—', recoveryFresh(x) ? 'var(--entry-confirmed)' : 'var(--t2)', recoveryFresh(x)) + '</tr>';
         };
-        // Статус → цель 1ч по убыванию → свежесть; одинаково на компьютере и телефоне.
+        // Доля монеты в портфеле идёт в порядок: перегруженная монета ниже. Кошелёк ещё
+        // не загружен — доли нет, ключ нейтрален.
+        for (const x of rows) { try { x.bookPct = bookShare(x.coin); } catch { x.bookPct = null; } }
+        // Статус → измерено → без разгона → не перегружает портфель → спред → цель 1ч → свежесть;
+        // одинаково на компьютере и телефоне.
         const ranked = rows.slice().sort((a, b) =>
           recoveryOrder(b, j, verdict(b), recoveryObservation(b, j)) -
           recoveryOrder(a, j, verdict(a), recoveryObservation(a, j)));

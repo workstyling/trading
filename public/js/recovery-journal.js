@@ -205,18 +205,36 @@
   // по которому «выше — значит прибыльнее», не нашлось. Разгон — это риск
   // отката к уровню до роста, он отдельный и не замерен; ставить его ниже —
   // значит «выше — меньше известных рисков», а не «выше — прибыльнее».
-  const MEASURED_FIRST = 1000;
-  const NO_PUMP_FIRST = 500;      // больше любой частоты (100), меньше MEASURED_FIRST
+  //
+  // Ключи сверху вниз — каждый старше всех, что ниже него:
+  //   1. статус (брать → кандидат → остальные);
+  //   2. есть измеренная частота (прочерк не получает подставной оценки);
+  //   3. нет пометки «разгон»;
+  //   4. монета не занимает в портфеле больше порога (одна монета на пятую
+  //      часть портфеля решает месяц сама; вёрстка передаёт долю в row.bookPct,
+  //      нет данных о кошельке — ключ нейтрален);
+  //   5. спред дешевле. Спред платится в каждой сделке целиком и в прогоне
+  //      по свечам не учтён, а при цели +0.3% спред 0.2% съедает две трети;
+  //      неизвестный спред — ниже любого известного;
+  //   6. частота цели по убыванию;
+  //   7. свежесть.
+  // Это порядок по известным издержкам и рискам, не по прибыли.
+  const RANK = { status: 1e9, measured: 1e8, noPump: 1e7, book: 5e6, spread: 1e4, hour: 10 };
+  const BOOK_MAX_PCT = 20;        // тот же порог, что в предупреждении перед покупкой
   function recoveryOrder(row, scan, verdict, observation, now = scanNow(scan)) {
     const mark = verdict && recoveryRowMark(row, scan, verdict, observation, now);
-    const priority = mark && mark.state === 'confirmed' ? 4000 : mark && mark.state === 'possible' ? 2000 : 0;
+    const status = mark && mark.state === 'confirmed' ? 2 : mark && mark.state === 'possible' ? 1 : 0;
     const hour = observation && finite(observation.hour) && observation.hour >= 0 && observation.hour <= 100
       ? Math.round(Number(observation.hour) * 10) / 10 : null;
     const pumped = !!(row.pump && row.pump.pumped);
+    const heavy = finite(row.bookPct) && Number(row.bookPct) >= BOOK_MAX_PCT;
+    // Спред 0..0.3% → 300..1 (шаг 0.001% = 1); неизвестный → 0, ниже любого известного.
+    const spread = finite(row.spreadPct) ? Math.max(1, Math.round((0.301 - Math.min(0.3, Math.max(0, Number(row.spreadPct)))) * 1000)) : 0;
     const age = finite(row.inListMin) ? Math.max(0, Number(row.inListMin)) : 1e6;
-    // Частота меняется шагами 0.1 п.п.; добавка за свежесть меньше этого шага.
-    // Вся добавка внутри группы меньше расстояния между статусами.
-    return priority + (hour == null ? 0 : MEASURED_FIRST + (pumped ? 0 : NO_PUMP_FIRST) + hour) + 0.01 / (1 + age / 60);
+    // Частота шагом 0.1 п.п. даёт шаг 1; добавка за свежесть меньше единицы.
+    return status * RANK.status +
+      (hour == null ? 0 : RANK.measured + (pumped ? 0 : RANK.noPump) + (heavy ? 0 : RANK.book) + spread * RANK.spread + hour * RANK.hour) +
+      0.01 / (1 + age / 60);
   }
   // Разрешена ли клетка этой монеты к покупке.
   //
@@ -391,8 +409,8 @@
     if (!base) return '';
     return '<div class="recovery-legend" title="Частота касания цели +0.30% за час до комиссий. ▲ означает превышение базы больше двух погрешностей и минимум на 3 п.п. Это не оценка прибыли.">' +
       '<b>▲</b> — частота выше базы ' + base.pct.toFixed(1) + '%, не разрешение покупать. ' +
-      'Внутри групп — сначала без пометки «разгон», затем цель 1ч по убыванию; при равенстве — свежие выше. ' +
-      'Выше — меньше известных рисков, а не больше прибыли: ключа, по которому верх прибыльнее низа, замер не нашёл.</div>';
+      'Внутри групп сверху вниз: без пометки «разгон» → не перегружает портфель → дешевле спред → цель 1ч по убыванию → свежие. ' +
+      'Выше — меньше известных издержек и рисков, а не больше прибыли: ключа, по которому верх прибыльнее низа, замер не нашёл.</div>';
   }
   function recoveryVerdict(row, gate, observation, buyCell) {
     const out = (tier, label, why, risk = false) => ({ tier, label, why,

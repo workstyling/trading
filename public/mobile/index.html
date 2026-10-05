@@ -7240,7 +7240,11 @@
             num(x.pullbackPct == null ? '—' : x.pullbackPct + '%') +
             num(recoveryDayChange(x)) + '</tr>';
         };
-        // Статус → цель 1ч по убыванию → свежесть; одинаково на компьютере и телефоне.
+        // Доля монеты в портфеле идёт в порядок: перегруженная монета ниже. Кошелёк ещё
+        // не загружен — доли нет, ключ нейтрален.
+        for (const x of rows) { try { x.bookPct = bookShareM(x.coin); } catch { x.bookPct = null; } }
+        // Статус → измерено → без разгона → не перегружает портфель → спред → цель 1ч → свежесть;
+        // одинаково на компьютере и телефоне.
         const ranked = rows.slice().sort((a, b) =>
           recoveryOrder(b, j, verdict(b), recoveryObservation(b, j)) -
           recoveryOrder(a, j, verdict(a), recoveryObservation(a, j)));
