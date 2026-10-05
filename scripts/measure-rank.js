@@ -115,7 +115,6 @@ const coinA = Object.entries(byCoin).map(([coin, rows]) => {
 const halfN = Math.floor(coinA.length / 2);
 const topCoins = new Set(coinA.slice(0, halfN).map(x => x.coin));
 const botCoins = new Set(coinA.slice(-halfN).map(x => x.coin));
-const pick = set => { const save = {}; for (const c in byCoin) if (!set.has(c)) { save[c] = byCoin[c]; } return save; };
 const only = (set) => r => B(r) && set.has(r.coin);
 for (const coin in byCoin) for (const r of byCoin[coin]) r.coin = coin;
 const vB = verdictOf(pooled(only(topCoins)), pooled(only(botCoins)));
