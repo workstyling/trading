@@ -18,8 +18,17 @@
 // записан здесь заранее, до того как посмотрели на числа: иначе он всегда
 // окажется чуть ниже лучшего результата, который удалось найти.
 //
+// РЕЖИМ РЫНКА (--regime down|up). Тот же замер, но только по входам, сделанным
+// на падающем (или не падающем) рынке. Определение записано ДО прогона:
+//   падающий рынок в момент входа = BTC за предыдущие 24 часа ниже нуля
+//   И медиана суточного изменения монет корзины в тот же час ниже нуля.
+// Если BTC в кеше нет или в этот час мало монет (меньше MIN_COINS) — режим
+// неизвестен, и такой вход не идёт ни в один из режимов: отсутствие данных не
+// превращается ни в «падает», ни в «растёт». Порог разрешения тот же, что у
+// клеток без режима: плюс с запасом в две ошибки на обеих половинах периода.
+//
 // Свечи берутся из кеша сверки сетки. Сначала: node scripts/recheck-recovery.js
-// Запуск: node scripts/measure-net.js [--gate 3] [--stop 3]
+// Запуск: node scripts/measure-net.js [--gate 3] [--stop 3] [--regime down]
 const fs = require('fs');
 const path = require('path');
 
@@ -39,6 +48,13 @@ const arg = (name, def) => {
 };
 const GATE = arg('gate', 3);             // падение от суточного пика, как в панели
 const STOP = arg('stop', 3);             // выход по стопу маркетом
+const REGIME = (() => {
+  const i = process.argv.indexOf('--regime');
+  const v = i >= 0 ? process.argv[i + 1] : null;
+  if (v == null) return null;
+  if (v !== 'down' && v !== 'up') { console.log('ПЛОХО: --regime бывает down или up'); process.exit(1); }
+  return v;
+})();
 
 let cache;
 try { cache = JSON.parse(fs.readFileSync(CACHE, 'utf8')); }
@@ -96,7 +112,9 @@ function entries() {
             ? (future[future.length - 1].cl / px - 1) * 100 - 2 * TAKER : v;
         }
       }
-      rows.push({ t: t0 * 1000, fall, pull, net });
+      // Суточное изменение монеты в момент входа — для режима рынка.
+      const ago = day[0].cl > 0 ? (px / day[0].cl - 1) * 100 : null;
+      rows.push({ t: t0 * 1000, fall, pull, net, chg24: ago });
       from = Math.min(from, t0 * 1000); to = Math.max(to, t0 * 1000);
     }
     if (rows.length) byCoin[coin] = rows;
@@ -116,6 +134,37 @@ function measure(byCoin, pick, key) {
 }
 
 const { byCoin, from, to } = entries();
+
+// Режим рынка по часам: BTC за сутки и медиана суточного изменения корзины.
+// Входы с неизвестным режимом выпадают из замера с --regime целиком.
+function markRegime() {
+  const hourOf = t => Math.floor(t / 3600000);
+  const byHour = new Map();
+  for (const coin in byCoin) for (const r of byCoin[coin]) {
+    if (!Number.isFinite(r.chg24)) continue;
+    const h = hourOf(r.t);
+    if (!byHour.has(h)) byHour.set(h, []);
+    byHour.get(h).push(r.chg24);
+  }
+  const btc = new Map();
+  for (const r of byCoin.BTC || []) if (Number.isFinite(r.chg24)) btc.set(hourOf(r.t), r.chg24);
+  const median = xs => { const s = xs.slice().sort((a, b) => a - b); const m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+  let down = 0, up = 0, unknown = 0;
+  for (const coin in byCoin) for (const r of byCoin[coin]) {
+    const h = hourOf(r.t), all = byHour.get(h) || [], b = btc.get(h);
+    if (!Number.isFinite(b) || all.length < MIN_COINS) { r.regime = null; unknown++; continue; }
+    r.regime = b < 0 && median(all) < 0 ? 'down' : 'up';
+    if (r.regime === 'down') down++; else up++;
+  }
+  return { down, up, unknown, btc: btc.size > 0 };
+}
+if (REGIME) {
+  const m = markRegime();
+  if (!m.btc) { console.log('ПЛОХО: в кеше нет BTC — режим рынка не определить'); process.exit(1); }
+  console.log('режим рынка: падающий ' + m.down + ' входов, не падающий ' + m.up + ', неизвестен ' + m.unknown);
+  console.log('замер только по входам режима «' + (REGIME === 'down' ? 'падающий' : 'не падающий') + '»');
+  for (const coin in byCoin) byCoin[coin] = byCoin[coin].filter(r => r.regime === REGIME);
+}
 const day = ms => Number.isFinite(ms) ? new Date(ms).toISOString().slice(0, 10) : '?';
 const MID = from + (to - from) / 2;
 const halves = {
@@ -213,8 +262,8 @@ if (best) console.log('\nлучший режим отбора: ' + best.h + 'ч,
 
 const hour = rows.find(r => r.h === 1 && r.target === 0.3);
 if (hour) {
-  console.log('\nдля ENTRY_NET в server.js:');
-  console.log(JSON.stringify({ at: day(Date.now()), from: day(from), to: day(to), splitAt: day(MID),
+  console.log('\nдля ' + (REGIME ? 'ENTRY_REGIME.' + REGIME : 'ENTRY_NET') + ' в server.js:');
+  console.log(JSON.stringify({ at: day(Date.now()), from: day(from), to: day(to), splitAt: day(MID), regime: REGIME,
     horizonH: 1, target: 0.3,
     panel: Math.round(hour.panel.m * 1000) / 1000, panelSe: Math.round(hour.panel.se * 1000) / 1000,
     control: Math.round(hour.control.m * 1000) / 1000, controlSe: Math.round(hour.control.se * 1000) / 1000,
