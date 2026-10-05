@@ -103,7 +103,7 @@ for (const [name, file] of [['десктоп', 'public/index.html'], ['моби�
   const src = read('server.js');
   ok(/const ENTRY_NET = \{/.test(src), 'измерение лежит в коде рядом с остальными');
   ok(/entryNet: ENTRY_NET/.test(src), 'и уходит в панель');
-  ok(/plusModes: 0/.test(src), 'записано, сколько режимов окупилось');
+  ok(/plusModes: \d+/.test(src), 'записано, сколько режимов окупилось');
   ok(fs.existsSync('scripts/measure-net.js'), 'скрипт пересчёта в репозитории');
   const script = read('scripts/measure-net.js');
   ok(/MAKER = 0\.075, TAKER = 0\.15/.test(script), 'скрипт считает с боевыми комиссиями');

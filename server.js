@@ -6399,6 +6399,25 @@ async function entrySignals(coin, onMissing = () => {}) {
 // Спред в процентах, или null если не удалось. Точность до тысячной доли
 // процента: округление до сотых превращало отличный спред в ноль, а ноль
 // прежняя формула трактовала как «неизвестно» и штрафовала.
+// Разгон за месяц (src/recovery/pump.js): пометка риска для строки рейтинга.
+// Дневные свечи меняются раз в сутки, поэтому кеш на шесть часов — шестьдесят
+// лишних запросов раз в шесть часов, а не на каждый скан. Не ответила биржа —
+// берём прежние свечи; их нет — null, и пометки нет, а не «разгона нет».
+const PUMP_TTL_MS = 6 * 3600 * 1000;
+const pumpCandles = new Map();          // coin -> { at, candles }
+async function entryPump(coin, price) {
+  const hit = pumpCandles.get(coin);
+  if (!hit || Date.now() - hit.at > PUMP_TTL_MS) {
+    try {
+      const r = await cbTry(`${DIP_CB}/products/${coin}-USD/candles?granularity=86400`);
+      const candles = r ? await r.json() : null;
+      if (Array.isArray(candles) && candles.length) pumpCandles.set(coin, { at: Date.now(), candles: candles.slice(0, 31) });
+    } catch { }
+  }
+  const got = pumpCandles.get(coin);
+  return got ? require('./src/recovery/pump').pumpFromDaily(got.candles, price) : null;
+}
+
 async function entrySpread(coin) {
   try {
     const r = await cbTry(`${DIP_CB}/products/${coin}-USD/ticker`);
@@ -6564,11 +6583,11 @@ const ENTRY_FREQ_RANK = {
 };
 
 const ENTRY_NET = {
-  at: '2026-09-15', from: '2026-08-09', to: '2026-09-13', splitAt: '2026-08-27',
+  at: '2026-10-05', from: '2026-09-10', to: '2026-10-05', splitAt: '2026-09-22',
   horizonH: 1, target: 0.3,
-  panel: -0.299, panelSe: 0.012, control: -0.285, controlSe: 0.008,
-  n: 10588, controlN: 18523, betterModes: 0, plusModes: 0, modes: 16,
-  worst: { horizonH: 24, target: 3, panel: -0.15, control: 0.177, diff: -0.326, se: 0.14 },
+  panel: -0.246, panelSe: 0.010, control: -0.242, controlSe: 0.007,
+  n: 11854, controlN: 22281, betterModes: 0, plusModes: 1, modes: 16,
+  worst: { horizonH: 24, target: 2, panel: 0.021, control: 0.125, diff: -0.104, se: 0.048 },
   // РАЗРЕШЕНИЕ НА ПОКУПКУ, ПО КЛЕТКАМ.
   //
   // Список пуст не потому, что правило не написано, а потому что ни одна
@@ -6584,6 +6603,25 @@ const ENTRY_NET = {
   // этот блок выводом scripts/measure-net.js.
   buyCells: [],
 };
+
+// ТОТ ЖЕ ЗАМЕР ПО РЕЖИМУ РЫНКА: node scripts/measure-net.js --regime down|up.
+//
+// Вопрос «можно ли брать монеты, когда рынок падает» — отдельная проверка, а
+// не вывод из общей. Определение записано до прогона (коммит 0748eec):
+// падающий рынок = BTC за 24 часа ниже нуля И медиана суточного хода корзины
+// ниже нуля. Порог разрешения тот же, что выше. Клетка отсюда разрешает
+// покупку только пока скан видит тот же режим (market.regime); режим
+// неизвестен — не разрешает ничего.
+const ENTRY_REGIME = {
+  down: { at: '2026-10-05', from: '2026-09-10', to: '2026-10-05', splitAt: '2026-09-22', regime: 'down',
+    horizonH: 1, target: 0.3, panel: -0.264, panelSe: 0.011, control: -0.276, controlSe: 0.009,
+    n: 5941, controlN: 7816, betterModes: 0, plusModes: 1, modes: 16, buyCells: [] },
+  up: { at: '2026-10-05', from: '2026-09-10', to: '2026-10-05', splitAt: '2026-09-22', regime: 'up',
+    horizonH: 1, target: 0.3, panel: -0.224, panelSe: 0.012, control: -0.223, controlSe: 0.007,
+    n: 5899, controlN: 14465, betterModes: 0, plusModes: 2, modes: 16, buyCells: [] },
+};
+// Тот же порог минимума монет, что в замере: меньше — режим не определяем.
+const ENTRY_REGIME_MIN_COINS = 12;
 
 // ОШИБКА ЭТИХ ЧИСЕЛ, ПО МОНЕТАМ.
 //
@@ -6729,6 +6767,7 @@ async function runEntryScan() {
             dayFallPct: sig.dayFallPct, recovery: recoveryOdds(sig.dayFallPct, sig.pullbackPct),
             runupPct: sig.runupPct, runup: runupOdds(sig.runupPct),
             entryValue: value,
+            pump: await entryPump(coin, sig.price),
           });
         } catch { missedDetails[coin] = 'Ошибка загрузки или разбора данных биржи.'; missed.push(coin); }
       }));
@@ -6844,6 +6883,10 @@ async function runEntryScan() {
         up: moved.filter(r => r.chg24Pct > 0).length,
         medChg24: mid == null ? null : Math.round(mid * 100) / 100,
         btcChg24: btc && btc.chg24Pct != null ? btc.chg24Pct : null,
+        // Режим рынка по тому же определению, что в замере ENTRY_REGIME.
+        // Нет BTC или мало монет — null, и клетки режима ничего не разрешают.
+        regime: btc && btc.chg24Pct != null && mid != null && moved.length >= ENTRY_REGIME_MIN_COINS
+          ? (btc.chg24Pct < 0 && mid < 0 ? 'down' : 'up') : null,
       } : null;
     }
     entryScan.results = rows;
@@ -7277,6 +7320,8 @@ function entryScanResponse(now = Date.now()) {
     // Прибыльность отбора после издержек: панель обязана говорить это сама,
     // иначе список частот читается как список для покупки.
     entryNet: ENTRY_NET,
+    // Тот же замер отдельно на падающем и растущем рынке.
+    entryRegime: ENTRY_REGIME,
     // Проверка самой сортировки: выше частота — не лучше по деньгам.
     freqRank: ENTRY_FREQ_RANK,
     pullbackNet: ENTRY_PULLBACK,

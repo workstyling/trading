@@ -226,8 +226,15 @@
   }
   function recoveryBuyCell(row, scan, now = scanNow(scan)) {
     if (!recoveryScanFresh(scan, now) || !finite(row.price) || row.price <= 0) return null;
-    const cells = scan && scan.entryNet && scan.entryNet.buyCells;
-    if (!Array.isArray(cells) || !cells.length) return null;
+    // Клетки режима рынка (ENTRY_REGIME) действуют, только пока скан видит тот
+    // же режим. Режим неизвестен — их нет вовсе: отсутствие данных не разрешение.
+    const regime = scan && scan.market && (scan.market.regime === 'down' || scan.market.regime === 'up') ? scan.market.regime : null;
+    const own = regime && scan.entryRegime && scan.entryRegime[regime] && scan.entryRegime[regime].buyCells;
+    const cells = [
+      ...((scan && scan.entryNet && Array.isArray(scan.entryNet.buyCells)) ? scan.entryNet.buyCells : []),
+      ...(Array.isArray(own) ? own.map(c => ({ ...c, regime })) : []),
+    ];
+    if (!cells.length) return null;
     const lo = fallBand(row);
     if (lo == null || !finite(row.pullbackPct)) return null;
     const deep = row.pullbackPct >= 1.5;
@@ -362,7 +369,8 @@
       escapeHtml(String(net.to)) + ': отбор давал <b>' + pct(net.panel) + '</b> за сделку против <b>' +
       pct(net.control) + '</b> у случайного входа. Из ' + net.modes + ' режимов (горизонты 1/4/12/24 ч) ' +
       (okModes ? 'окупились ' + okModes : 'не окупился <b>ни один</b>') +
-      '. Ни одна клетка не прошла порог покупки. Это список наблюдения, а не список покупки.',
+      '. Ни одна клетка не прошла порог покупки. Это список наблюдения, а не список покупки.' +
+      recoveryRegimeLine(scan),
       'Покупки не подтверждены. Оранжевые — наблюдение.');
   }
   // Цвета объясняются один раз — в блоке правил, где рядом нарисованы сами
@@ -546,7 +554,44 @@
     if (overall && overall.hitUnknown) line += ' · неизвестен исход цели у ' + overall.hitUnknown + ' записей';
     return '<span title="' + esc(notes.filter(Boolean).join(NL)) + '">' + line + '</span>';
   }
-  const api = { renderEntryJournal, renderRecoveryStatus, renderRecoveryLegend, renderRecoveryNet, recoveryObservation,
+  // ПАДАЮЩИЙ РЫНОК: тот же замер отдельно по режиму (ENTRY_REGIME) и какой
+  // режим сейчас. Ответ на вопрос «можно ли брать, когда рынок падает» должен
+  // быть на экране, а не в голове: без него оранжевые строки на падении
+  // читаются как «выбор на падающем рынке».
+  function recoveryRegimeLine(scan) {
+    const reg = scan && scan.entryRegime;
+    const down = reg && reg.down;
+    if (!down || !finite(down.panel) || !finite(down.control)) return '';
+    const pct = v => (v >= 0 ? '+' : '') + Number(v).toFixed(2) + '%';
+    const now = scan.market && scan.market.regime;
+    const state = now === 'down' ? 'рынок сейчас <b>падает</b>' : now === 'up' ? 'рынок сейчас не падает' : 'режим рынка сейчас неизвестен';
+    const passed = Array.isArray(down.buyCells) ? down.buyCells.filter(validRecoveryBuyCell).length : 0;
+    return '<br><b>Падающий рынок</b> (BTC и типичная монета за сутки в минусе; ' + state + '): отбор ' +
+      pct(down.panel) + ' против ' + pct(down.control) + ' у случайного входа, ' +
+      (passed ? 'разрешено групп: ' + passed + ' — их строки помечены «брать», пока рынок падает.'
+        : 'ни одна группа не окупает комиссии дважды — на падении по этому списку не входить.');
+  }
+  // РАЗГОН ЗА МЕСЯЦ — пометка риска рядом с названием монеты (обе вёрстки).
+  // Рейтинг смотрит сутки и не видит, что монета перед этим выросла в разы и
+  // может вернуться к уровню до разгона. Пометка ничего не разрешает и не
+  // запрещает: гейт и проверка доходности её не учитывают, порог — для экрана.
+  function recoveryPumpMark(row) {
+    const p = row && row.pump;
+    if (!p || !p.pumped || !finite(p.runup)) return '';
+    return '<span title="' + escapeHtml(recoveryPumpNote(row)) + '" style="margin-left:4px;font-size:8.5px;font-weight:800;' +
+      'color:#ff6b6b;border:1px solid #ff6b6b;border-radius:4px;padding:0 3px;white-space:nowrap;">разгон ×' + p.runup + '</span>';
+  }
+  function recoveryPumpNote(row) {
+    const p = row && row.pump;
+    if (!p) return 'Разгон за месяц не посчитан: дневной истории биржи не хватило или она не ответила.';
+    if (!p.pumped) return '';
+    const money = v => '$' + (v >= 100 ? Math.round(v) : v >= 1 ? Number(v).toFixed(2) : Number(v).toPrecision(3));
+    return 'Разгон: за ' + p.days + ' дн цена выросла в ' + p.runup + ' раза — с ' + money(p.base) + ' до ' + money(p.peak) +
+      ' (пик ' + (p.peakDaysAgo ? p.peakDaysAgo + ' дн назад' : 'сегодня') + '). Отдано ' + p.givenBackPct + '% роста; ' +
+      'до уровня до разгона ' + p.toBasePct + '%. Рейтинг смотрит только сутки и этот риск не учитывает. ' +
+      'Это пометка риска, её доходность не проверялась.';
+  }
+  const api = { renderEntryJournal, recoveryPumpMark, recoveryPumpNote, recoveryRegimeLine, renderRecoveryStatus, renderRecoveryLegend, renderRecoveryNet, recoveryObservation,
     recoveryVerdict, recoveryDayChange, recoveryBaseline, recoveryEdge, recoveryOrder, recoveryPeak, recoveryPeakMark, renderRecoveryTieNote, recoveryBuyCell,
     recoveryFresh, recoveryHeldNote,
     recoverySignalRows, renderRecoveryRules, recoveryRowMark, renderRecoveryGroups,

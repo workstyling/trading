@@ -16172,6 +16172,7 @@ Requirements:
               : 'Падение от суточного пика: ' + x.dayFallPct + '%',
             x.spreadPct == null ? 'Спред неизвестен' : 'Спред ' + x.spreadPct + '%',
             recoveryHeldNote(x),
+            recoveryPumpNote(x),
             edge.why,
             peak ? 'Из показанных строк здесь самая высокая измеренная частота касания цели. Максимум частоты сам по себе не разрешает покупку.' : '',
             v.label + ': ' + v.why,
@@ -16180,7 +16181,7 @@ Requirements:
           const num = (value, color, bold) => '<td style="text-align:right;padding:4px 6px;font-size:11px;white-space:nowrap;font-variant-numeric:tabular-nums;color:' +
             (color || rowColor) + ';' + (bold ? 'font-weight:800;' : '') + '">' + value + '</td>';
           return '<tr data-entry-state="' + mark.state + '" onclick="selectCoinForTrade(\'' + safe + '\')" title="' + escapeRecoveryText(tip) + '" style="cursor:pointer;' + mark.bg + '">' +
-            '<td style="padding:4px 6px;"><span style="color:' + rowColor + ';font-weight:700;font-size:11px;">' + safe + '</span>' + swingMark(x) + (peak ? '<span style="margin-left:4px;font-size:8.5px;font-weight:800;color:' + rowColor + ';border:1px solid ' + rowColor + ';border-radius:4px;padding:0 3px;">максимум</span>' : '') +
+            '<td style="padding:4px 6px;"><span style="color:' + rowColor + ';font-weight:700;font-size:11px;">' + safe + '</span>' + swingMark(x) + recoveryPumpMark(x) + (peak ? '<span style="margin-left:4px;font-size:8.5px;font-weight:800;color:' + rowColor + ';border:1px solid ' + rowColor + ';border-radius:4px;padding:0 3px;">максимум</span>' : '') +
             '<span data-bookshare="' + safe + '" data-live="1"></span>' +
             '<br><span style="color:var(--t2);font-size:9px;white-space:nowrap;">$' + price(x.price) + '</span>' +
             '<br><span style="color:var(--t2);font-size:9px;">от пика ' + (x.dayFallPct == null ? '—' : '−' + x.dayFallPct + '%') + '</span></td>' +
