@@ -240,6 +240,36 @@
     }
     .btn-limit:active { background: var(--blue); color: #fff; }
 
+    /* Trading bot. important нужен: глобальные стили полей и кнопок заданы так же */
+    #botTitle { font-size: 18px; font-weight: 700; color: var(--t0); }
+    #botStatus { font-size: 16px; font-weight: 600; color: var(--t2); }
+    #botRoot .bot-label { display: block; margin-bottom: 6px; font-size: 14px; color: var(--t2); }
+    #botRoot .limit-input { font-size: 18px !important; height: 50px; box-sizing: border-box; }
+    #botRoot select.limit-input { width: 100%; margin-bottom: 12px; }
+    #botRoot input.limit-input { flex: 1; min-width: 0; width: 0; padding: 0 2px !important; text-align: center; -moz-appearance: textfield; appearance: textfield; }
+    #botRoot input.limit-input::-webkit-outer-spin-button,
+    #botRoot input.limit-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    #botRoot .btn-limit { flex: 1; height: 50px; font-size: 17px !important; }
+    #botPlan { font-size: 17px; line-height: 1.5; color: var(--t0); }
+    #botFees, #botOrderTypes, #botDirection { margin-top: 8px; font-size: 15px; line-height: 1.5; color: var(--t1); }
+    #botNote { margin-top: 8px; font-size: 15px; line-height: 1.5; color: var(--t2); }
+    #botMsg { margin-top: 8px; font-size: 15px; line-height: 1.5; color: var(--red); }
+    #botRoot .bot-section-title { margin: 18px 0 8px; font-size: 18px; font-weight: 700; color: var(--t0); }
+    #botRoot .bot-done-head { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; }
+    .bot-net { margin-left: auto; font-size: 14px; font-weight: 500; color: var(--t1); white-space: nowrap; }
+    #botNetProfit { margin-left: 4px; font-size: 18px; font-weight: 700; }
+    #botFeesPaid { color: var(--t0); font-weight: 600; }
+    #botCancelled { margin-top: 8px; font-size: 14px; line-height: 1.5; color: var(--t2); }
+    #botRoot table { width: 100%; border-collapse: collapse; font-size: 14px; color: var(--t1); white-space: nowrap; }
+    #botRoot th { padding: 6px 8px; font-weight: 600; text-align: left; color: var(--t2); }
+    .bot-stepper { display: flex; align-items: center; gap: 4px; }
+    #botRoot .bot-step {
+      flex: 0 0 auto; width: 40px; height: 50px; padding: 0 !important; line-height: 1;
+      border: 1px solid var(--b1) !important; border-radius: var(--r1);
+      background: var(--s2) !important; color: var(--t0) !important;
+      font-size: 22px !important; font-weight: 700; cursor: pointer;
+    }
+
     /* ── Settings row ── */
     .settings-row {
       display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
@@ -1192,7 +1222,8 @@
       z-index: 99;
     }
     .tab {
-      flex: 1;
+      flex: 1 1 auto;
+      white-space: nowrap;
       padding: 8px 0 !important;
       border-radius: var(--r1) !important;
       border: none !important;
@@ -1532,6 +1563,7 @@
     }
   </style>
   <script src="/js/recovery-journal.js"></script>
+  <script src="/js/bot-panel.js"></script>
   <script src="/js/orders-freshness.js"></script>
 </head>
 <body>
@@ -1567,6 +1599,7 @@
     <button class="tab" data-tab="volume">📊 Volume</button>
     <button class="tab" data-tab="profit">Profit</button>
     <button class="tab" data-tab="holdings">Holdings</button>
+    <button class="tab" data-tab="bot">Bot</button>
   </div>
 
   <!-- Trade Panel -->
@@ -1756,6 +1789,73 @@
       <span class="ht-value" id="holdingsTotal">$0.00</span>
     </div>
     <div id="holdingsList" class="loading"><div class="spinner"></div>Loading...</div>
+  </div>
+
+  <!-- Trading bot Panel -->
+  <div class="panel" id="panelBot" data-tab="bot">
+    <div id="botRoot">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <span id="botTitle">Trading bot</span>
+        <span id="botStatus">—</span>
+      </div>
+      <div role="group" aria-label="Режим бота" style="display:flex;gap:8px;margin-bottom:12px;">
+        <button id="botModeReal" class="btn-limit" onclick="botSetMode('real')">Реальный</button>
+        <button id="botModeTest" class="btn-limit" onclick="botSetMode('test')">Тестовый</button>
+      </div>
+      <label for="botCoin" class="bot-label">Валюта</label>
+      <select id="botCoin" class="limit-input" onchange="botSaveConfig()"></select>
+      <div style="display:flex;gap:8px;margin-bottom:12px;">
+        <div style="flex:1;min-width:0;">
+          <label for="botMaxDeals" class="bot-label">Сделок, макс.</label>
+          <div class="bot-stepper">
+            <button type="button" class="bot-step" aria-label="Меньше сделок" onclick="botStep('botMaxDeals', -1)">−</button>
+            <input id="botMaxDeals" class="limit-input" type="number" inputmode="numeric" min="1" max="100" step="1" onchange="botSaveConfig()">
+            <button type="button" class="bot-step" aria-label="Больше сделок" onclick="botStep('botMaxDeals', 1)">+</button>
+          </div>
+        </div>
+        <div style="flex:1;min-width:0;">
+          <label for="botMaxUsd" class="bot-label">Сумма сделки, макс. $</label>
+          <div class="bot-stepper">
+            <button type="button" class="bot-step" aria-label="Уменьшить сумму" onclick="botStep('botMaxUsd', -100)">−</button>
+            <input id="botMaxUsd" class="limit-input" type="number" inputmode="decimal" min="1" step="1" onchange="botSaveConfig()">
+            <button type="button" class="bot-step" aria-label="Увеличить сумму" onclick="botStep('botMaxUsd', 100)">+</button>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:12px;">
+        <button id="botStart" class="btn-limit" style="border-color:var(--green) !important;color:var(--green) !important;" onclick="botOnStart()">Старт</button>
+        <button id="botPause" class="btn-limit" style="border-color:var(--b1) !important;color:var(--t1) !important;" onclick="botOnPause()">Пауза</button>
+        <button id="botStop" class="btn-limit" style="border-color:var(--red) !important;color:var(--red) !important;" onclick="botOnStop()">Стоп</button>
+      </div>
+      <div id="botPlan"></div>
+      <div id="botFees"></div>
+      <div id="botOrderTypes"></div>
+      <div id="botDirection"></div>
+      <div id="botNote"></div>
+      <div id="botMsg" role="alert" style="display:none;"></div>
+      <div class="bot-section-title">Открытые сделки</div>
+      <div style="overflow-x:auto;border:1px solid var(--b0);border-radius:var(--r1);">
+        <table>
+          <thead>
+            <tr><th>Открыта</th><th>Пара</th><th>Покупка</th><th>Цена покупки</th><th>Сумма</th><th>Комиссия покупки</th><th>Продажа: цель</th><th>Продажа: стоп</th><th>Если продать сейчас</th></tr>
+          </thead>
+          <tbody id="botOpenDeals"></tbody>
+        </table>
+      </div>
+      <div class="bot-section-title bot-done-head">
+        <span>Закрытые сделки</span>
+        <span class="bot-net">Комиссии <span id="botFeesPaid">—</span> · Чистый профит <span id="botNetProfit">—</span></span>
+      </div>
+      <div style="overflow-x:auto;border:1px solid var(--b0);border-radius:var(--r1);">
+        <table>
+          <thead>
+            <tr><th>Закрыта</th><th>Пара</th><th>Покупка</th><th>Продажа</th><th>Причина</th><th>Куплено на</th><th>Продано на</th><th>Комиссии</th><th>Чистый профит</th></tr>
+          </thead>
+          <tbody id="botClosedDeals"></tbody>
+        </table>
+      </div>
+      <div id="botCancelled" style="display:none;"></div>
+    </div>
   </div>
 
   <div class="toast-container" id="toastContainer"></div>
@@ -1949,6 +2049,7 @@
           refreshTopRecoveries();
         }
         if (tab.dataset.tab === 'profit') loadJournalPaperMobile();
+        if (tab.dataset.tab === 'bot') botLoad();
       });
     });
 

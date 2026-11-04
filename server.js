@@ -722,18 +722,24 @@ app.get('/get-holdings', async (req, res) => {
 let balanceCache = { data: null, ts: 0 };
 const BALANCE_CACHE_TTL = 10000; // 10 seconds
 
+// Свежий баланс USD. null — биржа вернула ответ неожиданной формы.
+async function fetchUsdBalance() {
+  const now = Date.now();
+  if (balanceCache.data !== null && (now - balanceCache.ts) < BALANCE_CACHE_TTL) {
+    return balanceCache.data;
+  }
+  const result = await client.getAccount({ accountUuid: USD_ACCOUNT_UUID });
+  const accountData = typeof result === 'string' ? JSON.parse(result) : result;
+  if (!accountData.account || !accountData.account.available_balance) return null;
+  const balance = parseFloat(accountData.account.available_balance.value) || 0;
+  balanceCache = { data: balance, ts: now };
+  return balance;
+}
+
 app.get('/get-balance', async (req, res) => {
   try {
-    const now = Date.now();
-    if (balanceCache.data !== null && (now - balanceCache.ts) < BALANCE_CACHE_TTL) {
-      return res.json({ success: true, balance: balanceCache.data });
-    }
-    const result = await client.getAccount({ accountUuid: USD_ACCOUNT_UUID });
-    const accountData = typeof result === 'string' ? JSON.parse(result) : result;
-
-    if (accountData.account && accountData.account.available_balance) {
-      const balance = parseFloat(accountData.account.available_balance.value) || 0;
-      balanceCache = { data: balance, ts: now };
+    const balance = await fetchUsdBalance();
+    if (balance !== null) {
       res.json({ success: true, balance });
     } else {
       res.status(500).json({ success: false, error: 'Invalid account data structure' });
@@ -4377,6 +4383,32 @@ app.post('/api/predictor/watchlist', (req, res) => {
 let volume30dCache = { data: null, ts: 0 };
 const VOLUME_30D_TTL = 5 * 60 * 1000; // 5 minutes
 
+async function loadVolume30d() {
+  // Coinbase owns the fee tier and its rolling 30-day definition.  Its
+  // transaction summary is therefore authoritative; rebuilding it from
+  // individual fills can double-count partial executions across pages.
+  const summaryRaw = await client.getTransactionSummary({});
+  const summary = typeof summaryRaw === 'string' ? JSON.parse(summaryRaw) : summaryRaw;
+  const totalUsd = Number(summary.total_volume);
+  const totalFees = Number(summary.total_fees);
+  const makerRate = Number(summary.fee_tier?.maker_fee_rate);
+  const takerRate = Number(summary.fee_tier?.taker_fee_rate);
+  if (!Number.isFinite(totalUsd) || totalUsd < 0 || !Number.isFinite(totalFees) || totalFees < 0) {
+    throw new Error('Coinbase transaction summary returned invalid volume data');
+  }
+  const out = {
+    totalUsd: Math.round(totalUsd * 100) / 100,
+    totalFees: Math.round(totalFees * 100) / 100,
+    feeTier: String(summary.fee_tier?.pricing_tier || ''),
+    makerFeePct: Number.isFinite(makerRate) && makerRate >= 0 ? makerRate * 100 : null,
+    takerFeePct: Number.isFinite(takerRate) && takerRate >= 0 ? takerRate * 100 : null,
+    source: 'coinbase-transaction-summary',
+    complete: true,
+  };
+  volume30dCache = { data: out, ts: Date.now() };
+  return out;
+}
+
 app.get('/get-volume-30d', async (req, res) => {
   try {
     const now = Date.now();
@@ -4386,29 +4418,7 @@ app.get('/get-volume-30d', async (req, res) => {
     if (!forceFresh && volume30dCache.data && (now - volume30dCache.ts) < VOLUME_30D_TTL) {
       return res.json({ success: true, ...volume30dCache.data, cached: true });
     }
-
-    // Coinbase owns the fee tier and its rolling 30-day definition.  Its
-    // transaction summary is therefore authoritative; rebuilding it from
-    // individual fills can double-count partial executions across pages.
-    const summaryRaw = await client.getTransactionSummary({});
-    const summary = typeof summaryRaw === 'string' ? JSON.parse(summaryRaw) : summaryRaw;
-    const totalUsd = Number(summary.total_volume);
-    const totalFees = Number(summary.total_fees);
-    const makerRate = Number(summary.fee_tier?.maker_fee_rate);
-    const takerRate = Number(summary.fee_tier?.taker_fee_rate);
-    if (!Number.isFinite(totalUsd) || totalUsd < 0 || !Number.isFinite(totalFees) || totalFees < 0) {
-      throw new Error('Coinbase transaction summary returned invalid volume data');
-    }
-    const out = {
-      totalUsd: Math.round(totalUsd * 100) / 100,
-      totalFees: Math.round(totalFees * 100) / 100,
-      feeTier: String(summary.fee_tier?.pricing_tier || ''),
-      makerFeePct: Number.isFinite(makerRate) && makerRate >= 0 ? makerRate * 100 : null,
-      takerFeePct: Number.isFinite(takerRate) && takerRate >= 0 ? takerRate * 100 : null,
-      source: 'coinbase-transaction-summary',
-      complete: true,
-    };
-    volume30dCache = { data: out, ts: now };
+    const out = await loadVolume30d();
     return res.json({ success: true, ...out });
 
   } catch (e) {
@@ -10023,6 +10033,236 @@ app.get('/api/calibration', (req, res) => {
 app.post('/api/calibration/run', async (req, res) => {
   const rep = await runCalibrationCheck(false);
   res.json({ success: true, report: rep });
+});
+
+// ═══ ТОРГОВЫЙ БОТ ═══
+// Торгует только виртуально, в тестовом режиме. Настоящих ордеров раздел не ставит.
+const botLib = require('./src/bot');
+const botEngine = require('./src/bot/engine');
+const BOT_FILE = path.join(__dirname, 'bot-state.json');
+const BOT_COINS_TTL = 60 * 60 * 1000;
+const BOT_TICK_MS = 20 * 1000;
+const BOT_QUOTE_TTL = 10 * 1000;
+const BOT_REAL_NOTE = 'Реальная торговля не подключена: в этом режиме бот не ставит ордера.';
+
+let botState = botLib.restoreState(null);
+try { botState = botLib.restoreState(JSON.parse(fs.readFileSync(BOT_FILE, 'utf8'))); } catch { }
+// stopped, running или paused. Настройки меняются только в stopped.
+// Намеренно не хранится в файле: после перезапуска или деплоя новые сделки
+// начинаются только по нажатию Старт. Если остались открытые сделки, бот на паузе:
+// стоп и цель должны продолжать работать.
+let botStatus = botState.deals.length ? 'paused' : 'stopped';
+let botCoinsCache = { list: [], at: 0 };
+
+// Монеты с торгуемой парой к USD. Если биржа не ответила, отдаём прошлый список.
+async function botCoinList() {
+  if (botCoinsCache.list.length && Date.now() - botCoinsCache.at < BOT_COINS_TTL) return botCoinsCache.list;
+  try {
+    const products = await fetchProducts();
+    const list = products
+      .filter(p => p.quote_currency === 'USD' && p.status === 'online' && !p.trading_disabled)
+      .map(p => p.base_currency)
+      .sort();
+    if (list.length) botCoinsCache = { list, at: Date.now() };
+  } catch (e) { console.warn('[bot] список пар:', e.message); }
+  return botCoinsCache.list;
+}
+
+function botSaveState(next) {
+  fs.writeFileSync(BOT_FILE, JSON.stringify(next, null, 2));
+  botState = next;
+}
+
+// Настоящие ставки аккаунта. Сбой не заменяем нулём и прошлым значением с истёкшим сроком.
+async function botFees() {
+  try {
+    const fresh = volume30dCache.data && Date.now() - volume30dCache.ts < VOLUME_30D_TTL;
+    const data = fresh ? volume30dCache.data : await loadVolume30d();
+    const summary = botLib.feeSummary(data.makerFeePct, data.takerFeePct);
+    return summary && { ...summary, volumeUsd: data.totalUsd, tier: data.feeTier };
+  } catch (e) {
+    console.warn('[bot] комиссии:', e.message);
+    return null;
+  }
+}
+
+const BOT_DIRECTION_TTL = 60 * 1000;
+let botDirectionCache = { pair: null, at: 0, data: null };
+
+async function botDirection(pair) {
+  const cache = botDirectionCache;
+  if (cache.pair === pair && Date.now() - cache.at < BOT_DIRECTION_TTL) return cache.data;
+  let data = null;
+  try {
+    const r = await fetch(`${DIP_CB}/products/${pair}/candles?granularity=3600`, DIP_H);
+    if (r.ok) data = botLib.trendDirection(await r.json(), Date.now() / 1000);
+  } catch (e) { console.warn('[bot] свечи:', e.message); }
+  botDirectionCache = { pair, at: Date.now(), data };
+  return data;
+}
+
+let botQuoteCache = { pair: null, at: 0, data: null };
+
+// at — время последней сделки по данным биржи: по нему движок отсекает устаревшую цену.
+async function botQuote(pair) {
+  const cache = botQuoteCache;
+  if (cache.pair === pair && Date.now() - cache.at < BOT_QUOTE_TTL) return cache.data;
+  let data = null;
+  try {
+    const r = await fetch(`${DIP_CB}/products/${pair}/ticker`, DIP_H);
+    if (r.ok) {
+      const t = await r.json();
+      data = { bid: parseFloat(t.bid), ask: parseFloat(t.ask), price: parseFloat(t.price), at: Date.parse(t.time) };
+    }
+  } catch (e) { console.warn('[bot] котировка:', e.message); }
+  botQuoteCache = { pair, at: Date.now(), data };
+  return data;
+}
+
+function botRulesNote(mode, fees, orderTypes) {
+  if (mode !== 'test') return BOT_REAL_NOTE;
+  const { netTargetPct, stopLossPct, maxHoldMs, entryTimeoutMs } = botEngine.PARAMS;
+  const target = fees && orderTypes
+    ? 'цель +' + botEngine.targetPct(fees, orderTypes.takeProfit).toFixed(2) + '% (+' + netTargetPct + '% чистыми)'
+    : 'цель неизвестна';
+  return 'Правила: вход, когда направление вверх; не исполнился за ' + (entryTimeoutMs / 60000) +
+    ' мин — снимается, и бот ждёт следующий вход; ' + target + ', стоп −' + stopLossPct +
+    '%, не дольше ' + (maxHoldMs / 3600000) + ' ч. Сделки виртуальные, по настоящим ценам.';
+}
+
+let botTickBusy = false;
+
+async function botTick() {
+  if (botTickBusy || botStatus === 'stopped' || botState.mode !== 'test') return;
+  botTickBusy = true;
+  try {
+    const pair = botState.coin + '-USD';
+    const [quote, direction, fees] = [await botQuote(pair), await botDirection(pair), await botFees()];
+    // Пока шли запросы, бота могли остановить: решаем только по текущему статусу.
+    if (botStatus === 'stopped' || botState.mode !== 'test' || botState.coin + '-USD' !== pair) return;
+    const spread = quote ? botLib.spreadPct(quote.bid, quote.ask) : null;
+    const next = botEngine.step(botState, {
+      status: botStatus, pair, quote, direction, fees,
+      orderTypes: botLib.chooseOrderTypes(fees, spread),
+      maxDeals: botState.maxDeals, maxUsd: botState.maxUsd, now: Date.now(),
+    });
+    if (JSON.stringify(next) !== JSON.stringify(botState)) botSaveState(next);
+  } catch (e) {
+    console.error('[bot] тик:', e.message);
+  } finally {
+    botTickBusy = false;
+  }
+}
+setInterval(botTick, BOT_TICK_MS);
+
+async function botView() {
+  const { mode, coin, maxDeals, maxUsd } = botState;
+  const fees = await botFees();
+  const quote = await botQuote(coin + '-USD');
+  const orderTypes = botLib.chooseOrderTypes(fees, quote ? botLib.spreadPct(quote.bid, quote.ask) : null);
+  // Сбой биржи не подменяем прошлым значением: неизвестный баланс остаётся null,
+  // и Старт его не пропустит. Тестовый режим к счёту не обращается.
+  let balance = null;
+  if (mode === 'test') {
+    balance = botEngine.cashUsd(botState);
+  } else {
+    try { balance = await fetchUsdBalance(); }
+    catch (e) { console.warn('[bot] баланс:', e.message); }
+  }
+  return {
+    success: true,
+    status: botStatus,
+    mode,
+    coin, pair: coin + '-USD', maxDeals, maxUsd,
+    minDealUsd: botLib.MIN_DEAL_USD,
+    balance,
+    plan: botLib.planDeals(balance, maxDeals, maxUsd),
+    lockedUsd: mode === 'test' ? botEngine.lockedUsd(botState) : 0,
+    fees,
+    orderTypes,
+    direction: await botDirection(coin + '-USD'),
+    coins: await botCoinList(),
+    // Сделки только виртуальные: в реальном режиме показывать нечего.
+    deals: mode === 'test'
+      ? botEngine.dealViews(botState, quote, Date.now())
+      : { open: [], closed: [], cancelledEntries: 0 },
+    // Только когда бот работает и у него есть свободное место под сделку.
+    nextEntryAt: botStatus === 'running' && botState.deals.length < maxDeals &&
+      botEngine.nextEntryAt(botState) > Date.now() ? botEngine.nextEntryAt(botState) : null,
+    netProfitUsd: mode === 'test' ? botState.realizedNetUsd : 0,
+    paidFeesUsd: mode === 'test' ? botState.paidFeesUsd : 0,
+    note: botRulesNote(mode, fees, orderTypes),
+  };
+}
+
+app.get('/api/bot', async (req, res) => {
+  try { res.json(await botView()); }
+  catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+app.post('/api/bot/config', async (req, res) => {
+  try {
+    if (botStatus !== 'stopped') return res.json({ success: false, error: 'Сначала остановите бота' });
+    const { config, error } = botLib.normalizeConfig(req.body);
+    if (error) return res.json({ success: false, error });
+    const coins = await botCoinList();
+    if (!coins.length) return res.json({ success: false, error: 'Список пар биржи недоступен, валюта не проверена' });
+    if (!coins.includes(config.coin)) return res.json({ success: false, error: 'На бирже нет торгуемой пары ' + config.coin + '-USD' });
+    botSaveState({ ...botState, ...config });
+    res.json(await botView());
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+app.post('/api/bot/mode', async (req, res) => {
+  try {
+    if (botStatus !== 'stopped') return res.json({ success: false, error: 'Сначала остановите бота' });
+    const { mode } = req.body || {};
+    if (mode !== 'test' && mode !== 'real') return res.json({ success: false, error: 'Неизвестный режим' });
+    botSaveState({ ...botState, mode });
+    console.log('[bot] режим:', mode);
+    res.json(await botView());
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+app.post('/api/bot/start', async (req, res) => {
+  try {
+    if (botState.mode !== 'test') return res.json({ success: false, error: 'Реальная торговля не подключена: включите тестовый режим' });
+    const view = await botView();
+    if (!view.fees) return res.json({ success: false, error: 'Комиссии неизвестны: бот не запущен' });
+    // Старт после Стопа — новый прогон: журнал очищается, только когда запуск уже
+    // точно состоится. Старт с паузы продолжает текущий прогон.
+    if (botStatus === 'stopped') {
+      botSaveState(botEngine.clearJournal(botState));
+    } else {
+      if (view.plan === null) return res.json({ success: false, error: 'Баланс неизвестен: бот не запущен' });
+      if (!view.plan.length) return res.json({ success: false, error: 'На балансе меньше минимальной сделки $' + botLib.MIN_DEAL_USD });
+    }
+    botStatus = 'running';
+    console.log('[bot] старт:', view.mode, view.pair);
+    await botTick();
+    res.json(await botView());
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+app.post('/api/bot/pause', async (req, res) => {
+  // Пауза не должна превращать остановленного бота в «приостановленного».
+  if (botStatus === 'running') botStatus = 'paused';
+  console.log('[bot] пауза');
+  try { res.json(await botView()); }
+  catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+// Стоп снимает виртуальные ордера и закрывает виртуальные позиции по Market.
+app.post('/api/bot/stop', async (req, res) => {
+  try {
+    const quote = botState.deals.length ? await botQuote(botState.coin + '-USD') : null;
+    const next = botEngine.closeAll(botState, quote, Date.now());
+    if (!next) return res.json({ success: false, error: 'Нет свежей цены: позицию закрыть нечем, бот не остановлен' });
+    if (botState.deals.length) botSaveState(next);
+    botStatus = 'stopped';
+    console.log('[bot] стоп');
+    res.json(await botView());
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
 // Start server — check port first, then listen
