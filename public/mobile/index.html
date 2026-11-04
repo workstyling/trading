@@ -255,7 +255,6 @@
     #botNote { margin-top: 8px; font-size: 15px; line-height: 1.5; color: var(--t2); }
     #botMsg { margin-top: 8px; font-size: 15px; line-height: 1.5; color: var(--red); }
     #botRoot .bot-section-title { margin: 18px 0 8px; font-size: 18px; font-weight: 700; color: var(--t0); }
-    #botRoot .bot-done-head { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; }
     .bot-net { margin-left: auto; font-size: 14px; font-weight: 500; color: var(--t1); white-space: nowrap; }
     #botNetProfit { margin-left: 4px; font-size: 18px; font-weight: 700; }
     #botFeesPaid { color: var(--t0); font-weight: 600; }
@@ -1798,6 +1797,9 @@
         <span id="botTitle">Trading bot</span>
         <span id="botStatus">—</span>
       </div>
+      <div style="display:flex;margin-bottom:12px;">
+        <span class="bot-net">Комиссии <span id="botFeesPaid">—</span> · Чистый профит <span id="botNetProfit">—</span></span>
+      </div>
       <div role="group" aria-label="Режим бота" style="display:flex;gap:8px;margin-bottom:12px;">
         <button id="botModeReal" class="btn-limit" onclick="botSetMode('real')">Реальный</button>
         <button id="botModeTest" class="btn-limit" onclick="botSetMode('test')">Тестовый</button>
@@ -1842,10 +1844,7 @@
           <tbody id="botOpenDeals"></tbody>
         </table>
       </div>
-      <div class="bot-section-title bot-done-head">
-        <span>Закрытые сделки</span>
-        <span class="bot-net">Комиссии <span id="botFeesPaid">—</span> · Чистый профит <span id="botNetProfit">—</span></span>
-      </div>
+      <div class="bot-section-title">Закрытые сделки</div>
       <div style="overflow-x:auto;border:1px solid var(--b0);border-radius:var(--r1);">
         <table>
           <thead>

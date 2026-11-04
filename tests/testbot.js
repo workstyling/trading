@@ -130,6 +130,7 @@ for (const [name, file] of [['десктоп', 'public/index.html'], ['теле�
   ok(html.includes('src="/js/bot-panel.js"'), name + ': подключён общий скрипт');
   ok(html.includes('botLoad()'), name + ': открытие вкладки загружает данные');
   ok(html.indexOf('id="botModeReal"') < html.indexOf('id="botModeTest"'), name + ': «Реальный» стоит первым');
+  ok(html.indexOf('id="botNetProfit"') < html.indexOf('id="botCoin"'), name + ': чистый профит наверху, над настройками');
   ok(html.includes("botStep('botMaxDeals', -1)") && html.includes("botStep('botMaxDeals', 1)"), name + ': кнопки − и + у числа сделок');
   ok(html.includes("botStep('botMaxUsd', -100)") && html.includes("botStep('botMaxUsd', 100)"), name + ': кнопки − и + у суммы');
   ok(html.includes('-webkit-inner-spin-button'), name + ': стандартные стрелки поля убраны');
