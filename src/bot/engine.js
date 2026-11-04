@@ -8,7 +8,7 @@ const PARAMS = Object.freeze({
   stopLossPct: 2,                    // от цены входа, до комиссий
   entryTimeoutMs: 10 * 60 * 1000,
   maxHoldMs: 24 * 3600 * 1000,
-  entrySpacingMs: 15 * 60 * 1000,    // иначе все сделки откроются по одной цене
+  entrySpacingMs: 15 * 60 * 1000,    // пауза после снятого входа и после стопа
   quoteMaxAgeMs: 5 * 60 * 1000,
   maxKeptOrders: 500,
 });
@@ -109,10 +109,15 @@ function manageDeal(state, deal, quote, now) {
   }
 }
 
-// Снятый вход тоже считается: после него бот ждёт следующий вход, а не ставит
-// такую же покупку сразу. Старт после Стопа очищает журнал и ждать не заставляет.
+// Свободные места занимаются сразу. Ждать надо только после неудачи: после снятого
+// входа, чтобы не ставить такую же покупку, и после стопа, чтобы не докупать в
+// падение. Старт после Стопа очищает журнал и ждать не заставляет.
 function nextEntryAt(state) {
-  const last = state.orders.reduce((latest, o) => (o.role === 'entry' && o.at > latest ? o.at : latest), 0);
+  const last = state.orders.reduce((latest, o) => {
+    if (o.role === 'entry' && o.status === 'CANCELLED') return Math.max(latest, o.at);
+    if (o.role === 'stopLoss' && o.status === 'FILLED') return Math.max(latest, o.filledAt);
+    return latest;
+  }, 0);
   return last ? last + PARAMS.entrySpacingMs : 0;
 }
 
@@ -137,6 +142,7 @@ function tryOpenDeal(state, { pair, quote, now, direction, fees, orderTypes, max
   };
   state.deals.push(deal);
   if (type === 'market') fillEntry(state, deal, price, now);
+  return true;
 }
 
 // Режем журнал целыми сделками, старые первыми: иначе от пары осталась бы половина.
@@ -209,7 +215,10 @@ function step(state, market) {
   for (const deal of [...next.deals]) {
     if (deal.pair === market.pair) manageDeal(next, deal, quote, now);
   }
-  if (status === 'running') tryOpenDeal(next, { ...market, quote, now });
+  // Каждая сделка занимает место и деньги, поэтому цикл ограничен лимитом и балансом.
+  if (status === 'running') {
+    while (tryOpenDeal(next, { ...market, quote, now }));
+  }
   trimOrders(next);
   return next;
 }

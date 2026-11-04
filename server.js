@@ -10121,13 +10121,14 @@ async function botQuote(pair) {
 
 function botRulesNote(mode, fees, orderTypes) {
   if (mode !== 'test') return BOT_REAL_NOTE;
-  const { netTargetPct, stopLossPct, maxHoldMs, entryTimeoutMs } = botEngine.PARAMS;
+  const { netTargetPct, stopLossPct, maxHoldMs, entryTimeoutMs, entrySpacingMs } = botEngine.PARAMS;
   const target = fees && orderTypes
     ? 'цель +' + botEngine.targetPct(fees, orderTypes.takeProfit).toFixed(2) + '% (+' + netTargetPct + '% чистыми)'
     : 'цель неизвестна';
   return 'Правила: вход, когда направление вверх; не исполнился за ' + (entryTimeoutMs / 60000) +
-    ' мин — снимается, и бот ждёт следующий вход; ' + target + ', стоп −' + stopLossPct +
-    '%, не дольше ' + (maxHoldMs / 3600000) + ' ч. Сделки виртуальные, по настоящим ценам.';
+    ' мин — снимается; ' + target + ', стоп −' + stopLossPct +
+    '%, не дольше ' + (maxHoldMs / 3600000) + ' ч. Свободные места занимаются сразу, после снятой покупки и после стопа пауза до ' +
+    (entrySpacingMs / 60000) + ' мин. Сделки виртуальные, по настоящим ценам.';
 }
 
 let botTickBusy = false;

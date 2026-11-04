@@ -22,7 +22,7 @@ function tick(state, price, now, over = {}) {
   return step(state, {
     status: 'running', pair: PAIR, quote: q, now, direction: UP, fees,
     orderTypes: over.orderTypes === undefined ? chooseOrderTypes(fees, 0.01) : over.orderTypes,
-    maxDeals: 2, maxUsd: 500, ...over,
+    maxDeals: 1, maxUsd: 500, ...over,
   });
 }
 const byRole = (s, role) => s.orders.filter((o) => o.role === role);
@@ -176,26 +176,47 @@ console.log('\nВход по Market');
 
 console.log('\nРазмер и число сделок');
 {
-  let s = tick(fresh(), 100, T0);
-  s = tick(s, 100, T0 + 1000, { direction: null, quote: quote(99, T0 + 1000) });
-  s = tick(s, 100, T0 + PARAMS.entrySpacingMs - 1);
-  ok(byRole(s, 'entry').length === 1, 'следующий вход не раньше чем через интервал после исполненного');
-  s = tick(fresh(), 100, T0);
-  s = tick(s, 100, T0 + 1000, { direction: null, quote: quote(99, T0 + 1000) });
-  s = tick(s, 100, T0 + PARAMS.entrySpacingMs);
-  ok(s.deals.length === 2, 'через интервал вторая сделка');
-  s = tick(s, 100, T0 + 2 * PARAMS.entrySpacingMs);
-  ok(s.deals.length === 2, 'больше лимита сделок не открывается');
+  // Случай владельца: лимит 4 сделки, а открывалась одна
+  let s = tick(fresh(), 100, T0, { maxDeals: 4 });
+  ok(s.deals.length === 4, 'все 4 места заняты сразу', s.deals.length);
+  ok(s.deals.slice(0, 3).every((d) => d.usd === 500), 'первые три по $500');
+  ok(lockedUsd(s) <= 2000 + 1e-9 && lockedUsd(s) > 1999.9, 'вместе с комиссиями весь баланс, но не больше', lockedUsd(s));
+  s = tick(s, 100, T0 + 1000, { maxDeals: 4 });
+  ok(s.deals.length === 4, 'больше лимита сделок не открывается');
+  ok(new Set(s.deals.map((d) => d.id)).size === 4, 'у сделок разные номера');
+
+  // Четыре по $500 с комиссиями стоят $2010: на четвёртую хватает только остатка
+  const fourth = s.deals[3].usd;
+  ok(fourth > 490 && fourth < 490.1, 'четвёртая на остаток, в минус баланс не уходит', fourth);
+  const limited = tick({ ...fresh(), realizedNetUsd: -100 }, 100, T0, { maxDeals: 4 });
+  ok(limited.deals[3].usd < fourth && lockedUsd(limited) <= 1900 + 1e-9, 'при меньшем балансе последняя ещё меньше', lockedUsd(limited));
+
+  // Свободное место после прибыльного закрытия занимается сразу
+  let one = holding();
+  one = tick(one, one.deals[0].takeProfitPrice + 1, T0 + 3000);
+  ok(one.deals.length === 1 && byRole(one, 'entry').length === 2, 'после цели новый вход сразу');
+
+  // После стопа пауза
+  let lost = holding();
+  const stopped = lost.deals[0].stopPrice;
+  lost = tick(lost, stopped * 0.99, T0 + 3000);
+  ok(lost.deals.length === 0 && byRole(lost, 'stopLoss')[0].status === 'FILLED', 'после стопа новой покупки в том же шаге нет');
+  ok(nextEntryAt(lost) === T0 + 3000 + PARAMS.entrySpacingMs, 'пауза считается от исполнения стопа');
+  ok(tick(lost, 100, T0 + 3000 + PARAMS.entrySpacingMs - 1).deals.length === 0, 'до конца паузы бот ждёт');
+  ok(tick(lost, 100, T0 + 3000 + PARAMS.entrySpacingMs).deals.length === 1, 'после паузы новый вход');
+
+  // Снятая покупка держит паузу и для остальных мест
+  let cancelled = tick(tick(fresh(), 100, T0, { maxDeals: 4 }), 100, T0 + PARAMS.entryTimeoutMs, { maxDeals: 4 });
+  ok(cancelled.deals.length === 0 && byRole(cancelled, 'entry').length === 4, 'снятые покупки сразу не заменяются');
 
   // Баланс как в примере владельца: 600 при лимите 500
   const small = { ...fresh(), realizedNetUsd: -1400 };
-  let a = tick(small, 100, T0);
+  const a = tick(small, 100, T0, { maxDeals: 2 });
   ok(a.deals[0].usd === 500, 'первая сделка $500 из $600', a.deals[0].usd);
-  a = tick(a, 100, T0 + 1000, { direction: null, quote: quote(99, T0 + 1000) });
-  a = tick(a, 100, T0 + PARAMS.entrySpacingMs);
   const second = a.deals[1];
   ok(second && second.usd > 96 && second.usd < 97.5, 'вторая на остаток с запасом на комиссии', second && second.usd);
   ok(lockedUsd(a) <= 600 + 1e-9, 'вместе с комиссиями не больше баланса', lockedUsd(a));
+  ok(tick(small, 100, T0, { maxDeals: 5 }).deals.length === 2, 'при лимите 5 лишних сделок на копейки нет');
 
   const empty = { ...fresh(), realizedNetUsd: -1999.5 };
   ok(tick(empty, 100, T0).deals.length === 0, 'остаток меньше минимальной сделки: входа нет');
@@ -258,8 +279,9 @@ console.log('\nСделки парами');
   ok(dealViews(old, null, T0).cancelledEntries === 1, 'старая запись снятого ордера с filledAt тоже не считается исполненной');
   ok(tick(old, 100, T0).deals.length === 1, 'и не мешает новому входу');
 
-  const twoPairs = tick(tick(s, s.deals[0].stopPrice * 0.9, T0 + 3000, { direction: null }), 100, T0 + PARAMS.entrySpacingMs);
-  const e = dealViews(twoPairs, quote(100, T0 + PARAMS.entrySpacingMs), T0 + PARAMS.entrySpacingMs);
+  const later = T0 + 3000 + PARAMS.entrySpacingMs;
+  const twoPairs = tick(tick(s, s.deals[0].stopPrice * 0.9, T0 + 3000, { direction: null }), 100, later);
+  const e = dealViews(twoPairs, quote(100, later), later);
   ok(e.closed.length === 1 && e.open.length === 1, 'закрытая и новая открытая сделка показаны раздельно');
 }
 
