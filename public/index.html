@@ -4753,7 +4753,15 @@
     #botMsg { margin-top: 8px; font-size: 15px; color: var(--red); }
     #botRoot .pred-table th { font-size: 14px; }
     #botRoot .pred-table td { font-size: 15px; }
+    .bot-head-right { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
     .bot-net { font-size: 15px; color: var(--t1); }
+    /* Узкий экран: строка профита на всю ширину, значение у правого края */
+    @media (max-width: 640px) {
+      .bot-head-right { width: 100%; gap: 6px; }
+      #botRoot .bot-net { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px; width: 100%; font-size: 13px; white-space: nowrap; }
+      #botRoot #botNetProfit { margin-left: auto; font-size: 18px; }
+      #botStatus { margin-left: auto; }
+    }
     #botNetProfit { margin-left: 6px; font-size: 20px; font-weight: 700; }
     #botFeesPaid { color: var(--t0); font-weight: 600; }
     #botCancelled { padding: 10px 14px; font-size: 14px; color: var(--t2); border-top: 1px solid var(--b0); }
@@ -6576,7 +6584,7 @@
                 <button id="botModeTest" class="pred-btn" onclick="botSetMode('test')">Тестовый</button>
               </div>
             </div>
-            <div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap;">
+            <div class="bot-head-right">
               <span class="bot-net">Комиссии <span id="botFeesPaid">—</span> · Чистый профит <span id="botNetProfit">—</span></span>
               <span id="botStatus">—</span>
             </div>

@@ -255,8 +255,12 @@
     #botNote { margin-top: 8px; font-size: 15px; line-height: 1.5; color: var(--t2); }
     #botMsg { margin-top: 8px; font-size: 15px; line-height: 1.5; color: var(--red); }
     #botRoot .bot-section-title { margin: 18px 0 8px; font-size: 18px; font-weight: 700; color: var(--t0); }
-    .bot-net { margin-left: auto; font-size: 14px; font-weight: 500; color: var(--t1); white-space: nowrap; }
-    #botNetProfit { margin-left: 4px; font-size: 18px; font-weight: 700; }
+    .bot-net { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px; width: 100%; font-size: 14px; font-weight: 500; color: var(--t1); white-space: nowrap; }
+    #botNetProfit { margin-left: auto; font-size: 18px; font-weight: 700; }
+    @media (max-width: 360px) {
+      .bot-net { font-size: 12px; }
+      #botNetProfit { font-size: 16px; }
+    }
     #botFeesPaid { color: var(--t0); font-weight: 600; }
     #botCancelled { margin-top: 8px; font-size: 14px; line-height: 1.5; color: var(--t2); }
     #botRoot table { width: 100%; border-collapse: collapse; font-size: 14px; color: var(--t1); white-space: nowrap; }
@@ -1828,7 +1832,7 @@
         <button id="botStart" class="btn-limit" style="border-color:var(--green) !important;color:var(--green) !important;" onclick="botOnStart()">Старт</button>
         <button id="botPause" class="btn-limit" style="border-color:var(--b1) !important;color:var(--t1) !important;" onclick="botOnPause()">Пауза</button>
       </div>
-      <div style="display:flex;gap:8px;margin-bottom:12px;">
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
         <button id="botFinish" class="btn-limit" style="flex:2;white-space:nowrap;padding:0 4px !important;font-size:15px !important;border-color:var(--blue) !important;color:var(--blue) !important;" onclick="botOnFinish()">Остановить и доделать</button>
         <button id="botStop" class="btn-limit" style="border-color:var(--red) !important;color:var(--red) !important;" onclick="botOnStop()">Остановить</button>
       </div>
