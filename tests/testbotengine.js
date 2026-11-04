@@ -1,6 +1,6 @@
 // Виртуальная торговля бота: вход, цель, стоп, выход по времени, Стоп и счёт профита.
 const { restoreState, feeSummary, chooseOrderTypes, DEFAULT_CONFIG } = require('../src/bot');
-const { PARAMS, targetPct, cashUsd, lockedUsd, nextEntryAt, dealViews, step, closeAll, clearJournal } = require('../src/bot/engine');
+const { PARAMS, targetPct, cashUsd, lockedUsd, nextEntryAt, dealViews, step, beginFinish, closeAll, clearJournal } = require('../src/bot/engine');
 
 let bad = 0;
 const ok = (cond, message, extra) => {
@@ -283,6 +283,41 @@ console.log('\nСделки парами');
   const twoPairs = tick(tick(s, s.deals[0].stopPrice * 0.9, T0 + 3000, { direction: null }), 100, later);
   const e = dealViews(twoPairs, quote(100, later), later);
   ok(e.closed.length === 1 && e.open.length === 1, 'закрытая и новая открытая сделка показаны раздельно');
+}
+
+console.log('\nОстановить и доделать');
+{
+  // Одна сделка куплена, вторая покупка ещё не исполнена
+  let s = holding();
+  const bought = s.deals[0];
+  s.deals.push({ ...bought, id: 'D99', stage: 'entry', entryOrderId: 'T99', usd: 100, entryFeeUsd: 0.5 });
+  s.orders.push({ id: 'T99', dealId: 'D99', role: 'entry', side: 'BUY', status: 'OPEN', at: T0, usd: 100, price: 99, pair: PAIR, type: 'limit', mode: 'test' });
+  const before = JSON.stringify(s);
+  const f = beginFinish(s, T0 + 5000);
+  ok(JSON.stringify(s) === before, 'исходное состояние не изменено');
+  ok(f.finishing === true, 'есть что доделывать');
+  ok(f.deals.length === 1 && f.deals[0].stage === 'holding', 'неисполненная покупка снята, купленное осталось');
+  ok(f.orders.find((o) => o.id === 'T99').status === 'CANCELLED', 'и она помечена снятой');
+  ok(byRole(f, 'takeProfit')[0].status === 'OPEN', 'цель продолжает работать');
+
+  const run = (state, price, now, over = {}) => tick(state, price, now, { status: 'finishing', ...over });
+  const noNew = run(f, 100, T0 + 6000, { maxDeals: 4 });
+  ok(noNew.deals.length === 1 && byRole(noNew, 'entry').length === 2, 'новых сделок нет, хотя направление вверх');
+
+  const late = run(f, 100, bought.filledAt + PARAMS.maxHoldMs * 3);
+  ok(late.deals.length === 1 && !byRole(late, 'timeExit').length, 'по времени в минус не продаёт, ждёт цель');
+
+  const won = run(f, bought.takeProfitPrice + 1, T0 + 7000);
+  ok(won.deals.length === 0 && won.realizedNetUsd > 0, 'цель закрывает сделку в плюс', won.realizedNetUsd);
+
+  const lost = run(f, bought.stopPrice * 0.99, T0 + 7000);
+  ok(lost.deals.length === 0 && lost.realizedNetUsd < 0, 'стоп продолжает ограничивать убыток', lost.realizedNetUsd);
+
+  ok(beginFinish(tick(fresh(), 100, T0), T0 + 1000).finishing === false, 'только неисполненные покупки: доделывать нечего');
+  ok(closeAll(f, quote(100, T0 + 8000), T0 + 8000).finishing === false, '«Остановить» отменяет доделывание');
+  ok(clearJournal(f).finishing === false, 'новый прогон начинается без доделывания');
+  const saved = restoreState(JSON.parse(JSON.stringify(f)));
+  ok(saved.finishing === true && saved.deals.length === 1, 'доделывание переживает перезапуск');
 }
 
 console.log('\nНовый прогон');

@@ -10047,11 +10047,16 @@ const BOT_REAL_NOTE = 'Реальная торговля не подключен
 
 let botState = botLib.restoreState(null);
 try { botState = botLib.restoreState(JSON.parse(fs.readFileSync(BOT_FILE, 'utf8'))); } catch { }
-// stopped, running или paused. Настройки меняются только в stopped.
-// Намеренно не хранится в файле: после перезапуска или деплоя новые сделки
+// stopped, running, paused или finishing. Настройки меняются только в stopped.
+// running намеренно не хранится в файле: после перезапуска или деплоя новые сделки
 // начинаются только по нажатию Старт. Если остались открытые сделки, бот на паузе:
-// стоп и цель должны продолжать работать.
-let botStatus = botState.deals.length ? 'paused' : 'stopped';
+// стоп и цель должны продолжать работать. Доделывание новых сделок не открывает,
+// поэтому оно хранится и продолжается после перезапуска.
+function botStatusAfterRestart(state) {
+  if (!state.deals.length) return 'stopped';
+  return state.finishing ? 'finishing' : 'paused';
+}
+let botStatus = botStatusAfterRestart(botState);
 let botCoinsCache = { list: [], at: 0 };
 
 // Монеты с торгуемой парой к USD. Если биржа не ответила, отдаём прошлый список.
@@ -10147,6 +10152,12 @@ async function botTick() {
       orderTypes: botLib.chooseOrderTypes(fees, spread),
       maxDeals: botState.maxDeals, maxUsd: botState.maxUsd, now: Date.now(),
     });
+    // Доделал последнюю сделку: останавливается полностью.
+    if (botStatus === 'finishing' && !next.deals.length) {
+      next.finishing = false;
+      botStatus = 'stopped';
+      console.log('[bot] доделал, остановлен');
+    }
     if (JSON.stringify(next) !== JSON.stringify(botState)) botSaveState(next);
   } catch (e) {
     console.error('[bot] тик:', e.message);
@@ -10237,6 +10248,7 @@ app.post('/api/bot/start', async (req, res) => {
     } else {
       if (view.plan === null) return res.json({ success: false, error: 'Баланс неизвестен: бот не запущен' });
       if (!view.plan.length) return res.json({ success: false, error: 'На балансе меньше минимальной сделки $' + botLib.MIN_DEAL_USD });
+      if (botState.finishing) botSaveState({ ...botState, finishing: false });
     }
     botStatus = 'running';
     console.log('[bot] старт:', view.mode, view.pair);
@@ -10253,7 +10265,21 @@ app.post('/api/bot/pause', async (req, res) => {
   catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
-// Стоп снимает виртуальные ордера и закрывает виртуальные позиции по Market.
+// Новых сделок нет, неисполненные покупки снимаются, купленное доводится до конца.
+app.post('/api/bot/finish', async (req, res) => {
+  try {
+    if (botStatus !== 'running' && botStatus !== 'paused') {
+      return res.json({ success: false, error: 'Бот не запущен' });
+    }
+    const next = botEngine.beginFinish(botState, Date.now());
+    botSaveState(next);
+    botStatus = next.deals.length ? 'finishing' : 'stopped';
+    console.log('[bot] доделать:', next.deals.length, 'сделок');
+    res.json(await botView());
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+// Снимает виртуальные ордера и закрывает виртуальные позиции по Market.
 app.post('/api/bot/stop', async (req, res) => {
   try {
     const quote = botState.deals.length ? await botQuote(botState.coin + '-USD') : null;

@@ -64,6 +64,7 @@ function restoreState(saved) {
     deals: Array.isArray(src.deals) ? src.deals : [],
     realizedNetUsd: Number.isFinite(src.realizedNetUsd) ? src.realizedNetUsd : 0,
     paidFeesUsd: Number.isFinite(src.paidFeesUsd) ? src.paidFeesUsd : 0,
+    finishing: src.finishing === true,
     nextId: Number.isInteger(src.nextId) && src.nextId > 0 ? src.nextId : 1,
   };
 }

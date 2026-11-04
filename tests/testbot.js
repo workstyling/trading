@@ -48,11 +48,12 @@ ok(!!normalizeConfig({ coin: 'BTC', maxDeals: 2, maxUsd: 0.5 }).error, 'сумм
 ok(!!normalizeConfig(null).error, 'отсутствие настроек отклоняется');
 
 console.log('\nСостояние из файла');
-const EMPTY_LEDGER = { deals: [], realizedNetUsd: 0, paidFeesUsd: 0, nextId: 1 };
+const EMPTY_LEDGER = { deals: [], realizedNetUsd: 0, paidFeesUsd: 0, finishing: false, nextId: 1 };
 same(restoreState(null), { mode: 'test', ...DEFAULT_CONFIG, orders: [], ...EMPTY_LEDGER }, 'без файла: тестовый режим, значения по умолчанию');
 ok(DEFAULT_CONFIG.coin === 'BTC', 'валюта по умолчанию BTC');
-same(restoreState({ mode: 'real', coin: 'ETH', maxDeals: 3, maxUsd: 100, orders: [{ id: 1 }], deals: [{ id: 2 }], realizedNetUsd: 5, paidFeesUsd: 7, nextId: 9 }),
-  { mode: 'real', coin: 'ETH', maxDeals: 3, maxUsd: 100, orders: [{ id: 1 }], deals: [{ id: 2 }], realizedNetUsd: 5, paidFeesUsd: 7, nextId: 9 }, 'режим, настройки и журнал восстанавливаются');
+same(restoreState({ mode: 'real', coin: 'ETH', maxDeals: 3, maxUsd: 100, orders: [{ id: 1 }], deals: [{ id: 2 }], realizedNetUsd: 5, paidFeesUsd: 7, finishing: true, nextId: 9 }),
+  { mode: 'real', coin: 'ETH', maxDeals: 3, maxUsd: 100, orders: [{ id: 1 }], deals: [{ id: 2 }], realizedNetUsd: 5, paidFeesUsd: 7, finishing: true, nextId: 9 }, 'режим, настройки и журнал восстанавливаются');
+ok(restoreState({ finishing: 'да' }).finishing === false, 'неверная отметка доделывания не считается');
 same(restoreState({ coin: 'BTC', maxDeals: 'x', maxUsd: 100, orders: 'y', deals: 'z', realizedNetUsd: 'q', paidFeesUsd: null, nextId: 0 }),
   { mode: 'test', ...DEFAULT_CONFIG, orders: [], ...EMPTY_LEDGER }, 'повреждённый файл заменяется значениями по умолчанию');
 for (const mode of [undefined, null, '', 'REAL', 'live', 1, true]) {
@@ -124,7 +125,7 @@ console.log('\nНаправление');
 console.log('\nОбе вёрстки');
 for (const [name, file] of [['десктоп', 'public/index.html'], ['телефон', 'public/mobile/index.html']]) {
   const html = fs.readFileSync(file, 'utf8');
-  for (const id of ['botRoot', 'botModeTest', 'botModeReal', 'botStatus', 'botCoin', 'botMaxDeals', 'botMaxUsd', 'botStart', 'botPause', 'botStop', 'botPlan', 'botFees', 'botOrderTypes', 'botDirection', 'botNote', 'botMsg', 'botOpenDeals', 'botClosedDeals', 'botNetProfit', 'botFeesPaid', 'botCancelled']) {
+  for (const id of ['botRoot', 'botModeTest', 'botModeReal', 'botStatus', 'botCoin', 'botMaxDeals', 'botMaxUsd', 'botStart', 'botPause', 'botFinish', 'botStop', 'botPlan', 'botFees', 'botOrderTypes', 'botDirection', 'botNote', 'botMsg', 'botOpenDeals', 'botClosedDeals', 'botNetProfit', 'botFeesPaid', 'botCancelled']) {
     ok(html.includes('id="' + id + '"'), name + ': есть ' + id);
   }
   ok(html.includes('src="/js/bot-panel.js"'), name + ': подключён общий скрипт');
@@ -143,7 +144,11 @@ console.log('\nНастоящие ордера не ставятся');
   const section = src.slice(start, src.indexOf('// Start server — check port', start));
   ok(start >= 0 && section.length > 0, 'раздел бота найден в server.js');
   ok(!/createOrder|placeMarket|placeLimit|cancelOrders/.test(section), 'раздел бота не ставит и не снимает ордера');
-  ok(/let botStatus = botState\.deals\.length \? 'paused' : 'stopped'/.test(section), 'после старта сервера новых сделок нет, открытые продолжают вестись');
+  ok(/let botStatus = botStatusAfterRestart\(botState\)/.test(section), 'статус после перезапуска считается из журнала');
+  const afterRestart = section.slice(section.indexOf('function botStatusAfterRestart'), section.indexOf('let botStatus ='));
+  ok(/'stopped'/.test(afterRestart) && /'finishing'/.test(afterRestart) && /'paused'/.test(afterRestart) && !/'running'/.test(afterRestart), 'после перезапуска сервера новых сделок нет, открытые продолжают вестись');
+  ok(/app\.post\('\/api\/bot\/finish'/.test(section), 'есть команда «Остановить и доделать»');
+  ok(/botStatus === 'finishing' && !next\.deals\.length/.test(section), 'доделав последнюю сделку, бот останавливается сам');
   const engineSrc = fs.readFileSync('src/bot/engine.js', 'utf8');
   ok(!/createOrder|client\.|fetch\(|require\('\.\.\/\.\.\/cb/.test(engineSrc), 'движок не обращается к бирже');
   ok(/botState\.mode !== 'test'/.test(section.slice(section.indexOf('async function botTick'), section.indexOf('setInterval(botTick'))), 'тик работает только в тестовом режиме');

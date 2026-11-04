@@ -224,6 +224,7 @@
     const looks = {
       running: ['Запущен', 'var(--green)'],
       paused: ['Пауза', 'var(--yellow)'],
+      finishing: ['Доделывает сделки', 'var(--blue)'],
       stopped: ['Остановлен', 'var(--t2)'],
     };
     const [statusText, statusColor] = looks[view.status];
@@ -239,6 +240,7 @@
     document.querySelectorAll('#botRoot .bot-step').forEach((button) => setDisabled(button, locked));
     setDisabled($('botStart'), view.status === 'running');
     setDisabled($('botPause'), view.status !== 'running');
+    setDisabled($('botFinish'), view.status !== 'running' && view.status !== 'paused');
     setDisabled($('botStop'), view.status === 'stopped');
     $('botPlan').textContent = planText(view);
     $('botFees').textContent = feesText(view);
@@ -317,6 +319,7 @@
   window.botSetMode = (mode) => act('/api/bot/mode', { mode });
   window.botOnStart = () => act('/api/bot/start');
   window.botOnPause = () => act('/api/bot/pause');
+  window.botOnFinish = () => act('/api/bot/finish');
   window.botOnStop = () => act('/api/bot/stop');
 
   // Опрос заодно убирает старое сообщение: поле к этому времени уже вернулось

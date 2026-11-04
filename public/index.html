@@ -4745,7 +4745,7 @@
     #botRoot .pred-input { font-size: 17px; height: 46px; padding: 0 6px; text-align: center; -moz-appearance: textfield; appearance: textfield; }
     #botRoot .pred-input::-webkit-outer-spin-button,
     #botRoot .pred-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-    #botRoot .pred-btn { font-size: 16px; height: 46px; padding: 0 20px; }
+    #botRoot .pred-btn { font-size: 16px; height: 46px; padding: 0 14px; }
     #botRoot .pred-card-head .pred-btn { height: 38px; padding: 0 16px; }
     #botPlan { margin-top: 16px; font-size: 18px; color: var(--t0); }
     #botFees, #botOrderTypes, #botDirection { margin-top: 8px; font-size: 16px; color: var(--t1); }
@@ -6599,7 +6599,8 @@
               </div>
               <button id="botStart" class="pred-btn green" onclick="botOnStart()">Старт</button>
               <button id="botPause" class="pred-btn" onclick="botOnPause()">Пауза</button>
-              <button id="botStop" class="pred-btn" style="border-color:var(--red);color:var(--red);" onclick="botOnStop()">Стоп</button>
+              <button id="botFinish" class="pred-btn" style="border-color:var(--blue);color:var(--blue);" onclick="botOnFinish()">Остановить и доделать</button>
+              <button id="botStop" class="pred-btn" style="border-color:var(--red);color:var(--red);" onclick="botOnStop()">Остановить</button>
             </div>
             <div id="botPlan"></div>
             <div id="botFees"></div>

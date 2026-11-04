@@ -89,7 +89,7 @@ function cancelEntry(state, deal, now) {
   state.deals = state.deals.filter((d) => d !== deal);
 }
 
-function manageDeal(state, deal, quote, now) {
+function manageDeal(state, deal, quote, now, status) {
   if (deal.stage === 'entry') {
     // Лимитка исполнена, только если цена прошла сквозь неё, а не коснулась:
     // на касании очередь могла не дойти.
@@ -104,7 +104,8 @@ function manageDeal(state, deal, quote, now) {
     closeDeal(state, deal, { price: deal.takeProfitPrice, ratePct: deal.limitPct, now, filledOrderId: deal.takeProfitOrderId });
   } else if (deal.exitType === 'market' && quote.bid >= deal.takeProfitPrice) {
     closeDeal(state, deal, { price: quote.bid, ratePct: deal.marketPct, now, filledOrderId: deal.takeProfitOrderId });
-  } else if (now - deal.filledAt >= PARAMS.maxHoldMs) {
+  } else if (status !== 'finishing' && now - deal.filledAt >= PARAMS.maxHoldMs) {
+    // При доделывании по времени не продаём: сделка ждёт цель, а стоп ограничивает убыток.
     closeDeal(state, deal, { price: quote.bid, ratePct: deal.marketPct, now, type: 'market', role: 'timeExit' });
   }
 }
@@ -213,7 +214,7 @@ function step(state, market) {
   const { quote, now, status } = market;
   if (status === 'stopped' || !validQuote(quote, now)) return next;
   for (const deal of [...next.deals]) {
-    if (deal.pair === market.pair) manageDeal(next, deal, quote, now);
+    if (deal.pair === market.pair) manageDeal(next, deal, quote, now, status);
   }
   // Каждая сделка занимает место и деньги, поэтому цикл ограничен лимитом и балансом.
   if (status === 'running') {
@@ -223,12 +224,24 @@ function step(state, market) {
   return next;
 }
 
-// Кнопка Стоп: снимает ордера и закрывает позиции по Market.
+// Кнопка «Остановить и доделать»: неисполненные покупки снимаются, купленное
+// доводится до цели или стопа. Когда сделок не останется, бот остановится сам.
+function beginFinish(state, now) {
+  const next = JSON.parse(JSON.stringify(state));
+  for (const deal of [...next.deals]) {
+    if (deal.stage === 'entry') cancelEntry(next, deal, now);
+  }
+  next.finishing = next.deals.length > 0;
+  return next;
+}
+
+// Кнопка «Остановить»: снимает ордера и закрывает позиции по Market.
 // Без цены позицию закрыть нечем: возвращаем null, и бот не останавливается.
 function closeAll(state, quote, now) {
   const next = JSON.parse(JSON.stringify(state));
   const holding = next.deals.some((d) => d.stage === 'holding');
   if (holding && !validQuote(quote, now)) return null;
+  next.finishing = false;
   for (const deal of [...next.deals]) {
     if (deal.stage === 'entry') cancelEntry(next, deal, now);
     else closeDeal(next, deal, { price: quote.bid, ratePct: deal.marketPct, now, type: 'market', role: 'stopButton' });
@@ -239,7 +252,7 @@ function closeAll(state, quote, now) {
 
 // Новый тестовый прогон: журнал пуст, баланс начальный, настройки и режим те же.
 function clearJournal(state) {
-  return { ...state, orders: [], deals: [], realizedNetUsd: 0, paidFeesUsd: 0, nextId: 1 };
+  return { ...state, orders: [], deals: [], realizedNetUsd: 0, paidFeesUsd: 0, nextId: 1, finishing: false };
 }
 
-module.exports = { PARAMS, targetPct, validQuote, cashUsd, lockedUsd, nextEntryAt, dealViews, step, closeAll, clearJournal };
+module.exports = { PARAMS, targetPct, validQuote, cashUsd, lockedUsd, nextEntryAt, dealViews, step, beginFinish, closeAll, clearJournal };
