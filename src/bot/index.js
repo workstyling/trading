@@ -60,7 +60,10 @@ function restoreState(saved) {
     // Реальный режим только по явной записи: всё остальное считается тестовым.
     mode: src.mode === 'real' ? 'real' : 'test',
     ...(config || DEFAULT_CONFIG),
-    orders: Array.isArray(src.orders) ? src.orders : [],
+    // Стопы открытых сделок, созданных до перехода на Stop-Limit, теперь работают так же.
+    orders: Array.isArray(src.orders)
+      ? src.orders.map((o) => (o && o.role === 'stopLoss' && o.status === 'WAITING' ? { ...o, type: 'stopLimit' } : o))
+      : [],
     deals: Array.isArray(src.deals) ? src.deals : [],
     realizedNetUsd: Number.isFinite(src.realizedNetUsd) ? src.realizedNetUsd : 0,
     paidFeesUsd: Number.isFinite(src.paidFeesUsd) ? src.paidFeesUsd : 0,
@@ -90,23 +93,19 @@ function spreadPct(bid, ask) {
   return ((ask - bid) / ((ask + bid) / 2)) * 100;
 }
 
-// Выбор типа ордера по цене исполнения. Market платит комиссию и половину
-// спреда, Limit только свою комиссию, но может не исполниться: тогда сделки нет,
-// и это безопаснее переплаты. Стоп всегда Market: он обязан исполниться.
-// null — данных для сравнения нет.
+// Типы ордеров заданы владельцем: покупка и цель Limit, стоп Stop-Limit. Здесь только
+// считаем, сколько это экономит против Market, который платит комиссию и половину спреда.
+// savingPct может быть отрицательным, если Limit окажется дороже. null — комиссии неизвестны.
 function chooseOrderTypes(fees, spread) {
   if (!fees) return null;
   const spreadKnown = typeof spread === 'number' && Number.isFinite(spread) && spread >= 0;
-  // Если Limit дороже по ставке, исход решает спред: без него сравнивать нечего.
-  if (fees.limitPct > fees.marketPct && !spreadKnown) return null;
   const marketCostPct = fees.marketPct + (spreadKnown ? spread / 2 : 0);
-  const passive = fees.limitPct <= marketCostPct ? 'limit' : 'market';
   return {
-    entry: passive,
-    takeProfit: passive,
-    stopLoss: 'market',
+    entry: 'limit',
+    takeProfit: 'limit',
+    stopLoss: 'stopLimit',
     spreadKnown,
-    savingPct: Math.abs(marketCostPct - fees.limitPct),
+    savingPct: marketCostPct - fees.limitPct,
   };
 }
 

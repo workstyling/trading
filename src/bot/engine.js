@@ -6,6 +6,8 @@ const { MIN_DEAL_USD, TEST_BALANCE_USD } = require('./index');
 const PARAMS = Object.freeze({
   netTargetPct: 0.5,                 // чистыми после комиссий обоих концов
   stopLossPct: 2,                    // от цены входа, до комиссий
+  stopLimitMaxSlipPct: 1,            // ниже цены стопа на столько: продажа по Market
+  stopLimitTimeoutMs: 15 * 60 * 1000, // столько ждём исполнения лимитки стопа
   entryTimeoutMs: 10 * 60 * 1000,
   maxHoldMs: 24 * 3600 * 1000,
   entrySpacingMs: 15 * 60 * 1000,    // пауза после снятого входа и после стопа
@@ -13,12 +15,10 @@ const PARAMS = Object.freeze({
   maxKeptOrders: 500,
 });
 
-const rateOf = (fees, type) => (type === 'limit' ? fees.limitPct : fees.marketPct);
-
-// Цель сделки в процентах: выход в ноль по текущему тарифу плюс чистая прибыль.
+// Цель сделки в процентах: выход в ноль по Limit на текущем тарифе плюс чистая прибыль.
 // Снизится комиссия с ростом объёма за 30 дней — снизится и цель.
-function targetPct(fees, exitType) {
-  return (exitType === 'limit' ? fees.limitBreakevenPct : fees.marketBreakevenPct) + PARAMS.netTargetPct;
+function targetPct(fees) {
+  return fees.limitBreakevenPct + PARAMS.netTargetPct;
 }
 
 function validQuote(quote, now) {
@@ -49,12 +49,13 @@ function fillEntry(state, deal, price, now) {
   deal.size = deal.usd / price;
   deal.takeProfitPrice = price * (1 + deal.targetPct / 100);
   deal.stopPrice = price * (1 - PARAMS.stopLossPct / 100);
-  const common = { dealId: deal.id, at: now, pair: deal.pair, side: 'SELL', usd: deal.usd, status: 'WAITING' };
+  const common = { dealId: deal.id, at: now, pair: deal.pair, side: 'SELL', usd: deal.usd };
   deal.takeProfitOrderId = addOrder(state, {
-    ...common, type: deal.exitType, role: 'takeProfit', price: deal.takeProfitPrice,
-    status: deal.exitType === 'limit' ? 'OPEN' : 'WAITING',
+    ...common, type: 'limit', role: 'takeProfit', price: deal.takeProfitPrice, status: 'OPEN',
   }).id;
-  deal.stopOrderId = addOrder(state, { ...common, type: 'market', role: 'stopLoss', price: deal.stopPrice }).id;
+  deal.stopOrderId = addOrder(state, {
+    ...common, type: 'stopLimit', role: 'stopLoss', price: deal.stopPrice, status: 'WAITING',
+  }).id;
 }
 
 // Чистый результат продажи: минус комиссия покупки и комиссия продажи.
@@ -74,7 +75,7 @@ function closeDeal(state, deal, { price, ratePct, now, filledOrderId, type, role
     }
   }
   const fields = { status: 'FILLED', filledAt: now, price, usd: proceeds, feeUsd, netUsd };
-  if (filledOrderId) Object.assign(orderById(state, filledOrderId), fields);
+  if (filledOrderId) Object.assign(orderById(state, filledOrderId), fields, type ? { type } : {});
   else addOrder(state, { dealId: deal.id, at: now, pair: deal.pair, side: 'SELL', type, role, ...fields });
   state.realizedNetUsd += netUsd;
   state.paidFeesUsd += deal.entryFeeUsd + feeUsd;
@@ -89,6 +90,19 @@ function cancelEntry(state, deal, now) {
   state.deals = state.deals.filter((d) => d !== deal);
 }
 
+// Лимитка стопа исполняется, только если цена вернётся выше неё, а при падении этого
+// может не случиться. Поэтому убыток ограничен: при уходе ниже или по времени — Market.
+function manageTriggeredStop(state, deal, quote, now) {
+  const market = { price: quote.bid, ratePct: deal.marketPct, now, filledOrderId: deal.stopOrderId, type: 'market' };
+  if (quote.bid <= deal.stopPrice * (1 - PARAMS.stopLimitMaxSlipPct / 100)) {
+    closeDeal(state, deal, market);
+  } else if (quote.price > deal.stopPrice) {
+    closeDeal(state, deal, { price: deal.stopPrice, ratePct: deal.limitPct, now, filledOrderId: deal.stopOrderId });
+  } else if (now - deal.stopTriggeredAt >= PARAMS.stopLimitTimeoutMs) {
+    closeDeal(state, deal, market);
+  }
+}
+
 function manageDeal(state, deal, quote, now, status) {
   if (deal.stage === 'entry') {
     // Лимитка исполнена, только если цена прошла сквозь неё, а не коснулась:
@@ -97,13 +111,20 @@ function manageDeal(state, deal, quote, now, status) {
     else if (now - deal.placedAt >= PARAMS.entryTimeoutMs) cancelEntry(state, deal, now);
     return;
   }
-  // Стоп проверяем первым: при сомнении считаем исход худшим.
+  if (deal.stopTriggeredAt) {
+    manageTriggeredStop(state, deal, quote, now);
+    return;
+  }
+  // Стоп проверяем первым: при сомнении считаем исход худшим. Сработавший стоп
+  // выставляет лимитку на продажу, а цель снимается: монеты заняты этой лимиткой.
   if (quote.bid <= deal.stopPrice) {
-    closeDeal(state, deal, { price: quote.bid, ratePct: deal.marketPct, now, filledOrderId: deal.stopOrderId });
-  } else if (deal.exitType === 'limit' && quote.price > deal.takeProfitPrice) {
+    deal.stopTriggeredAt = now;
+    orderById(state, deal.stopOrderId).status = 'OPEN';
+    const target = orderById(state, deal.takeProfitOrderId);
+    target.status = 'CANCELLED';
+    target.closedAt = now;
+  } else if (quote.price > deal.takeProfitPrice) {
     closeDeal(state, deal, { price: deal.takeProfitPrice, ratePct: deal.limitPct, now, filledOrderId: deal.takeProfitOrderId });
-  } else if (deal.exitType === 'market' && quote.bid >= deal.takeProfitPrice) {
-    closeDeal(state, deal, { price: quote.bid, ratePct: deal.marketPct, now, filledOrderId: deal.takeProfitOrderId });
   } else if (status !== 'finishing' && now - deal.filledAt >= PARAMS.maxHoldMs) {
     // При доделывании по времени не продаём: сделка ждёт цель, а стоп ограничивает убыток.
     closeDeal(state, deal, { price: quote.bid, ratePct: deal.marketPct, now, type: 'market', role: 'timeExit' });
@@ -125,24 +146,20 @@ function nextEntryAt(state) {
 function tryOpenDeal(state, { pair, quote, now, direction, fees, orderTypes, maxDeals, maxUsd }) {
   if (!direction || direction.trend !== 'up' || !fees || !orderTypes) return;
   if (state.deals.length >= maxDeals || now < nextEntryAt(state)) return;
-  const type = orderTypes.entry;
-  const ratePct = rateOf(fees, type);
   const free = cashUsd(state) - lockedUsd(state);
-  const usd = Math.floor(Math.min(maxUsd, free / (1 + ratePct / 100)) * 100) / 100;
+  const usd = Math.floor(Math.min(maxUsd, free / (1 + fees.limitPct / 100)) * 100) / 100;
   if (usd < MIN_DEAL_USD) return;
-  const price = type === 'limit' ? quote.bid : quote.ask;
+  const price = quote.bid;
   const dealId = 'D' + state.nextId++;
   const order = addOrder(state, {
-    dealId, at: now, pair, side: 'BUY', type, role: 'entry', price, usd, status: 'OPEN',
+    dealId, at: now, pair, side: 'BUY', type: 'limit', role: 'entry', price, usd, status: 'OPEN',
   });
-  const deal = {
+  state.deals.push({
     id: dealId, pair, stage: 'entry', usd, placedAt: now, entryPrice: price,
-    entryFeeUsd: usd * ratePct / 100, entryOrderId: order.id,
-    exitType: orderTypes.takeProfit, targetPct: targetPct(fees, orderTypes.takeProfit),
+    entryFeeUsd: usd * fees.limitPct / 100, entryOrderId: order.id,
+    targetPct: targetPct(fees),
     limitPct: fees.limitPct, marketPct: fees.marketPct,
-  };
-  state.deals.push(deal);
-  if (type === 'market') fillEntry(state, deal, price, now);
+  });
   return true;
 }
 

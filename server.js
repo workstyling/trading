@@ -10126,13 +10126,16 @@ async function botQuote(pair) {
 
 function botRulesNote(mode, fees, orderTypes) {
   if (mode !== 'test') return BOT_REAL_NOTE;
-  const { netTargetPct, stopLossPct, maxHoldMs, entryTimeoutMs, entrySpacingMs } = botEngine.PARAMS;
+  const {
+    netTargetPct, stopLossPct, maxHoldMs, entryTimeoutMs, entrySpacingMs, stopLimitMaxSlipPct, stopLimitTimeoutMs,
+  } = botEngine.PARAMS;
   const target = fees && orderTypes
-    ? 'цель +' + botEngine.targetPct(fees, orderTypes.takeProfit).toFixed(2) + '% (+' + netTargetPct + '% чистыми)'
+    ? 'цель +' + botEngine.targetPct(fees).toFixed(2) + '% (+' + netTargetPct + '% чистыми)'
     : 'цель неизвестна';
   return 'Правила: вход, когда направление вверх; не исполнился за ' + (entryTimeoutMs / 60000) +
-    ' мин — снимается; ' + target + ', стоп −' + stopLossPct +
-    '%, не дольше ' + (maxHoldMs / 3600000) + ' ч. Свободные места занимаются сразу, после снятой покупки и после стопа пауза до ' +
+    ' мин — снимается; ' + target + ', стоп −' + stopLossPct + '% по Stop-Limit (ещё −' + stopLimitMaxSlipPct +
+    '% или ' + (stopLimitTimeoutMs / 60000) + ' мин без исполнения — Market), не дольше ' + (maxHoldMs / 3600000) +
+    ' ч. Свободные места занимаются сразу, после снятой покупки и после стопа пауза до ' +
     (entrySpacingMs / 60000) + ' мин. Сделки виртуальные, по настоящим ценам.';
 }
 

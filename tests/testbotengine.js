@@ -110,7 +110,7 @@ console.log('\nЦель');
   const tp = byRole(s, 'takeProfit')[0];
   ok(tp.type === 'limit' && tp.status === 'OPEN', 'цель выставлена как Limit');
   ok(near(deal.targetPct, FEES.limitBreakevenPct + PARAMS.netTargetPct), 'цель = выход в ноль по тарифу + чистая прибыль', deal.targetPct);
-  ok(near(targetPct(feeSummary(0.1, 0.2), 'limit'), feeSummary(0.1, 0.2).limitBreakevenPct + PARAMS.netTargetPct), 'ниже комиссия на большем объёме — ниже цель');
+  ok(near(targetPct(feeSummary(0.1, 0.2)), feeSummary(0.1, 0.2).limitBreakevenPct + PARAMS.netTargetPct), 'ниже комиссия на большем объёме — ниже цель');
 
   const touch = tick(s, deal.takeProfitPrice, T0 + 2000, { direction: null });
   ok(touch.deals.length === 1, 'касание цели не исполняет Limit');
@@ -131,20 +131,66 @@ console.log('\nСтоп');
 {
   const s = holding();
   const deal = s.deals[0];
-  const lost = tick(s, deal.stopPrice, T0 + 2000, { direction: null, quote: { bid: deal.stopPrice, ask: deal.stopPrice + 0.01, price: deal.stopPrice, at: T0 + 2000 } });
-  const filled = byRole(lost, 'stopLoss')[0];
-  ok(lost.deals.length === 0 && filled.status === 'FILLED' && filled.type === 'market', 'стоп закрывает по Market');
+  const stopRow = byRole(s, 'stopLoss')[0];
+  ok(stopRow.type === 'stopLimit' && stopRow.status === 'WAITING', 'стоп выставлен как Stop-Limit и ждёт цену');
+
+  const at = (price, now) => ({ direction: null, quote: { bid: price, ask: price + 0.01, price, at: now } });
+  const above = tick(s, deal.stopPrice + 0.5, T0 + 2000, { direction: null });
+  ok(above.deals[0].stopTriggeredAt === undefined, 'выше цены стопа не срабатывает');
+
+  const trig = tick(s, deal.stopPrice, T0 + 2000, at(deal.stopPrice, T0 + 2000));
+  ok(trig.deals.length === 1 && trig.deals[0].stopTriggeredAt === T0 + 2000, 'на цене стопа срабатывает, но сделка ещё открыта');
+  ok(byRole(trig, 'stopLoss')[0].status === 'OPEN', 'лимитка стопа работает');
+  ok(byRole(trig, 'takeProfit')[0].status === 'CANCELLED', 'цель снята: монеты заняты лимиткой стопа');
+
+  // Цена вернулась выше лимитки: исполнилась по Limit
+  const back = tick(trig, deal.stopPrice + 0.01, T0 + 3000, at(deal.stopPrice + 0.01, T0 + 3000));
+  const byLimit = byRole(back, 'stopLoss')[0];
+  ok(back.deals.length === 0 && byLimit.status === 'FILLED' && byLimit.type === 'stopLimit', 'цена вернулась: исполнено по Stop-Limit');
+  ok(near(byLimit.price, deal.stopPrice), 'по цене лимитки, а не по текущей');
   const proceeds = deal.size * deal.stopPrice;
-  const expected = proceeds * (1 - 0.009) - 500 - 2.5;
-  ok(near(filled.netUsd, expected, 1e-6) && filled.netUsd < 0, 'убыток считает обе комиссии, выход по Market 0.9%', filled.netUsd);
-  ok(near(filled.feeUsd, proceeds * 0.009), 'комиссия выхода по Market');
-  ok(byRole(lost, 'takeProfit')[0].status === 'CANCELLED', 'цель снята');
+  ok(near(byLimit.feeUsd, proceeds * 0.005), 'комиссия Limit 0.5%, а не Market 0.9%');
+  ok(near(byLimit.netUsd, proceeds * (1 - 0.005) - 502.5, 1e-6) && byLimit.netUsd < 0, 'убыток считает обе комиссии', byLimit.netUsd);
 
-  const gap = tick(s, deal.stopPrice * 0.9, T0 + 2000, { direction: null });
-  ok(near(byRole(gap, 'stopLoss')[0].price, deal.stopPrice * 0.9 - 0.01), 'при обвале исполняется по текущей цене, не по цене стопа');
+  // Касание цены лимитку не исполняет
+  const touch = tick(trig, deal.stopPrice, T0 + 3000, at(deal.stopPrice, T0 + 3000));
+  ok(touch.deals.length === 1, 'цена только коснулась лимитки: сделка ждёт');
 
-  const paused = tick(s, deal.stopPrice * 0.9, T0 + 2000, { status: 'paused', direction: null });
+  // Цена ушла ещё ниже: Market
+  const slip = deal.stopPrice * (1 - PARAMS.stopLimitMaxSlipPct / 100);
+  const notYet = tick(trig, slip + 0.01, T0 + 3000, at(slip + 0.01, T0 + 3000));
+  ok(notYet.deals.length === 1, 'выше предела падения ещё ждём лимитку');
+  const fell = tick(trig, slip, T0 + 3000, at(slip, T0 + 3000));
+  const byMarket = byRole(fell, 'stopLoss')[0];
+  ok(fell.deals.length === 0 && byMarket.status === 'FILLED' && byMarket.type === 'market', 'цена ушла ниже предела: продажа по Market');
+  ok(near(byMarket.price, slip) && near(byMarket.feeUsd, deal.size * slip * 0.009), 'по текущей цене, комиссия Market');
+
+  // Лимитка стоит слишком долго: Market
+  const inTime = tick(trig, deal.stopPrice - 0.5, T0 + 2000 + PARAMS.stopLimitTimeoutMs - 1, at(deal.stopPrice - 0.5, T0 + 2000 + PARAMS.stopLimitTimeoutMs - 1));
+  ok(inTime.deals.length === 1, 'до конца времени ждём лимитку');
+  const timedOut = tick(trig, deal.stopPrice - 0.5, T0 + 2000 + PARAMS.stopLimitTimeoutMs, at(deal.stopPrice - 0.5, T0 + 2000 + PARAMS.stopLimitTimeoutMs));
+  ok(timedOut.deals.length === 0 && byRole(timedOut, 'stopLoss')[0].type === 'market', 'время вышло: продажа по Market');
+
+  // После срабатывания цель больше не работает
+  const late = tick(trig, deal.takeProfitPrice + 1, T0 + 3000, at(deal.takeProfitPrice + 1, T0 + 3000));
+  const row = byRole(late, 'stopLoss')[0];
+  ok(row.status === 'FILLED' && near(row.price, deal.stopPrice) && byRole(late, 'takeProfit')[0].status === 'CANCELLED', 'резкий отскок: исполняется лимитка стопа, а не снятая цель');
+
+  // Сильный обвал за один шаг: сначала срабатывает, следующий шаг продаёт
+  const crash = tick(tick(s, deal.stopPrice * 0.9, T0 + 2000, { direction: null }), deal.stopPrice * 0.9, T0 + 22000, { direction: null });
+  ok(crash.deals.length === 0 && byRole(crash, 'stopLoss')[0].type === 'market', 'обвал: за два шага продано по Market');
+
+  const paused = tick(tick(s, deal.stopPrice * 0.9, T0 + 2000, { status: 'paused', direction: null }), deal.stopPrice * 0.9, T0 + 22000, { status: 'paused', direction: null });
   ok(paused.deals.length === 0, 'на паузе стоп продолжает работать');
+
+  // Стоп на время: сработавшая лимитка не продаётся по таймеру сделки раньше своего времени
+  const longHold = { ...JSON.parse(JSON.stringify(trig)) };
+  const atLimit = tick(longHold, deal.stopPrice, T0 + 2000 + 1000, at(deal.stopPrice, T0 + 3000));
+  ok(!byRole(atLimit, 'timeExit').length, 'продажи по времени сделки у сработавшего стопа нет');
+
+  const closed = closeAll(trig, quote(deal.stopPrice, T0 + 3000), T0 + 3000);
+  ok(closed.deals.length === 0 && byRole(closed, 'stopButton').length === 1, 'кнопка «Остановить» закрывает и сработавший стоп');
+  ok(byRole(closed, 'stopLoss')[0].status === 'CANCELLED' && byRole(closed, 'stopLoss')[0].filledAt === null, 'его лимитка снята, не исполнена');
 }
 
 console.log('\nВыход по времени');
@@ -157,21 +203,6 @@ console.log('\nВыход по времени');
   const row = byRole(after, 'timeExit')[0];
   ok(after.deals.length === 0 && row && row.type === 'market' && row.status === 'FILLED', 'по пределу времени продажа по Market');
   ok(byRole(after, 'takeProfit')[0].status === 'CANCELLED' && byRole(after, 'stopLoss')[0].status === 'CANCELLED', 'цель и стоп сняты');
-}
-
-console.log('\nВход по Market');
-{
-  const types = { entry: 'market', takeProfit: 'market', stopLoss: 'market', spreadKnown: true, savingPct: 0 };
-  const s = tick(fresh(), 100, T0, { orderTypes: types });
-  const entry = byRole(s, 'entry')[0];
-  ok(entry.status === 'FILLED' && entry.type === 'market', 'исполнен сразу');
-  ok(near(entry.price, 100.01), 'по ask, с переплатой спреда');
-  ok(near(entry.feeUsd, 4.5), 'комиссия Market 0.9% = $4.50');
-  const tp = s.deals[0].takeProfitPrice;
-  ok(byRole(s, 'takeProfit')[0].status === 'WAITING', 'цель ждёт цену');
-  const won = tick(s, tp + 0.02, T0 + 1000, { orderTypes: types, direction: null });
-  const filled = byRole(won, 'takeProfit')[0];
-  ok(won.deals.length === 0 && near(filled.price, tp + 0.01), 'цель Market исполняется по bid');
 }
 
 console.log('\nРазмер и число сделок');
@@ -199,7 +230,9 @@ console.log('\nРазмер и число сделок');
   // После стопа пауза
   let lost = holding();
   const stopped = lost.deals[0].stopPrice;
-  lost = tick(lost, stopped * 0.99, T0 + 3000);
+  lost = tick(lost, stopped * 0.9, T0 + 2500);
+  ok(lost.deals.length === 1 && byRole(lost, 'entry').length === 1, 'сработавший стоп занимает место, новой покупки нет');
+  lost = tick(lost, stopped * 0.9, T0 + 3000);
   ok(lost.deals.length === 0 && byRole(lost, 'stopLoss')[0].status === 'FILLED', 'после стопа новой покупки в том же шаге нет');
   ok(nextEntryAt(lost) === T0 + 3000 + PARAMS.entrySpacingMs, 'пауза считается от исполнения стопа');
   ok(tick(lost, 100, T0 + 3000 + PARAMS.entrySpacingMs - 1).deals.length === 0, 'до конца паузы бот ждёт');
@@ -256,7 +289,7 @@ console.log('\nСделки парами');
   const row = b.open[0];
   ok(row.buy.status === 'FILLED', 'покупка исполнена');
   ok(row.target.status === 'OPEN' && row.target.type === 'limit', 'цель работает');
-  ok(row.stop.status === 'WAITING' && row.stop.type === 'market', 'стоп ждёт цену');
+  ok(row.stop.status === 'WAITING' && row.stop.type === 'stopLimit', 'стоп ждёт цену');
   const size = 500 / s.deals[0].entryPrice;
   const bid = 100 - 0.01;
   ok(near(row.nowNetUsd, size * bid * (1 - 0.009) - 502.5), 'результат сейчас: продажа по bid, Market, обе комиссии', row.nowNetUsd);
@@ -280,7 +313,8 @@ console.log('\nСделки парами');
   ok(tick(old, 100, T0).deals.length === 1, 'и не мешает новому входу');
 
   const later = T0 + 3000 + PARAMS.entrySpacingMs;
-  const twoPairs = tick(tick(s, s.deals[0].stopPrice * 0.9, T0 + 3000, { direction: null }), 100, later);
+  const crashed = tick(tick(s, s.deals[0].stopPrice * 0.9, T0 + 2500, { direction: null }), s.deals[0].stopPrice * 0.9, T0 + 3000, { direction: null });
+  const twoPairs = tick(crashed, 100, later);
   const e = dealViews(twoPairs, quote(100, later), later);
   ok(e.closed.length === 1 && e.open.length === 1, 'закрытая и новая открытая сделка показаны раздельно');
 }
@@ -310,7 +344,7 @@ console.log('\nОстановить и доделать');
   const won = run(f, bought.takeProfitPrice + 1, T0 + 7000);
   ok(won.deals.length === 0 && won.realizedNetUsd > 0, 'цель закрывает сделку в плюс', won.realizedNetUsd);
 
-  const lost = run(f, bought.stopPrice * 0.99, T0 + 7000);
+  const lost = run(run(f, bought.stopPrice * 0.9, T0 + 7000), bought.stopPrice * 0.9, T0 + 8000);
   ok(lost.deals.length === 0 && lost.realizedNetUsd < 0, 'стоп продолжает ограничивать убыток', lost.realizedNetUsd);
 
   ok(beginFinish(tick(fresh(), 100, T0), T0 + 1000).finishing === false, 'только неисполненные покупки: доделывать нечего');
@@ -345,7 +379,8 @@ console.log('\nОстальное');
   ok(JSON.stringify(s) === before, 'шаг не меняет исходное состояние');
   const again = restoreState(JSON.parse(JSON.stringify(holding())));
   ok(again.deals.length === 1 && again.nextId > 1, 'сделка переживает запись в файл');
-  const after = tick(again, again.deals[0].stopPrice * 0.5, T0 + 3000, { direction: null });
+  const low = again.deals[0].stopPrice * 0.5;
+  const after = tick(tick(again, low, T0 + 3000, { direction: null }), low, T0 + 4000, { direction: null });
   ok(after.deals.length === 0, 'и продолжает вестись после перезапуска');
   const ids = holding().orders.map((o) => o.id);
   ok(new Set(ids).size === ids.length, 'номера ордеров не повторяются');

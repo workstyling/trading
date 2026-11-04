@@ -88,17 +88,25 @@ console.log('\nВыбор типа ордера');
   }
 
   const yours = chooseOrderTypes(feeSummary(0.5, 0.9), 0.2);
-  ok(yours.entry === 'limit' && yours.takeProfit === 'limit', 'Limit 0.5% против Market 0.9%: вход и тейк Limit');
-  ok(yours.stopLoss === 'market', 'стоп Market');
+  ok(yours.entry === 'limit' && yours.takeProfit === 'limit', 'покупка и цель Limit');
+  ok(yours.stopLoss === 'stopLimit', 'стоп Stop-Limit');
   ok(near(yours.savingPct, 0.5), 'экономия: 0.9 + половина спреда 0.1 минус 0.5');
-  ok(chooseOrderTypes(feeSummary(0.5, 0.9), null).entry === 'limit', 'неизвестный спред: Limit всё равно дешевле по ставке');
-  ok(chooseOrderTypes(feeSummary(0.5, 0.9), null).spreadKnown === false, 'и это отмечено');
-  ok(chooseOrderTypes(feeSummary(0.5, 0.5), 0).entry === 'limit', 'равная цена: Limit');
-  ok(chooseOrderTypes(feeSummary(0.5, 0.4), 0).entry === 'market', 'Market дешевле: Market');
-  ok(chooseOrderTypes(feeSummary(0.5, 0.4), 0.4).entry === 'limit', 'широкий спред делает Market дороже: Limit');
-  ok(chooseOrderTypes(feeSummary(0.5, 0.4), 0).stopLoss === 'market', 'стоп Market при любых ставках');
-  ok(chooseOrderTypes(feeSummary(0.5, 0.4), null) === null, 'исход решает неизвестный спред: не выбираем');
-  ok(chooseOrderTypes(null, 0.1) === null, 'комиссии неизвестны: не выбираем');
+  const noSpread = chooseOrderTypes(feeSummary(0.5, 0.9), null);
+  ok(noSpread.entry === 'limit' && noSpread.spreadKnown === false && near(noSpread.savingPct, 0.4), 'неизвестный спред: экономия только по ставке, и это отмечено');
+  const odd = chooseOrderTypes(feeSummary(0.5, 0.4), 0);
+  ok(odd.entry === 'limit' && near(odd.savingPct, -0.1), 'Limit дороже: тип тот же, экономия отрицательная');
+  ok(chooseOrderTypes(null, 0.1) === null, 'комиссии неизвестны: не считаем');
+
+  const old = restoreState({
+    orders: [
+      { id: 'A', role: 'stopLoss', type: 'market', status: 'WAITING' },
+      { id: 'B', role: 'stopLoss', type: 'market', status: 'FILLED' },
+      { id: 'C', role: 'takeProfit', type: 'limit', status: 'OPEN' },
+    ],
+  });
+  ok(old.orders[0].type === 'stopLimit', 'ожидающий стоп открытой сделки переходит на Stop-Limit');
+  ok(old.orders[1].type === 'market', 'исполненный стоп в истории не меняется');
+  ok(old.orders[2].type === 'limit', 'цель не меняется');
 }
 
 console.log('\nНаправление');

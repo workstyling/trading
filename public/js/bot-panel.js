@@ -71,12 +71,13 @@
 
   function orderTypesText(view) {
     const types = view.orderTypes;
-    if (!types) return 'Тип ордера не выбран: не хватает данных.';
-    const isLimit = types.entry === 'limit';
-    return 'Ордера: вход и фиксация прибыли ' + (isLimit ? 'Limit' : 'Market') +
-      ', дешевле ' + (isLimit ? 'Market' : 'Limit') + ' на ' + pct(types.savingPct) + ' за сторону ' +
-      (types.spreadKnown ? 'с учётом спреда' : 'без учёта спреда') +
-      '. Стоп Market: выйти важнее цены.';
+    if (!types) return 'Комиссии неизвестны: экономию посчитать нельзя.';
+    const saving = types.savingPct > 0
+      ? ', дешевле Market на ' + pct(types.savingPct) + ' за сторону ' +
+        (types.spreadKnown ? 'с учётом спреда' : 'без учёта спреда')
+      : '';
+    return 'Ордера: покупка и цель Limit' + saving +
+      '. Стоп Stop-Limit: если цена не вернётся к лимитке, продажа по Market.';
   }
 
   function renderDirection(view) {
@@ -117,7 +118,8 @@
   const CLOSE_REASONS = {
     takeProfit: 'Цель', stopLoss: 'Стоп', timeExit: 'По времени', stopButton: 'Кнопка Стоп',
   };
-  const typeName = (type) => (type === 'limit' ? 'Limit' : 'Market');
+  const ORDER_TYPES = { limit: 'Limit', market: 'Market', stopLimit: 'Stop-Limit' };
+  const typeName = (type) => ORDER_TYPES[type] || type;
 
   const moneyOrDash = (v) => (Number.isFinite(v) ? usd(v) : '—');
 
