@@ -4396,12 +4396,14 @@ async function loadVolume30d() {
   if (!Number.isFinite(totalUsd) || totalUsd < 0 || !Number.isFinite(totalFees) || totalFees < 0) {
     throw new Error('Coinbase transaction summary returned invalid volume data');
   }
+  // Округление убирает хвост дробной арифметики: 0.009 * 100 даёт 0.8999999999999999.
+  const ratePct = (rate) => (Number.isFinite(rate) && rate >= 0 ? Math.round(rate * 1e8) / 1e6 : null);
   const out = {
     totalUsd: Math.round(totalUsd * 100) / 100,
     totalFees: Math.round(totalFees * 100) / 100,
     feeTier: String(summary.fee_tier?.pricing_tier || ''),
-    makerFeePct: Number.isFinite(makerRate) && makerRate >= 0 ? makerRate * 100 : null,
-    takerFeePct: Number.isFinite(takerRate) && takerRate >= 0 ? takerRate * 100 : null,
+    makerFeePct: ratePct(makerRate),
+    takerFeePct: ratePct(takerRate),
     source: 'coinbase-transaction-summary',
     complete: true,
   };
