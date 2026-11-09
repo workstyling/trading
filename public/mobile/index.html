@@ -7316,6 +7316,7 @@
             x.dayFallPct == null ? (x.dayCoverH != null ? 'Падение от пика не считано: истории всего ' + x.dayCoverH + ' ч' : '')
               : 'Падение от суточного пика: ' + x.dayFallPct + '%',
             x.spreadPct == null ? 'Спред неизвестен' : 'Спред ' + x.spreadPct + '%',
+            recoveryCapVolNote(x),
             recoveryHeldNote(x),
             recoveryPumpNote(x),
             edge.why,
@@ -7340,7 +7341,7 @@
             '<span style="color:' + rowColor + ';font-weight:700;font-size:12px;">' + safe + '</span>' + swingMark(x) + recoveryPumpMark(x) + (peak ? '<span style="margin-left:4px;font-size:8.5px;font-weight:800;color:' + rowColor + ';border:1px solid ' + rowColor + ';border-radius:4px;padding:0 3px;">максимум</span>' : '') +
             '<span data-bookshare="' + safe + '"></span>' +
             '<span style="color:var(--t2);font-size:9px;margin-left:5px;white-space:nowrap;">$' + price(x.price) + '</span>' +
-            '<br><span style="color:var(--t2);font-size:9px;">' + sub + '<br>' + conditions + '</span></td>' +
+            '<br><span style="color:var(--t2);font-size:9px;">' + sub + '<br>' + conditions + '<br>' + recoveryCapVol(x) + '</span></td>' +
             num((edge.above ? String.fromCharCode(9650) + ' ' : '') + rec.text +
               (rec.ofCoin === false ? '<small style="display:block;font-size:8px;font-weight:400;">группа</small>' : ''),
               rowColor, true) +

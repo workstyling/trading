@@ -6219,7 +6219,7 @@ function microScalpEntryValue(row) {
 // минуты дают 0.54 — треть устаревания снимается почти даром.
 const ENTRY_SCAN_INTERVAL_MS = 2 * 60 * 1000;
 const ENTRY_SCAN_MAX_COINS = 60;
-const entryScan = { results: [], at: 0, total: 0, running: false, failedAt: 0, market: null, missed: [], missedDetails: {} };
+const entryScan = { results: [], at: 0, total: 0, running: false, failedAt: 0, market: null, missed: [], missedDetails: {}, fees: null };
 
 // ЛЕНТА СКАНА: то, что по свечам задним числом не восстановить.
 //
@@ -6902,6 +6902,10 @@ async function runEntryScan() {
       } : null;
     }
     entryScan.results = rows;
+    // Комиссии счёта для строки окупаемости: цель +0.30% подобрана под
+    // старый тариф, и на нынешнем она может не покрывать даже круг Limit.
+    entryScan.fees = await botFees();
+    refreshCbMarketCaps(rows.map(r => r.coin));
     entryScan.total = universe.length;
     entryScan.missed = missed;
     entryScan.missedDetails = missedDetails;
@@ -7317,6 +7321,68 @@ app.get('/api/entry-paper', (req, res) => {
     })),
   });
 });
+// КАПИТАЛИЗАЦИЯ ПО COINBASE — справка в строке панели входа.
+//
+// Биржевой API Coinbase капитализацию не отдаёт, её отдаёт публичный каталог
+// активов (/v2/assets/search). Первая страница по рангу покрывает крупные
+// монеты; остальные ищутся по имени. Дальше первой страницы каталог прыгает по
+// рангам и повторяет записи, поэтому по страницам не идём. Тикер иногда
+// принадлежит другому проекту: при расхождении цены больше чем в полтора раза
+// капитализация не показывается.
+//
+// Только для экрана: ни отбор, ни разрешение покупки её не читают.
+const CB_ASSETS_URL = 'https://api.coinbase.com/v2/assets/search?base=USD&include_prices=true&resolution=day';
+const CB_MCAP_TTL_MS = 60 * 60 * 1000;
+const cbMcap = new Map();   // монета -> { mc, px, at }; mc null — не найдена, не искать до TTL
+let cbMcapRunning = false;
+
+async function cbAssets(query) {
+  const r = await fetch(CB_ASSETS_URL + query,
+    { headers: { 'User-Agent': 'trading-app/1.0' }, signal: AbortSignal.timeout(15000) });
+  if (!r.ok) throw new Error('каталог Coinbase ответил ' + r.status);
+  const j = await r.json();
+  return Array.isArray(j.data) ? j.data : [];
+}
+
+function cbMcapTake(coin, list, now) {
+  const best = list
+    .filter(a => a && a.symbol === coin && a.listed === true && Number(a.market_cap) > 0 && Number(a.latest) > 0)
+    .sort((a, b) => (Number(a.rank) || 1e9) - (Number(b.rank) || 1e9))[0];
+  if (best) cbMcap.set(coin, { mc: Number(best.market_cap), px: Number(best.latest), at: now });
+  return !!best;
+}
+
+async function refreshCbMarketCaps(coins) {
+  if (cbMcapRunning) return;
+  cbMcapRunning = true;
+  try {
+    const now = Date.now();
+    const stale = coins.filter(c => !(now - ((cbMcap.get(c) || {}).at || 0) < CB_MCAP_TTL_MS));
+    if (!stale.length) return;
+    const top = await cbAssets('&filter=listed&sort=rank&order=asc&limit=100');
+    const left = stale.filter(c => !cbMcapTake(c, top, now));
+    for (const coin of left.slice(0, 40)) {
+      try {
+        const found = cbMcapTake(coin, await cbAssets('&limit=10&query=' + encodeURIComponent(coin.toLowerCase())), now);
+        if (!found) cbMcap.set(coin, { mc: null, px: null, at: now });
+      } catch { }
+      await new Promise(r => setTimeout(r, 300));
+    }
+  } catch (e) {
+    console.warn('[mcap-cb]', e.message);
+  } finally {
+    cbMcapRunning = false;
+  }
+}
+
+function cbMarketCap(coin, price) {
+  const m = cbMcap.get(coin);
+  if (!m || !(m.mc > 0) || !(m.px > 0) || !(Number(price) > 0)) return null;
+  if (Date.now() - m.at > 6 * CB_MCAP_TTL_MS) return null;
+  if (Math.max(price / m.px, m.px / price) > 1.5) return null;
+  return Math.round(m.mc);
+}
+
 function entryScanResponse(now = Date.now()) {
   const response = {
     success: true,
@@ -7356,8 +7422,13 @@ function entryScanResponse(now = Date.now()) {
     intervalMs: ENTRY_SCAN_INTERVAL_MS,
     serverNow: now,
     market: entryScan.market,
+    // Комиссии счёта; null — неизвестны, и окупаемость цели не проверить.
+    fees: entryScan.fees
+      ? { limitPct: entryScan.fees.limitPct, marketPct: entryScan.fees.marketPct, tier: entryScan.fees.tier || '' }
+      : null,
   };
-  response.results = recoverySignalRows(entryScan.results, response);
+  response.results = recoverySignalRows(
+    entryScan.results.map(row => ({ ...row, mcap: cbMarketCap(row.coin, row.price) })), response);
   return response;
 }
 app.get('/api/entry-scan', (req, res) => res.json(entryScanResponse()));

@@ -389,7 +389,8 @@
           (buy.length < 5 ? ' клетки' : ' клеток')) + '.</b> ' +
         'Плюс после комиссий модели и на поиске, и на проверке (' + escapeHtml(String(net.from)) + ' — ' +
         escapeHtml(String(net.to)) + '). В таблице такие строки помечены словом «брать» с горизонтом и целью. ' +
-        'Остальные строки — наблюдение. ' + (recoveryScanFresh(scan) ? '' : 'Скан не готов или устарел: сигналы покупки отключены.'),
+        'Остальные строки — наблюдение. ' + (recoveryScanFresh(scan) ? '' : 'Скан не готов или устарел: сигналы покупки отключены.') +
+        recoveryFeeLine(scan),
         recoveryScanFresh(scan) ? 'Проверку прошли группы: ' + buy.length : 'Скан устарел — сигналы покупки отключены');
     }
     return box('#ff9f9f', 'rgba(255,107,107,0.35)', 'rgba(255,107,107,0.10)',
@@ -398,8 +399,8 @@
       pct(net.control) + '</b> у случайного входа. Из ' + net.modes + ' режимов (горизонты 1/4/12/24 ч) ' +
       (okModes ? 'окупились ' + okModes : 'не окупился <b>ни один</b>') +
       '. Ни одна клетка не прошла порог покупки. Это список наблюдения, а не список покупки.' +
-      recoveryRegimeLine(scan),
-      'Покупки не подтверждены. Оранжевые — наблюдение.');
+      recoveryFeeLine(scan) + recoveryRegimeLine(scan),
+      'Покупки не подтверждены. Оранжевые — наблюдение.' + recoveryFeeShort(scan));
   }
   // Цвета объясняются один раз — в блоке правил, где рядом нарисованы сами
   // рамки. Здесь они дублировались словами, и над таблицей из двенадцати
@@ -600,6 +601,50 @@
       (passed ? 'разрешено групп: ' + passed + ' — их строки помечены «брать», пока рынок падает.'
         : 'ни одна группа не окупает комиссии дважды — на падении по этому списку не входить.');
   }
+  // MCAP И VOL24 под названием монеты (обе вёрстки). Капитализация — из
+  // каталога Coinbase, объём — оборот пары к USD на самой бирже Coinbase за
+  // скользящие 24 часа. Справка: ни отбор, ни разрешение покупки их не читают.
+  function recoveryMoney(value) {
+    if (!finite(value) || !(Number(value) > 0)) return '—';
+    const v = Number(value);
+    return '$' + (v >= 1e12 ? (v / 1e12).toFixed(2) + 'T' : v >= 1e9 ? (v / 1e9).toFixed(2) + 'B'
+      : v >= 1e6 ? (v / 1e6).toFixed(1) + 'M' : v >= 1e3 ? Math.round(v / 1e3) + 'K' : String(Math.round(v)));
+  }
+  function recoveryCapVol(row) {
+    const part = (label, value) => '<span style="display:inline-block;white-space:nowrap;">' + label + ' ' + recoveryMoney(value) + '</span>';
+    return part('MCap', row && row.mcap) + ' · ' + part('Vol24', row && row.vol24);
+  }
+  function recoveryCapVolNote(row) {
+    const cap = row && finite(row.mcap) && Number(row.mcap) > 0;
+    return 'Капитализация (каталог Coinbase): ' + (cap ? recoveryMoney(row.mcap) : 'не найдена или тикер у другого проекта') + '\n' +
+      'Объём на Coinbase за 24 ч, пара к USD: ' + recoveryMoney(row && row.vol24);
+  }
+  // КОМИССИЯ СЧЁТА ПРОТИВ ЦЕЛИ. Цель +0.30% подбиралась под комиссию модели
+  // 0.075% / 0.15%. На тарифе, где круг Limit дороже цели, даже дошедшая до
+  // цели сделка закрывается в минус — это должно быть видно в главной строке.
+  function recoveryFeeLine(scan) {
+    const f = scan && scan.fees;
+    if (!f || !finite(f.limitPct) || !finite(f.marketPct)) {
+      return ' Комиссия счёта неизвестна: окупается ли цель, не проверить.';
+    }
+    const num = v => String(Math.round(Number(v) * 1000) / 1000);
+    const round = Number(f.limitPct) * 2;
+    const net = scan.entryNet;
+    const target = net && finite(net.target) ? Number(net.target) : null;
+    const text = ' Комиссия счёта сейчас: Limit ' + num(f.limitPct) + '%, Market ' + num(f.marketPct) + '%' +
+      (f.tier ? ' (тариф ' + escapeHtml(f.tier) + ')' : '') + ', круг Limit ' + num(round) + '%.';
+    if (target == null || round < target) return text;
+    return text + ' <b>Цель +' + num(target) + '% меньше комиссии за круг: даже дошедшая до цели сделка закрывается в минус ' +
+      'примерно на ' + num(round - target) + '%.</b>';
+  }
+  // То же коротко — для видимой строки над таблицей, без раскрытия подробностей.
+  function recoveryFeeShort(scan) {
+    const f = scan && scan.fees;
+    const net = scan && scan.entryNet;
+    if (!f || !finite(f.limitPct) || !net || !finite(net.target)) return '';
+    const round = Math.round(Number(f.limitPct) * 2 * 1000) / 1000;
+    return round >= Number(net.target) ? ' Цель +' + Number(net.target) + '% меньше комиссии за круг ' + round + '%.' : '';
+  }
   // РАЗГОН ЗА МЕСЯЦ — пометка риска рядом с названием монеты (обе вёрстки).
   // Рейтинг смотрит сутки и не видит, что монета перед этим выросла в разы и
   // может вернуться к уровню до разгона. Пометка ничего не разрешает и не
@@ -620,7 +665,7 @@
       'до уровня до разгона ' + p.toBasePct + '%. Рейтинг смотрит только сутки и этот риск не учитывает. ' +
       'Это пометка риска, её доходность не проверялась.';
   }
-  const api = { renderEntryJournal, recoveryPumpMark, recoveryPumpNote, recoveryRegimeLine, renderRecoveryStatus, renderRecoveryLegend, renderRecoveryNet, recoveryObservation,
+  const api = { renderEntryJournal, recoveryPumpMark, recoveryPumpNote, recoveryCapVol, recoveryCapVolNote, recoveryFeeLine, recoveryRegimeLine, renderRecoveryStatus, renderRecoveryLegend, renderRecoveryNet, recoveryObservation,
     recoveryVerdict, recoveryDayChange, recoveryBaseline, recoveryEdge, recoveryOrder, recoveryPeak, recoveryPeakMark, renderRecoveryTieNote, recoveryBuyCell,
     recoveryFresh, recoveryHeldNote,
     recoverySignalRows, renderRecoveryRules, recoveryRowMark, renderRecoveryGroups,
