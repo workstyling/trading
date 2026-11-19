@@ -88,12 +88,28 @@ console.log('\nСервер не теряет сигнал за пределам
     ENTRY_FREQ_RANK: {},
     ENTRY_GATE_FALL: 3, ENTRY_GATE_SPREAD: 0.3, ENTRY_SCAN_INTERVAL_MS: 120000,
     ENTRY_FREQ_RANK: {}, ENTRY_PULLBACK: {}, ENTRY_REGIME: {}, recheckStamp: () => ({}),
-    cbMarketCap: () => null };
+    cbMarketCap: () => 1e12, ENTRY_MIN_MCAP: 500e6, ENTRY_MIN_VOL24: 3e6 };
+  candidates.forEach(c => { c.vol24 = 5e6; });
   vm.createContext(ctx);
   vm.runInContext(source.slice(start, end), ctx);
   const response = ctx.entryScanResponse(now);
   ok(response.results.length === candidates.length && response.results[0].coin === 'BUY', 'реальный обработчик отдаёт весь скан, покупка идёт первой');
   ok(ctx.entryScanResponse(now + 300001).results.every(r => !r.buySignal), 'реальный обработчик повторно проверяет свежесть при каждом запросе');
+
+  // Порог по размеру: MCap от $500M и Vol24 от $3M; неизвестная капитализация не проходит.
+  const caps = { BIG: 2e9, EDGE: 500e6, SMALL: 499e6, THIN: 2e9, NOCAP: null, BUY: 1e9 };
+  ctx.cbMarketCap = coin => (coin in caps ? caps[coin] : 1e12);
+  ctx.entryScan = { at: now, results: [
+    row({ coin: 'BIG', vol24: 3e6, dayFallPct: 4 }), row({ coin: 'EDGE', vol24: 10e6, dayFallPct: 4 }),
+    row({ coin: 'SMALL', vol24: 10e6, dayFallPct: 4 }), row({ coin: 'THIN', vol24: 2.99e6, dayFallPct: 4 }),
+    row({ coin: 'NOCAP', vol24: 50e6, dayFallPct: 4 }), row({ coin: 'NOVOL', vol24: null, dayFallPct: 4 }),
+    row({ coin: 'BUY', vol24: 4e6 }),
+  ] };
+  const sized = ctx.entryScanResponse(now);
+  const shown = sized.results.map(r => r.coin).sort().join(',');
+  ok(shown === 'BIG,BUY,EDGE', 'проходят только MCap ≥ $500M и Vol24 ≥ $3M, границы включены: ' + shown);
+  ok(sized.sizeGate.hidden === 4 && sized.sizeGate.unknownMcap === 1, 'ответ говорит, сколько скрыто и у скольких капитализация неизвестна');
+  ok(sized.results[0].coin === 'BUY' && sized.results[0].buySignal === true, 'порог не мешает разрешённой монете идти первой');
 }
 
 console.log('\nВердикт и план выхода');

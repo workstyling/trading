@@ -608,7 +608,22 @@
     if (!finite(value) || !(Number(value) > 0)) return '—';
     const v = Number(value);
     return '$' + (v >= 1e12 ? (v / 1e12).toFixed(2) + 'T' : v >= 1e9 ? (v / 1e9).toFixed(2) + 'B'
-      : v >= 1e6 ? (v / 1e6).toFixed(1) + 'M' : v >= 1e3 ? Math.round(v / 1e3) + 'K' : String(Math.round(v)));
+      : v >= 1e6 ? (v / 1e6).toFixed(1).replace(/\.0$/, '') + 'M' : v >= 1e3 ? Math.round(v / 1e3) + 'K' : String(Math.round(v)));
+  }
+  // ПОРОГ ПО РАЗМЕРУ МОНЕТЫ над таблицей (обе вёрстки): что отсечено и почему.
+  function renderRecoverySizeGate(scan) {
+    const g = scan && scan.sizeGate;
+    if (!g || !finite(g.minMcap) || !finite(g.minVol24)) return '';
+    const hidden = Number(g.hidden) || 0;
+    const unknown = Number(g.unknownMcap) || 0;
+    return '<div style="color:var(--t2);font-size:10px;margin-bottom:6px;">Только MCap от ' + recoveryMoney(g.minMcap) +
+      ' и Vol24 от ' + recoveryMoney(g.minVol24) +
+      (hidden ? ' · скрыто ' + hidden + (unknown ? ', из них без известной капитализации ' + unknown : '') : '') + '</div>';
+  }
+  function recoveryEmptyText(scan) {
+    if (scan && scan.staleSince) return 'Обновление не удалось; сигналы покупки отключены. Ожидается следующий скан.';
+    const hidden = scan && scan.sizeGate && Number(scan.sizeGate.hidden);
+    return hidden ? 'Порог MCap и Vol24 не прошла ни одна из ' + hidden + ' монет скана.' : 'Первый скан после запуска…';
   }
   function recoveryCapVol(row) {
     const part = (label, value) => '<span style="display:inline-block;white-space:nowrap;">' + label + ' ' + recoveryMoney(value) + '</span>';
@@ -665,7 +680,7 @@
       'до уровня до разгона ' + p.toBasePct + '%. Рейтинг смотрит только сутки и этот риск не учитывает. ' +
       'Это пометка риска, её доходность не проверялась.';
   }
-  const api = { renderEntryJournal, recoveryPumpMark, recoveryPumpNote, recoveryCapVol, recoveryCapVolNote, recoveryFeeLine, recoveryRegimeLine, renderRecoveryStatus, renderRecoveryLegend, renderRecoveryNet, recoveryObservation,
+  const api = { renderEntryJournal, recoveryPumpMark, recoveryPumpNote, recoveryCapVol, recoveryCapVolNote, recoveryFeeLine, renderRecoverySizeGate, recoveryEmptyText, recoveryRegimeLine, renderRecoveryStatus, renderRecoveryLegend, renderRecoveryNet, recoveryObservation,
     recoveryVerdict, recoveryDayChange, recoveryBaseline, recoveryEdge, recoveryOrder, recoveryPeak, recoveryPeakMark, renderRecoveryTieNote, recoveryBuyCell,
     recoveryFresh, recoveryHeldNote,
     recoverySignalRows, renderRecoveryRules, recoveryRowMark, renderRecoveryGroups,

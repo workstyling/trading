@@ -42,4 +42,14 @@ assert.ok(!summary(view.renderRecoveryNet({ ...netScan, fees: { limitPct: 0.075,
 assert.ok(view.recoveryFeeLine(scan(null)).includes('неизвестна'), 'нет данных — так и сказано');
 assert.ok(view.recoveryFeeLine(scan({ limitPct: null, marketPct: 0.9 })).includes('неизвестна'), 'частичные данные — тоже неизвестно');
 
+// Порог по размеру над таблицей и пустой список после порога.
+const gate = { minMcap: 500e6, minVol24: 3e6, hidden: 5, unknownMcap: 1 };
+const gateLine = view.renderRecoverySizeGate({ sizeGate: gate });
+assert.ok(gateLine.includes('Только MCap от $500M и Vol24 от $3M'), 'порог назван числами: ' + gateLine);
+assert.ok(gateLine.includes('скрыто 5, из них без известной капитализации 1'), 'видно, сколько отсечено');
+assert.equal(view.renderRecoverySizeGate({}), '', 'без порога строки нет');
+assert.ok(view.recoveryEmptyText({ sizeGate: gate }).includes('не прошла ни одна из 5'), 'пустой список объяснён порогом');
+assert.ok(view.recoveryEmptyText({ sizeGate: { ...gate, hidden: 0 } }).includes('Первый скан'), 'без скана — прежний текст');
+assert.ok(view.recoveryEmptyText({ staleSince: 1, sizeGate: gate }).includes('Обновление не удалось'), 'сбой скана важнее порога');
+
 console.log('testcapvol: ok');

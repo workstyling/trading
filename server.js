@@ -7383,6 +7383,15 @@ function cbMarketCap(coin, price) {
   return Math.round(m.mc);
 }
 
+// Порог панели входа по размеру монеты: в список попадают только монеты с
+// капитализацией от $500M и оборотом пары к USD на Coinbase от $3M за сутки.
+// Капитализация неизвестна (каталог не ответил, тикер у другого проекта) —
+// монета не проходит: отсутствие данных здесь запрет, а не разрешение.
+// Журнал сигналов и его контрольная группа считаются по всему скану, как и
+// раньше: порог меняет то, что предлагается к покупке, а не сам замер.
+const ENTRY_MIN_MCAP = 500e6;
+const ENTRY_MIN_VOL24 = 3e6;
+
 function entryScanResponse(now = Date.now()) {
   const response = {
     success: true,
@@ -7427,8 +7436,14 @@ function entryScanResponse(now = Date.now()) {
       ? { limitPct: entryScan.fees.limitPct, marketPct: entryScan.fees.marketPct, tier: entryScan.fees.tier || '' }
       : null,
   };
-  response.results = recoverySignalRows(
-    entryScan.results.map(row => ({ ...row, mcap: cbMarketCap(row.coin, row.price) })), response);
+  const sized = entryScan.results.map(row => ({ ...row, mcap: cbMarketCap(row.coin, row.price) }));
+  const kept = sized.filter(row => Number(row.mcap) >= ENTRY_MIN_MCAP && Number(row.vol24) >= ENTRY_MIN_VOL24);
+  response.sizeGate = {
+    minMcap: ENTRY_MIN_MCAP, minVol24: ENTRY_MIN_VOL24,
+    hidden: sized.length - kept.length,
+    unknownMcap: sized.filter(row => row.mcap == null).length,
+  };
+  response.results = recoverySignalRows(kept, response);
   return response;
 }
 app.get('/api/entry-scan', (req, res) => res.json(entryScanResponse()));

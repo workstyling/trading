@@ -7230,10 +7230,10 @@
           // Отвалившийся скан обязан быть видимым: устаревший список выглядит
           // рабочим, и по нему можно купить по цене, которой уже нет.
           (j.staleSince ? '<span style="color:#ff6b6b;font-weight:700;"> · биржа не ответила, список устарел</span>' : '') +
-          '</span></div>' + renderRecoveryMissing(j);
+          '</span></div>' + renderRecoveryMissing(j) + renderRecoverySizeGate(j);
         if (!rows.length) {
           box.innerHTML = head + renderRecoveryStatus(j.recheck, j.serverNow) + '<div style="color:var(--t2);font-size:11px;">' +
-            (j.staleSince ? 'Обновление не удалось; сигналы покупки отключены. Ожидается следующий скан.' : 'Первый скан после запуска…') + '</div>';
+            recoveryEmptyText(j) + '</div>';
           restoreRecoveryDetails(box, openDetails);
           return;
         }
