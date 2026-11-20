@@ -76,19 +76,39 @@
     // Сюда же упирался вопрос «почему таблица не различает монеты»: могла,
     // просто показывала всем одно и то же.
     const own = cell.byCoin && cell.byCoin[row.coin];
-    if (own && finite(own.pct) && own.pct >= 0 && own.pct <= 100 && finite(own.n) && own.n >= MIN_COIN_POINTS) {
+    const ownOk = own && finite(own.pct) && own.pct >= 0 && own.pct <= 100 && finite(own.n) && own.n > 0;
+    if (ownOk && Number(own.n) >= MIN_COIN_POINTS) {
       const pct = Math.round(Number(own.pct) * 10) / 10;
       // Своя ошибка доли, а не ошибка клетки: на тридцати наблюдениях она
       // около 8 пунктов, и делать вид, что число точное, нельзя.
       const se = Math.sqrt(pct / 100 * (1 - pct / 100) / Number(own.n)) * 100;
-      return { hour: pct, se, ofCoin: true, group: groupPct,
+      return { hour: pct, se, ofCoin: true, srcLabel: '', group: groupPct,
         text: pct.toFixed(1) + '%', color: 'var(--blue)',
         why: 'Свежая частота касания цели +0.30% за час у самой ' + row.coin + ': ' + pct.toFixed(1) +
           '% ±' + se.toFixed(1) + ' п.п. на ' + own.n + ' наблюдениях, ' + period +
           '. По всей группе — ' + groupPct.toFixed(1) + '%, но внутри неё монеты расходятся на десятки ' +
           'пунктов, поэтому здесь число этой монеты. Частота касания — не прибыль: комиссии и спред не вычтены.' };
     }
-    return { hour: groupPct, se: Number(cell.se), ofCoin: false, group: groupPct,
+    if (ownOk) {
+      // СМЕСЬ МОНЕТЫ И ГРУППЫ. Раньше наблюдения монеты младше порога 30
+      // выбрасывались целиком: у монеты с 29 наблюдениями стояло число группы,
+      // с 30 — своё, и оценка прыгала на десятки пунктов от одного наблюдения.
+      // Теперь недостающие до порога наблюдения добираются из группы: вес
+      // монеты n из 30, группы — остаток. При n≥30 группа не участвует вовсе.
+      // Ошибка посчитана как у доли на 30 наблюдениях — это приближение:
+      // ошибка группы в нём не учтена.
+      const n = Number(own.n);
+      const pct = Math.round((n * Number(own.pct) + (MIN_COIN_POINTS - n) * Number(cell.actual)) / MIN_COIN_POINTS * 10) / 10;
+      const se = Math.sqrt(pct / 100 * (1 - pct / 100) / MIN_COIN_POINTS) * 100;
+      return { hour: pct, se, ofCoin: false, srcLabel: 'смесь', group: groupPct,
+        text: pct.toFixed(1) + '%', color: 'var(--blue)',
+        why: 'Смесь: у самой ' + row.coin + ' наблюдений только ' + n + ' из ' + MIN_COIN_POINTS +
+          ' (' + Math.round(Number(own.pct) * 10) / 10 + '%), остаток добран из группы (' + groupPct.toFixed(1) +
+          '%) — вместе ' + pct.toFixed(1) + '% ±' + se.toFixed(1) + ' п.п., ' + period +
+          '. Так оценка не прыгает между числом группы и своим при наборе наблюдений. ' +
+          'Частота касания — не прибыль: комиссии и спред не вычтены.' };
+    }
+    return { hour: groupPct, se: Number(cell.se), ofCoin: false, srcLabel: 'группа', group: groupPct,
       text: groupPct.toFixed(1) + '%', color: 'var(--blue)',
       why: 'Своих наблюдений по ' + row.coin + ' не набралось, поэтому показана частота всей группы: ' +
         groupPct.toFixed(1) + '% ±' + Number(cell.se).toFixed(1) + ' п.п. (1 стандартная ошибка); ' + cell.coins + ' монет' +
@@ -191,7 +211,7 @@
       : peak.count % 10 === 1 ? 'строка' : peak.count % 10 >= 2 && peak.count % 10 <= 4 ? 'строки' : 'строк';
     return '<div style="font-size:10px;line-height:1.4;margin-bottom:6px;color:var(--t2);">' +
       '<b>' + peak.count + '</b> ' + tail + ' с максимальной частотой <b>' + peak.hour.toFixed(1) +
-      '%</b>. При равном проценте и статусе выше более свежий сигнал.</div>';
+      '%</b>. При равном проценте и статусе выше дешевле спред, затем свежее.</div>';
   }
   // Сначала покупки, затем возможные покупки, затем остальные.
   // Внутри группы измеренные строки выше прочерков; из измеренных — без
@@ -213,13 +233,16 @@
   //   4. монета не занимает в портфеле больше порога (одна монета на пятую
   //      часть портфеля решает месяц сама; вёрстка передаёт долю в row.bookPct,
   //      нет данных о кошельке — ключ нейтрален);
-  //   5. спред дешевле. Спред платится в каждой сделке целиком и в прогоне
-  //      по свечам не учтён, а при цели +0.3% спред 0.2% съедает две трети;
-  //      неизвестный спред — ниже любого известного;
-  //   6. частота цели по убыванию;
-  //   7. свежесть.
-  // Это порядок по известным издержкам и рискам, не по прибыли.
-  const RANK = { status: 1e9, measured: 1e8, noPump: 1e7, book: 5e6, spread: 1e4, hour: 10 };
+  //   5. спред известен (неизвестный — ниже всех измеренных: нет данных —
+  //      нет и места наверху);
+  //   6. частота цели по убыванию — по просьбе владельца главный числовой
+  //      ключ: наверху то, что чаще доходит до цели. Частота — смесь оценки
+  //      монеты и группы, и это по-прежнему не прибыльность: порядок по
+  //      проценту замерен и денег не добавляет (ENTRY_FREQ_RANK);
+  //   7. спред дешевле: платится в каждой сделке целиком, при цели +0.3%
+  //      спред 0.2% съедает две трети;
+  //   8. свежесть.
+  const RANK = { status: 1e9, measured: 1e8, noPump: 1e7, book: 5e6, spreadKnown: 4e6, hour: 3000, spread: 1 };
   const BOOK_MAX_PCT = 20;        // тот же порог, что в предупреждении перед покупкой
   function recoveryOrder(row, scan, verdict, observation, now = scanNow(scan)) {
     const mark = verdict && recoveryRowMark(row, scan, verdict, observation, now);
@@ -228,12 +251,14 @@
       ? Math.round(Number(observation.hour) * 10) / 10 : null;
     const pumped = !!(row.pump && row.pump.pumped);
     const heavy = finite(row.bookPct) && Number(row.bookPct) >= BOOK_MAX_PCT;
-    // Спред 0..0.3% → 300..1 (шаг 0.001% = 1); неизвестный → 0, ниже любого известного.
+    // Спред 0..0.3% → 300..1 (шаг 0.001% = 1); неизвестный → 0 и без ключа «известен».
     const spread = finite(row.spreadPct) ? Math.max(1, Math.round((0.301 - Math.min(0.3, Math.max(0, Number(row.spreadPct)))) * 1000)) : 0;
     const age = finite(row.inListMin) ? Math.max(0, Number(row.inListMin)) : 1e6;
-    // Частота шагом 0.1 п.п. даёт шаг 1; добавка за свежесть меньше единицы.
+    // Частота шагом 0.1 п.п. даёт 0..1000 → ×3000 это 0..3e6: меньше ключей
+    // выше неё и больше всего диапазона спреда (300). Добавка за свежесть меньше единицы.
     return status * RANK.status +
-      (hour == null ? 0 : RANK.measured + (pumped ? 0 : RANK.noPump) + (heavy ? 0 : RANK.book) + spread * RANK.spread + hour * RANK.hour) +
+      (hour == null ? 0 : RANK.measured + (pumped ? 0 : RANK.noPump) + (heavy ? 0 : RANK.book) +
+        (spread > 0 ? RANK.spreadKnown : 0) + Math.round(hour * 10) * RANK.hour + spread * RANK.spread) +
       0.01 / (1 + age / 60);
   }
   // Разрешена ли клетка этой монеты к покупке.
@@ -410,8 +435,9 @@
     if (!base) return '';
     return '<div class="recovery-legend" title="Частота касания цели +0.30% за час до комиссий. ▲ означает превышение базы больше двух погрешностей и минимум на 3 п.п. Это не оценка прибыли.">' +
       '<b>▲</b> — частота выше базы ' + base.pct.toFixed(1) + '%, не разрешение покупать. ' +
-      'Внутри групп сверху вниз: без пометки «разгон» → не перегружает портфель → дешевле спред → цель 1ч по убыванию → свежие. ' +
-      'Выше — меньше известных издержек и рисков, а не больше прибыли: ключа, по которому верх прибыльнее низа, замер не нашёл.</div>';
+      'Внутри групп сверху вниз: без пометки «разгон» → не перегружает портфель → спред известен → цель 1ч по убыванию → дешевле спред → свежие. ' +
+      'Процент «цель 1ч» — смесь наблюдений самой монеты и её группы. ' +
+      'Выше — чаще доходит до цели при меньших известных издержках, а не больше прибыли: ключа, по которому верх прибыльнее низа, замер не нашёл.</div>';
   }
   function recoveryVerdict(row, gate, observation, buyCell) {
     const out = (tier, label, why, risk = false) => ({ tier, label, why,

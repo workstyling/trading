@@ -16303,7 +16303,7 @@ Requirements:
             '<br><span style="color:var(--t2);font-size:9px;">от пика ' + (x.dayFallPct == null ? '—' : '−' + x.dayFallPct + '%') + '</span>' +
             '<br><span style="color:var(--t2);font-size:9px;">' + recoveryCapVol(x) + '</span></td>' +
             num((edge.above ? String.fromCharCode(9650) + ' ' : '') + rec.text +
-              (rec.ofCoin === false ? '<small style="display:block;font-size:8px;font-weight:400;">группа</small>' : ''),
+              (rec.srcLabel ? '<small style="display:block;font-size:8px;font-weight:400;">' + rec.srcLabel + '</small>' : ''),
               rowColor, true) +
             num(x.pullbackPct == null ? '—' : x.pullbackPct + '%') +
             num(recoveryDayChange(x)) +

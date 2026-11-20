@@ -132,20 +132,34 @@ console.log('Fresh observations, missing cells, stale checks, daily change and n
   // Своя ошибка доли, а не ошибка клетки: на 210 наблюдениях около 2.9 п.п.
   assert(Math.abs(at('BTC').se - 2.88) < 0.1, String(at('BTC').se));
   assert(at('VVV').se > at('BTC').se, 'меньше наблюдений — больше ошибка');
-  // Монета с горсткой наблюдений своего числа не получает
-  assert.equal(at('THIN').hour, 57.7);
+  // Монета с горсткой наблюдений получает смесь: свои 12 наблюдений плюс
+  // 18 добранных из группы — (12·70 + 18·57.7) / 30 = 62.6. Раньше её данные
+  // выбрасывались целиком, и оценка прыгала на пороге в 30 наблюдений.
+  assert.equal(at('THIN').hour, 62.6);
   assert.equal(at('THIN').ofCoin, false);
-  assert(at('THIN').why.includes('Своих наблюдений по THIN не набралось'), at('THIN').why);
+  assert.equal(at('THIN').srcLabel, 'смесь');
+  assert(at('THIN').why.includes('Смесь'), at('THIN').why);
+  assert(at('THIN').why.includes('12 из 30'), at('THIN').why);
+  // Число монеты помечено как её собственное
+  assert.equal(at('BTC').srcLabel, '');
   // И монета, которой в разбивке нет вовсе
   assert.equal(at('ZZZ').hour, 57.7);
   assert.equal(at('ZZZ').ofCoin, false);
+  assert.equal(at('ZZZ').srcLabel, 'группа');
   assert(at('ZZZ').why.includes('расходятся на десятки пунктов'), at('ZZZ').why);
+  // На границе порога смесь почти не отличается от своего числа: вес группы 1 из 30
+  const edge = { ...report, cells: [{ lo: 3, deep: false, actual: 57.7, se: 2.04, coins: 39, n: 8157,
+    byCoin: { REZ: { pct: 50, n: 29 } } }] };
+  const blended = recoveryObservation({ ...row, coin: 'REZ' },
+    { recheck: { ...check, report: edge }, recoveryMeasuredAt: '2026-09-09', at: now }, now);
+  assert.equal(blended.hour, 50.3, String(blended.hour));
+  assert.equal(blended.srcLabel, 'смесь');
   // Старый отчёт без разбивки продолжает работать по-прежнему
   assert.equal(recoveryObservation(row, scan, now).hour, 54.2);
   assert.equal(recoveryObservation(row, scan, now).ofCoin, false);
   // Испорченная разбивка не пускается в число
   for (const broken of [{ pct: null, n: 100 }, { pct: 120, n: 100 }, { pct: -1, n: 100 },
-    { pct: 50, n: null }, { pct: 50, n: 29 }]) {
+    { pct: 50, n: null }, { pct: 50, n: 0 }, { pct: 50, n: -3 }]) {
     const bad = { ...report, cells: [{ lo: 3, deep: false, actual: 57.7, se: 2.04, coins: 39, n: 8157,
       byCoin: { REZ: broken } }] };
     const d = { recheck: { ...check, report: bad }, recoveryMeasuredAt: '2026-09-09', at: now };
