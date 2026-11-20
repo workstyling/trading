@@ -1,53 +1,13 @@
 'use strict';
-// Закрепление монеты (📌) и строгая лексикографичность весов порядка.
+// Пин карточек монет (Selected Orders) и строгая лексикографичность весов
+// порядка панели входа. В самой панели входа пин-кнопки нет: владелец просил
+// закреплять карточки монет, а не строки рейтинга.
 const fs = require('fs');
 const view = require('../public/js/recovery-journal');
-const { recoveryTogglePin, recoveryPinSet, recoveryPinButton, renderRecoveryGroups, recoveryOrder } = view;
+const { recoveryOrder } = view;
 let bad = 0;
 const ok = (c, m, x) => { if (!c) bad++; console.log('  ' + (c ? 'ok  ' : 'ПЛОХО') + '  ' + m + (x ? '   ' + x : '')); };
 const now = Date.now();
-
-console.log('Закрепление: переключается и чистит имя');
-{
-  for (const coin of [...recoveryPinSet()]) recoveryTogglePin(coin); // чистый старт
-  ok(recoveryTogglePin('ETH').has('ETH'), 'первый клик закрепляет');
-  ok(!recoveryTogglePin('ETH').has('ETH'), 'второй — открепляет');
-  const cleaned = recoveryTogglePin('<b>eth</b>');
-  ok(cleaned.has('bethb') && cleaned.size === 1, 'имя чистится до букв и цифр', [...cleaned].join(','));
-  recoveryTogglePin('bethb');
-  ok(recoveryTogglePin('').size === 0, 'пустое имя ничего не меняет');
-}
-
-console.log('Кнопка не меняет разрешений и останавливает клик строки');
-{
-  const off = recoveryPinButton('SOL', 'reload()');
-  ok(off.includes('event.stopPropagation()'), 'клик по кнопке не проваливается в строку');
-  ok(off.includes("recoveryTogglePin('SOL')") && off.includes('reload()'), 'кнопка переключает и перерисовывает');
-  ok(off.includes('не меняются'), 'подсказка говорит, что статус и разрешение не меняются');
-  recoveryTogglePin('SOL');
-  ok(recoveryPinButton('SOL', 'r()').includes('Открепить SOL'), 'закреплённая кнопка предлагает открепить');
-  recoveryTogglePin('SOL');
-}
-
-console.log('Секция закреплённых — в самом верху, строки не дублируются');
-{
-  // Скан без свежей проверки: все строки уходят в «Остальные».
-  const scan = { at: now, serverNow: now, recoveryMeasuredAt: '2026-09-09',
-    gate: { fallPct: 3, spreadPct: 0.3 }, entryNet: { buyCells: [] } };
-  const rows = [{ coin: 'FIL', price: 1, dayFallPct: 4, pullbackPct: 0.9, spreadPct: 0.1 },
-    { coin: 'AAVE', price: 1, dayFallPct: 4, pullbackPct: 0.9, spreadPct: 0.1 }];
-  const render = r => '<tr data-coin="' + r.coin + '"><td>' + r.coin + '</td></tr>';
-  const withPin = renderRecoveryGroups(rows, scan, render, 7, new Set(['AAVE']));
-  ok(withPin.indexOf('Закреплённые вручную · 1') >= 0, 'секция названа и посчитана');
-  ok(withPin.indexOf('Закреплённые') < withPin.indexOf('Покупать'), 'закреплённые выше «Покупать»');
-  ok(withPin.indexOf('data-entry-group="pinned"') >= 0, 'секция помечена для вёрстки');
-  ok(withPin.split('data-coin="AAVE"').length === 2, 'закреплённая строка не дублируется в своей группе');
-  ok(withPin.split('data-coin="FIL"').length === 2 &&
-    withPin.indexOf('data-coin="AAVE"') < withPin.indexOf('data-coin="FIL"'), 'незакреплённая осталась на месте, ниже');
-  const noPin = renderRecoveryGroups(rows, scan, render, 7);
-  ok(!noPin.includes('Закреплённые'), 'без закреплённых секции нет');
-  ok(!noPin.includes('pinned'), 'и пустая секция не рисуется');
-}
 
 console.log('Веса порядка строго лексикографичны');
 {
@@ -73,12 +33,25 @@ console.log('Веса порядка строго лексикографичны
     'без замера резкий провал порядок не меняет');
 }
 
-console.log('Кнопка и закреплённые есть в обеих вёрстках');
-for (const [file, reload] of [['public/index.html', 'loadEntryScan()'], ['public/mobile/index.html', 'loadEntryScanM()']]) {
+console.log('Пин карточек монет (Selected Orders) — в обеих вёрстках');
+for (const file of ['public/index.html', 'public/mobile/index.html']) {
   const src = fs.readFileSync(file, 'utf8');
-  ok(src.includes("recoveryPinButton(safe, '" + reload + "'"), file + ': кнопка перерисовывает свою вёрстку');
-  ok(new RegExp('renderRecoveryGroups\\(ranked, j, cell, [47], recoveryPinSet\\(\\)\\)').test(src),
-    file + ': закреплённые переданы в группы');
+  ok(src.includes("togglePinnedCoin('${coin}')"), file + ': кнопка 📌 на карточке монеты');
+  ok(/function coinCardRank\(coin\) \{ return pinnedCoins\.has\(coin\) \? 0 : favoriteCoins\.has\(coin\) \? 1 : 2; \}/.test(src),
+    file + ': закреплённые выше избранных, избранные выше остальных');
+  ok(src.includes('coinCardRank(a.split'), file + ': сортировка карточек идёт по этому порядку');
+  ok(src.includes('ни на какие ордера не влияет'), file + ': закрепление описано как порядок на экране');
+}
+
+console.log('А в панели входа пин-кнопки нет');
+{
+  ok(!('recoveryPinButton' in view) && !('recoveryTogglePin' in view) && !('recoveryPinSet' in view),
+    'помощники пина строк удалены, а не оставлены мёртвым кодом');
+  for (const file of ['public/index.html', 'public/mobile/index.html']) {
+    const src = fs.readFileSync(file, 'utf8');
+    ok(!src.includes('recoveryPinButton'), file + ': в строках рейтинга кнопки нет');
+    ok(/renderRecoveryGroups\(ranked, j, cell, [47]\)/.test(src), file + ': группы рейтинга без закреплённых');
+  }
 }
 
 console.log(bad ? '\nПЛОХО: ' + bad : '\nвсё зелено');

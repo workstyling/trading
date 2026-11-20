@@ -1923,6 +1923,47 @@
 
     const FAVORITE_COINS_KEY = 'favoriteCoins';
     let favoriteCoins = new Set(JSON.parse(localStorage.getItem(FAVORITE_COINS_KEY) || '[]'));
+    // 📌 Закреплённые карточки монет: всегда в самом верху, выше избранных.
+    // Список живёт в этом браузере, у компьютера свой. Закрепление меняет
+    // только порядок карточек на экране и ни на какие ордера не влияет.
+    const PINNED_COINS_KEY = 'pinnedCoins';
+    let pinnedCoins = new Set(JSON.parse(localStorage.getItem(PINNED_COINS_KEY) || '[]'));
+    // Порядок карточек: закреплённые → избранные → остальные, внутри — по алфавиту.
+    function coinCardRank(coin) { return pinnedCoins.has(coin) ? 0 : favoriteCoins.has(coin) ? 1 : 2; }
+    function resortMonitorGroups() {
+      const list = document.getElementById('monitorList');
+      if (!list) return;
+      const groups = [...list.querySelectorAll('.monitor-group')];
+      groups.sort((a, b) => {
+        const diff = coinCardRank(a.dataset.coin || '') - coinCardRank(b.dataset.coin || '');
+        if (diff) return diff;
+        return (a.dataset.coin || '').localeCompare(b.dataset.coin || '');
+      });
+      groups.forEach(g => list.appendChild(g));
+    }
+    function togglePinnedCoin(coin) {
+      const adding = !pinnedCoins.has(coin);
+      if (adding) pinnedCoins.add(coin); else pinnedCoins.delete(coin);
+      try { localStorage.setItem(PINNED_COINS_KEY, JSON.stringify([...pinnedCoins])); } catch (e) { }
+      const list = document.getElementById('monitorList');
+      if (!list) return;
+      list.querySelectorAll('[data-pin-coin]').forEach(el => {
+        if (el.dataset.pinCoin !== coin) return;
+        el.style.opacity = pinnedCoins.has(coin) ? '1' : '0.25';
+        el.style.color = pinnedCoins.has(coin) ? '#f5c518' : '';
+        el.title = pinnedCoins.has(coin) ? 'Открепить: карточка вернётся на своё место' : 'Закрепить карточку ' + coin + ' в самом верху списка';
+      });
+      resortMonitorGroups();
+      if (adding) {
+        const group = [...list.querySelectorAll('.monitor-group')].find(g => g.dataset.coin === coin);
+        if (group) {
+          group.style.animation = 'none';
+          void group.offsetWidth;
+          group.style.animation = 'favSlideInMobile 0.45s cubic-bezier(0.22,1,0.36,1) forwards';
+          setTimeout(() => { group.style.animation = ''; }, 460);
+        }
+      }
+    }
 
     async function loadFavoritesFromServer() {
       try {
@@ -1977,16 +2018,9 @@
         }
       });
 
-      // Re-sort groups in DOM
+      // Re-sort groups in DOM: закреплённые остаются выше избранных.
+      resortMonitorGroups();
       const groups = [...list.querySelectorAll('.monitor-group')];
-      groups.sort((a, b) => {
-        const aC = (a.dataset.coin || '');
-        const bC = (b.dataset.coin || '');
-        const aFav = favoriteCoins.has(aC) ? 0 : 1;
-        const bFav = favoriteCoins.has(bC) ? 0 : 1;
-        if (aFav !== bFav) return aFav - bFav;
-        return aC.localeCompare(bC);
-      });
       const favGroup = adding ? groups.find(g => g.dataset.coin === coin) : null;
 
       // Flash star first
@@ -3205,9 +3239,8 @@
 
       let html = '';
       const sortedPairs = Object.keys(byCoin).sort((a, b) => {
-        const aFav = favoriteCoins.has(a.split('-')[0]) ? 0 : 1;
-        const bFav = favoriteCoins.has(b.split('-')[0]) ? 0 : 1;
-        if (aFav !== bFav) return aFav - bFav;
+        const diff = coinCardRank(a.split('-')[0]) - coinCardRank(b.split('-')[0]);
+        if (diff) return diff;
         return a.localeCompare(b);
       });
       for (const pair of sortedPairs) {
@@ -3347,6 +3380,7 @@
             <span class="monitor-coin" style="cursor:pointer" onclick="selectCoinForTradeM('${coin}')" title="Выбрать ${coin} и открыть график 15m">${pair}</span>
             <span style="display:flex;align-items:center;gap:8px;">
               <button id="bewM_${coin}" onclick="toggleBeWatchM('${coin}','${pair}',${totalFilled},${totalUSD})" title="Telegram-алерт при выходе в безубыток (одноразовый)" style="padding:3px 8px;border:1px solid ${_beWatches[coin] ? 'var(--yellow)' : 'rgba(255,255,255,0.25)'};border-radius:5px;background:${_beWatches[coin] ? 'rgba(245,197,24,0.15)' : 'transparent'};color:${_beWatches[coin] ? 'var(--yellow)' : '#889'};font-size:11px;font-weight:600;">🔔${_beWatches[coin] ? ' ON' : ''}</button>
+              <span data-pin-coin="${coin}" onclick="togglePinnedCoin('${coin}')" title="${pinnedCoins.has(coin) ? 'Открепить: карточка вернётся на своё место' : `Закрепить карточку ${coin} в самом верху списка`}" style="cursor:pointer;font-size:19px;opacity:${pinnedCoins.has(coin) ? '1' : '0.25'};padding:0 6px;line-height:1;color:${pinnedCoins.has(coin) ? '#f5c518' : 'inherit'};">📌</span>
               <span data-fav-coin="${coin}" onclick="toggleFavoriteCoin('${coin}')" title="${isFav ? 'Remove from favorites' : 'Add to favorites'}" style="cursor:pointer;font-size:22px;opacity:${isFav ? '1' : '0.25'};padding:0 8px;line-height:1;color:${isFav ? '#f5c518' : 'inherit'};">★</span>
               <span class="monitor-pnl" style="color:${pnlColor};text-align:right;" title="Вся выбранная позиция: остаток по текущему Ask с комиссией taker ${tradingSettings.marketFee}%, с учётом выбранных покупок и продаж">
                 <span style="display:block;font-size:9px;font-weight:500;color:var(--t2);white-space:nowrap;">Итого Limit · taker</span>${formatProfitM(limitPnL)}
@@ -7341,7 +7375,6 @@
             '<span style="color:' + rowColor + ';font-weight:700;font-size:12px;">' + safe + '</span>' + swingMark(x) + recoveryPumpMark(x) + (peak ? '<span style="margin-left:4px;font-size:8.5px;font-weight:800;color:' + rowColor + ';border:1px solid ' + rowColor + ';border-radius:4px;padding:0 3px;">максимум</span>' : '') +
             '<span data-bookshare="' + safe + '"></span>' +
             '<span style="color:var(--t2);font-size:9px;margin-left:5px;white-space:nowrap;">$' + price(x.price) + '</span>' +
-            recoveryPinButton(safe, 'loadEntryScanM()', 14) +
             '<br><span style="color:var(--t2);font-size:9px;">' + sub + '<br>' + conditions + '<br>' + recoveryCapVol(x) + '</span></td>' +
             num((edge.above ? String.fromCharCode(9650) + ' ' : '') + rec.text +
               (rec.srcLabel ? '<small style="display:block;font-size:8px;font-weight:400;">' + rec.srcLabel + '</small>' : ''),
@@ -7361,7 +7394,7 @@
           renderRecoveryNet(j) + renderRecoveryLegend(j) + renderRecoveryTieNote(rows, j) +
           renderRecoveryRules(j) + mkLine +
           '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;"><table style="width:100%;border-collapse:collapse;table-layout:fixed;"><thead>' + head2 + '</thead><tbody>' +
-          renderRecoveryGroups(ranked, j, cell, 4, recoveryPinSet()) + '</tbody></table></div>' +
+          renderRecoveryGroups(ranked, j, cell, 4) + '</tbody></table></div>' +
           (!good.length ? '<div style="color:var(--t2);font-size:10px;margin-top:5px;">Порог не взял никто — монеты показаны в остальных.</div>' : '') +
           '<div id="entryPaperM" style="margin-top:6px;padding-top:5px;border-top:1px solid var(--b1);font-size:10px;color:var(--t2);"></div>';
 

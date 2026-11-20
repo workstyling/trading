@@ -11514,6 +11514,18 @@ Requirements:
 
     const FAVORITE_COINS_KEY = 'favoriteCoins';
     let favoriteCoins = new Set(JSON.parse(safeStorage.getItem(FAVORITE_COINS_KEY) || '[]'));
+    // 📌 Закреплённые карточки монет: всегда в самом верху, выше избранных.
+    // Список живёт в этом браузере, у телефона свой. Закрепление меняет только
+    // порядок карточек на экране и ни на какие ордера не влияет.
+    const PINNED_COINS_KEY = 'pinnedCoins';
+    let pinnedCoins = new Set(JSON.parse(safeStorage.getItem(PINNED_COINS_KEY) || '[]'));
+    // Порядок карточек: закреплённые → избранные → остальные, внутри — по алфавиту.
+    function coinCardRank(coin) { return pinnedCoins.has(coin) ? 0 : favoriteCoins.has(coin) ? 1 : 2; }
+    function togglePinnedCoin(coin) {
+      if (pinnedCoins.has(coin)) pinnedCoins.delete(coin); else pinnedCoins.add(coin);
+      safeStorage.setItem(PINNED_COINS_KEY, JSON.stringify([...pinnedCoins]));
+      updateSelectedOrdersView();
+    }
 
     async function loadFavoritesFromServer() {
       try {
@@ -13296,9 +13308,8 @@ Requirements:
 
       let h = '';
       const sortedPairs = Object.keys(byCoin).sort((a, b) => {
-        const aFav = favoriteCoins.has(a.split('-')[0]) ? 0 : 1;
-        const bFav = favoriteCoins.has(b.split('-')[0]) ? 0 : 1;
-        if (aFav !== bFav) return aFav - bFav;
+        const diff = coinCardRank(a.split('-')[0]) - coinCardRank(b.split('-')[0]);
+        if (diff) return diff;
         return a.localeCompare(b);
       });
       for (const pair of sortedPairs) {
@@ -13622,8 +13633,9 @@ Requirements:
         };
 
         const isFav = favoriteCoins.has(coin);
+        const isPin = pinnedCoins.has(coin);
         h += `<div class="coin-group" data-coin="${coin}" data-coin-pair="${pair}">
-          <h4><span onclick="selectCoinForTrade('${coin}')" title="Выбрать ${coin} и открыть график 15m здесь" style="cursor:pointer;color:var(--blue);">${pair}</span>${todayBadge} <span onclick="toggleFavoriteCoin('${coin}')" title="${isFav ? 'Remove from favorites' : 'Add to favorites'}" style="cursor:pointer;font-size:16px;opacity:${isFav ? '1' : '0.25'};padding:0 6px;color:${isFav ? '#f5c518' : 'inherit'};">★</span><button class="select-coin-btn" onclick="selectCoinForBuy('${coin}')" title="Set for Buy">⬆</button></h4>
+          <h4><span onclick="selectCoinForTrade('${coin}')" title="Выбрать ${coin} и открыть график 15m здесь" style="cursor:pointer;color:var(--blue);">${pair}</span>${todayBadge} <span data-pin-coin="${coin}" onclick="togglePinnedCoin('${coin}')" title="${isPin ? 'Открепить: карточка вернётся на своё место' : `Закрепить карточку ${coin} в самом верху списка`}" style="cursor:pointer;font-size:14px;opacity:${isPin ? '1' : '0.25'};padding:0 5px;color:${isPin ? '#f5c518' : 'inherit'};">📌</span><span onclick="toggleFavoriteCoin('${coin}')" title="${isFav ? 'Remove from favorites' : 'Add to favorites'}" style="cursor:pointer;font-size:16px;opacity:${isFav ? '1' : '0.25'};padding:0 6px;color:${isFav ? '#f5c518' : 'inherit'};">★</span><button class="select-coin-btn" onclick="selectCoinForBuy('${coin}')" title="Set for Buy">⬆</button></h4>
           <div class="balance">Selected: ${fmtSize(filledShown)} ${coin} <span id="realBal_${coin}" data-live="1" style="color:var(--t2);font-size:10px;">(loading real balance...)</span>${shortNote}${heldNote}${missedNote} ${sellNow > 0 ? `<button class="sell-all-btn" onclick="sellAllCoin('${pair}', '${sellNow}', ${avgBuyPrice}, ${sellNowCost})">SELL ALL</button> <button class="sell-all-btn mkt" onclick="sellAllMarket('${pair}', '${sellNow}', '${coin}', ${sellNowCost})" title="Продать всё ПО РЫНКУ. Диалог покажет реальную цену исполнения по стакану и прибыль, обновляя их каждую секунду.">SELL MKT</button> <button id="bew_${coin}" onclick="toggleBeWatch('${coin}','${pair}',${totalFilled},${totalUSD})" title="Telegram-алерт, когда Limit P&L дойдёт до 0 (сработает один раз и выключится)" style="padding:3px 8px;border:1px solid ${_beWatches[coin] ? 'var(--yellow)' : 'rgba(255,255,255,0.25)'};border-radius:5px;background:${_beWatches[coin] ? 'rgba(245,197,24,0.15)' : 'transparent'};color:${_beWatches[coin] ? 'var(--yellow)' : '#889'};font-size:10px;font-weight:600;cursor:pointer;">🔔 BE${_beWatches[coin] ? ' ON' : ''}</button>` : ''} <button class="${btnClass}" title="${openTitle}" onclick="saveGroupProfit('${coin}', ${groupProfit.toFixed(2)}, '${filledBuys.map(o => o.order_id).join(',')}', '${filledSells.map(o => o.order_id).join(',')}', ${buyCreatedDate ? `'${buyCreatedDate}'` : 'null'})" ${btnDisabled ? 'disabled' : ''}>${btnText}</button>
           ${sellNow > 0 ? (() => { const _st = sellSteps(coin); return `<span style="margin-left:10px;display:inline-flex;align-items:center;gap:4px;">
             <input type="text" id="limitSellPrice_${coin}" placeholder="Limit price" value="${_st.limit != null ? _st.limit : ''}" oninput="previewLimitSell('${coin}','${sellNow}',${sellNowCost})" style="width:90px;padding:3px 6px;background:var(--s3);border:1px solid var(--b1);border-radius:5px;color:var(--t0);font-family:'JetBrains Mono',monospace;font-size:11px;outline:none;" autocomplete="off">
@@ -16298,7 +16310,7 @@ Requirements:
             (color || rowColor) + ';' + (bold ? 'font-weight:800;' : '') + '">' + value + '</td>';
           return '<tr data-entry-state="' + mark.state + '" onclick="selectCoinForTrade(\'' + safe + '\')" title="' + escapeRecoveryText(tip) + '" style="cursor:pointer;' + mark.bg + '">' +
             '<td style="padding:4px 6px;"><span style="color:' + rowColor + ';font-weight:700;font-size:11px;">' + safe + '</span>' + swingMark(x) + recoveryPumpMark(x) + (peak ? '<span style="margin-left:4px;font-size:8.5px;font-weight:800;color:' + rowColor + ';border:1px solid ' + rowColor + ';border-radius:4px;padding:0 3px;">максимум</span>' : '') +
-            '<span data-bookshare="' + safe + '" data-live="1"></span>' + recoveryPinButton(safe, 'loadEntryScan()') +
+            '<span data-bookshare="' + safe + '" data-live="1"></span>' +
             '<br><span style="color:var(--t2);font-size:9px;white-space:nowrap;">$' + price(x.price) + '</span>' +
             '<br><span style="color:var(--t2);font-size:9px;">от пика ' + (x.dayFallPct == null ? '—' : '−' + x.dayFallPct + '%') + '</span>' +
             '<br><span style="color:var(--t2);font-size:9px;">' + recoveryCapVol(x) + '</span></td>' +
@@ -16324,7 +16336,7 @@ Requirements:
           renderRecoveryNet(j) + renderRecoveryLegend(j) + renderRecoveryTieNote(rows, j) +
           renderRecoveryRules(j) + mkLine +
           '<table style="width:100%;border-collapse:collapse;"><thead>' + head2 + '</thead><tbody>' +
-          renderRecoveryGroups(ranked, j, cell, 7, recoveryPinSet()) + '</tbody></table>' +
+          renderRecoveryGroups(ranked, j, cell, 7) + '</tbody></table>' +
           (!good.length ? '<div style="color:var(--t2);font-size:10px;margin-top:5px;">Порог не взял никто — монеты показаны в остальных.</div>' : '') +
           '<div id="entryPaper" style="margin-top:6px;padding-top:5px;border-top:1px solid var(--b1);font-size:10px;color:var(--t2);"></div>';
 

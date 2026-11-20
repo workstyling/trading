@@ -343,55 +343,16 @@
       bg: 'background:var(--entry-possible-bg);',
       why: 'Оранжевая рамка: параметры монеты подходят, свежая частота цели выше базы больше чем на две погрешности и минимум на 3 п.п. Прибыльность группы не подтверждена, и по прогону этот отбор издержек не окупает — это кандидат для наблюдения, а не для покупки.' };
   }
-  // ЗАКРЕПЛЁННЫЕ МОНЕТЫ (📌). Закрепление меняет только место на экране:
-  // статус, рамка и разрешение покупки считаются как раньше, и строка несёт
-  // их с собой в секцию закреплённых. Список живёт в браузере: у телефона и
-  // компьютера он свой и на сервер не ходит.
-  let pinMemory = [];       // запасной список, когда localStorage недоступен
-  function readPins() {
-    try {
-      const raw = JSON.parse(localStorage.getItem('entryPins') || '[]');
-      if (Array.isArray(raw)) return raw.filter(coin => typeof coin === 'string');
-    } catch { }
-    return pinMemory;
-  }
-  function writePins(list) {
-    pinMemory = list;
-    try { localStorage.setItem('entryPins', JSON.stringify(list)); } catch { }
-  }
-  function recoveryPinSet() { return new Set(readPins()); }
-  function recoveryTogglePin(coin) {
-    const safe = String(coin || '').replace(/[^A-Z0-9]/gi, '');
-    if (!safe) return recoveryPinSet();
-    const had = readPins();
-    const list = had.includes(safe) ? had.filter(c => c !== safe) : [...had, safe];
-    writePins(list);
-    return new Set(list);
-  }
-  // Кнопка в строке. reload — вызов перерисовки своей вёрстки.
-  function recoveryPinButton(coin, reload, size) {
-    const safe = String(coin || '').replace(/[^A-Z0-9]/gi, '');
-    const on = recoveryPinSet().has(safe);
-    return '<button data-pin="' + safe + '" onclick="event.stopPropagation();recoveryTogglePin(\'' + safe + '\');' + reload + '" ' +
-      'title="' + (on ? 'Открепить ' + safe : 'Закрепить ' + safe + ' в самом верху списка') +
-      '. Закрепление меняет только место на экране: статус и разрешение покупки не меняются." ' +
-      'style="margin-left:6px;padding:2px 7px;font-size:' + (size || 11) + 'px;line-height:1;cursor:pointer;border-radius:6px;vertical-align:middle;' +
-      'border:1px solid ' + (on ? '#f5c518' : 'var(--b1)') + ';background:' + (on ? 'rgba(245,197,24,0.15)' : 'transparent') + ';' +
-      'color:' + (on ? '#f5c518' : 'var(--t2)') + ';">📌</button>';
-  }
-  function renderRecoveryGroups(sorted, scan, renderRow, columns, pins) {
+  function renderRecoveryGroups(sorted, scan, renderRow, columns) {
     const gate = { fall: scan.gate && scan.gate.fallPct, spread: scan.gate && scan.gate.spreadPct };
-    const groups = { pinned: [], confirmed: [], possible: [], none: [] };
+    const groups = { confirmed: [], possible: [], none: [] };
     const candidatesKnown = recoveryScanFresh(scan, scanNow(scan)) && !!recoveryBaseline(scan);
     for (const row of sorted) {
       const observation = recoveryObservation(row, scan);
       const verdict = recoveryVerdict(row, gate, observation, recoveryBuyCell(row, scan));
-      const state = recoveryRowMark(row, scan, verdict, observation).state;
-      if (pins && pins.has(String(row.coin).replace(/[^A-Z0-9]/gi, ''))) groups.pinned.push(row);
-      else groups[state].push(row);
+      groups[recoveryRowMark(row, scan, verdict, observation).state].push(row);
     }
     return [
-      ...(groups.pinned.length ? [['pinned', '📌 Закреплённые вручную', '#f5c518']] : []),
       ['confirmed', 'Покупать', 'var(--entry-confirmed)'],
       ['possible', 'Кандидаты · покупка не разрешена', 'var(--entry-possible)'],
       ['none', 'Остальные', 'var(--t1)'],
@@ -485,8 +446,7 @@
       '<b>▲</b> — частота выше базы ' + base.pct.toFixed(1) + '%, не разрешение покупать. ' +
       'Внутри групп сверху вниз: без пометки «разгон» → не перегружает портфель → спред известен → цель 1ч по убыванию → дешевле спред → свежие. ' +
       'Процент «цель 1ч» — смесь наблюдений самой монеты и её группы. ' +
-      'Выше — чаще доходит до цели при меньших известных издержках, а не больше прибыли: ключа, по которому верх прибыльнее низа, замер не нашёл. ' +
-      '📌 — закреплённая вручную монета стоит выше всех на этом устройстве; это место на экране, не сигнал.</div>';
+      'Выше — чаще доходит до цели при меньших известных издержках, а не больше прибыли: ключа, по которому верх прибыльнее низа, замер не нашёл.</div>';
   }
   function recoveryVerdict(row, gate, observation, buyCell) {
     const out = (tier, label, why, risk = false) => ({ tier, label, why,
@@ -755,8 +715,7 @@
       'до уровня до разгона ' + p.toBasePct + '%. Рейтинг смотрит только сутки и этот риск не учитывает. ' +
       'Это пометка риска, её доходность не проверялась.';
   }
-  const api = { renderEntryJournal, recoveryPumpMark, recoveryPumpNote, recoveryCapVol, recoveryCapVolNote, recoveryFeeLine, renderRecoverySizeGate, recoveryEmptyText,
-    recoveryPinSet, recoveryTogglePin, recoveryPinButton, recoveryRegimeLine, renderRecoveryStatus, renderRecoveryLegend, renderRecoveryNet, recoveryObservation,
+  const api = { renderEntryJournal, recoveryPumpMark, recoveryPumpNote, recoveryCapVol, recoveryCapVolNote, recoveryFeeLine, renderRecoverySizeGate, recoveryEmptyText, recoveryRegimeLine, renderRecoveryStatus, renderRecoveryLegend, renderRecoveryNet, recoveryObservation,
     recoveryVerdict, recoveryDayChange, recoveryBaseline, recoveryEdge, recoveryOrder, recoveryPeak, recoveryPeakMark, renderRecoveryTieNote, recoveryBuyCell,
     recoveryFresh, recoveryHeldNote,
     recoverySignalRows, renderRecoveryRules, recoveryRowMark, renderRecoveryGroups,
