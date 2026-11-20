@@ -7341,6 +7341,7 @@
             '<span style="color:' + rowColor + ';font-weight:700;font-size:12px;">' + safe + '</span>' + swingMark(x) + recoveryPumpMark(x) + (peak ? '<span style="margin-left:4px;font-size:8.5px;font-weight:800;color:' + rowColor + ';border:1px solid ' + rowColor + ';border-radius:4px;padding:0 3px;">максимум</span>' : '') +
             '<span data-bookshare="' + safe + '"></span>' +
             '<span style="color:var(--t2);font-size:9px;margin-left:5px;white-space:nowrap;">$' + price(x.price) + '</span>' +
+            recoveryPinButton(safe, 'loadEntryScanM()', 14) +
             '<br><span style="color:var(--t2);font-size:9px;">' + sub + '<br>' + conditions + '<br>' + recoveryCapVol(x) + '</span></td>' +
             num((edge.above ? String.fromCharCode(9650) + ' ' : '') + rec.text +
               (rec.srcLabel ? '<small style="display:block;font-size:8px;font-weight:400;">' + rec.srcLabel + '</small>' : ''),
@@ -7360,7 +7361,7 @@
           renderRecoveryNet(j) + renderRecoveryLegend(j) + renderRecoveryTieNote(rows, j) +
           renderRecoveryRules(j) + mkLine +
           '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;"><table style="width:100%;border-collapse:collapse;table-layout:fixed;"><thead>' + head2 + '</thead><tbody>' +
-          renderRecoveryGroups(ranked, j, cell, 4) + '</tbody></table></div>' +
+          renderRecoveryGroups(ranked, j, cell, 4, recoveryPinSet()) + '</tbody></table></div>' +
           (!good.length ? '<div style="color:var(--t2);font-size:10px;margin-top:5px;">Порог не взял никто — монеты показаны в остальных.</div>' : '') +
           '<div id="entryPaperM" style="margin-top:6px;padding-top:5px;border-top:1px solid var(--b1);font-size:10px;color:var(--t2);"></div>';
 

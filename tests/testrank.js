@@ -209,7 +209,7 @@ for (const [name, file] of [['десктоп', 'public/index.html'], ['моби�
     '  список упорядочен по измеренной частоте');
   ok(!/verdict\(b\)\.tier - verdict\(a\)\.tier/.test(src), '  прежний порядок по уровню отката убран');
   ok(/renderRecoveryLegend\(j\)/.test(src), '  подпись про порог показана');
-  ok(/renderRecoveryGroups\(ranked, j, cell, [47]\)/.test(src), '  все монеты показаны в трёх группах');
+  ok(/renderRecoveryGroups\(ranked, j, cell, [47], recoveryPinSet\(\)\)/.test(src), '  все монеты показаны в группах, закреплённые переданы');
   ok(!/const SHOWN = 8;/.test(src), '  ограничение восемью строками убрано');
 }
 

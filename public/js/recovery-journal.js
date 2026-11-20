@@ -233,16 +233,23 @@
   //   4. монета не занимает в портфеле больше порога (одна монета на пятую
   //      часть портфеля решает месяц сама; вёрстка передаёт долю в row.bookPct,
   //      нет данных о кошельке — ключ нейтрален);
-  //   5. спред известен (неизвестный — ниже всех измеренных: нет данных —
+  //   5. нет измеренно-худшего резкого провала (откат от порога замера
+  //      pullbackNet: такие строки в среднем хуже остального списка; замера
+  //      нет — ключ нейтрален);
+  //   6. спред известен (неизвестный — ниже всех измеренных: нет данных —
   //      нет и места наверху);
-  //   6. частота цели по убыванию — по просьбе владельца главный числовой
+  //   7. частота цели по убыванию — по просьбе владельца главный числовой
   //      ключ: наверху то, что чаще доходит до цели. Частота — смесь оценки
   //      монеты и группы, и это по-прежнему не прибыльность: порядок по
   //      проценту замерен и денег не добавляет (ENTRY_FREQ_RANK);
-  //   7. спред дешевле: платится в каждой сделке целиком, при цели +0.3%
+  //   8. спред дешевле: платится в каждой сделке целиком, при цели +0.3%
   //      спред 0.2% съедает две трети;
-  //   8. свежесть.
-  const RANK = { status: 1e9, measured: 1e8, noPump: 1e7, book: 5e6, spreadKnown: 4e6, hour: 3000, spread: 1 };
+  //   9. свежесть.
+  // Веса строго лексикографичны: каждый ключ больше суммы диапазонов всех
+  // младших. Прежние веса это нарушали: спред с частотой (до 7.3e6) могли
+  // перевесить ключ портфеля (5e6), и перегруженная монета с высокой частотой
+  // вставала выше свободной.
+  const RANK = { status: 1e9, measured: 1e8, noPump: 5e7, book: 2.5e7, noSteep: 1.25e7, spreadKnown: 4e6, hour: 3000, spread: 1 };
   const BOOK_MAX_PCT = 20;        // тот же порог, что в предупреждении перед покупкой
   function recoveryOrder(row, scan, verdict, observation, now = scanNow(scan)) {
     const mark = verdict && recoveryRowMark(row, scan, verdict, observation, now);
@@ -256,8 +263,10 @@
     const age = finite(row.inListMin) ? Math.max(0, Number(row.inListMin)) : 1e6;
     // Частота шагом 0.1 п.п. даёт 0..1000 → ×3000 это 0..3e6: меньше ключей
     // выше неё и больше всего диапазона спреда (300). Добавка за свежесть меньше единицы.
+    const steep = !!steepPullback(row, scan);
     return status * RANK.status +
       (hour == null ? 0 : RANK.measured + (pumped ? 0 : RANK.noPump) + (heavy ? 0 : RANK.book) +
+        (steep ? 0 : RANK.noSteep) +
         (spread > 0 ? RANK.spreadKnown : 0) + Math.round(hour * 10) * RANK.hour + spread * RANK.spread) +
       0.01 / (1 + age / 60);
   }
@@ -334,16 +343,55 @@
       bg: 'background:var(--entry-possible-bg);',
       why: 'Оранжевая рамка: параметры монеты подходят, свежая частота цели выше базы больше чем на две погрешности и минимум на 3 п.п. Прибыльность группы не подтверждена, и по прогону этот отбор издержек не окупает — это кандидат для наблюдения, а не для покупки.' };
   }
-  function renderRecoveryGroups(sorted, scan, renderRow, columns) {
+  // ЗАКРЕПЛЁННЫЕ МОНЕТЫ (📌). Закрепление меняет только место на экране:
+  // статус, рамка и разрешение покупки считаются как раньше, и строка несёт
+  // их с собой в секцию закреплённых. Список живёт в браузере: у телефона и
+  // компьютера он свой и на сервер не ходит.
+  let pinMemory = [];       // запасной список, когда localStorage недоступен
+  function readPins() {
+    try {
+      const raw = JSON.parse(localStorage.getItem('entryPins') || '[]');
+      if (Array.isArray(raw)) return raw.filter(coin => typeof coin === 'string');
+    } catch { }
+    return pinMemory;
+  }
+  function writePins(list) {
+    pinMemory = list;
+    try { localStorage.setItem('entryPins', JSON.stringify(list)); } catch { }
+  }
+  function recoveryPinSet() { return new Set(readPins()); }
+  function recoveryTogglePin(coin) {
+    const safe = String(coin || '').replace(/[^A-Z0-9]/gi, '');
+    if (!safe) return recoveryPinSet();
+    const had = readPins();
+    const list = had.includes(safe) ? had.filter(c => c !== safe) : [...had, safe];
+    writePins(list);
+    return new Set(list);
+  }
+  // Кнопка в строке. reload — вызов перерисовки своей вёрстки.
+  function recoveryPinButton(coin, reload, size) {
+    const safe = String(coin || '').replace(/[^A-Z0-9]/gi, '');
+    const on = recoveryPinSet().has(safe);
+    return '<button data-pin="' + safe + '" onclick="event.stopPropagation();recoveryTogglePin(\'' + safe + '\');' + reload + '" ' +
+      'title="' + (on ? 'Открепить ' + safe : 'Закрепить ' + safe + ' в самом верху списка') +
+      '. Закрепление меняет только место на экране: статус и разрешение покупки не меняются." ' +
+      'style="margin-left:6px;padding:2px 7px;font-size:' + (size || 11) + 'px;line-height:1;cursor:pointer;border-radius:6px;vertical-align:middle;' +
+      'border:1px solid ' + (on ? '#f5c518' : 'var(--b1)') + ';background:' + (on ? 'rgba(245,197,24,0.15)' : 'transparent') + ';' +
+      'color:' + (on ? '#f5c518' : 'var(--t2)') + ';">📌</button>';
+  }
+  function renderRecoveryGroups(sorted, scan, renderRow, columns, pins) {
     const gate = { fall: scan.gate && scan.gate.fallPct, spread: scan.gate && scan.gate.spreadPct };
-    const groups = { confirmed: [], possible: [], none: [] };
+    const groups = { pinned: [], confirmed: [], possible: [], none: [] };
     const candidatesKnown = recoveryScanFresh(scan, scanNow(scan)) && !!recoveryBaseline(scan);
     for (const row of sorted) {
       const observation = recoveryObservation(row, scan);
       const verdict = recoveryVerdict(row, gate, observation, recoveryBuyCell(row, scan));
-      groups[recoveryRowMark(row, scan, verdict, observation).state].push(row);
+      const state = recoveryRowMark(row, scan, verdict, observation).state;
+      if (pins && pins.has(String(row.coin).replace(/[^A-Z0-9]/gi, ''))) groups.pinned.push(row);
+      else groups[state].push(row);
     }
     return [
+      ...(groups.pinned.length ? [['pinned', '📌 Закреплённые вручную', '#f5c518']] : []),
       ['confirmed', 'Покупать', 'var(--entry-confirmed)'],
       ['possible', 'Кандидаты · покупка не разрешена', 'var(--entry-possible)'],
       ['none', 'Остальные', 'var(--t1)'],
@@ -437,7 +485,8 @@
       '<b>▲</b> — частота выше базы ' + base.pct.toFixed(1) + '%, не разрешение покупать. ' +
       'Внутри групп сверху вниз: без пометки «разгон» → не перегружает портфель → спред известен → цель 1ч по убыванию → дешевле спред → свежие. ' +
       'Процент «цель 1ч» — смесь наблюдений самой монеты и её группы. ' +
-      'Выше — чаще доходит до цели при меньших известных издержках, а не больше прибыли: ключа, по которому верх прибыльнее низа, замер не нашёл.</div>';
+      'Выше — чаще доходит до цели при меньших известных издержках, а не больше прибыли: ключа, по которому верх прибыльнее низа, замер не нашёл. ' +
+      '📌 — закреплённая вручную монета стоит выше всех на этом устройстве; это место на экране, не сигнал.</div>';
   }
   function recoveryVerdict(row, gate, observation, buyCell) {
     const out = (tier, label, why, risk = false) => ({ tier, label, why,
@@ -706,7 +755,8 @@
       'до уровня до разгона ' + p.toBasePct + '%. Рейтинг смотрит только сутки и этот риск не учитывает. ' +
       'Это пометка риска, её доходность не проверялась.';
   }
-  const api = { renderEntryJournal, recoveryPumpMark, recoveryPumpNote, recoveryCapVol, recoveryCapVolNote, recoveryFeeLine, renderRecoverySizeGate, recoveryEmptyText, recoveryRegimeLine, renderRecoveryStatus, renderRecoveryLegend, renderRecoveryNet, recoveryObservation,
+  const api = { renderEntryJournal, recoveryPumpMark, recoveryPumpNote, recoveryCapVol, recoveryCapVolNote, recoveryFeeLine, renderRecoverySizeGate, recoveryEmptyText,
+    recoveryPinSet, recoveryTogglePin, recoveryPinButton, recoveryRegimeLine, renderRecoveryStatus, renderRecoveryLegend, renderRecoveryNet, recoveryObservation,
     recoveryVerdict, recoveryDayChange, recoveryBaseline, recoveryEdge, recoveryOrder, recoveryPeak, recoveryPeakMark, renderRecoveryTieNote, recoveryBuyCell,
     recoveryFresh, recoveryHeldNote,
     recoverySignalRows, renderRecoveryRules, recoveryRowMark, renderRecoveryGroups,
