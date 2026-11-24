@@ -6341,6 +6341,10 @@
       <div class="main-right">
         <!-- Открытые paper-сделки — самое верхнее, за ними следят чаще всего -->
         <div style="display:none;"><div id="tlPaperStrip" style="display:none;margin-bottom:14px;"></div></div>
+        <!-- Бумажные сделки стоят ПЕРЕД панелью входа, а не внутри неё: это мои
+             открытые позиции, а не часть списка кандидатов. Снаружи их видно
+             сразу и видно даже тогда, когда скан ещё грузится или отказал. -->
+        <div id="paperEntryBox" style="margin-bottom:10px;padding:7px 10px;border:1px solid var(--b1);border-radius:8px;background:rgba(0,180,255,0.05);font-size:11px;color:var(--t2);"></div>
         <div id="entryScanBox" style="margin-bottom:14px;padding:9px 11px;border:1px solid var(--b1);border-radius:8px;background:var(--s1);"></div>
         <div id="microScalpPanel" style="display:none;">
           <div class="tl-head">
@@ -16336,10 +16340,6 @@ Requirements:
         box.innerHTML = head + renderRecoveryStatus(j.recheck, j.serverNow) +
           renderRecoveryNet(j) + renderRecoveryLegend(j) + renderRecoveryTieNote(rows, j) +
           renderRecoveryRules(j) + mkLine +
-          // Бумажные сделки — НАД списком: открытая позиция важнее списка
-          // кандидатов, а внизу её не было видно без прокрутки всей таблицы.
-          '<div id="paperEntryBox" style="margin-bottom:8px;padding:6px 8px;border:1px solid var(--b1);' +
-          'border-radius:8px;background:rgba(0,180,255,0.05);font-size:11px;color:var(--t2);"></div>' +
           '<table style="width:100%;border-collapse:collapse;"><thead>' + head2 + '</thead><tbody>' +
           renderRecoveryGroups(ranked, j, cell, 7) + '</tbody></table>' +
           (!good.length ? '<div style="color:var(--t2);font-size:10px;margin-top:5px;">Порог не взял никто — монеты показаны в остальных.</div>' : '') +
