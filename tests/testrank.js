@@ -191,7 +191,12 @@ for (const [name, file] of [['десктоп', 'public/index.html'], ['моби�
   const cold = ctx.cell(row({ coin: 'REZ', dayFallPct: 4, pullbackPct: 2 }));
   const risk = ctx.cell(row({ dayFallPct: 12, chg24Pct: -14 }));
   console.log('  ' + name);
-  ok(!/var\(--blue\)/.test(warm) && /color:var\(--entry-possible\)/.test(warm), '  кандидат оранжевый, голубого в строке нет');
+  // Кнопки — элементы действия, а не оценка: цвет проверяем на самой строке.
+  // Иначе синяя кнопка «Купить» (бумажная покупка) ломала бы проверку смысла.
+  const noButtons = html => html.replace(/<button\b[\s\S]*?<\/button>/g, '');
+  ok(!/var\(--blue\)/.test(noButtons(warm)) && /color:var\(--entry-possible\)/.test(warm),
+    '  кандидат оранжевый, голубого в оценке нет');
+  ok(/<button[^>]*data-paper-buy/.test(warm), '  синий остаётся только на кнопке бумажной покупки');
   ok(warm.includes('data-entry-state="possible"') && warm.includes('var(--entry-possible-bg)'), '  возможный кандидат получает оранжевую рамку и фон');
   ok(hot.includes('data-entry-state="possible"'), '  максимум без подтверждения прибыли тоже только возможный');
   ok(hot.includes(String.fromCharCode(9650)), '  у числа есть метка порога');

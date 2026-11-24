@@ -54,7 +54,8 @@ console.log('Блок сделок: итог, проценты, кнопка у�
   ok(html.includes('+$1.23'), 'прибыль в долларах');
   ok(html.includes('+1.23%'), 'и в процентах');
   ok(html.includes("del('pe_1_SOL')"), 'кнопка удаления знает свою сделку');
-  ok(html.includes('удалить'), 'кнопка подписана по-русски');
+  ok(html.includes('Удалить'), 'кнопка подписана по-русски');
+  ok(/data-paper-del="pe_1_SOL"[^>]*min-height:28px/.test(html), 'кнопка удаления нажимается пальцем');
   ok(html.includes('Выход в ноль при'), 'в подсказке — цена безубытка');
 
   const loss = renderPaperEntry({ ...data, totalPnlUsd: -2.5,
@@ -69,7 +70,18 @@ console.log('Блок сделок: итог, проценты, кнопка у�
     open: [{ ...data.open[0], price: null, pnlUsd: null, pnlPct: null }] }, 'del(\'%ID%\')');
   ok(none.includes('цены неизвестны') && !none.includes('+$'), 'без цен итог не выдумывается');
 
-  ok(renderPaperEntry({ success: true, open: [] }, 'd()').includes('бум.'), 'пустой блок объясняет, как добавить');
+  ok(renderPaperEntry({ success: true, open: [] }, 'd()').includes('Купить'), 'пустой блок объясняет, как добавить');
+
+  // «Удалить все» — только когда есть что удалять пачкой, и подальше от
+  // построчных кнопок: промах стёр бы весь журнал вместо одной строки.
+  const two = { ...data, open: [data.open[0], { ...data.open[0], id: 'pe_2_ETH', coin: 'ETH' }] };
+  const withAll = renderPaperEntry(two, 'del(\'%ID%\')', 'delAll()');
+  ok(withAll.includes('delAll()') && withAll.includes('Удалить все (2)'), 'кнопка «удалить все» названа числом');
+  ok(withAll.lastIndexOf('data-paper-del-all') > withAll.lastIndexOf('data-paper-del='), 'она стоит после построчных');
+  ok(!renderPaperEntry(data, 'del(\'%ID%\')', 'delAll()').includes('data-paper-del-all'),
+    'на одной сделке кнопки «удалить все» нет');
+  ok(!withAll.includes('data-paper-del-all') === false && !renderPaperEntry(two, 'del(\'%ID%\')').includes('delAll'),
+    'без обработчика кнопка не рисуется');
   ok(renderPaperEntry({ success: false, error: 'сервер молчит' }, 'd()').includes('сервер молчит'),
     'отказ сервера виден, а не превращается в пустое место');
   ok(renderPaperEntry(null, 'd()').includes('недоступны'), 'отсутствие данных не роняет блок');
@@ -79,6 +91,12 @@ console.log('Кнопка покупки честно описана');
 {
   const b = recoveryPaperButton('SOL', 'buy(\'SOL\')');
   ok(b.includes("buy('SOL')") && b.includes('event.stopPropagation()'), 'жмётся и не проваливается в строку');
+  // Прежняя «бум.» была серой, в девять пикселей, и пальцем по ней не попасть.
+  ok(b.includes('Купить'), 'подписана словом, а не сокращением');
+  ok(/min-height:28px/.test(b), 'высота хватает для пальца');
+  ok(/font-size:11px/.test(b), 'шрифт читаемый');
+  ok(b.includes('var(--blue)'), 'видна цветом');
+  ok(!b.includes('var(--green)') && !b.includes('#00e5a0'), 'но не зелёная: зелёный здесь значит «разрешено покупать»');
   ok(b.includes('Настоящий ордер не ставится'), 'сказано, что ордера нет');
   ok(b.includes('может исполниться не сразу'), 'сказано, что лимитка по биду может ждать');
   ok(recoveryPaperButton('<b>x</b>', 'f()').includes('data-paper-buy="bxb"'), 'имя монеты чистится');
@@ -90,6 +108,7 @@ console.log('Сервер: вход по биду, комиссия мейкер
   ok(/app\.get\('\/api\/paper-entry'/.test(src), 'маршрут чтения есть');
   ok(/app\.post\('\/api\/paper-entry'/.test(src), 'маршрут покупки есть');
   ok(/app\.delete\('\/api\/paper-entry\/:id'/.test(src), 'маршрут удаления есть');
+  ok(/app\.delete\('\/api\/paper-entry'/.test(src), 'маршрут удаления всех есть');
   const block = src.slice(src.indexOf("app.post('/api/paper-entry'"), src.indexOf("app.delete('/api/paper-entry/:id'"));
   ok(block.includes('entry: quote.bid'), 'вход записывается по лучшему биду');
   ok(block.includes('paperLimitFee()'), 'комиссия — мейкерская, как у лимитки');

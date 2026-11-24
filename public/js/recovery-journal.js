@@ -732,18 +732,24 @@
   // Вход — по лучшему биду с комиссией мейкера, выход считается так же;
   // в реальности такая заявка встаёт в очередь и может не исполниться сразу,
   // поэтому это сказано прямо в подсказке, а не подразумевается.
+  // Кнопка крупная и подписанная словом, а не сокращением: прежняя «бум.»
+  // была серой, в девять пикселей, и по ней не удавалось попасть пальцем.
+  // Высота 28 пикселей — нижняя граница, на которой кнопка нажимается с
+  // первого раза; цвет синий, а не зелёный, чтобы её не прочитали как
+  // разрешение покупать (зелёный в этой панели означает именно его).
   function recoveryPaperButton(coin, onClick, size) {
     const safe = String(coin || '').replace(/[^A-Z0-9]/gi, '');
     return '<button data-paper-buy="' + safe + '" onclick="event.stopPropagation();' + onClick + '" ' +
       'title="Бумажная покупка ' + safe + ' по лучшему биду, лимиткой, на $100. Настоящий ордер не ставится. ' +
       'Дальше в блоке ниже будет видно, сколько сделка принесла бы сейчас. ' +
       'В реальности лимитка по биду встаёт в очередь и может исполниться не сразу." ' +
-      'style="margin-left:6px;padding:1px 6px;font-size:' + (size || 9) + 'px;line-height:1.4;cursor:pointer;' +
-      'border-radius:5px;vertical-align:middle;border:1px solid var(--b1);background:transparent;color:var(--t2);">' +
-      'бум.</button>';
+      'style="margin-left:6px;padding:0 10px;min-height:28px;font-size:' + (size || 11) + 'px;font-weight:700;' +
+      'line-height:1;cursor:pointer;border-radius:7px;vertical-align:middle;white-space:nowrap;' +
+      'border:1px solid var(--blue);background:rgba(0,180,255,0.14);color:var(--blue);">' +
+      '📝 Купить</button>';
   }
   // Блок открытых бумажных сделок с онлайн-прибылью и кнопкой удаления.
-  function renderPaperEntry(data, onDelete) {
+  function renderPaperEntry(data, onDelete, onDeleteAll) {
     if (!data || data.success === false) {
       return '<div style="color:var(--t2);">Бумажные сделки недоступны' +
         (data && data.error ? ': ' + escapeHtml(String(data.error)) : '.') + '</div>';
@@ -752,11 +758,11 @@
     const money = v => (v >= 0 ? '+$' : '−$') + Math.abs(v).toFixed(2);
     const price = v => v == null ? '—' : Number(v) < 0.001 ? Number(v).toFixed(8)
       : Number(v) < 1 ? Number(v).toFixed(5) : Number(v) < 100 ? Number(v).toFixed(3) : Number(v).toFixed(2);
-    const head = '<b style="color:var(--t1);">Бумажные сделки</b> ' +
+    const head = '<b style="color:var(--t1);font-size:11px;">Бумажные сделки</b> ' +
       '<span title="Покупка по лучшему биду лимиткой на $' + (data.budgetUsd || 100) +
       '. Прибыль считается по текущему биду за вычетом обеих комиссий. Настоящих ордеров нет.">· ' + open.length + '</span>';
     if (!open.length) {
-      return '<div>' + head + '<br><span style="color:var(--t2);">Нажмите «бум.» в строке монеты, чтобы записать покупку.</span></div>';
+      return '<div>' + head + '<br><span style="color:var(--t2);">Нажмите <b style="color:var(--blue);">📝 Купить</b> в строке монеты, чтобы записать бумажную покупку.</span></div>';
     }
     // Итог печатаем только когда известны все цены: частичная сумма,
     // выданная за полную, — это молчаливая ложь о результате.
@@ -779,10 +785,20 @@
         (known ? money(t.pnlUsd) + ' <span style="font-weight:400;">(' + (t.pnlPct >= 0 ? '+' : '') + t.pnlPct + '%)</span>' : '—') + '</span>' +
         '<button data-paper-del="' + escapeHtml(t.id) + '" onclick="' + onDelete.replace('%ID%', escapeHtml(t.id)) + '" ' +
         'title="Удалить бумажную сделку ' + safe + '" ' +
-        'style="padding:1px 6px;font-size:10px;line-height:1.4;cursor:pointer;border-radius:5px;' +
-        'border:1px solid rgba(255,107,107,0.5);background:transparent;color:#ff6b6b;">удалить</button></div>';
+        'style="padding:0 10px;min-height:28px;font-size:11px;font-weight:700;line-height:1;cursor:pointer;' +
+        'border-radius:7px;white-space:nowrap;border:1px solid #ff6b6b;background:rgba(255,107,107,0.14);' +
+        'color:#ff6b6b;">✕ Удалить</button></div>';
     }).join('');
-    return '<div><div style="display:flex;align-items:center;gap:6px;">' + head + total + '</div>' + rows + '</div>';
+    // Удалить всё — отдельной кнопкой под списком, а не рядом с построчными:
+    // промах по соседней кнопке стёр бы весь журнал вместо одной строки.
+    const clearAll = onDeleteAll && open.length > 1
+      ? '<div style="margin-top:6px;text-align:right;"><button data-paper-del-all="1" onclick="' + onDeleteAll + '" ' +
+        'title="Удалить все бумажные сделки (' + open.length + ')" ' +
+        'style="padding:0 10px;min-height:28px;font-size:11px;font-weight:700;line-height:1;cursor:pointer;' +
+        'border-radius:7px;border:1px solid rgba(255,107,107,0.6);background:transparent;color:#ff6b6b;">' +
+        '✕ Удалить все (' + open.length + ')</button></div>'
+      : '';
+    return '<div><div style="display:flex;align-items:center;gap:6px;">' + head + total + '</div>' + rows + clearAll + '</div>';
   }
   // РАЗГОН ЗА МЕСЯЦ — пометка риска рядом с названием монеты (обе вёрстки).
   // Рейтинг смотрит сутки и не видит, что монета перед этим выросла в разы и

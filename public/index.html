@@ -16372,7 +16372,7 @@ Requirements:
     function paintPaperEntry() {
       const el = document.getElementById('paperEntryBox');
       if (!el || !paperEntryData) return;
-      el.innerHTML = renderPaperEntry(paperEntryData, 'paperEntryDelete(\'%ID%\')');
+      el.innerHTML = renderPaperEntry(paperEntryData, 'paperEntryDelete(\'%ID%\')', 'paperEntryDeleteAll()');
     }
     async function loadPaperEntry() {
       try {
@@ -16393,6 +16393,21 @@ Requirements:
         const j = await r.json();
         if (!j.success) { showCustomAlert(j.error || 'Не удалось записать бумажную покупку'); return; }
       } catch (e) { showCustomAlert('Бумажная покупка не записана: ' + e.message); return; }
+      await loadPaperEntry();
+    }
+    async function paperEntryDeleteAll() {
+      const n = paperEntryData && Array.isArray(paperEntryData.open) ? paperEntryData.open.length : 0;
+      // Удаление всего журнала не отменить, поэтому спрашиваем.
+      if (!confirm('Удалить все бумажные сделки (' + n + ')? Это не отменить.')) return;
+      try {
+        const r = await fetch('/api/paper-entry', { method: 'DELETE' });
+        const j = r.ok ? await r.json() : null;
+        if (j && Array.isArray(j.open)) { paperEntryData = j; paintPaperEntry(); return; }
+        // Отказ не должен выглядеть как «ничего не произошло»: однажды сервер
+        // ответил «Cannot DELETE» (старый процесс без маршрута), а экран молча
+        // перерисовал прежний список.
+        showCustomAlert((j && j.error) || 'Сделки не удалены: сервер ответил ' + r.status);
+      } catch (e) { showCustomAlert('Сделки не удалены: ' + e.message); }
       await loadPaperEntry();
     }
     async function paperEntryDelete(id) {

@@ -7592,6 +7592,17 @@ app.post('/api/paper-entry', async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, error: String(e.message || e).slice(0, 200) }); }
 });
 
+// Удалить все бумажные сделки разом. Отдельный маршрут, а не удаление по
+// одной в цикле: иначе на половине списка связь оборвётся, и останется
+// неизвестно что.
+app.delete('/api/paper-entry', async (req, res) => {
+  const removed = entryPaperManual.trades.length;
+  entryPaperManual.trades = [];
+  saveEntryPaperManual();
+  try { res.json({ ...(await entryPaperResponse()), removed }); }
+  catch { res.json({ success: true, removed, open: [] }); }
+});
+
 app.delete('/api/paper-entry/:id', async (req, res) => {
   const before = entryPaperManual.trades.length;
   entryPaperManual.trades = entryPaperManual.trades.filter(t => t.id !== req.params.id);
