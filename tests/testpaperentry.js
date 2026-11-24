@@ -132,6 +132,13 @@ console.log('Сервер: вход по биду, комиссия мейкер
   const budget = src.slice(src.indexOf("app.post('/api/paper-entry/budget'"), src.indexOf("app.delete('/api/paper-entry'"));
   ok(budget.includes('MANUAL_PAPER_MIN_USD') && budget.includes('MANUAL_PAPER_MAX_USD'), 'сумма проверяется по границам');
   ok(budget.includes('Math.round(usd * 100) / 100'), 'сумма округляется до цента');
+  // Сумма обязана пережить перезапуск: она пишется в файл и читается при
+  // старте, иначе после каждого деплоя вернулась бы сотня.
+  ok(budget.includes('saveEntryPaperManual()'), 'сумма пишется в файл сразу');
+  const boot = src.slice(src.indexOf('let entryPaperManual ='), src.indexOf('function saveEntryPaperManual'));
+  ok(boot.includes('saved.budgetUsd'), 'при старте сумма читается из файла');
+  ok(boot.includes('MANUAL_PAPER_MIN_USD') && boot.includes('MANUAL_PAPER_MAX_USD'),
+    'испорченная сумма из файла не принимается');
   ok(!budget.includes('entryPaperManual.trades ='), 'открытые сделки на прежней сумме не переписываются');
   const block = src.slice(src.indexOf("app.post('/api/paper-entry'"), src.indexOf("app.delete('/api/paper-entry/:id'"));
   ok(block.includes('entry: quote.bid'), 'вход записывается по лучшему биду');
