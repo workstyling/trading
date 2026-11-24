@@ -6,7 +6,8 @@ const os = require('os');
 const crypto = require('crypto');
 const { RESTClient } = require('./cb/dist/rest/index.js');
 const predictor = require('./src/predictor');
-const { recoverySignalRows } = require('./public/js/recovery-journal');
+const { recoverySignalRows, recoveryObservation, recoveryEdge, recoveryBaseline,
+  chaseEntry: recoveryChaseEntry } = require('./public/js/recovery-journal');
 const { nextCheckAt, finishCheck } = require('./src/recovery/check-state');
 
 // ХВОСТ ЖУРНАЛА В ПАМЯТИ.
@@ -7605,6 +7606,242 @@ app.post('/api/paper-entry', async (req, res) => {
     res.json({ success: true, trade: entryPaperView(trade, quote.bid) });
   } catch (e) { res.status(500).json({ success: false, error: String(e.message || e).slice(0, 200) }); }
 });
+
+// ══════════════════════════════════════════════════════════════════
+// НАБЛЮДЕНИЕ ЗА МОНЕТОЙ ДО УДОБНОГО МОМЕНТА ВХОДА
+//
+// Монета ставится под наблюдение кнопкой в списке. Дальше сервер каждые
+// полминуты пересчитывает её условия и ждёт момента, когда выполнены ВСЕ
+// измеренные условия входа сразу. В этот момент уходит одно сообщение в
+// Telegram, оповещение снимается само, а наблюдение продолжается — чтобы
+// включить следующее сообщение, надо нажать кнопку в блоке.
+//
+// Условия взяты только из того, что измерено, и считаются тем же кодом, что
+// рисует панель (recovery-journal), чтобы экран и сообщение не разошлись:
+//   • падение от суточного максимума и спред — гейт панели;
+//   • суточный ход в пределах ±10% — вне этого строка считается рискованной;
+//   • не «вдогонку» — рост за 15 минут перед входом измеренно хуже;
+//   • не резкий провал — откат от порога замера измеренно хуже;
+//   • частота цели выше базы значимо — свежая ночная сверка.
+//
+// Чего здесь НЕТ и быть не может: обещания прибыли. Измеренная частота
+// относится к цели +0.30%, а круг лимитных комиссий на нынешнем тарифе
+// дороже этой цели, и прогон по свечам показывает, что отбор издержек не
+// окупает. Поэтому и на экране, и в сообщении это сказано прямо.
+// ══════════════════════════════════════════════════════════════════
+const ENTRY_WATCH_FILE = path.join(__dirname, 'entry-watch.json');
+const ENTRY_WATCH_MAX = 10;              // больше десяти — это уже не наблюдение, а шум
+const ENTRY_WATCH_TICK_MS = 30 * 1000;
+const ENTRY_WATCH_RISK_CHG = 10;         // |ход за сутки| от этого — рискованная строка
+let entryWatch = { items: [] };
+try {
+  const saved = JSON.parse(fs.readFileSync(ENTRY_WATCH_FILE, 'utf8'));
+  if (saved && Array.isArray(saved.items)) {
+    entryWatch.items = saved.items
+      .filter(it => it && typeof it.coin === 'string')
+      .slice(0, ENTRY_WATCH_MAX)
+      .map(it => ({
+        coin: it.coin, armed: !!it.armed,
+        addedAt: Number(it.addedAt) || Date.now(),
+        firedAt: Number(it.firedAt) || 0,
+        firedPrice: Number(it.firedPrice) || 0,
+      }));
+  }
+} catch { }
+function saveEntryWatch() {
+  try { fs.writeFileSync(ENTRY_WATCH_FILE, JSON.stringify(entryWatch, null, 2)); }
+  catch (e) { console.error('[entry-watch] save', e.message); }
+}
+
+// Подробный разбор одной монеты: каждое условие названо, показано его
+// значение и сказано, на чём оно основано. Никаких скрытых баллов — то, что
+// видно на экране, и есть всё, на чём держится решение.
+function entryWatchAnalyze(coin, scan) {
+  const row = (scan.results || []).find(r => r.coin === coin);
+  const gate = scan.gate || {};
+  const fresh = !scan.staleSince && finiteNum(scan.at) && Date.now() - scan.at <= 5 * 60000;
+  const out = {
+    coin, at: Date.now(), inScan: !!row, scanFresh: fresh,
+    price: row ? row.price : null,
+    spreadPct: row ? row.spreadPct : null,
+    dayFallPct: row ? row.dayFallPct : null,
+    pullbackPct: row ? row.pullbackPct : null,
+    mom15Pct: row ? row.mom15Pct : null,
+    chg24Pct: row ? row.chg24Pct : null,
+    rsi: row ? row.rsi : null,
+    mcap: row ? row.mcap : null,
+    vol24: row ? row.vol24 : null,
+    checks: [], ready: false, hourPct: null, hourOfCoin: null, baselinePct: null,
+  };
+  const add = (k, ok, v, why) => out.checks.push({ k, ok: !!ok, v: v == null ? '—' : String(v), why });
+  // Пока скана нет или он устарел, решать не на чем: это «неизвестно», а не
+  // «можно». Монета могла выпасть из списка и по условиям, и по сбою биржи.
+  add('Монета в свежем скане', !!row && fresh,
+    !row ? 'нет в списке' : fresh ? 'да' : 'скан устарел',
+    'Без свежей цены и условий вход не оценивается.');
+  if (!row || !fresh) return out;
+
+  const fallOk = finiteNum(row.dayFallPct) && Number(row.dayFallPct) >= Number(gate.fallPct);
+  add('Падение от суточного максимума ≥ ' + gate.fallPct + '%', fallOk,
+    finiteNum(row.dayFallPct) ? row.dayFallPct + '%' : 'неизвестно',
+    'Чем глубже падение, тем чаще цена возвращается: +15 п.п. при погрешности 3.5.');
+
+  const spreadOk = finiteNum(row.spreadPct) && Number(row.spreadPct) >= 0 && Number(row.spreadPct) <= Number(gate.spreadPct);
+  add('Спред не шире ' + gate.spreadPct + '%', spreadOk,
+    finiteNum(row.spreadPct) ? row.spreadPct + '%' : 'неизвестен',
+    'Спред платится в каждой сделке целиком; шире цели — сделка не может выйти в плюс.');
+
+  const calmOk = finiteNum(row.chg24Pct) && Math.abs(Number(row.chg24Pct)) < ENTRY_WATCH_RISK_CHG;
+  add('Ход за сутки в пределах ±' + ENTRY_WATCH_RISK_CHG + '%', calmOk,
+    finiteNum(row.chg24Pct) ? (row.chg24Pct > 0 ? '+' : '') + row.chg24Pct + '%' : 'неизвестен',
+    'За этой границей строка считается рискованной.');
+
+  const chase = recoveryChaseEntry(row, scan);
+  add('Не вдогонку: цена не растёт последние 15 минут', !chase,
+    finiteNum(row.mom15Pct) ? (row.mom15Pct > 0 ? '+' : '') + row.mom15Pct + '%' : 'неизвестно',
+    'Вход вдогонку измеренно хуже спокойного: −0.24 и −0.28 п.п. за час в двух половинах замера.');
+
+  const steepAt = scan.pullbackNet && scan.pullbackNet.steep && scan.pullbackNet.steep.verdict === 'хуже'
+    ? Number(scan.pullbackNet.steep.at) : null;
+  const steepOk = steepAt == null || (finiteNum(row.pullbackPct) && Number(row.pullbackPct) < steepAt);
+  add(steepAt == null ? 'Откат от получасового максимума' : 'Откат меньше ' + steepAt + '% (не резкий провал)', steepOk,
+    finiteNum(row.pullbackPct) ? row.pullbackPct + '%' : 'неизвестен',
+    steepAt == null ? 'Замер резкого провала недоступен — условие не решает исход.'
+      : 'Резкий провал измеренно хуже остального списка: −0.26 при погрешности 0.09.');
+
+  const observation = recoveryObservation(row, scan);
+  const edge = recoveryEdge(observation, recoveryBaseline(scan));
+  out.hourPct = observation && finiteNum(observation.hour) ? observation.hour : null;
+  out.hourOfCoin = observation ? !!observation.ofCoin : null;
+  out.baselinePct = edge && finiteNum(edge.baseline) ? edge.baseline : null;
+  add('Частота цели выше базы значимо', !!(edge && edge.above),
+    out.hourPct == null ? 'нет свежей оценки'
+      : out.hourPct + '%' + (out.baselinePct == null ? '' : ' против базы ' + out.baselinePct + '%'),
+    'Частота касания цели +0.30% за час. Это не вероятность прибыли.');
+
+  out.ready = out.checks.every(c => c.ok);
+  return out;
+}
+const finiteNum = v => v != null && v !== '' && typeof v !== 'boolean' && Number.isFinite(Number(v));
+
+async function entryWatchState() {
+  const scan = entryScanResponse();
+  const fees = entryScan.fees;
+  const roundPct = fees && Number.isFinite(fees.limitPct) ? Math.round(fees.limitPct * 2 * 1000) / 1000 : null;
+  return {
+    success: true,
+    tgConfigured: tgConfigured(),
+    max: ENTRY_WATCH_MAX,
+    // Круг комиссий рядом с анализом: без него «условия выполнены» читается
+    // как «будет прибыль», а цель +0.3% этого круга не окупает.
+    roundTripPct: roundPct,
+    targetPct: scan.entryNet && Number.isFinite(scan.entryNet.target) ? scan.entryNet.target : null,
+    items: entryWatch.items.map(it => ({
+      ...entryWatchAnalyze(it.coin, scan),
+      armed: it.armed, addedAt: it.addedAt, firedAt: it.firedAt, firedPrice: it.firedPrice,
+    })),
+  };
+}
+
+app.get('/api/entry-watch', async (req, res) => {
+  try { res.json(await entryWatchState()); }
+  catch (e) { res.status(500).json({ success: false, error: String(e.message || e).slice(0, 200) }); }
+});
+
+app.post('/api/entry-watch', async (req, res) => {
+  try {
+    const coin = String((req.body || {}).coin || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (!coin) return res.status(400).json({ success: false, error: 'Монета не указана' });
+    if (entryWatch.items.some(it => it.coin === coin)) {
+      return res.json({ success: false, error: coin + ' уже под наблюдением' });
+    }
+    if (entryWatch.items.length >= ENTRY_WATCH_MAX) {
+      return res.json({ success: false, error: 'Уже ' + ENTRY_WATCH_MAX + ' монет под наблюдением: уберите лишние' });
+    }
+    entryWatch.items.push({ coin, armed: true, addedAt: Date.now(), firedAt: 0, firedPrice: 0 });
+    saveEntryWatch();
+    console.log('[entry-watch] под наблюдением ' + coin);
+    res.json(await entryWatchState());
+  } catch (e) { res.status(500).json({ success: false, error: String(e.message || e).slice(0, 200) }); }
+});
+
+// Включить следующее оповещение по монете (или выключить, не снимая наблюдение).
+app.post('/api/entry-watch/arm', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const coin = String(body.coin || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const enable = body.enable === undefined ? true : !!body.enable;
+    const item = entryWatch.items.find(it => it.coin === coin);
+    if (!item) return res.json({ success: false, error: 'Монета не под наблюдением' });
+    // Включать оповещение без настроенного Telegram незачем: сообщение
+    // всё равно не уйдёт, а кнопка выглядела бы работающей.
+    if (enable && !tgConfigured()) {
+      return res.json({ success: false, error: 'Telegram не настроен: укажите Bot Token и Chat ID в настройках' });
+    }
+    item.armed = enable;
+    saveEntryWatch();
+    res.json(await entryWatchState());
+  } catch (e) { res.status(500).json({ success: false, error: String(e.message || e).slice(0, 200) }); }
+});
+
+app.delete('/api/entry-watch/:coin', async (req, res) => {
+  const coin = String(req.params.coin || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const before = entryWatch.items.length;
+  entryWatch.items = entryWatch.items.filter(it => it.coin !== coin);
+  if (entryWatch.items.length === before) return res.json({ success: false, error: 'Монета не под наблюдением' });
+  saveEntryWatch();
+  try { res.json(await entryWatchState()); }
+  catch { res.json({ success: true }); }
+});
+
+// Тик наблюдения. Одно сообщение на одно включение: сработало — оповещение
+// снято, наблюдение продолжается.
+setInterval(async () => {
+  if (!entryWatch.items.some(it => it.armed)) return;
+  let scan;
+  try { scan = entryScanResponse(); } catch (e) { console.error('[entry-watch]', e.message); return; }
+  const fees = entryScan.fees;
+  const roundPct = fees && Number.isFinite(fees.limitPct) ? Math.round(fees.limitPct * 2 * 1000) / 1000 : null;
+  for (const item of entryWatch.items) {
+    if (!item.armed) continue;
+    let a;
+    try { a = entryWatchAnalyze(item.coin, scan); } catch (e) { console.error('[entry-watch]', item.coin, e.message); continue; }
+    if (!a.ready) continue;
+    try {
+      const target = scan.entryNet && Number.isFinite(scan.entryNet.target) ? scan.entryNet.target : null;
+      const sent = await sendTelegram(
+        `🔎 <b>МОМЕНТ ВХОДА</b> — <b>${escTg(a.coin)}-USD</b>\n` +
+        `Все измеренные условия выполнены одновременно.\n` +
+        `━━━━━━━━━━━━━━━━━━\n` +
+        a.checks.map(c => `${c.ok ? '✅' : '❌'} ${escTg(c.k)}: ${escTg(c.v)}`).join('\n') + '\n' +
+        `━━━━━━━━━━━━━━━━━━\n` +
+        `💵 Цена: $${escTg(String(a.price))}` +
+        (a.spreadPct != null ? ` · спред ${escTg(String(a.spreadPct))}%` : '') +
+        (a.rsi != null ? ` · RSI ${Math.round(a.rsi)}` : '') + '\n' +
+        (a.hourPct != null
+          ? `📊 Цель +${target == null ? '0.30' : target}% за час достигалась в ${escTg(String(a.hourPct))}% случаев` +
+            (a.hourOfCoin ? ' (по самой монете)' : ' (по группе)') +
+            (a.baselinePct != null ? `, база ${escTg(String(a.baselinePct))}%` : '') + '\n'
+          : '') +
+        '\n' +
+        `<i>Это не обещание прибыли. Частота относится к цели +${target == null ? '0.30' : target}%` +
+        (roundPct != null ? `, а круг лимитных комиссий на вашем тарифе стоит ${escTg(String(roundPct))}% — такая цель его не окупает` : '') +
+        `. Прогон по свечам показывает, что отбор в целом издержек не окупает.</i>\n` +
+        `(одноразовое оповещение — выключено, наблюдение продолжается)`, 'HTML');
+      // Снимаем только когда сообщение действительно ушло: иначе отказ
+      // Telegram выглядел бы так, будто момента просто не было.
+      if (!sent) {
+        console.error('[entry-watch] ' + a.coin + ': отправка не удалась, оповещение остаётся включённым');
+        continue;
+      }
+      item.armed = false;
+      item.firedAt = Date.now();
+      item.firedPrice = a.price;
+      saveEntryWatch();
+      console.log('[entry-watch] сработал ' + a.coin + ' по $' + a.price + ', telegram=ok');
+    } catch (e) { console.error('[entry-watch]', item.coin, e.message); }
+  }
+}, ENTRY_WATCH_TICK_MS);
 
 // Сумма одной бумажной сделки. Хранится на сервере, а не в браузере: иначе
 // телефон и компьютер считали бы прибыль по разным суммам.

@@ -726,6 +726,89 @@
     const round = Math.round(Number(f.limitPct) * 2 * 1000) / 1000;
     return round >= Number(net.target) ? ' Цель +' + Number(net.target) + '% меньше комиссии за круг ' + round + '%.' : '';
   }
+  // НАБЛЮДЕНИЕ ЗА МОНЕТОЙ ДО МОМЕНТА ВХОДА (обе вёрстки).
+  //
+  // Кнопка ставит монету под наблюдение, сервер каждые полминуты пересчитывает
+  // её условия. Когда выполнены все сразу — одно сообщение в Telegram, после
+  // чего оповещение снимается само, а наблюдение продолжается.
+  function recoveryWatchButton(coin, onClick, size) {
+    const safe = String(coin || '').replace(/[^A-Z0-9]/gi, '');
+    return '<button data-watch-add="' + safe + '" onclick="event.stopPropagation();' + onClick + '" ' +
+      'title="Следить за ' + safe + ' и прислать одно сообщение в Telegram, когда совпадут все измеренные условия входа. ' +
+      'После сообщения оповещение выключится само, наблюдение продолжится." ' +
+      'style="margin-left:5px;padding:0 9px;min-height:28px;font-size:' + (size || 11) + 'px;font-weight:700;' +
+      'line-height:1;cursor:pointer;border-radius:7px;vertical-align:middle;white-space:nowrap;' +
+      'border:1px solid #f5c518;background:rgba(245,197,24,0.14);color:#f5c518;">👁 Следить</button>';
+  }
+  function watchAgo(at, now) {
+    if (!finite(at) || !(Number(at) > 0)) return '';
+    const min = Math.round((now - Number(at)) / 60000);
+    return min < 1 ? 'только что' : min < 60 ? min + ' мин назад' : Math.round(min / 60) + ' ч назад';
+  }
+  // Блок наблюдения. onArm/onDisarm/onRemove — вызовы своей вёрстки, %COIN%
+  // подставляется монетой.
+  function renderEntryWatch(data, onArm, onDisarm, onRemove, now = Date.now()) {
+    if (!data || data.success === false) {
+      return '<div style="color:var(--t2);">Наблюдение недоступно' +
+        (data && data.error ? ': ' + escapeHtml(String(data.error)) : '.') + '</div>';
+    }
+    const items = Array.isArray(data.items) ? data.items : [];
+    const head = '<b style="color:var(--t1);font-size:11px;">👁 Наблюдение за входом</b> ' +
+      '<span title="Сервер пересчитывает условия каждые полминуты. Когда совпадут все — одно сообщение в Telegram, ' +
+      'после чего оповещение выключается само.">· ' + items.length + '</span>' +
+      (data.tgConfigured === false
+        ? ' <span style="color:#ff6b6b;">Telegram не настроен — сообщение не уйдёт</span>' : '');
+    if (!items.length) {
+      return '<div>' + head + '<br><span style="color:var(--t2);">Нажмите <b style="color:#f5c518;">👁 Следить</b> ' +
+        'в строке монеты, чтобы ждать момента входа.</span></div>';
+    }
+    const price = v => v == null ? '—' : Number(v) < 0.001 ? Number(v).toFixed(8)
+      : Number(v) < 1 ? Number(v).toFixed(5) : Number(v) < 100 ? Number(v).toFixed(3) : Number(v).toFixed(2);
+    const btn = (call, text, color, title) =>
+      '<button onclick="' + call + '" title="' + escapeHtml(title) + '" ' +
+      'style="padding:0 9px;min-height:26px;font-size:10px;font-weight:700;line-height:1;cursor:pointer;' +
+      'border-radius:6px;white-space:nowrap;border:1px solid ' + color + ';background:transparent;color:' + color + ';">' +
+      text + '</button>';
+    const rows = items.map(it => {
+      const safe = String(it.coin).replace(/[^A-Z0-9]/gi, '');
+      const done = it.checks ? it.checks.filter(c => c.ok).length : 0;
+      const total = it.checks ? it.checks.length : 0;
+      // Состояние оповещения важнее всего: из-за него приходит или не
+      // приходит сообщение, и путать его с готовностью условий нельзя.
+      const state = it.armed
+        ? '<span style="color:#f5c518;font-weight:700;">оповещение включено</span>'
+        : it.firedAt
+          ? '<span style="color:var(--green);font-weight:700;">сработало ' + watchAgo(it.firedAt, now) +
+            (finite(it.firedPrice) && it.firedPrice > 0 ? ' по $' + price(it.firedPrice) : '') + '</span>'
+          : '<span style="color:var(--t2);">оповещение выключено</span>';
+      const checks = (it.checks || []).map(c =>
+        '<div title="' + escapeHtml(String(c.why || '')) + '" style="display:flex;gap:6px;padding:1px 0;">' +
+        '<span style="color:' + (c.ok ? 'var(--green)' : '#ff6b6b') + ';">' + (c.ok ? '✓' : '✗') + '</span>' +
+        '<span style="color:var(--t2);">' + escapeHtml(String(c.k)) + '</span>' +
+        '<span style="margin-left:auto;color:' + (c.ok ? 'var(--t1)' : '#ff9f9f') + ';white-space:nowrap;">' +
+        escapeHtml(String(c.v)) + '</span></div>').join('');
+      const buttons = (it.armed
+        ? btn(onDisarm.replace('%COIN%', safe), 'Выключить', 'var(--t2)', 'Перестать ждать сообщение, наблюдение останется')
+        : btn(onArm.replace('%COIN%', safe), '🔔 Включить оповещение', '#f5c518',
+          'Прислать следующее сообщение, когда снова совпадут все условия')) +
+        ' ' + btn(onRemove.replace('%COIN%', safe), '✕ Убрать', '#ff6b6b', 'Снять ' + safe + ' с наблюдения');
+      return '<div style="padding:5px 0;border-top:1px solid var(--b1);">' +
+        '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">' +
+        '<b style="color:var(--t1);font-size:11px;">' + safe + '</b>' +
+        '<span style="color:var(--t2);">$' + price(it.price) + '</span>' +
+        '<span style="color:' + (it.ready ? 'var(--green)' : 'var(--t2)') + ';font-weight:700;">' +
+        (it.ready ? 'момент настал: ' : 'ждём: ') + done + ' из ' + total + '</span>' +
+        '<span style="margin-left:auto;">' + state + '</span></div>' +
+        '<div style="margin-top:3px;">' + checks + '</div>' +
+        '<div style="margin-top:4px;display:flex;gap:5px;flex-wrap:wrap;">' + buttons + '</div></div>';
+    }).join('');
+    // Честная приписка: «все условия выполнены» — это не «будет прибыль».
+    const note = finite(data.roundTripPct) && finite(data.targetPct) && Number(data.roundTripPct) >= Number(data.targetPct)
+      ? '<div style="margin-top:5px;color:#ff9f9f;">Совпадение условий — не обещание прибыли: цель +' + data.targetPct +
+        '% меньше круга комиссий ' + data.roundTripPct + '%.</div>'
+      : '<div style="margin-top:5px;color:var(--t2);">Совпадение условий — не обещание прибыли.</div>';
+    return '<div>' + head + rows + note + '</div>';
+  }
   // РУЧНАЯ БУМАЖНАЯ ПОКУПКА (обе вёрстки).
   //
   // Кнопка в строке: «купил бы сейчас по лимитке». Настоящих ордеров нет.
@@ -834,7 +917,7 @@
       'Это пометка риска, её доходность не проверялась.';
   }
   const api = { renderEntryJournal, recoveryPumpMark, recoveryPumpNote, chaseEntry,
-    recoveryPaperButton, renderPaperEntry, recoveryCapVol, recoveryCapVolNote, recoveryFeeLine, renderRecoverySizeGate, recoveryEmptyText, recoveryRegimeLine, renderRecoveryStatus, renderRecoveryLegend, renderRecoveryNet, recoveryObservation,
+    recoveryPaperButton, renderPaperEntry, recoveryWatchButton, renderEntryWatch, recoveryCapVol, recoveryCapVolNote, recoveryFeeLine, renderRecoverySizeGate, recoveryEmptyText, recoveryRegimeLine, renderRecoveryStatus, renderRecoveryLegend, renderRecoveryNet, recoveryObservation,
     recoveryVerdict, recoveryDayChange, recoveryBaseline, recoveryEdge, recoveryOrder, recoveryPeak, recoveryPeakMark, renderRecoveryTieNote, recoveryBuyCell,
     recoveryFresh, recoveryHeldNote,
     recoverySignalRows, renderRecoveryRules, recoveryRowMark, renderRecoveryGroups,

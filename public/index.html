@@ -6344,6 +6344,9 @@
         <!-- Бумажные сделки стоят ПЕРЕД панелью входа, а не внутри неё: это мои
              открытые позиции, а не часть списка кандидатов. Снаружи их видно
              сразу и видно даже тогда, когда скан ещё грузится или отказал. -->
+        <!-- Наблюдение за моментом входа стоит выше бумажных сделок: это то,
+             чего ждёшь прямо сейчас, а сделки — то, что уже сделано. -->
+        <div id="entryWatchBox" style="margin-bottom:10px;padding:7px 10px;border:1px solid var(--b1);border-radius:8px;background:rgba(245,197,24,0.05);font-size:11px;color:var(--t2);"></div>
         <div id="paperEntryBox" style="margin-bottom:10px;padding:7px 10px;border:1px solid var(--b1);border-radius:8px;background:rgba(0,180,255,0.05);font-size:11px;color:var(--t2);"></div>
         <div id="entryScanBox" style="margin-bottom:14px;padding:9px 11px;border:1px solid var(--b1);border-radius:8px;background:var(--s1);"></div>
         <div id="microScalpPanel" style="display:none;">
@@ -16316,6 +16319,7 @@ Requirements:
             '<td style="padding:4px 6px;"><span style="color:' + rowColor + ';font-weight:700;font-size:11px;">' + safe + '</span>' + swingMark(x) + recoveryPumpMark(x) + (peak ? '<span style="margin-left:4px;font-size:8.5px;font-weight:800;color:' + rowColor + ';border:1px solid ' + rowColor + ';border-radius:4px;padding:0 3px;">максимум</span>' : '') +
             '<span data-bookshare="' + safe + '" data-live="1"></span>' +
             recoveryPaperButton(safe, 'paperEntryBuy(\'' + safe + '\')') +
+            recoveryWatchButton(safe, 'entryWatchAdd(\'' + safe + '\')') +
             '<br><span style="color:var(--t2);font-size:9px;white-space:nowrap;">$' + price(x.price) + '</span>' +
             '<br><span style="color:var(--t2);font-size:9px;">от пика ' + (x.dayFallPct == null ? '—' : '−' + x.dayFallPct + '%') + '</span>' +
             '<br><span style="color:var(--t2);font-size:9px;">' + recoveryCapVol(x) + '</span></td>' +
@@ -16399,6 +16403,41 @@ Requirements:
       } catch (e) { showCustomAlert('Бумажная покупка не записана: ' + e.message); return; }
       await loadPaperEntry();
     }
+    // ── НАБЛЮДЕНИЕ ЗА МОМЕНТОМ ВХОДА ──
+    // Условия считает сервер и он же шлёт сообщение; экран только показывает
+    // разбор и управляет оповещением.
+    let entryWatchData = null;
+    function paintEntryWatch() {
+      const el = document.getElementById('entryWatchBox');
+      if (!el || !entryWatchData) return;
+      el.innerHTML = renderEntryWatch(entryWatchData, 'entryWatchArm(\'%COIN%\', true)',
+        'entryWatchArm(\'%COIN%\', false)', 'entryWatchRemove(\'%COIN%\')');
+    }
+    async function loadEntryWatch() {
+      try {
+        entryWatchData = await (await fetch('/api/entry-watch')).json();
+      } catch (e) {
+        if (!entryWatchData) entryWatchData = { success: false, error: e.message };
+      }
+      paintEntryWatch();
+    }
+    async function entryWatchSend(url, opts) {
+      try {
+        const r = await fetch(url, opts);
+        const j = r.ok ? await r.json() : null;
+        if (j && j.success) { entryWatchData = j; paintEntryWatch(); return; }
+        showCustomAlert((j && j.error) || 'Не удалось: сервер ответил ' + r.status);
+      } catch (e) { showCustomAlert('Не удалось: ' + e.message); }
+      await loadEntryWatch();
+    }
+    const entryWatchAdd = coin => entryWatchSend('/api/entry-watch', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ coin }),
+    });
+    const entryWatchArm = (coin, enable) => entryWatchSend('/api/entry-watch/arm', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ coin, enable }),
+    });
+    const entryWatchRemove = coin => entryWatchSend('/api/entry-watch/' + encodeURIComponent(coin), { method: 'DELETE' });
+
     async function paperEntryBudget(value) {
       try {
         const r = await fetch('/api/paper-entry/budget', {
@@ -16543,6 +16582,9 @@ Requirements:
     // спрашивать нечего.
     // Прибыль бумажных сделок «онлайн»: сервер держит цены свежими 15 секунд,
     // чаще спрашивать незачем — ответ будет тот же.
+    // Наблюдение пересчитывается сервером раз в полминуты — чаще спрашивать нечего.
+    setInterval(loadEntryWatch, 30000);
+    loadEntryWatch();
     setInterval(loadPaperEntry, 15000);
     loadPaperEntry();
     setInterval(loadEntryScan, 60_000);

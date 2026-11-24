@@ -1699,6 +1699,9 @@
     <!-- Бумажные сделки стоят ПЕРЕД панелью входа, а не внутри неё: это мои
          открытые позиции, а не часть списка кандидатов. Снаружи их видно
          сразу и видно даже тогда, когда скан ещё грузится или отказал. -->
+    <!-- Наблюдение за моментом входа стоит выше бумажных сделок: это то,
+         чего ждёшь прямо сейчас, а сделки — то, что уже сделано. -->
+    <div id="entryWatchBoxM" style="margin-bottom:10px;padding:7px 9px;border:1px solid var(--b1);border-radius:8px;background:rgba(245,197,24,0.05);font-size:11px;color:var(--t2);"></div>
     <div id="paperEntryBoxM" style="margin-bottom:10px;padding:7px 9px;border:1px solid var(--b1);border-radius:8px;background:rgba(0,180,255,0.05);font-size:11px;color:var(--t2);"></div>
     <div id="entryScanBoxM" style="margin-bottom:14px;padding:8px 9px;border:1px solid var(--b1);border-radius:8px;background:var(--s1);"></div>
     <div id="microScalpPanelM" style="display:none;">
@@ -7380,6 +7383,7 @@
             '<span data-bookshare="' + safe + '"></span>' +
             '<span style="color:var(--t2);font-size:9px;margin-left:5px;white-space:nowrap;">$' + price(x.price) + '</span>' +
             recoveryPaperButton(safe, 'paperEntryBuyM(\'' + safe + '\')', 10) +
+            recoveryWatchButton(safe, 'entryWatchAddM(\'' + safe + '\')', 10) +
             '<br><span style="color:var(--t2);font-size:9px;">' + sub + '<br>' + conditions + '<br>' + recoveryCapVol(x) + '</span></td>' +
             num((edge.above ? String.fromCharCode(9650) + ' ' : '') + rec.text +
               (rec.srcLabel ? '<small style="display:block;font-size:8px;font-weight:400;">' + rec.srcLabel + '</small>' : ''),
@@ -7456,6 +7460,40 @@
       } catch (e) { alert('Бумажная покупка не записана: ' + e.message); return; }
       await loadPaperEntryM();
     }
+    // ── НАБЛЮДЕНИЕ ЗА МОМЕНТОМ ВХОДА ──
+    // Условия считает сервер и он же шлёт сообщение; экран только показывает
+    // разбор и управляет оповещением.
+    let entryWatchDataM = null;
+    function paintEntryWatchM() {
+      const el = document.getElementById('entryWatchBoxM');
+      if (!el || !entryWatchDataM) return;
+      el.innerHTML = renderEntryWatch(entryWatchDataM, 'entryWatchArmM(\'%COIN%\', true)',
+        'entryWatchArmM(\'%COIN%\', false)', 'entryWatchRemoveM(\'%COIN%\')');
+    }
+    async function loadEntryWatchM() {
+      try {
+        entryWatchDataM = await (await fetch('' + BASE + '/api/entry-watch')).json();
+      } catch (e) {
+        if (!entryWatchDataM) entryWatchDataM = { success: false, error: e.message };
+      }
+      paintEntryWatchM();
+    }
+    async function entryWatchSendM(url, opts) {
+      try {
+        const j = await api(url, opts);
+        if (j && j.success) { entryWatchDataM = j; paintEntryWatchM(); return; }
+        alert((j && j.error) || 'Не удалось');
+      } catch (e) { alert('Не удалось: ' + e.message); }
+      await loadEntryWatchM();
+    }
+    const entryWatchAddM = coin => entryWatchSendM('/api/entry-watch', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ coin }),
+    });
+    const entryWatchArmM = (coin, enable) => entryWatchSendM('/api/entry-watch/arm', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ coin, enable }),
+    });
+    const entryWatchRemoveM = coin => entryWatchSendM('/api/entry-watch/' + encodeURIComponent(coin), { method: 'DELETE' });
+
     async function paperEntryBudgetM(value) {
       try {
         const j = await api('/api/paper-entry/budget', {
@@ -7529,6 +7567,9 @@
     // Скан ВХОДА обновляется раз в пять минут на сервере, чаще спрашивать нечего.
     // Прибыль бумажных сделок «онлайн»: сервер держит цены свежими 15 секунд,
     // чаще спрашивать незачем — ответ будет тот же.
+    // Наблюдение пересчитывается сервером раз в полминуты — чаще спрашивать нечего.
+    setInterval(loadEntryWatchM, 30000);
+    loadEntryWatchM();
     setInterval(loadPaperEntryM, 15000);
     loadPaperEntryM();
     setInterval(loadEntryScanM, 60_000);
