@@ -16375,7 +16375,8 @@ Requirements:
     function paintPaperEntry() {
       const el = document.getElementById('paperEntryBox');
       if (!el || !paperEntryData) return;
-      el.innerHTML = renderPaperEntry(paperEntryData, 'paperEntryDelete(\'%ID%\')', 'paperEntryDeleteAll()');
+      el.innerHTML = renderPaperEntry(paperEntryData, 'paperEntryDelete(\'%ID%\')', 'paperEntryDeleteAll()',
+        'paperEntryBudget(this.value)');
     }
     async function loadPaperEntry() {
       try {
@@ -16396,6 +16397,20 @@ Requirements:
         const j = await r.json();
         if (!j.success) { showCustomAlert(j.error || 'Не удалось записать бумажную покупку'); return; }
       } catch (e) { showCustomAlert('Бумажная покупка не записана: ' + e.message); return; }
+      await loadPaperEntry();
+    }
+    async function paperEntryBudget(value) {
+      try {
+        const r = await fetch('/api/paper-entry/budget', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ usd: parseFloat(value) }),
+        });
+        const j = r.ok ? await r.json() : null;
+        if (j && j.success) { paperEntryData = j; paintPaperEntry(); return; }
+        // Отказ надо показать и вернуть прежнее значение: иначе в поле
+        // осталась бы сумма, по которой покупок не будет.
+        showCustomAlert((j && j.error) || 'Сумма не сохранена');
+      } catch (e) { showCustomAlert('Сумма не сохранена: ' + e.message); }
       await loadPaperEntry();
     }
     async function paperEntryDeleteAll() {

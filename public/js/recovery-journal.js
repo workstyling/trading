@@ -749,7 +749,7 @@
       '📝 Купить</button>';
   }
   // Блок открытых бумажных сделок с онлайн-прибылью и кнопкой удаления.
-  function renderPaperEntry(data, onDelete, onDeleteAll) {
+  function renderPaperEntry(data, onDelete, onDeleteAll, onBudget) {
     if (!data || data.success === false) {
       return '<div style="color:var(--t2);">Бумажные сделки недоступны' +
         (data && data.error ? ': ' + escapeHtml(String(data.error)) : '.') + '</div>';
@@ -758,11 +758,24 @@
     const money = v => (v >= 0 ? '+$' : '−$') + Math.abs(v).toFixed(2);
     const price = v => v == null ? '—' : Number(v) < 0.001 ? Number(v).toFixed(8)
       : Number(v) < 1 ? Number(v).toFixed(5) : Number(v) < 100 ? Number(v).toFixed(3) : Number(v).toFixed(2);
+    // Сумма следующей покупки. Меняется здесь же: уже открытые сделки
+    // остаются на своей сумме — менять её задним числом значит переписать
+    // случившийся результат.
+    const budget = finite(data.budgetUsd) ? Number(data.budgetUsd) : 100;
+    const field = !onBudget ? '' :
+      '<label title="Сумма следующей бумажной покупки. Уже открытые сделки остаются на своей сумме." ' +
+      'style="display:inline-flex;align-items:center;gap:4px;margin-left:8px;color:var(--t2);">на $' +
+      '<input data-paper-budget type="number" inputmode="decimal" min="' + (finite(data.minUsd) ? data.minUsd : 1) +
+      '" max="' + (finite(data.maxUsd) ? data.maxUsd : 100000) + '" step="10" value="' + budget + '" ' +
+      'onclick="event.stopPropagation()" onchange="' + onBudget + '" ' +
+      'style="width:72px;min-height:26px;padding:2px 6px;font-size:11px;font-weight:700;' +
+      'border:1px solid var(--b1);border-radius:6px;background:var(--s3,transparent);color:var(--t1);">' +
+      '</label>';
     const head = '<b style="color:var(--t1);font-size:11px;">Бумажные сделки</b> ' +
-      '<span title="Покупка по лучшему биду лимиткой на $' + (data.budgetUsd || 100) +
-      '. Прибыль считается по текущему биду за вычетом обеих комиссий. Настоящих ордеров нет.">· ' + open.length + '</span>';
+      '<span title="Покупка по лучшему биду лимиткой на указанную сумму. ' +
+      'Прибыль считается по текущему биду за вычетом обеих комиссий. Настоящих ордеров нет.">· ' + open.length + '</span>' + field;
     if (!open.length) {
-      return '<div>' + head + '<br><span style="color:var(--t2);">Нажмите <b style="color:var(--blue);">📝 Купить</b> в строке монеты, чтобы записать бумажную покупку.</span></div>';
+      return '<div>' + head + '<br><span style="color:var(--t2);">Нажмите <b style="color:var(--blue);">📝 Купить</b> в строке монеты, чтобы записать бумажную покупку на $' + budget + '.</span></div>';
     }
     // Итог печатаем только когда известны все цены: частичная сумма,
     // выданная за полную, — это молчаливая ложь о результате.

@@ -7491,13 +7491,24 @@ app.get('/api/entry-scan', (req, res) => res.json(entryScanResponse()));
 // же — лимиткой по текущему биду.
 // ══════════════════════════════════════════════════════════════════
 const MANUAL_PAPER_FILE = path.join(__dirname, 'entry-paper-manual.json');
-const MANUAL_PAPER_BUDGET = 100;          // сумма одной бумажной сделки, $
+const MANUAL_PAPER_BUDGET = 100;          // сумма одной бумажной сделки по умолчанию, $
+const MANUAL_PAPER_MIN_USD = 1;           // меньше доллара считать нечего
+const MANUAL_PAPER_MAX_USD = 100000;      // верхняя граница: это бумага, а не счёт
 const MANUAL_PAPER_MAX = 50;              // больше полусотни строк — это уже не экран, а свалка
 const MANUAL_PAPER_QUOTE_TTL = 15 * 1000; // цены обновляем не чаще раза в 15 с
-let entryPaperManual = { trades: [] };
+let entryPaperManual = { budgetUsd: MANUAL_PAPER_BUDGET, trades: [] };
 try {
   const saved = JSON.parse(fs.readFileSync(MANUAL_PAPER_FILE, 'utf8'));
-  if (saved && Array.isArray(saved.trades)) entryPaperManual = { trades: saved.trades };
+  if (saved && Array.isArray(saved.trades)) {
+    // Сумма из файла принимается только разумная: испорченное значение не
+    // должно молча превратить все будущие сделки в ноль.
+    const saveBudget = Number(saved.budgetUsd);
+    entryPaperManual = {
+      budgetUsd: Number.isFinite(saveBudget) && saveBudget >= MANUAL_PAPER_MIN_USD && saveBudget <= MANUAL_PAPER_MAX_USD
+        ? saveBudget : MANUAL_PAPER_BUDGET,
+      trades: saved.trades,
+    };
+  }
 } catch { }
 function saveEntryPaperManual() {
   try { fs.writeFileSync(MANUAL_PAPER_FILE, JSON.stringify(entryPaperManual, null, 2)); }
@@ -7544,7 +7555,8 @@ async function entryPaperResponse() {
   const known = open.filter(o => o.pnlUsd != null);
   return {
     success: true,
-    budgetUsd: MANUAL_PAPER_BUDGET,
+    budgetUsd: entryPaperManual.budgetUsd,
+    minUsd: MANUAL_PAPER_MIN_USD, maxUsd: MANUAL_PAPER_MAX_USD,
     open,
     // Итог только по тем, чья цена известна: иначе сумма врала бы молча.
     totalPnlUsd: known.length ? Math.round(known.reduce((s, o) => s + o.pnlUsd, 0) * 100) / 100 : null,
@@ -7580,8 +7592,10 @@ app.post('/api/paper-entry', async (req, res) => {
       // Комиссии записаны на сделке: тариф поменяется, а прошлая запись
       // обязана остаться воспроизводимой.
       feeEntryPct: maker, feeExitPct: maker,
-      budget: MANUAL_PAPER_BUDGET,
-      qty: MANUAL_PAPER_BUDGET * (1 - maker) / quote.bid,
+      // Сумма берётся текущая и записывается на сделку: позже её поменяют, а
+      // прошлая запись обязана остаться такой, какой была.
+      budget: entryPaperManual.budgetUsd,
+      qty: entryPaperManual.budgetUsd * (1 - maker) / quote.bid,
       openedAt: Date.now(),
     };
     entryPaperManual.trades.push(trade);
@@ -7590,6 +7604,22 @@ app.post('/api/paper-entry', async (req, res) => {
     console.log('[paper-entry] ' + coin + ' бумажная покупка по биду $' + quote.bid);
     res.json({ success: true, trade: entryPaperView(trade, quote.bid) });
   } catch (e) { res.status(500).json({ success: false, error: String(e.message || e).slice(0, 200) }); }
+});
+
+// Сумма одной бумажной сделки. Хранится на сервере, а не в браузере: иначе
+// телефон и компьютер считали бы прибыль по разным суммам.
+app.post('/api/paper-entry/budget', async (req, res) => {
+  const usd = Number((req.body || {}).usd);
+  if (!Number.isFinite(usd) || usd < MANUAL_PAPER_MIN_USD || usd > MANUAL_PAPER_MAX_USD) {
+    return res.json({ success: false, error: 'Сумма должна быть от $' + MANUAL_PAPER_MIN_USD + ' до $' + MANUAL_PAPER_MAX_USD });
+  }
+  // Округление до цента: $33.333333 в поле — это не сумма, а мусор в отчёте.
+  entryPaperManual.budgetUsd = Math.round(usd * 100) / 100;
+  saveEntryPaperManual();
+  // Открытые сделки не трогаем: они куплены на прежнюю сумму, и менять её
+  // задним числом значит переписать уже случившийся результат.
+  try { res.json(await entryPaperResponse()); }
+  catch { res.json({ success: true, budgetUsd: entryPaperManual.budgetUsd }); }
 });
 
 // Удалить все бумажные сделки разом. Отдельный маршрут, а не удаление по

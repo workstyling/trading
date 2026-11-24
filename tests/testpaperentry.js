@@ -87,6 +87,25 @@ console.log('Блок сделок: итог, проценты, кнопка у�
   ok(renderPaperEntry(null, 'd()').includes('недоступны'), 'отсутствие данных не роняет блок');
 }
 
+console.log('Поле суммы покупки');
+{
+  const data = { success: true, budgetUsd: 250, minUsd: 1, maxUsd: 100000, unknown: 0, totalPnlUsd: null, open: [] };
+  const html = renderPaperEntry(data, 'del(\'%ID%\')', 'all()', 'setBudget(this.value)');
+  ok(/<input[^>]*data-paper-budget/.test(html), 'поле есть в шапке блока');
+  ok(/value="250"/.test(html), 'показывает текущую сумму');
+  ok(/min="1"[^>]*max="100000"/.test(html), 'границы приходят с сервера');
+  ok(html.includes('setBudget(this.value)'), 'изменение уходит обработчику');
+  ok(html.includes('type="number"') && html.includes('inputmode="decimal"'), 'на телефоне открывается цифровая клавиатура');
+  ok(html.includes('event.stopPropagation()'), 'клик по полю не проваливается в строку');
+  ok(html.includes('на $250'), 'пустой блок называет текущую сумму');
+  ok(html.includes('открытые сделки остаются на своей сумме'), 'сказано, что прошлые сделки не пересчитываются');
+  // Без обработчика поле не рисуется: нередактируемое поле вводит в заблуждение.
+  ok(!renderPaperEntry(data, 'del(\'%ID%\')').includes('data-paper-budget'), 'без обработчика поля нет');
+  // Испорченная сумма с сервера не должна обнулить подпись
+  ok(renderPaperEntry({ ...data, budgetUsd: null }, 'd()', 'a()', 'b()').includes('value="100"'),
+    'без суммы показывается значение по умолчанию');
+}
+
 console.log('Кнопка покупки честно описана');
 {
   const b = recoveryPaperButton('SOL', 'buy(\'SOL\')');
@@ -109,11 +128,17 @@ console.log('Сервер: вход по биду, комиссия мейкер
   ok(/app\.post\('\/api\/paper-entry'/.test(src), 'маршрут покупки есть');
   ok(/app\.delete\('\/api\/paper-entry\/:id'/.test(src), 'маршрут удаления есть');
   ok(/app\.delete\('\/api\/paper-entry'/.test(src), 'маршрут удаления всех есть');
+  ok(/app\.post\('\/api\/paper-entry\/budget'/.test(src), 'маршрут суммы есть');
+  const budget = src.slice(src.indexOf("app.post('/api/paper-entry/budget'"), src.indexOf("app.delete('/api/paper-entry'"));
+  ok(budget.includes('MANUAL_PAPER_MIN_USD') && budget.includes('MANUAL_PAPER_MAX_USD'), 'сумма проверяется по границам');
+  ok(budget.includes('Math.round(usd * 100) / 100'), 'сумма округляется до цента');
+  ok(!budget.includes('entryPaperManual.trades ='), 'открытые сделки на прежней сумме не переписываются');
   const block = src.slice(src.indexOf("app.post('/api/paper-entry'"), src.indexOf("app.delete('/api/paper-entry/:id'"));
   ok(block.includes('entry: quote.bid'), 'вход записывается по лучшему биду');
   ok(block.includes('paperLimitFee()'), 'комиссия — мейкерская, как у лимитки');
   ok(!/createOrder|placeLimit|placeMarket/.test(block), 'настоящих ордеров ветка не ставит');
   ok(block.includes('Биржа не дала цену'), 'без цены покупка отклоняется, а не придумывается');
+  ok(block.includes('budget: entryPaperManual.budgetUsd'), 'покупка берёт текущую сумму и пишет её на сделку');
   ok(/entry-paper-manual\.json/.test(read('.gitignore')), 'живые данные не едут в репозиторий');
   // Журнал эксперимента paper-бота остаётся отдельным
   ok(!block.includes('paperBot.open.push'), 'ручные сделки не попадают в эксперимент paper-бота');
