@@ -127,6 +127,10 @@ for (const [file, buy, del, box] of [
   const src = read(file);
   ok(src.includes('recoveryPaperButton(safe, \'' + buy + '('), file + ': кнопка в строке монеты');
   ok(src.includes('id="' + box + '"'), file + ': блок сделок на месте');
+  // Внизу его не было видно без прокрутки всего списка: открытая позиция
+  // важнее списка кандидатов, поэтому блок стоит НАД таблицей.
+  const render = src.slice(src.indexOf('box.innerHTML = head + renderRecoveryStatus'));
+  ok(render.indexOf('id="' + box + '"') < render.indexOf('<thead>'), file + ': блок стоит над таблицей');
   ok(src.includes('renderPaperEntry('), file + ': блок рисуется общим кодом');
   ok(new RegExp('setInterval\\(load' + (file.includes('mobile') ? 'PaperEntryM' : 'PaperEntry') + ', 15000\\)').test(src),
     file + ': прибыль обновляется онлайн');
