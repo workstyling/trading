@@ -6392,9 +6392,15 @@ async function entrySignals(coin, onMissing = () => {}) {
   const highDay = dayOk ? Math.max(...winDay.map(x => x.hi)) : null;
   // Разгон: на сколько монета выше своего суточного минимума.
   const lowDay = dayOk ? Math.min(...winDay.map(x => x.lo)) : null;
+  // Ход за последние 15 минут — для пометки «вдогонку» (ENTRY_CHASE).
+  // Ряд рвётся при простоях: если третья свеча назад дальше 25 минут,
+  // честнее null, чем ход за неизвестный интервал.
+  const mom15 = rows[3] && rows[3].cl > 0 && rows[0].t - rows[3].t <= 25 * 60_000
+    ? Math.round((price / rows[3].cl - 1) * 10000) / 100 : null;
   return {
     price,
     chg24Pct: chg24,
+    mom15Pct: mom15,
     runupPct: lowDay > 0 ? Math.round((price / lowDay - 1) * 10000) / 100 : null,
     // Сколько часов реально покрыто — чтобы отказ был виден, а не выглядел
     // как «данных нет».
@@ -6588,6 +6594,23 @@ const ENTRY_PULLBACK = {
     verdict: 'хуже' },
 };
 
+// ВХОД ВДОГОНКУ: цена уже выросла за последние 15 минут. Внутри того же
+// гейта (падение ≥3%, |24ч|<10%) такие входы измеренно хуже спокойных, и
+// эффект повторился в обеих половинах периода — это та самая жалоба
+// «вырастет, куплю, а потом упадёт». Большой отскок от суточного минимума
+// (runup ≥10%) той же проверки НЕ прошёл: исход во второй половине нулевой.
+// Единица счёта — монета-час, чтобы соседние точки одного движения не
+// считались независимыми. Пересчёт: node measure-chase.js (свечи 5м, 28 дней,
+// монеты текущего скана).
+const ENTRY_CHASE = {
+  at: '2026-11-23', from: '2026-10-27', to: '2026-11-24', splitAt: '2026-11-10',
+  coins: 25, gate: 'падение >=3%, |24ч|<10%', threshold: 0,
+  hour: { h1: { chase: -0.076, calm: 0.165, diff: -0.241, se: 0.026 },
+    h2: { chase: -0.208, calm: 0.073, diff: -0.281, se: 0.023 } },
+  hit: { h1: { diff: -10.6, se: 0.8 }, h2: { diff: -13.1, se: 0.7 } },
+  verdict: 'хуже',
+};
+
 const ENTRY_FREQ_RANK = {
   at: '2026-09-16', from: '2026-08-09', to: '2026-09-13', splitAt: '2026-08-27', coins: 35,
   hour: { top: -0.258, topSe: 0.024, bottom: -0.299, bottomSe: 0.020, diff: 0.041, se: 0.031, verdict: 'ноль' },
@@ -6774,6 +6797,7 @@ async function runEntryScan() {
           if (!value) { missedDetails[coin] = 'Недостаточно данных для расчёта.'; missed.push(coin); return; }
           rows.push({
             coin, pair: coin + '-USD', price: sig.price, vol24: volume, chg24Pct: sig.chg24Pct,
+            mom15Pct: sig.mom15Pct,
             dayCoverH: sig.dayCoverH,
             rsi: sig.rsi5, pullbackPct: sig.pullbackPct, spreadPct: sp,
             dayFallPct: sig.dayFallPct, recovery: recoveryOdds(sig.dayFallPct, sig.pullbackPct),
@@ -7412,6 +7436,8 @@ function entryScanResponse(now = Date.now()) {
     // Проверка самой сортировки: выше частота — не лучше по деньгам.
     freqRank: ENTRY_FREQ_RANK,
     pullbackNet: ENTRY_PULLBACK,
+    // Вход вдогонку: рост за 15 минут перед входом измеренно хуже.
+    chaseNet: ENTRY_CHASE,
     // Когда числа последний раз подтверждались на другой выборке
     recoveryConfirmedAt: null,
     // Когда ночная сверка последний раз доходила до конца и с каким исходом.

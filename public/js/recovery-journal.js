@@ -143,6 +143,24 @@
       ' у мелкого отката, разница ' + (finite(h.diff) ? Number(h.diff).toFixed(3) + ' ±' + Number(h.se).toFixed(3) : '?') +
       '. Замер вне выборки, издержки внутри. Резкий провал — не скидка, а продавец в стакане.' };
   }
+  // ВХОД ВДОГОНКУ: цена выросла за последние 15 минут. Внутри того же гейта
+  // такие входы измеренно хуже спокойных, эффект повторился в обеих половинах
+  // замера (scan.chaseNet). Порог и числа приходят из замера на сервере:
+  // своё число здесь значило бы придумать правило. Нет замера или нет хода —
+  // пометки нет.
+  function chaseEntry(row, scan) {
+    const m = scan && scan.chaseNet;
+    if (!m || m.verdict !== 'хуже' || !finite(m.threshold) || !finite(row.mom15Pct)) return null;
+    if (Number(row.mom15Pct) <= Number(m.threshold)) return null;
+    const h = m.hour || {};
+    const d = part => part && finite(part.diff) ? Number(part.diff).toFixed(3) + ' ±' + Number(part.se).toFixed(3) : '?';
+    const hb = m.hit || {};
+    const hd = part => part && finite(part.diff) ? Number(part.diff).toFixed(1) + ' ±' + Number(part.se).toFixed(1) : '?';
+    return { why: 'Вход вдогонку: цена выросла за последние 15 минут (+' + Number(row.mom15Pct).toFixed(2) +
+      '%). Внутри тех же условий такие входы измеренно хуже спокойных: через час ' + d(h.h1) + ' и ' + d(h.h2) +
+      ' п.п. в двух половинах замера, цель достигается реже на ' + hd(hb.h1) + ' и ' + hd(hb.h2) +
+      ' п.п. Это «вырастет — куплю — упадёт»: панель такой вход не предлагает, лучше дождаться, пока рост остынет.' };
+  }
   function recoveryEdge(observation, baseline) {
     if (!observation || observation.hour == null || !baseline) return { above: false, why: '' };
     const diff = Math.round((observation.hour - baseline.pct) * 10) / 10;
@@ -236,20 +254,21 @@
   //   5. нет измеренно-худшего резкого провала (откат от порога замера
   //      pullbackNet: такие строки в среднем хуже остального списка; замера
   //      нет — ключ нейтрален);
-  //   6. спред известен (неизвестный — ниже всех измеренных: нет данных —
+  //   6. не вдогонку (рост за 15 минут перед входом, замер chaseNet: хуже
+  //      спокойных в обеих половинах; замера или хода нет — ключ нейтрален);
+  //   7. спред известен (неизвестный — ниже всех измеренных: нет данных —
   //      нет и места наверху);
-  //   7. частота цели по убыванию — по просьбе владельца главный числовой
+  //   8. частота цели по убыванию — по просьбе владельца главный числовой
   //      ключ: наверху то, что чаще доходит до цели. Частота — смесь оценки
   //      монеты и группы, и это по-прежнему не прибыльность: порядок по
   //      проценту замерен и денег не добавляет (ENTRY_FREQ_RANK);
-  //   8. спред дешевле: платится в каждой сделке целиком, при цели +0.3%
+  //   9. спред дешевле: платится в каждой сделке целиком, при цели +0.3%
   //      спред 0.2% съедает две трети;
-  //   9. свежесть.
+  //   10. свежесть.
   // Веса строго лексикографичны: каждый ключ больше суммы диапазонов всех
-  // младших. Прежние веса это нарушали: спред с частотой (до 7.3e6) могли
-  // перевесить ключ портфеля (5e6), и перегруженная монета с высокой частотой
-  // вставала выше свободной.
-  const RANK = { status: 1e9, measured: 1e8, noPump: 5e7, book: 2.5e7, noSteep: 1.25e7, spreadKnown: 4e6, hour: 3000, spread: 1 };
+  // младших (spread 300 < hour 3e6+300 < spreadKnown 4e6 < noChase 8e6 <
+  // noSteep 1.6e7 < book 3.2e7 < noPump 6.4e7 < measured 2e8 < status 1e9).
+  const RANK = { status: 1e9, measured: 2e8, noPump: 6.4e7, book: 3.2e7, noSteep: 1.6e7, noChase: 8e6, spreadKnown: 4e6, hour: 3000, spread: 1 };
   const BOOK_MAX_PCT = 20;        // тот же порог, что в предупреждении перед покупкой
   function recoveryOrder(row, scan, verdict, observation, now = scanNow(scan)) {
     const mark = verdict && recoveryRowMark(row, scan, verdict, observation, now);
@@ -264,9 +283,10 @@
     // Частота шагом 0.1 п.п. даёт 0..1000 → ×3000 это 0..3e6: меньше ключей
     // выше неё и больше всего диапазона спреда (300). Добавка за свежесть меньше единицы.
     const steep = !!steepPullback(row, scan);
+    const chase = !!chaseEntry(row, scan);
     return status * RANK.status +
       (hour == null ? 0 : RANK.measured + (pumped ? 0 : RANK.noPump) + (heavy ? 0 : RANK.book) +
-        (steep ? 0 : RANK.noSteep) +
+        (steep ? 0 : RANK.noSteep) + (chase ? 0 : RANK.noChase) +
         (spread > 0 ? RANK.spreadKnown : 0) + Math.round(hour * 10) * RANK.hour + spread * RANK.spread) +
       0.01 / (1 + age / 60);
   }
@@ -333,6 +353,16 @@
       return { state: 'none', label: 'резкий откат', color: '#ff6b6b',
         bg: 'background:rgba(255,107,107,0.08);', why: steep.why };
     }
+    // ВДОГОНКУ — ИЗМЕРЕННО ХУДШЕЕ, А НЕ КАНДИДАТ. Цена выросла за последние
+    // 15 минут: внутри того же гейта такие входы хуже спокойных в обеих
+    // половинах замера (через час −0.24 и −0.28 п.п., цель реже на 11-13
+    // п.п.). Оранжевая рамка звала бы покупать ровно в момент, когда хуже
+    // всего; прятать строку тоже нельзя — помечаем и называем причину.
+    const chase = chaseEntry(row, scan);
+    if (chase) {
+      return { state: 'none', label: 'вдогонку', color: '#ff6b6b',
+        bg: 'background:rgba(255,107,107,0.08);', why: chase.why };
+    }
     const edge = recoveryEdge(observation, recoveryBaseline(scan, now));
     if (!edge.above) return plain;
     // Было «возможная покупка». Строкой выше панель говорит, что покупать по
@@ -381,6 +411,7 @@
       '2. Ход за сутки строго между −10% и +10%; цена и условия известны, скану не больше 5 минут.<br>' +
       '3. Для группы с таким падением и откатом подтверждён плюс после комиссий: средний результат минус две погрешности выше нуля в обеих частях проверки.<br>' +
       'Откат от максимума за 30 минут делит группы на &lt;1.5% и ≥1.5%; сам по себе глубокий откат не разрешает вход. RSI, рост BTC и процент «цель 1ч» не включают покупку.<br>' +
+      'Строка, выросшая за последние 15 минут, помечена «вдогонку» и кандидатом не считается: такие входы измеренно хуже спокойных («вырастет — куплю — упадёт»); подробные числа в подсказке строки.<br>' +
       '<b style="color:#00ffa8;">Подтверждённый вход: зелёная рамка и «брать» с целью и сроком, вверху списка.</b> ' +
       'Это прохождение правил алгоритма, не гарантия прибыли.<br>' +
       '<b style="color:var(--entry-possible);">Возможный вход: оранжевая рамка.</b> Параметры монеты подходят, свежая частота цели выше базы больше чем на две погрешности и минимум на 3 п.п., но проверка доходности ещё не пройдена. Покупка не разрешена.<br>' +
@@ -715,7 +746,7 @@
       'до уровня до разгона ' + p.toBasePct + '%. Рейтинг смотрит только сутки и этот риск не учитывает. ' +
       'Это пометка риска, её доходность не проверялась.';
   }
-  const api = { renderEntryJournal, recoveryPumpMark, recoveryPumpNote, recoveryCapVol, recoveryCapVolNote, recoveryFeeLine, renderRecoverySizeGate, recoveryEmptyText, recoveryRegimeLine, renderRecoveryStatus, renderRecoveryLegend, renderRecoveryNet, recoveryObservation,
+  const api = { renderEntryJournal, recoveryPumpMark, recoveryPumpNote, chaseEntry, recoveryCapVol, recoveryCapVolNote, recoveryFeeLine, renderRecoverySizeGate, recoveryEmptyText, recoveryRegimeLine, renderRecoveryStatus, renderRecoveryLegend, renderRecoveryNet, recoveryObservation,
     recoveryVerdict, recoveryDayChange, recoveryBaseline, recoveryEdge, recoveryOrder, recoveryPeak, recoveryPeakMark, renderRecoveryTieNote, recoveryBuyCell,
     recoveryFresh, recoveryHeldNote,
     recoverySignalRows, renderRecoveryRules, recoveryRowMark, renderRecoveryGroups,
