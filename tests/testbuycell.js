@@ -87,7 +87,7 @@ console.log('\nСервер не теряет сигнал за пределам
     RECOVERY_MEASURED_AT: scan.recoveryMeasuredAt, RECOVERY_SAMPLE: 1, RECOVERY_CHECK_VERSION: 2,
     ENTRY_FREQ_RANK: {},
     ENTRY_GATE_FALL: 3, ENTRY_GATE_SPREAD: 0.3, ENTRY_SCAN_INTERVAL_MS: 120000,
-    ENTRY_FREQ_RANK: {}, ENTRY_PULLBACK: {}, ENTRY_REGIME: {}, ENTRY_CHASE: {}, recheckStamp: () => ({}),
+    ENTRY_FREQ_RANK: {}, ENTRY_PULLBACK: {}, ENTRY_REGIME: {}, ENTRY_CHASE: {}, ENTRY_EDGE: {}, recheckStamp: () => ({}),
     cbMarketCap: () => 1e12, ENTRY_MIN_MCAP: 500e6, ENTRY_MIN_VOL24: 3e6 };
   candidates.forEach(c => { c.vol24 = 5e6; });
   vm.createContext(ctx);

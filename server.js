@@ -6612,6 +6612,37 @@ const ENTRY_CHASE = {
   verdict: 'хуже',
 };
 
+// ЧТО ВНУТРИ КАНДИДАТОВ ЕЩЁ ОТЛИЧАЕТ МОМЕНТ ВХОДА.
+//
+// Семь условий наблюдения совпадали с определением кандидата: на живом
+// скане все 15 кандидатов давали «7 из 7» сразу, а из остальных строк — ни
+// одна. То есть наблюдение дублировало статус и ничего не добавляло.
+//
+// Прогон 45 942 точек входа за 26 дней (25 монет скана, свечи 5м, круг
+// комиссий 0.7%, проверка на двух половинах периода) нашёл ровно два
+// признака, повторившихся в ОБЕИХ половинах:
+//   • откат от получасового максимума в полосе 0.5–1.5% — лучше остальных
+//     (+0.08 ±0.03 и +0.12 ±0.03 п.п.); откат мельче 0.5% — хуже в обеих;
+//   • RSI 5m ниже 60 — выше 60 хуже в обеих (−0.14 ±0.05 и −0.17 ±0.05).
+// Глубина падения, разгон от дна, знак суточного хода и сила падения за 15
+// минут проверку не прошли.
+//
+// Чего прогон НЕ нашёл: прибыльной комбинации. Ни одна из 16 пар цель/стоп/
+// горизонт (от +1%/1ч до +5%/48ч) не вышла в плюс после комиссий ни с этими
+// фильтрами, ни без них. Среднее по всем точкам −0.62% ±0.015 на сделку, в
+// плюсе 45.3%. Эти числа показываются рядом с наблюдением, чтобы совпадение
+// условий не читалось как обещание заработка.
+//
+// Пересчёт: measure-edge.js и measure-grid.js.
+const ENTRY_EDGE = {
+  at: '2026-11-24', from: '2026-10-28', to: '2026-11-23', coins: 25, points: 45942, feePct: 0.7,
+  pullbackBand: { lo: 0.5, hi: 1.5, h1: { diff: 0.08, se: 0.03 }, h2: { diff: 0.12, se: 0.03 }, verdict: 'лучше' },
+  rsiMax: { at: 60, h1: { diff: -0.14, se: 0.05 }, h2: { diff: -0.17, se: 0.05 }, verdict: 'хуже' },
+  // Ожидание на тех же точках: цель +1.5%, стоп −2%, горизонт 4 ч.
+  expectation: { target: 1.5, stop: 2, horizonH: 4, netPct: -0.62, netSe: 0.015, winPct: 45.3, winSe: 0.5 },
+  profitableModes: 0, modesChecked: 16,
+};
+
 const ENTRY_FREQ_RANK = {
   at: '2026-09-16', from: '2026-08-09', to: '2026-09-13', splitAt: '2026-08-27', coins: 35,
   hour: { top: -0.258, topSe: 0.024, bottom: -0.299, bottomSe: 0.020, diff: 0.041, se: 0.031, verdict: 'ноль' },
@@ -7439,6 +7470,8 @@ function entryScanResponse(now = Date.now()) {
     pullbackNet: ENTRY_PULLBACK,
     // Вход вдогонку: рост за 15 минут перед входом измеренно хуже.
     chaseNet: ENTRY_CHASE,
+    // Что внутри кандидатов ещё отличает момент входа, и чего это стоит.
+    edgeNet: ENTRY_EDGE,
     // Когда числа последний раз подтверждались на другой выборке
     recoveryConfirmedAt: null,
     // Когда ночная сверка последний раз доходила до конца и с каким исходом.
@@ -7719,6 +7752,27 @@ function entryWatchAnalyze(coin, scan) {
       : out.hourPct + '%' + (out.baselinePct == null ? '' : ' против базы ' + out.baselinePct + '%'),
     'Частота касания цели +0.30% за час. Это не вероятность прибыли.');
 
+  // Два признака, отличающие момент внутри самих кандидатов. Без них
+  // наблюдение повторяло статус строки: кандидат давал «всё выполнено» сразу.
+  const edgeM = scan.edgeNet;
+  const band = edgeM && edgeM.pullbackBand && edgeM.pullbackBand.verdict === 'лучше' ? edgeM.pullbackBand : null;
+  if (band) {
+    const inBand = finiteNum(row.pullbackPct) &&
+      Number(row.pullbackPct) >= Number(band.lo) && Number(row.pullbackPct) < Number(band.hi);
+    add('Откат в полосе ' + band.lo + '–' + band.hi + '%', inBand,
+      finiteNum(row.pullbackPct) ? row.pullbackPct + '%' : 'неизвестен',
+      'Эта полоса измеренно лучше остальных в обеих половинах замера: +' + band.h1.diff +
+      ' и +' + band.h2.diff + ' п.п. Откат мельче ' + band.lo + '% — хуже в обеих.');
+  }
+  const rsiCap = edgeM && edgeM.rsiMax && edgeM.rsiMax.verdict === 'хуже' ? Number(edgeM.rsiMax.at) : null;
+  if (rsiCap != null) {
+    const rsiOk = finiteNum(row.rsi) && Number(row.rsi) < rsiCap;
+    add('RSI ниже ' + rsiCap, rsiOk,
+      finiteNum(row.rsi) ? Math.round(Number(row.rsi)) : 'неизвестен',
+      'RSI от ' + rsiCap + ' измеренно хуже в обеих половинах замера: ' + edgeM.rsiMax.h1.diff +
+      ' и ' + edgeM.rsiMax.h2.diff + ' п.п.');
+  }
+
   out.ready = out.checks.every(c => c.ok);
   return out;
 }
@@ -7736,6 +7790,11 @@ async function entryWatchState() {
     // как «будет прибыль», а цель +0.3% этого круга не окупает.
     roundTripPct: roundPct,
     targetPct: scan.entryNet && Number.isFinite(scan.entryNet.target) ? scan.entryNet.target : null,
+    // Сколько такие входы давали на замере: без этого числа «все условия
+    // выполнены» читается как обещание заработка.
+    expectation: scan.edgeNet ? scan.edgeNet.expectation : null,
+    modesChecked: scan.edgeNet ? scan.edgeNet.modesChecked : null,
+    profitableModes: scan.edgeNet ? scan.edgeNet.profitableModes : null,
     items: entryWatch.items.map(it => ({
       ...entryWatchAnalyze(it.coin, scan),
       armed: it.armed, addedAt: it.addedAt, firedAt: it.firedAt, firedPrice: it.firedPrice,

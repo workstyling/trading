@@ -37,6 +37,12 @@ console.log('Разбор монеты считается тем же кодом
     entryNet: { buyCells: [], target: 0.3 },
     chaseNet: { threshold: 0, verdict: 'хуже', hour: { h1: { diff: -0.24, se: 0.03 }, h2: { diff: -0.28, se: 0.02 } }, hit: {} },
     pullbackNet: { steep: { at: 3, verdict: 'хуже', hour: {} } },
+    edgeNet: {
+      pullbackBand: { lo: 0.5, hi: 1.5, verdict: 'лучше', h1: { diff: 0.08, se: 0.03 }, h2: { diff: 0.12, se: 0.03 } },
+      rsiMax: { at: 60, verdict: 'хуже', h1: { diff: -0.14, se: 0.05 }, h2: { diff: -0.17, se: 0.05 } },
+      expectation: { target: 1.5, stop: 2, horizonH: 4, netPct: -0.62, netSe: 0.015, winPct: 45.3 },
+      profitableModes: 0, modesChecked: 16,
+    },
   };
   const row = over => ({ coin: 'FIL', price: 2, dayFallPct: 4, pullbackPct: 0.9, spreadPct: 0.1,
     chg24Pct: -1.5, mom15Pct: -0.1, rsi: 45, ...over });
@@ -45,7 +51,7 @@ console.log('Разбор монеты считается тем же кодом
 
   const good = run({});
   ok(good.ready === true, 'все условия выполнены — момент настал', good.checks.filter(c => !c.ok).map(c => c.k).join(','));
-  ok(good.checks.length === 7, 'разобрано семь условий', String(good.checks.length));
+  ok(good.checks.length === 9, 'разобрано девять условий', String(good.checks.length));
   ok(good.checks.every(c => c.why && c.why.length > 10), 'у каждого условия сказано, на чём оно основано');
   ok(good.hourPct === 57.7 && good.baselinePct === 45.1, 'частота и база взяты из свежей сверки');
 
@@ -59,10 +65,22 @@ console.log('Разбор монеты считается тем же кодом
     ['резкий провал', { pullbackPct: 3.2 }, null],
     ['нет свежей сверки', {}, { recheck: null }],
     ['скан устарел', {}, { staleSince: now }],
+    // Два признака, из-за которых кандидат больше не получает «всё
+    // выполнено» автоматически: они измерены внутри самих кандидатов.
+    ['откат мельче полосы', { pullbackPct: 0.4 }, null],
+    ['откат выше полосы', { pullbackPct: 1.6 }, null],
+    ['RSI перегрет', { rsi: 61 }, null],
+    ['RSI неизвестен', { rsi: null }, null],
   ];
   for (const [name, over, scanOver] of cases) {
     ok(run(over, scanOver).ready === false, 'не момент: ' + name);
   }
+  // Без замера дополнительные условия не выдумываются: отсутствие данных не
+  // должно ни разрешать, ни запрещать.
+  const noEdge = run({}, { edgeNet: null });
+  ok(noEdge.checks.length === 7 && noEdge.ready === true, 'без замера остаются прежние семь условий',
+    String(noEdge.checks.length));
+
   // Монеты нет в скане — это «неизвестно», а не «можно»
   const absent = ctx.entryWatchAnalyze('NOPE', { ...base, results: [row({})] });
   ok(absent.ready === false && absent.inScan === false, 'монеты нет в скане — входа нет');

@@ -803,10 +803,22 @@
         '<div style="margin-top:4px;display:flex;gap:5px;flex-wrap:wrap;">' + buttons + '</div></div>';
     }).join('');
     // Честная приписка: «все условия выполнены» — это не «будет прибыль».
+    // Рядом стоит измеренное ожидание, иначе зелёные галочки читаются как
+    // обещание заработка.
+    const e = data.expectation;
+    const measured = e && finite(e.netPct)
+      ? '<br>Замер таких входов: <b style="color:' + (Number(e.netPct) >= 0 ? 'var(--green)' : '#ff9f9f') + ';">' +
+        (Number(e.netPct) >= 0 ? '+' : '') + e.netPct + '% ±' + e.netSe + '</b> за сделку после комиссий' +
+        (finite(e.winPct) ? ', в плюсе ' + e.winPct + '%' : '') +
+        (finite(e.target) ? ' (цель +' + e.target + '%, стоп −' + e.stop + '%, ' + e.horizonH + ' ч)' : '') +
+        (finite(data.profitableModes) && finite(data.modesChecked)
+          ? '. Прибыльных сочетаний цели и срока: ' + data.profitableModes + ' из ' + data.modesChecked + '.'
+          : '.')
+      : '';
     const note = finite(data.roundTripPct) && finite(data.targetPct) && Number(data.roundTripPct) >= Number(data.targetPct)
       ? '<div style="margin-top:5px;color:#ff9f9f;">Совпадение условий — не обещание прибыли: цель +' + data.targetPct +
-        '% меньше круга комиссий ' + data.roundTripPct + '%.</div>'
-      : '<div style="margin-top:5px;color:var(--t2);">Совпадение условий — не обещание прибыли.</div>';
+        '% меньше круга комиссий ' + data.roundTripPct + '%.' + measured + '</div>'
+      : '<div style="margin-top:5px;color:var(--t2);">Совпадение условий — не обещание прибыли.' + measured + '</div>';
     return '<div>' + head + rows + note + '</div>';
   }
   // РУЧНАЯ БУМАЖНАЯ ПОКУПКА (обе вёрстки).
