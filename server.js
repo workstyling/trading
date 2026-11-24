@@ -7474,6 +7474,133 @@ function entryScanResponse(now = Date.now()) {
 }
 app.get('/api/entry-scan', (req, res) => res.json(entryScanResponse()));
 
+// ══════════════════════════════════════════════════════════════════
+// РУЧНАЯ БУМАЖНАЯ ПОКУПКА ИЗ ПАНЕЛИ ВХОДА
+//
+// Кнопка в строке рейтинга: «купил бы сейчас» — и дальше видно, сколько
+// сделка принесла бы. Настоящих ордеров не ставит.
+//
+// Журнал отдельный от paper-бота (paper-trades.json): тот ведёт свой
+// эксперимент по Top Losers со стопами и целями, и ручные сделки смешали бы
+// его статистику. Здесь автоматики нет вовсе — сделка живёт, пока её не
+// удалят. Файл в .gitignore: это живые данные, в репозитории им не место.
+//
+// Вход — лимитка по лучшему биду, то есть по лучшей цене для покупателя и с
+// комиссией мейкера. Такая заявка в реальности встаёт в очередь и может не
+// исполниться сразу; об этом сказано в подсказке кнопки. Выход считается так
+// же — лимиткой по текущему биду.
+// ══════════════════════════════════════════════════════════════════
+const MANUAL_PAPER_FILE = path.join(__dirname, 'entry-paper-manual.json');
+const MANUAL_PAPER_BUDGET = 100;          // сумма одной бумажной сделки, $
+const MANUAL_PAPER_MAX = 50;              // больше полусотни строк — это уже не экран, а свалка
+const MANUAL_PAPER_QUOTE_TTL = 15 * 1000; // цены обновляем не чаще раза в 15 с
+let entryPaperManual = { trades: [] };
+try {
+  const saved = JSON.parse(fs.readFileSync(MANUAL_PAPER_FILE, 'utf8'));
+  if (saved && Array.isArray(saved.trades)) entryPaperManual = { trades: saved.trades };
+} catch { }
+function saveEntryPaperManual() {
+  try { fs.writeFileSync(MANUAL_PAPER_FILE, JSON.stringify(entryPaperManual, null, 2)); }
+  catch (e) { console.error('[paper-entry] save', e.message); }
+}
+
+// Текущая цена выхода по каждой монете. Кеш общий на все открытые строки:
+// панель опрашивает этот маршрут постоянно, и без него каждый опрос бил бы
+// по бирже столько раз, сколько открыто сделок.
+const entryPaperQuotes = new Map();   // pair -> { bid, at }
+async function entryPaperPrices(pairs) {
+  const now = Date.now();
+  const stale = [...new Set(pairs)].filter(p => !(now - ((entryPaperQuotes.get(p) || {}).at || 0) < MANUAL_PAPER_QUOTE_TTL));
+  await Promise.all(stale.map(async pair => {
+    const quote = await fetchBestQuote(pair);
+    if (quote && quote.bid > 0) entryPaperQuotes.set(pair, { bid: quote.bid, at: Date.now() });
+  }));
+  return entryPaperQuotes;
+}
+
+// Что сделка стоит сейчас. Неизвестная цена — это «неизвестно», а не ноль:
+// иначе свежая сделка показала бы −$100 убытка на пустом месте.
+function entryPaperView(trade, bid) {
+  const price = Number(bid) > 0 ? Number(bid) : null;
+  const out = price == null ? null : trade.qty * price * (1 - trade.feeExitPct);
+  const pnl = out == null ? null : Math.round((out - trade.budget) * 100) / 100;
+  return {
+    id: trade.id, coin: trade.coin, pair: trade.pair,
+    entry: trade.entry, qty: trade.qty, budget: trade.budget,
+    openedAt: trade.openedAt,
+    feeEntryPct: Math.round(trade.feeEntryPct * 1e6) / 1e4,
+    feeExitPct: Math.round(trade.feeExitPct * 1e6) / 1e4,
+    price,
+    pnlUsd: pnl,
+    pnlPct: pnl == null ? null : Math.round(pnl / trade.budget * 10000) / 100,
+    // Во сколько цена должна прийти, чтобы выйти в ноль после обеих комиссий.
+    breakeven: Math.round(trade.budget / (trade.qty * (1 - trade.feeExitPct)) * 1e8) / 1e8,
+  };
+}
+
+async function entryPaperResponse() {
+  const quotes = await entryPaperPrices(entryPaperManual.trades.map(t => t.pair));
+  const open = entryPaperManual.trades.map(t => entryPaperView(t, (quotes.get(t.pair) || {}).bid));
+  const known = open.filter(o => o.pnlUsd != null);
+  return {
+    success: true,
+    budgetUsd: MANUAL_PAPER_BUDGET,
+    open,
+    // Итог только по тем, чья цена известна: иначе сумма врала бы молча.
+    totalPnlUsd: known.length ? Math.round(known.reduce((s, o) => s + o.pnlUsd, 0) * 100) / 100 : null,
+    unknown: open.length - known.length,
+  };
+}
+
+app.get('/api/paper-entry', async (req, res) => {
+  try { res.json(await entryPaperResponse()); }
+  catch (e) { res.status(500).json({ success: false, error: String(e.message || e).slice(0, 200) }); }
+});
+
+app.post('/api/paper-entry', async (req, res) => {
+  try {
+    const coin = String((req.body || {}).coin || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (!coin) return res.status(400).json({ success: false, error: 'Монета не указана' });
+    if (entryPaperManual.trades.length >= MANUAL_PAPER_MAX) {
+      return res.json({ success: false, error: 'Уже ' + MANUAL_PAPER_MAX + ' бумажных сделок: удалите лишние' });
+    }
+    if (entryPaperManual.trades.some(t => t.coin === coin)) {
+      return res.json({ success: false, error: coin + ' уже есть в бумажных сделках' });
+    }
+    const pair = coin + '-USD';
+    const quote = await fetchBestQuote(pair);
+    // Цены нет — покупки нет. Поставить сделку по выдуманной цене значит
+    // испортить журнал ради того, чтобы кнопка «сработала».
+    if (!quote || !(quote.bid > 0)) return res.json({ success: false, error: 'Биржа не дала цену по ' + pair });
+    const maker = paperLimitFee();
+    const trade = {
+      id: 'pe_' + Date.now() + '_' + coin,
+      coin, pair,
+      entry: quote.bid,
+      // Комиссии записаны на сделке: тариф поменяется, а прошлая запись
+      // обязана остаться воспроизводимой.
+      feeEntryPct: maker, feeExitPct: maker,
+      budget: MANUAL_PAPER_BUDGET,
+      qty: MANUAL_PAPER_BUDGET * (1 - maker) / quote.bid,
+      openedAt: Date.now(),
+    };
+    entryPaperManual.trades.push(trade);
+    saveEntryPaperManual();
+    entryPaperQuotes.set(pair, { bid: quote.bid, at: Date.now() });
+    console.log('[paper-entry] ' + coin + ' бумажная покупка по биду $' + quote.bid);
+    res.json({ success: true, trade: entryPaperView(trade, quote.bid) });
+  } catch (e) { res.status(500).json({ success: false, error: String(e.message || e).slice(0, 200) }); }
+});
+
+app.delete('/api/paper-entry/:id', async (req, res) => {
+  const before = entryPaperManual.trades.length;
+  entryPaperManual.trades = entryPaperManual.trades.filter(t => t.id !== req.params.id);
+  if (entryPaperManual.trades.length === before) return res.json({ success: false, error: 'Сделка не найдена' });
+  saveEntryPaperManual();
+  try { res.json(await entryPaperResponse()); }
+  catch { res.json({ success: true }); }
+});
+
 async function runMicroScalpScan() {
   if (microScalpScan.running || !cbVolumeCache.size) return;
   microScalpScan.running = true;

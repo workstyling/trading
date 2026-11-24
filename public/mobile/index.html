@@ -7375,6 +7375,7 @@
             '<span style="color:' + rowColor + ';font-weight:700;font-size:12px;">' + safe + '</span>' + swingMark(x) + recoveryPumpMark(x) + (peak ? '<span style="margin-left:4px;font-size:8.5px;font-weight:800;color:' + rowColor + ';border:1px solid ' + rowColor + ';border-radius:4px;padding:0 3px;">максимум</span>' : '') +
             '<span data-bookshare="' + safe + '"></span>' +
             '<span style="color:var(--t2);font-size:9px;margin-left:5px;white-space:nowrap;">$' + price(x.price) + '</span>' +
+            recoveryPaperButton(safe, 'paperEntryBuyM(\'' + safe + '\')', 10) +
             '<br><span style="color:var(--t2);font-size:9px;">' + sub + '<br>' + conditions + '<br>' + recoveryCapVol(x) + '</span></td>' +
             num((edge.above ? String.fromCharCode(9650) + ' ' : '') + rec.text +
               (rec.srcLabel ? '<small style="display:block;font-size:8px;font-weight:400;">' + rec.srcLabel + '</small>' : ''),
@@ -7396,11 +7397,15 @@
           '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;"><table style="width:100%;border-collapse:collapse;table-layout:fixed;"><thead>' + head2 + '</thead><tbody>' +
           renderRecoveryGroups(ranked, j, cell, 4) + '</tbody></table></div>' +
           (!good.length ? '<div style="color:var(--t2);font-size:10px;margin-top:5px;">Порог не взял никто — монеты показаны в остальных.</div>' : '') +
+          '<div id="paperEntryBoxM" style="margin-top:6px;padding-top:5px;border-top:1px solid var(--b1);font-size:10px;color:var(--t2);"></div>' +
           '<div id="entryPaperM" style="margin-top:6px;padding-top:5px;border-top:1px solid var(--b1);font-size:10px;color:var(--t2);"></div>';
 
         restoreRecoveryDetails(box, openDetails);
         // Доли портфеля: кошелёк живёт своим циклом, дорисовываем после разметки
         try { paintBookSharesM(); } catch { }
+        // Бумажные сделки рисуем сразу из уже загруженных данных, не дожидаясь
+        // опроса: иначе блок на секунду исчезает при каждом обновлении списка.
+        paintPaperEntryM();
 
         // Форвардный журнал: обещанное панелью против случившегося. Пока
         // сделок мало, показываем счётчик — чтобы было видно, что проверка
@@ -7417,6 +7422,44 @@
       }
     }
 
+    // ── БУМАЖНЫЕ СДЕЛКИ ПАНЕЛИ ВХОДА ──
+    // Настоящих ордеров здесь нет: покупка записывается по лучшему биду, а
+    // прибыль пересчитывается по текущему. Данные держим в переменной, чтобы
+    // перерисовка списка не стирала блок до ответа сервера.
+    let paperEntryDataM = null;
+    function paintPaperEntryM() {
+      const el = document.getElementById('paperEntryBoxM');
+      if (!el || !paperEntryDataM) return;
+      el.innerHTML = renderPaperEntry(paperEntryDataM, 'paperEntryDeleteM(\'%ID%\')');
+    }
+    async function loadPaperEntryM() {
+      try {
+        paperEntryDataM = await (await fetch('' + BASE + '/api/paper-entry')).json();
+      } catch (e) {
+        // Сетевой сбой не должен стирать уже показанные сделки: показываем
+        // причину только когда показывать больше нечего.
+        if (!paperEntryDataM) paperEntryDataM = { success: false, error: e.message };
+      }
+      paintPaperEntryM();
+    }
+    async function paperEntryBuyM(coin) {
+      try {
+        const j = await api('/api/paper-entry', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ coin }),
+        });
+        if (!j.success) { alert(j.error || 'Не удалось записать бумажную покупку'); return; }
+      } catch (e) { alert('Бумажная покупка не записана: ' + e.message); return; }
+      await loadPaperEntryM();
+    }
+    async function paperEntryDeleteM(id) {
+      try {
+        const j = await api('/api/paper-entry/' + encodeURIComponent(id), { method: 'DELETE' });
+        if (j && j.success && Array.isArray(j.open)) { paperEntryDataM = j; paintPaperEntryM(); return; }
+        if (j && !j.success) alert(j.error || 'Сделка не удалена');
+      } catch (e) { alert('Сделка не удалена: ' + e.message); }
+      await loadPaperEntryM();
+    }
     async function loadMicroScalpM() {
       try {
         const j = await api('/api/micro-scalp-scan');
@@ -7453,6 +7496,10 @@
     setInterval(loadMicroScalpM, 60_000);
     loadMicroScalpM();
     // Скан ВХОДА обновляется раз в пять минут на сервере, чаще спрашивать нечего.
+    // Прибыль бумажных сделок «онлайн»: сервер держит цены свежими 15 секунд,
+    // чаще спрашивать незачем — ответ будет тот же.
+    setInterval(loadPaperEntryM, 15000);
+    loadPaperEntryM();
     setInterval(loadEntryScanM, 60_000);
     loadEntryScanM();
 

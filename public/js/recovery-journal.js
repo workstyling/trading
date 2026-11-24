@@ -726,6 +726,64 @@
     const round = Math.round(Number(f.limitPct) * 2 * 1000) / 1000;
     return round >= Number(net.target) ? ' Цель +' + Number(net.target) + '% меньше комиссии за круг ' + round + '%.' : '';
   }
+  // РУЧНАЯ БУМАЖНАЯ ПОКУПКА (обе вёрстки).
+  //
+  // Кнопка в строке: «купил бы сейчас по лимитке». Настоящих ордеров нет.
+  // Вход — по лучшему биду с комиссией мейкера, выход считается так же;
+  // в реальности такая заявка встаёт в очередь и может не исполниться сразу,
+  // поэтому это сказано прямо в подсказке, а не подразумевается.
+  function recoveryPaperButton(coin, onClick, size) {
+    const safe = String(coin || '').replace(/[^A-Z0-9]/gi, '');
+    return '<button data-paper-buy="' + safe + '" onclick="event.stopPropagation();' + onClick + '" ' +
+      'title="Бумажная покупка ' + safe + ' по лучшему биду, лимиткой, на $100. Настоящий ордер не ставится. ' +
+      'Дальше в блоке ниже будет видно, сколько сделка принесла бы сейчас. ' +
+      'В реальности лимитка по биду встаёт в очередь и может исполниться не сразу." ' +
+      'style="margin-left:6px;padding:1px 6px;font-size:' + (size || 9) + 'px;line-height:1.4;cursor:pointer;' +
+      'border-radius:5px;vertical-align:middle;border:1px solid var(--b1);background:transparent;color:var(--t2);">' +
+      'бум.</button>';
+  }
+  // Блок открытых бумажных сделок с онлайн-прибылью и кнопкой удаления.
+  function renderPaperEntry(data, onDelete) {
+    if (!data || data.success === false) {
+      return '<div style="color:var(--t2);">Бумажные сделки недоступны' +
+        (data && data.error ? ': ' + escapeHtml(String(data.error)) : '.') + '</div>';
+    }
+    const open = Array.isArray(data.open) ? data.open : [];
+    const money = v => (v >= 0 ? '+$' : '−$') + Math.abs(v).toFixed(2);
+    const price = v => v == null ? '—' : Number(v) < 0.001 ? Number(v).toFixed(8)
+      : Number(v) < 1 ? Number(v).toFixed(5) : Number(v) < 100 ? Number(v).toFixed(3) : Number(v).toFixed(2);
+    const head = '<b style="color:var(--t1);">Бумажные сделки</b> ' +
+      '<span title="Покупка по лучшему биду лимиткой на $' + (data.budgetUsd || 100) +
+      '. Прибыль считается по текущему биду за вычетом обеих комиссий. Настоящих ордеров нет.">· ' + open.length + '</span>';
+    if (!open.length) {
+      return '<div>' + head + '<br><span style="color:var(--t2);">Нажмите «бум.» в строке монеты, чтобы записать покупку.</span></div>';
+    }
+    // Итог печатаем только когда известны все цены: частичная сумма,
+    // выданная за полную, — это молчаливая ложь о результате.
+    const total = finite(data.totalPnlUsd)
+      ? '<span style="margin-left:auto;font-weight:800;color:' + (data.totalPnlUsd >= 0 ? 'var(--green)' : '#ff6b6b') + ';">' +
+        money(data.totalPnlUsd) + (data.unknown ? '<span style="color:var(--t2);font-weight:400;"> (без ' + data.unknown + ')</span>' : '') + '</span>'
+      : '<span style="margin-left:auto;color:var(--t2);">цены неизвестны</span>';
+    const rows = open.map(t => {
+      const known = finite(t.pnlUsd);
+      const color = !known ? 'var(--t2)' : t.pnlUsd >= 0 ? 'var(--green)' : '#ff6b6b';
+      const safe = String(t.coin).replace(/[^A-Z0-9]/gi, '');
+      const tip = 'Вход $' + price(t.entry) + ' (лимитка по биду, комиссия ' + t.feeEntryPct + '%)' +
+        String.fromCharCode(10) + 'Сейчас $' + price(t.price) +
+        String.fromCharCode(10) + 'Выход в ноль при $' + price(t.breakeven) + ' — обе комиссии уже учтены' +
+        String.fromCharCode(10) + 'Сумма сделки $' + t.budget;
+      return '<div title="' + escapeHtml(tip) + '" style="display:flex;align-items:center;gap:6px;padding:3px 0;border-top:1px solid var(--b1);">' +
+        '<b style="color:var(--t1);">' + safe + '</b>' +
+        '<span style="color:var(--t2);">$' + price(t.entry) + ' → $' + price(t.price) + '</span>' +
+        '<span style="margin-left:auto;font-weight:700;color:' + color + ';white-space:nowrap;">' +
+        (known ? money(t.pnlUsd) + ' <span style="font-weight:400;">(' + (t.pnlPct >= 0 ? '+' : '') + t.pnlPct + '%)</span>' : '—') + '</span>' +
+        '<button data-paper-del="' + escapeHtml(t.id) + '" onclick="' + onDelete.replace('%ID%', escapeHtml(t.id)) + '" ' +
+        'title="Удалить бумажную сделку ' + safe + '" ' +
+        'style="padding:1px 6px;font-size:10px;line-height:1.4;cursor:pointer;border-radius:5px;' +
+        'border:1px solid rgba(255,107,107,0.5);background:transparent;color:#ff6b6b;">удалить</button></div>';
+    }).join('');
+    return '<div><div style="display:flex;align-items:center;gap:6px;">' + head + total + '</div>' + rows + '</div>';
+  }
   // РАЗГОН ЗА МЕСЯЦ — пометка риска рядом с названием монеты (обе вёрстки).
   // Рейтинг смотрит сутки и не видит, что монета перед этим выросла в разы и
   // может вернуться к уровню до разгона. Пометка ничего не разрешает и не
@@ -746,7 +804,8 @@
       'до уровня до разгона ' + p.toBasePct + '%. Рейтинг смотрит только сутки и этот риск не учитывает. ' +
       'Это пометка риска, её доходность не проверялась.';
   }
-  const api = { renderEntryJournal, recoveryPumpMark, recoveryPumpNote, chaseEntry, recoveryCapVol, recoveryCapVolNote, recoveryFeeLine, renderRecoverySizeGate, recoveryEmptyText, recoveryRegimeLine, renderRecoveryStatus, renderRecoveryLegend, renderRecoveryNet, recoveryObservation,
+  const api = { renderEntryJournal, recoveryPumpMark, recoveryPumpNote, chaseEntry,
+    recoveryPaperButton, renderPaperEntry, recoveryCapVol, recoveryCapVolNote, recoveryFeeLine, renderRecoverySizeGate, recoveryEmptyText, recoveryRegimeLine, renderRecoveryStatus, renderRecoveryLegend, renderRecoveryNet, recoveryObservation,
     recoveryVerdict, recoveryDayChange, recoveryBaseline, recoveryEdge, recoveryOrder, recoveryPeak, recoveryPeakMark, renderRecoveryTieNote, recoveryBuyCell,
     recoveryFresh, recoveryHeldNote,
     recoverySignalRows, renderRecoveryRules, recoveryRowMark, renderRecoveryGroups,

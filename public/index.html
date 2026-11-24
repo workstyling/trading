@@ -16311,6 +16311,7 @@ Requirements:
           return '<tr data-entry-state="' + mark.state + '" onclick="selectCoinForTrade(\'' + safe + '\')" title="' + escapeRecoveryText(tip) + '" style="cursor:pointer;' + mark.bg + '">' +
             '<td style="padding:4px 6px;"><span style="color:' + rowColor + ';font-weight:700;font-size:11px;">' + safe + '</span>' + swingMark(x) + recoveryPumpMark(x) + (peak ? '<span style="margin-left:4px;font-size:8.5px;font-weight:800;color:' + rowColor + ';border:1px solid ' + rowColor + ';border-radius:4px;padding:0 3px;">максимум</span>' : '') +
             '<span data-bookshare="' + safe + '" data-live="1"></span>' +
+            recoveryPaperButton(safe, 'paperEntryBuy(\'' + safe + '\')') +
             '<br><span style="color:var(--t2);font-size:9px;white-space:nowrap;">$' + price(x.price) + '</span>' +
             '<br><span style="color:var(--t2);font-size:9px;">от пика ' + (x.dayFallPct == null ? '—' : '−' + x.dayFallPct + '%') + '</span>' +
             '<br><span style="color:var(--t2);font-size:9px;">' + recoveryCapVol(x) + '</span></td>' +
@@ -16338,11 +16339,15 @@ Requirements:
           '<table style="width:100%;border-collapse:collapse;"><thead>' + head2 + '</thead><tbody>' +
           renderRecoveryGroups(ranked, j, cell, 7) + '</tbody></table>' +
           (!good.length ? '<div style="color:var(--t2);font-size:10px;margin-top:5px;">Порог не взял никто — монеты показаны в остальных.</div>' : '') +
+          '<div id="paperEntryBox" style="margin-top:6px;padding-top:5px;border-top:1px solid var(--b1);font-size:10px;color:var(--t2);"></div>' +
           '<div id="entryPaper" style="margin-top:6px;padding-top:5px;border-top:1px solid var(--b1);font-size:10px;color:var(--t2);"></div>';
 
         restoreRecoveryDetails(box, openDetails);
         // Доли портфеля рисуются после разметки: кошелёк живёт своим циклом
         try { paintBookShares(); } catch { }
+        // Бумажные сделки рисуем сразу из уже загруженных данных, не дожидаясь
+        // опроса: иначе блок на секунду исчезает при каждом обновлении списка.
+        paintPaperEntry();
 
         // Форвардный журнал: обещанное панелью против случившегося. Пока
         // сделок мало, показываем счётчик — чтобы было видно, что проверка
@@ -16359,6 +16364,46 @@ Requirements:
       }
     }
 
+    // ── БУМАЖНЫЕ СДЕЛКИ ПАНЕЛИ ВХОДА ──
+    // Настоящих ордеров здесь нет: покупка записывается по лучшему биду, а
+    // прибыль пересчитывается по текущему. Данные держим в переменной, чтобы
+    // перерисовка списка не стирала блок до ответа сервера.
+    let paperEntryData = null;
+    function paintPaperEntry() {
+      const el = document.getElementById('paperEntryBox');
+      if (!el || !paperEntryData) return;
+      el.innerHTML = renderPaperEntry(paperEntryData, 'paperEntryDelete(\'%ID%\')');
+    }
+    async function loadPaperEntry() {
+      try {
+        paperEntryData = await (await fetch('/api/paper-entry')).json();
+      } catch (e) {
+        // Сетевой сбой не должен стирать уже показанные сделки: показываем
+        // причину только когда показывать больше нечего.
+        if (!paperEntryData) paperEntryData = { success: false, error: e.message };
+      }
+      paintPaperEntry();
+    }
+    async function paperEntryBuy(coin) {
+      try {
+        const r = await fetch('/api/paper-entry', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ coin }),
+        });
+        const j = await r.json();
+        if (!j.success) { showCustomAlert(j.error || 'Не удалось записать бумажную покупку'); return; }
+      } catch (e) { showCustomAlert('Бумажная покупка не записана: ' + e.message); return; }
+      await loadPaperEntry();
+    }
+    async function paperEntryDelete(id) {
+      try {
+        const r = await fetch('/api/paper-entry/' + encodeURIComponent(id), { method: 'DELETE' });
+        const j = await r.json();
+        if (j && j.success && Array.isArray(j.open)) { paperEntryData = j; paintPaperEntry(); return; }
+        if (j && !j.success) showCustomAlert(j.error || 'Сделка не удалена');
+      } catch (e) { showCustomAlert('Сделка не удалена: ' + e.message); }
+      await loadPaperEntry();
+    }
     async function loadMicroScalp() {
       try {
         const r = await fetch('/api/micro-scalp-scan');
@@ -16463,6 +16508,10 @@ Requirements:
     loadMicroScalp();
     // Скан ВХОДА обновляется раз в пять минут на сервере, поэтому чаще
     // спрашивать нечего.
+    // Прибыль бумажных сделок «онлайн»: сервер держит цены свежими 15 секунд,
+    // чаще спрашивать незачем — ответ будет тот же.
+    setInterval(loadPaperEntry, 15000);
+    loadPaperEntry();
     setInterval(loadEntryScan, 60_000);
     loadEntryScan();
 
