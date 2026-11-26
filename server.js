@@ -10760,6 +10760,24 @@ function crashAnalyze(coin, bars, vol24) {
   };
 }
 
+// Глубина стакана в ±2% от цены: сколько денег стоит по обе стороны.
+// Для упавшей монеты это главный вопрос ликвидности — продать её бывает
+// некому. Неизвестная глубина остаётся неизвестной, а не нулём.
+async function crashDepth(pair, price) {
+  if (!(price > 0)) return null;
+  try {
+    const r = await cbTry(`${DIP_CB}/products/${pair}/book?level=2`);
+    if (!r) return null;
+    const book = await r.json();
+    const lo = price * 0.98, hi = price * 1.02;
+    let bid = 0, ask = 0;
+    for (const e of (book.bids || [])) { const p = +e[0], s = +e[1]; if (p >= lo) bid += p * s; }
+    for (const e of (book.asks || [])) { const p = +e[0], s = +e[1]; if (p <= hi) ask += p * s; }
+    if (!(bid > 0) && !(ask > 0)) return null;
+    return { bid: Math.round(bid), ask: Math.round(ask) };
+  } catch { return null; }
+}
+
 async function crashFetchBars(pair) {
   const r = await cbTry(`${DIP_CB}/products/${pair}/candles?granularity=3600`);
   if (!r) return null;
@@ -10798,11 +10816,20 @@ async function crashScanRun() {
       await new Promise(r2 => setTimeout(r2, 40));
     }
     picked.sort((a, b) => b.offHigh - a.offHigh);
+    // Капитализации подтягиваем ДО разбора: иначе первый проход показывает
+    // прочерки, а число появляется только через десять минут.
+    const shortlist = picked.slice(0, CRASH_MAX_CANDIDATES).map(x => x.id.replace('-USD', ''));
+    try { await refreshCbMarketCaps(shortlist); } catch { }
     const rows = [];
     for (const { id, vol } of picked.slice(0, CRASH_MAX_CANDIDATES)) {
       const bars = await crashFetchBars(id);
       const a = bars && crashAnalyze(id.replace('-USD', ''), bars, vol);
-      if (a) rows.push(a);
+      if (a) {
+        // Капитализация — из того же каталога Coinbase, что у панели входа.
+        a.mcap = cbMarketCap(a.coin, a.price);
+        a.depth = await crashDepth(id, a.price);
+        rows.push(a);
+      }
       await new Promise(r2 => setTimeout(r2, 90));
     }
     // Сверху те, у кого выполнено больше условий, при равенстве — глубже падение.

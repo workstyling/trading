@@ -100,6 +100,38 @@ console.log('Панель: находки, цена вопроса, управл
   ok(html.includes('Что отброшено') && html.includes('EMA50'), 'в правилах сказано, какие признаки не подтвердились');
 }
 
+console.log('Ликвидность рядом с монетой');
+{
+  const row = { coin: 'HONEY', price: 0.0002, fall: 88, rise: 4, sinceLow: 3, rsi: 33, volFading: 0.1,
+    d24: -5, vol24: 1.8e6, mcap: 4.2e7, depth: { bid: 125000, ask: 98000 },
+    done: 8, total: 8, ready: true, checks: [{ k: 'тест', ok: true, v: '1', why: 'основание теста' }] };
+  const base = { success: true, alertOn: false, tgConfigured: true, at: Date.now(), running: false, coins: 1,
+    serverNow: Date.now(), intervalMs: 600000,
+    measure: { events: 1, coins: 1, from: 'a', to: 'b', all: { netPct: -0.9 },
+      filtered: { netPct: -0.21, netSe: 0.15, winPct: 50 }, profitableModes: 0, modesChecked: 7 } };
+  const html = view.renderCrashPanel({ ...base, rows: [row] }, 't()', 'r()');
+  ok(html.includes('Vol24 $1.8M'), 'суточный оборот рядом с монетой');
+  ok(html.includes('MCap $42.0M'), 'капитализация рядом с монетой');
+  ok(html.includes('$125K') && html.includes('$98K'), 'глубина стакана ±2% по обе стороны');
+  ok(html.includes('±2%'), 'глубина подписана');
+  // Неизвестное остаётся неизвестным: ноль ликвидности и «нет данных» — разное
+  const blind = view.renderCrashPanel({ ...base, rows: [{ ...row, mcap: null, depth: null }] }, 't()', 'r()');
+  ok(blind.includes('MCap —'), 'нет капитализации — прочерк, а не ноль');
+  ok(/±2%[^$]*—/.test(blind.replace(/<[^>]*>/g, '')), 'нет стакана — прочерк, а не ноль');
+  ok(!blind.includes('MCap $0'), 'ноль вместо неизвестного не подставляется');
+}
+
+console.log('Сервер считает глубину и капитализацию');
+{
+  const src = read('server.js');
+  ok(/async function crashDepth\(/.test(src), 'глубина стакана считается');
+  const d = src.slice(src.indexOf('async function crashDepth('), src.indexOf('async function crashFetchBars('));
+  ok(d.includes('price * 0.98') && d.includes('price * 1.02'), 'берутся именно ±2% от цены');
+  ok(d.includes('return null'), 'без стакана возвращается «неизвестно»');
+  ok(src.includes('a.mcap = cbMarketCap(a.coin, a.price)'), 'капитализация берётся из общего каталога');
+  ok(src.includes('a.depth = await crashDepth('), 'глубина попадает в строку');
+}
+
 console.log('График TradingView и самообновление');
 {
   const data = { success: true, alertOn: false, tgConfigured: true, at: Date.now() - 120000, running: false,

@@ -164,12 +164,22 @@
         '<span style="color:var(--green);font-size:11px;font-weight:700;">от дна +' + r.rise + '%</span>' +
         '<span style="color:' + colour + ';font-size:11px;font-weight:800;margin-left:auto;">' +
         r.done + '/' + r.total + (r.ready ? ' ✓' : '') + '</span>' +
+        // Ликвидность рядом с монетой: по упавшей монете это первый вопрос —
+        // есть ли кому продать. Глубина ±2% показывает, сколько денег стоит
+        // по обе стороны от цены.
+        '<span style="flex-basis:100%;color:var(--t2);font-size:9.5px;display:flex;gap:8px;flex-wrap:wrap;">' +
+        '<span title="Оборот пары к USD на Coinbase за 24 часа">Vol24 ' + money(r.vol24) + '</span>' +
+        '<span title="Капитализация из каталога Coinbase. Прочерк — не найдена или тикер принадлежит другому проекту">MCap ' +
+        money(r.mcap) + '</span>' +
+        '<span title="Глубина стакана в пределах 2% от цены: слева деньги покупателей, справа — продавцов. Прочерк — стакан не получен">±2% ' +
+        (r.depth ? '<b style="color:var(--green);">' + money(r.depth.bid) + '</b>/<b style="color:#ff6b6b;">' + money(r.depth.ask) + '</b>' : '—') +
+        '</span></span>' +
         '</summary>' +
         '<div style="margin-top:4px;font-size:10px;">' +
         '<div style="color:var(--t2);margin-bottom:3px;">дно ' + r.sinceLow + ' ч назад · RSI ' +
         (r.rsi == null ? '—' : r.rsi) + ' · объём ' + (r.volFading == null ? '—' : r.volFading + '× от дна') +
         ' · за сутки ' + (r.d24 == null ? '—' : (r.d24 > 0 ? '+' : '') + r.d24 + '%') +
-        ' · оборот ' + money(r.vol24) + '</div>' + checks +
+        '</div>' + checks +
         '<div style="margin-top:4px;"><button onclick="crashOpenChart(\'' + safe + '\')" ' +
         'style="padding:0 9px;min-height:26px;font-size:10px;font-weight:700;line-height:1;cursor:pointer;' +
         'border-radius:6px;border:1px solid var(--blue);background:rgba(0,180,255,0.12);color:var(--blue);">' +
