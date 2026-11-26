@@ -34,23 +34,45 @@
     return 'следующий через ' + (min > 0 ? min + ' мин ' + sec + ' с' : sec + ' с');
   }
 
-  // График TradingView прямо в карточке. Вставляется при первом раскрытии:
-  // два десятка кадров сразу повесили бы страницу, особенно на телефоне.
-  function crashChart(details, coin) {
-    if (!details || !details.open) return;
-    const box = details.querySelector('[data-crash-chart]');
-    if (!box || box.dataset.loaded === '1') return;
-    // Тикер у TradingView заглавный, и в адрес не должно попасть ничего,
-    // кроме букв и цифр.
-    const safe = String(coin || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+  // ГРАФИК СВЕРХУ ВКЛАДКИ. Один кадр на всю вкладку, а не свой в каждой
+  // карточке: два десятка кадров вешают телефон, а смотреть всё равно
+  // приходится по одному. Выбранная монета помнится между обновлениями
+  // списка, иначе график пропадал бы раз в минуту.
+  let chartCoin = '';
+  const safeCoin = v => String(v || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+  function crashChartCoin() { return chartCoin; }
+
+  function renderCrashChart() {
+    if (!chartCoin) return '';
+    return '<div data-crash-chart style="margin:6px 0;padding:6px;border:1px solid var(--b1);border-radius:8px;background:var(--s1);">' +
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">' +
+      '<b style="color:var(--t0);font-size:12px;">' + chartCoin + ' · 15 минут</b>' +
+      '<a href="https://www.tradingview.com/chart/?symbol=COINBASE%3A' + chartCoin + 'USD" target="_blank" rel="noopener" ' +
+      'style="color:var(--blue);font-size:10px;">открыть на TradingView ↗</a>' +
+      '<button onclick="crashCloseChart()" title="Закрыть график" ' +
+      'style="margin-left:auto;padding:0 9px;min-height:26px;font-size:11px;font-weight:700;line-height:1;cursor:pointer;' +
+      'border-radius:6px;border:1px solid var(--b1);background:transparent;color:var(--t2);">✕</button></div>' +
+      '<iframe title="График ' + chartCoin + '" ' +
+      'src="https://s.tradingview.com/widgetembed/?symbol=COINBASE%3A' + chartCoin +
+      'USD&interval=15&theme=dark&style=1&timezone=exchange&hide_top_toolbar=1&hide_legend=1&hide_side_toolbar=1&save_image=0" ' +
+      'style="width:100%;height:300px;border:0;border-radius:6px;display:block;" frameborder="0" allowtransparency="true" scrolling="no"></iframe>' +
+      '</div>';
+  }
+
+  // Выбор монеты: ставим график сверху и прокручиваем к нему, иначе на
+  // телефоне он остаётся выше экрана и кажется, что ничего не произошло.
+  function crashShowChart(coin, repaint) {
+    const safe = safeCoin(coin);
     if (!safe) return;
-    box.dataset.loaded = '1';
-    box.innerHTML = '<iframe loading="lazy" title="График ' + safe + '" ' +
-      'src="https://s.tradingview.com/widgetembed/?symbol=COINBASE%3A' + safe +
-      'USD&interval=60&theme=dark&style=1&timezone=exchange&hide_top_toolbar=1&hide_legend=1&hide_side_toolbar=1&save_image=0" ' +
-      'style="width:100%;height:260px;border:0;border-radius:6px;" frameborder="0" allowtransparency="true" scrolling="no"></iframe>' +
-      '<div style="margin-top:3px;"><a href="https://www.tradingview.com/chart/?symbol=COINBASE%3A' + safe + 'USD" ' +
-      'target="_blank" rel="noopener" style="color:var(--blue);font-size:10px;">Открыть ' + safe + ' на TradingView ↗</a></div>';
+    chartCoin = safe;
+    if (typeof repaint === 'function') repaint();
+    if (typeof document === 'undefined') return;
+    const box = document.querySelector('[data-crash-chart]');
+    if (box && box.scrollIntoView) box.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  }
+  function crashCloseChartState(repaint) {
+    chartCoin = '';
+    if (typeof repaint === 'function') repaint();
   }
 
   // Шапка: состояние прохода, выключатель отчётов и измеренная цена вопроса.
@@ -127,12 +149,16 @@
         '<span style="color:var(--t2);">' + esc(c.k) + '</span>' +
         '<span style="margin-left:auto;color:' + (c.ok ? 'var(--t1)' : '#ff9f9f') + ';white-space:nowrap;">' +
         esc(c.v) + '</span></div>').join('');
-      return '<details ontoggle="crashChart(this, \'' + safe + '\')" ' +
-        'style="margin-bottom:6px;border:1px solid ' + (r.ready ? 'rgba(0,229,160,0.4)' : 'var(--b1)') +
+      const picked = safe === chartCoin;
+      return '<details style="margin-bottom:6px;border:1px solid ' +
+        (picked ? 'var(--blue)' : r.ready ? 'rgba(0,229,160,0.4)' : 'var(--b1)') +
         ';border-radius:8px;padding:6px 8px;' + (r.ready ? 'background:rgba(0,229,160,0.06);' : '') + '">' +
-        '<summary title="Нажмите, чтобы раскрыть условия и график TradingView" ' +
+        '<summary title="Нажмите, чтобы раскрыть условия" ' +
         'style="cursor:pointer;display:flex;align-items:center;gap:7px;flex-wrap:wrap;">' +
-        '<b style="color:var(--t0);font-size:12px;">' + safe + '</b>' +
+        '<b onclick="event.preventDefault();event.stopPropagation();crashOpenChart(\'' + safe + '\')" ' +
+        'title="Показать график ' + safe + ' сверху" ' +
+        'style="color:' + (picked ? 'var(--blue)' : 'var(--t0)') + ';font-size:12px;cursor:pointer;' +
+        'text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px;">' + safe + '</b>' +
         '<span style="color:var(--t2);font-size:10px;">$' + price(r.price) + '</span>' +
         '<span style="color:#ff6b6b;font-size:11px;font-weight:700;">−' + r.fall + '%</span>' +
         '<span style="color:var(--green);font-size:11px;font-weight:700;">от дна +' + r.rise + '%</span>' +
@@ -144,7 +170,10 @@
         (r.rsi == null ? '—' : r.rsi) + ' · объём ' + (r.volFading == null ? '—' : r.volFading + '× от дна') +
         ' · за сутки ' + (r.d24 == null ? '—' : (r.d24 > 0 ? '+' : '') + r.d24 + '%') +
         ' · оборот ' + money(r.vol24) + '</div>' + checks +
-        '<div data-crash-chart style="margin-top:6px;color:var(--t2);">График загрузится при раскрытии…</div>' +
+        '<div style="margin-top:4px;"><button onclick="crashOpenChart(\'' + safe + '\')" ' +
+        'style="padding:0 9px;min-height:26px;font-size:10px;font-weight:700;line-height:1;cursor:pointer;' +
+        'border-radius:6px;border:1px solid var(--blue);background:rgba(0,180,255,0.12);color:var(--blue);">' +
+        '📈 График ' + safe + '</button></div>' +
         '</div></details>';
     }).join('') + '</div>';
   }
@@ -154,7 +183,9 @@
       return '<div style="color:var(--t2);font-size:11px;">Поиск обвалов недоступен' +
         (data && data.error ? ': ' + esc(data.error) : '.') + '</div>';
     }
-    return renderCrashHead(data, onToggle, onRefresh) + renderCrashRules(data) + renderCrashRows(data);
+    // График идёт сразу под шапкой — выше списка, чтобы не искать его.
+    return renderCrashHead(data, onToggle, onRefresh) + renderCrashChart() +
+      renderCrashRules(data) + renderCrashRows(data);
   }
 
   // Список обновляется сам раз в минуту. Без этого раскрытая карточка с
@@ -182,7 +213,8 @@
   }
 
   const api = { renderCrashPanel, renderCrashHead, renderCrashRules, renderCrashRows,
-    crashChart, nextIn, crashOpenCoins, crashRestoreOpen };
+    renderCrashChart, crashShowChart, crashCloseChartState, crashChartCoin,
+    nextIn, crashOpenCoins, crashRestoreOpen };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else Object.assign(root, api);
 })(typeof globalThis !== 'undefined' ? globalThis : this);

@@ -16327,6 +16327,9 @@ Requirements:
       el.innerHTML = renderCrashPanel(crashData, 'crashToggleAlert()', 'crashRefresh()');
       crashRestoreOpen(el, open);
     }
+    // График выбирается кликом по монете и живёт сверху вкладки.
+    function crashOpenChart(coin) { crashShowChart(coin, paintCrash); }
+    function crashCloseChart() { crashCloseChartState(paintCrash); }
     async function loadCrash() {
       try {
         crashData = await (await fetch('/api/crash-scan')).json();

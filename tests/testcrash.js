@@ -60,7 +60,14 @@ console.log('Отчёты в Telegram: по одному на монету, вы
   const route = src.slice(src.indexOf("app.post('/api/crash-alert'"), src.indexOf("app.post('/api/crash-scan/refresh'"));
   ok(route.includes('tgConfigured()'), 'включить отчёты без настроенного Telegram нельзя');
   ok(route.includes('crashState.sent = {}'), 'при включении список отправленных очищается');
+  ok(route.includes('saveCrashState()'), 'выбор сохраняется сразу');
   ok(/crash-watch\.json/.test(read('.gitignore')), 'живые данные не едут в репозиторий');
+  // Включённые отчёты обязаны пережить перезапуск: иначе после каждого
+  // деплоя они молча выключались бы.
+  const boot = src.slice(src.indexOf('let crashState ='), src.indexOf('function saveCrashState'));
+  ok(boot.includes('crashState.alertOn = !!saved.alertOn'), 'при старте состояние отчётов читается из файла');
+  const save = src.slice(src.indexOf('function saveCrashState'), src.indexOf('const crashEma'));
+  ok(save.includes('alertOn: crashState.alertOn'), 'состояние отчётов пишется в файл');
 }
 
 console.log('Панель: находки, цена вопроса, управление');
@@ -102,30 +109,30 @@ console.log('График TradingView и самообновление');
     rows: [{ coin: 'HONEY', price: 0.0002, fall: 88, rise: 4, sinceLow: 3, rsi: 33, volFading: 0.1,
       d24: -5, vol24: 1e6, done: 8, total: 8, ready: true, checks: [{ k: 'тест', ok: true, v: '1', why: 'основание теста' }] }] };
   const html = view.renderCrashPanel(data, 't()', 'r()');
-  ok(html.includes("crashChart(this, 'HONEY')"), 'раскрытие карточки грузит график');
-  ok(html.includes('data-crash-chart'), 'место под график есть');
-  ok(!html.includes('tradingview.com'), 'кадр не грузится, пока карточка закрыта');
   ok(/следующий через 8 мин/.test(html), 'видно, когда будет следующий проход', html.match(/следующий через [^<·]*/));
+  ok(html.includes("crashOpenChart('HONEY')"), 'монета открывает график');
+  ok(!html.includes('tradingview.com'), 'пока монета не выбрана, кадра нет');
 
-  // Кадр появляется только при раскрытии
-  const calls = [];
-  const details = { open: false, querySelector: () => null };
-  view.crashChart(details, 'HONEY');
-  ok(true, 'закрытая карточка график не грузит');
-  const box = { dataset: {}, innerHTML: '' };
-  const open = { open: true, querySelector: s => (s === '[data-crash-chart]' ? box : null) };
-  view.crashChart(open, 'HONEY');
-  ok(box.innerHTML.includes('COINBASE%3AHONEYUSD'), 'кадр показывает нужную монету');
-  ok(box.innerHTML.includes('loading="lazy"'), 'кадр грузится лениво');
-  ok(box.innerHTML.includes('tradingview.com/chart'), 'есть ссылка открыть на TradingView');
-  ok(box.dataset.loaded === '1', 'повторно кадр не вставляется');
-  const before = box.innerHTML;
-  view.crashChart(open, 'HONEY');
-  ok(box.innerHTML === before, 'второй вызов ничего не меняет');
-  // Имя монеты чистится: в адрес кадра не должно попасть ничего лишнего
-  const box2 = { dataset: {}, innerHTML: '' };
-  view.crashChart({ open: true, querySelector: () => box2 }, '<b>he</b>');
-  ok(box2.innerHTML.includes('COINBASE%3ABHEBUSD') && !box2.innerHTML.includes('<b>he'), 'имя монеты чистится');
+  // Выбор монеты ставит график сверху, над списком
+  view.crashShowChart('HONEY');
+  const withChart = view.renderCrashPanel(data, 't()', 'r()');
+  ok(view.crashChartCoin() === 'HONEY', 'выбранная монета запомнена');
+  ok(withChart.includes('COINBASE%3AHONEYUSD'), 'кадр показывает нужную монету');
+  ok(withChart.includes('interval=15'), 'интервал 15 минут');
+  ok(withChart.includes('HONEY · 15 минут'), 'подписан интервал');
+  ok(withChart.indexOf('data-crash-chart') < withChart.indexOf('HONEY</b>') ||
+     withChart.indexOf('data-crash-chart') < withChart.indexOf('details'), 'график стоит выше списка');
+  ok(withChart.includes('tradingview.com/chart'), 'есть ссылка открыть на TradingView');
+  ok(withChart.includes('crashCloseChart()'), 'график можно закрыть');
+
+  // Имя монеты чистится и приводится к тикеру
+  view.crashShowChart('<b>he</b>');
+  ok(view.crashChartCoin() === 'BHEB', 'имя монеты чистится и поднимается в верхний регистр', view.crashChartCoin());
+  view.crashShowChart('');
+  ok(view.crashChartCoin() === 'BHEB', 'пустое имя выбор не сбрасывает');
+  view.crashCloseChartState();
+  ok(view.crashChartCoin() === '' && !view.renderCrashPanel(data, 't()', 'r()').includes('tradingview'),
+    'закрытие убирает кадр');
 }
 
 console.log('Вкладка в обеих вёрстках');
@@ -145,6 +152,9 @@ for (const [file, tab, root, loader] of [
     file + ': список обновляется сам, пока вкладка открыта');
   ok(src.includes('crashOpenCoins(el)') && src.includes('crashRestoreOpen(el, open)'),
     file + ': раскрытые карточки переживают обновление');
+  ok(src.includes('function crashOpenChart(coin)') && src.includes('crashShowChart(coin, paintCrash'),
+    file + ': клик по монете открывает график');
+  ok(src.includes('function crashCloseChart()'), file + ': график можно закрыть');
 }
 
 console.log('Бот удалён целиком');

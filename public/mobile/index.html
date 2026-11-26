@@ -7381,6 +7381,9 @@
       el.innerHTML = renderCrashPanel(crashDataM, 'crashToggleAlertM()', 'crashRefreshM()');
       crashRestoreOpen(el, open);
     }
+    // График выбирается кликом по монете и живёт сверху вкладки.
+    function crashOpenChart(coin) { crashShowChart(coin, paintCrashM); }
+    function crashCloseChart() { crashCloseChartState(paintCrashM); }
     async function loadCrashM() {
       try {
         crashDataM = await (await fetch('' + BASE + '/api/crash-scan')).json();
