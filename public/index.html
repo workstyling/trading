@@ -4737,33 +4737,13 @@
     .pred-btn.green:hover { background: rgba(48,209,88,0.1); }
 
     /* Trading bot */
-    #botRoot .pred-card-head h3 { font-size: 18px; }
-    #botStatus { font-size: 16px; font-weight: 600; color: var(--t2); }
-    #botRoot .pred-controls { gap: 12px; }
-    #botRoot .pred-controls label { font-size: 14px; }
-    #botRoot .pred-select { font-size: 17px; height: 46px; padding: 0 12px; }
-    #botRoot .pred-input { font-size: 17px; height: 46px; padding: 0 6px; text-align: center; -moz-appearance: textfield; appearance: textfield; }
-    #botRoot .pred-input::-webkit-outer-spin-button,
-    #botRoot .pred-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-    #botRoot .pred-btn { font-size: 16px; height: 46px; padding: 0 14px; }
-    #botRoot .pred-card-head .pred-btn { height: 38px; padding: 0 16px; }
     #botPlan { margin-top: 16px; font-size: 18px; color: var(--t0); }
     #botFees, #botOrderTypes, #botDirection { margin-top: 8px; font-size: 16px; color: var(--t1); }
     #botNote { margin-top: 8px; font-size: 15px; color: var(--t2); }
     #botMsg { margin-top: 8px; font-size: 15px; color: var(--red); }
-    #botRoot .pred-table th { font-size: 14px; }
-    #botRoot .pred-table td { font-size: 15px; }
-    .bot-head-right { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
-    .bot-net { font-size: 15px; color: var(--t1); }
     /* Узкий экран: строка профита на всю ширину, значение у правого края */
     @media (max-width: 640px) {
-      .bot-head-right { width: 100%; gap: 6px; }
-      #botRoot .bot-net { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px; width: 100%; font-size: 13px; white-space: nowrap; }
-      #botRoot #botNetProfit { margin-left: auto; font-size: 18px; }
-      #botStatus { margin-left: auto; }
     }
-    #botNetProfit { margin-left: 6px; font-size: 20px; font-weight: 700; }
-    #botFeesPaid { color: var(--t0); font-weight: 600; }
     #botCancelled { padding: 10px 14px; font-size: 14px; color: var(--t2); border-top: 1px solid var(--b0); }
     .bot-stepper { display: inline-flex; align-items: center; gap: 4px; }
     .bot-step {
@@ -6050,8 +6030,8 @@
     }
   </style>
   <script src="/js/recovery-journal.js"></script>
+  <script src="/js/crash-panel.js"></script>
   <script src="/js/orders-freshness.js"></script>
-  <script src="/js/bot-panel.js"></script>
 </head>
 
 <body>
@@ -6117,7 +6097,7 @@
     <div class="tab-nav">
       <button class="tab-btn active" data-tab="trading" onclick="switchTab('trading')">Trading</button>
       <button class="tab-btn" data-tab="journal" onclick="switchTab('journal')">Journal 📒</button>
-      <button class="tab-btn" data-tab="bot" onclick="switchTab('bot')">Trading bot</button>
+      <button class="tab-btn" data-tab="crash" onclick="switchTab('crash')">📉 Обвал</button>
     </div>
 
     <div id="tab-trading" class="tab-pane active">
@@ -6580,80 +6560,11 @@
       </div>
     </div><!-- /tab-journal -->
 
-    <div id="tab-bot" class="tab-pane">
-      <div id="botRoot">
-        <div class="pred-card" style="margin-bottom:14px;">
-          <div class="pred-card-head">
-            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-              <h3>Trading bot</h3>
-              <div role="group" aria-label="Режим бота" style="display:flex;gap:4px;">
-                <button id="botModeReal" class="pred-btn" onclick="botSetMode('real')">Реальный</button>
-                <button id="botModeTest" class="pred-btn" onclick="botSetMode('test')">Тестовый</button>
-              </div>
-            </div>
-            <div class="bot-head-right">
-              <span class="bot-net">Комиссии <span id="botFeesPaid">—</span> · Чистый профит <span id="botNetProfit">—</span></span>
-              <span id="botStatus">—</span>
-            </div>
-          </div>
-          <div class="pred-card-body">
-            <div class="pred-controls">
-              <label for="botCoin">Валюта</label>
-              <select id="botCoin" class="pred-select" onchange="botSaveConfig()"></select>
-              <label for="botMaxDeals">Сделок, макс.</label>
-              <div class="bot-stepper">
-                <button type="button" class="bot-step" aria-label="Меньше сделок" onclick="botStep('botMaxDeals', -1)">−</button>
-                <input id="botMaxDeals" class="pred-input" type="number" min="1" max="100" step="1" style="width:76px;" onchange="botSaveConfig()">
-                <button type="button" class="bot-step" aria-label="Больше сделок" onclick="botStep('botMaxDeals', 1)">+</button>
-              </div>
-              <label for="botMaxUsd">Сумма сделки, макс. $</label>
-              <div class="bot-stepper">
-                <button type="button" class="bot-step" aria-label="Уменьшить сумму" onclick="botStep('botMaxUsd', -100)">−</button>
-                <input id="botMaxUsd" class="pred-input" type="number" min="1" step="1" style="width:110px;" onchange="botSaveConfig()">
-                <button type="button" class="bot-step" aria-label="Увеличить сумму" onclick="botStep('botMaxUsd', 100)">+</button>
-              </div>
-              <button id="botStart" class="pred-btn green" onclick="botOnStart()">Старт</button>
-              <button id="botPause" class="pred-btn" onclick="botOnPause()">Пауза</button>
-              <button id="botFinish" class="pred-btn" style="border-color:var(--blue);color:var(--blue);" onclick="botOnFinish()">Остановить и доделать</button>
-              <button id="botStop" class="pred-btn" style="border-color:var(--red);color:var(--red);" onclick="botOnStop()">Остановить</button>
-            </div>
-            <div id="botPlan"></div>
-            <div id="botFees"></div>
-            <div id="botOrderTypes"></div>
-            <div id="botDirection"></div>
-            <div id="botNote"></div>
-            <div id="botMsg" role="alert" style="display:none;"></div>
-          </div>
-        </div>
-        <div class="pred-card" style="margin-bottom:14px;">
-          <div class="pred-card-head">
-            <h3>Открытые сделки</h3>
-          </div>
-          <div style="overflow-x:auto;">
-            <table class="pred-table">
-              <thead>
-                <tr><th>Открыта</th><th>Пара</th><th>Покупка</th><th>Цена покупки</th><th>Сумма</th><th>Комиссия покупки</th><th>Продажа: цель</th><th>Продажа: стоп</th><th>Если продать сейчас</th></tr>
-              </thead>
-              <tbody id="botOpenDeals"></tbody>
-            </table>
-          </div>
-        </div>
-        <div class="pred-card">
-          <div class="pred-card-head">
-            <h3>Закрытые сделки</h3>
-          </div>
-          <div style="overflow-x:auto;">
-            <table class="pred-table">
-              <thead>
-                <tr><th>Закрыта</th><th>Пара</th><th>Покупка</th><th>Продажа</th><th>Причина</th><th>Куплено на</th><th>Продано на</th><th>Комиссии</th><th>Чистый профит</th></tr>
-              </thead>
-              <tbody id="botClosedDeals"></tbody>
-            </table>
-          </div>
-          <div id="botCancelled" style="display:none;"></div>
-        </div>
-      </div>
-    </div><!-- /tab-bot -->
+    <!-- Обвал и разворот: монеты, которые сильно упали и начали расти -->
+    <div id="tab-crash" class="tab-pane">
+      <div id="crashRoot" style="font-size:12px;color:var(--t2);">Загрузка…</div>
+    </div><!-- /tab-crash -->
+
   </div>
 
   <script>
@@ -16403,6 +16314,42 @@ Requirements:
       } catch (e) { showCustomAlert('Бумажная покупка не записана: ' + e.message); return; }
       await loadPaperEntry();
     }
+    // ── ОБВАЛ И РАЗВОРОТ ──
+    // Всю работу делает сервер: проход по монетам, разбор условий и отчёты
+    // в Telegram. Экран показывает результат и управляет отчётами.
+    let crashData = null;
+    function paintCrash() {
+      const el = document.getElementById('crashRoot');
+      if (!el || !crashData) return;
+      el.innerHTML = renderCrashPanel(crashData, 'crashToggleAlert()', 'crashRefresh()');
+    }
+    async function loadCrash() {
+      try {
+        crashData = await (await fetch('/api/crash-scan')).json();
+      } catch (e) {
+        if (!crashData) crashData = { success: false, error: e.message };
+      }
+      paintCrash();
+    }
+    async function crashToggleAlert() {
+      try {
+        const r = await fetch('/api/crash-alert', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ enable: !(crashData && crashData.alertOn) }),
+        });
+        const j = r.ok ? await r.json() : null;
+        if (j && j.success) { crashData = j; paintCrash(); return; }
+        showCustomAlert((j && j.error) || 'Не удалось переключить отчёты');
+      } catch (e) { showCustomAlert('Не удалось: ' + e.message); }
+      await loadCrash();
+    }
+    async function crashRefresh() {
+      try {
+        await fetch('/api/crash-scan/refresh', { method: 'POST' });
+        if (crashData) { crashData.running = true; paintCrash(); }
+        setTimeout(loadCrash, 20000);
+      } catch (e) { showCustomAlert('Не удалось запустить проход: ' + e.message); }
+    }
     // ── НАБЛЮДЕНИЕ ЗА МОМЕНТОМ ВХОДА ──
     // Условия считает сервер и он же шлёт сообщение; экран только показывает
     // разбор и управляет оповещением.
@@ -16583,6 +16530,8 @@ Requirements:
     // Прибыль бумажных сделок «онлайн»: сервер держит цены свежими 15 секунд,
     // чаще спрашивать незачем — ответ будет тот же.
     // Наблюдение пересчитывается сервером раз в полминуты — чаще спрашивать нечего.
+    // Вкладка обвалов опрашивается, только когда открыта.
+    setInterval(() => { if (document.getElementById('tab-crash')?.classList.contains('active')) loadCrash(); }, 60000);
     setInterval(loadEntryWatch, 30000);
     loadEntryWatch();
     setInterval(loadPaperEntry, 15000);
@@ -17651,15 +17600,15 @@ Reply ONLY with JSON, no other text: {"signal":"BUY/WAIT/SKIP","confidence":1-10
       document.querySelectorAll('.tab-pane').forEach(p => p.classList.toggle('active', p.id === 'tab-' + name));
       try { safeStorage.setItem('activeTab', name); } catch {}
       // Вкладки Moonshots и Paper Bot убраны; их содержимое переехало в Journal
+      if (name === 'crash') loadCrash();
       if (name === 'journal') { loadJournal(); loadMicroLab(); loadLab(); loadPaper(); startPaperPoll(); }
       else stopPaperPoll();
-      if (name === 'bot') botLoad();
     }
     // Restore last tab on load
     document.addEventListener('DOMContentLoaded', () => {
       try {
         const last = safeStorage.getItem('activeTab');
-        if (last === 'journal' || last === 'bot') switchTab(last);
+        if (last === 'journal' || last === 'crash') switchTab(last);
       } catch {}
     });
 

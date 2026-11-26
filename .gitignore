@@ -45,6 +45,6 @@ entry-since.json
 entry-paper.json
 recovery-check.json
 entry-feed.jsonl
-bot-state.json
 
 entry-watch.json
+crash-watch.json

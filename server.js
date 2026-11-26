@@ -6595,6 +6595,34 @@ const ENTRY_PULLBACK = {
     verdict: 'хуже' },
 };
 
+// Комиссии счёта для панели входа: сколько стоит круг и какой рост нужен,
+// чтобы выйти в ноль. Ставки приходят от Coinbase вместе с тарифом.
+// Непригодная ставка — это «неизвестно», а не ноль: по нулевой комиссии
+// панель посчитала бы цель окупаемой, когда она такой не является.
+function entryFeeSummary(limitPct, marketPct) {
+  const valid = v => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v < 100;
+  if (!valid(limitPct) || !valid(marketPct)) return null;
+  // Рост, окупающий комиссию с обеих сторон: (1+x)(1-f) = 1/(1-f).
+  const breakeven = f => Math.round((1 / ((1 - f / 100) * (1 - f / 100)) - 1) * 1e6) / 1e4;
+  return {
+    limitPct, marketPct,
+    limitBreakevenPct: breakeven(limitPct),
+    marketBreakevenPct: breakeven(marketPct),
+  };
+}
+
+async function entryFees() {
+  try {
+    const fresh = volume30dCache.data && Date.now() - volume30dCache.ts < VOLUME_30D_TTL;
+    const data = fresh ? volume30dCache.data : await loadVolume30d();
+    const summary = entryFeeSummary(data.makerFeePct, data.takerFeePct);
+    return summary && { ...summary, volumeUsd: data.totalUsd, tier: data.feeTier };
+  } catch (e) {
+    console.warn('[entry-fees]', e.message);
+    return null;
+  }
+}
+
 // ВХОД ВДОГОНКУ: цена уже выросла за последние 15 минут. Внутри того же
 // гейта (падение ≥3%, |24ч|<10%) такие входы измеренно хуже спокойных, и
 // эффект повторился в обеих половинах периода — это та самая жалоба
@@ -6960,7 +6988,7 @@ async function runEntryScan() {
     entryScan.results = rows;
     // Комиссии счёта для строки окупаемости: цель +0.30% подобрана под
     // старый тариф, и на нынешнем она может не покрывать даже круг Limit.
-    entryScan.fees = await botFees();
+    entryScan.fees = await entryFees();
     refreshCbMarketCaps(rows.map(r => r.coin));
     entryScan.total = universe.length;
     entryScan.missed = missed;
@@ -10613,265 +10641,254 @@ app.post('/api/calibration/run', async (req, res) => {
   res.json({ success: true, report: rep });
 });
 
-// ═══ ТОРГОВЫЙ БОТ ═══
-// Торгует только виртуально, в тестовом режиме. Настоящих ордеров раздел не ставит.
-const botLib = require('./src/bot');
-const botEngine = require('./src/bot/engine');
-const BOT_FILE = path.join(__dirname, 'bot-state.json');
-const BOT_COINS_TTL = 60 * 60 * 1000;
-const BOT_TICK_MS = 20 * 1000;
-const BOT_QUOTE_TTL = 10 * 1000;
-const BOT_REAL_NOTE = 'Реальная торговля не подключена: в этом режиме бот не ставит ордера.';
+// ══════════════════════════════════════════════════════════════════
+// ОБВАЛ И РАЗВОРОТ — поиск монет, которые сильно упали и начали расти
+//
+// Правила не придуманы, а измерены: прогон 85 036 событий по 289 монетам
+// Coinbase за 133 дня (часовые свечи, круг комиссий 0.7%, проверка на двух
+// половинах периода). Событие — монета глубоко под своим двухнедельным
+// максимумом и выросла от локального дна.
+//
+// Из 22 проверенных признаков подтвердились на ОБЕИХ половинах семь:
+//   рост от дна меньше 6%      +0.83 и +0.81 п.п. (поздний вход хуже всего:
+//                               рост 12%+ даёт −1.46 и −1.27)
+//   дно было 2–4 часа назад    +0.29 и +1.03
+//   объём затух вдвое от дна   +0.38 и +0.47 (продавец выдохся)
+//   RSI 25–40                  +0.63 и +0.78 (ниже 25 — ещё падает)
+//   цена ниже EMA20            +0.85 и +1.11 (выше — отскок уже прошёл)
+//   за сутки всё ещё в минусе  +0.46 и +0.72
+//   падение больше 3 размахов  редкое исключение, оставлено как есть
+//
+// Вместе они поднимают результат с −0.9% до −0.2% на сделку. ПРИБЫЛЬНОЙ
+// комбинации прогон не нашёл: ни одна цель от +2% до +10% и ни один горизонт
+// от 6 до 48 часов не вышли в плюс с запасом в обеих половинах. Поэтому
+// система ищет и показывает, но не обещает заработка — измеренные числа
+// стоят на экране и в сообщении.
+//
+// Пересчёт: measure-rebound2.js, measure-combo.js.
+// ══════════════════════════════════════════════════════════════════
+const CRASH_FILE = path.join(__dirname, 'crash-watch.json');
+const CRASH_TICK_MS = 10 * 60 * 1000;    // полный проход раз в 10 минут
+const CRASH_MIN_VOL = 50e3;              // ниже этого оборота монету не купить
+const CRASH_MAX_CANDIDATES = 70;         // столько монет берём на подробный разбор
+const CRASH_KEEP = 40;                   // столько строк держим в выдаче
+const CRASH_MEASURE = {
+  at: '2026-11-26', from: '2026-07-13', to: '2026-11-23', coins: 289, events: 85036, feePct: 0.7,
+  // Результат тех же входов на замере: цель +5%, стоп −7%, 12 часов.
+  all: { netPct: -0.90, winPct: 40 },
+  filtered: { netPct: -0.21, winPct: 50, netSe: 0.15 },
+  profitableModes: 0, modesChecked: 7,
+  signalsPerWeek: 323,
+};
 
-let botState = botLib.restoreState(null);
-try { botState = botLib.restoreState(JSON.parse(fs.readFileSync(BOT_FILE, 'utf8'))); } catch { }
-// stopped, running, paused или finishing. Настройки меняются только в stopped.
-// running намеренно не хранится в файле: после перезапуска или деплоя новые сделки
-// начинаются только по нажатию Старт. Если остались открытые сделки, бот на паузе:
-// стоп и цель должны продолжать работать. Доделывание новых сделок не открывает,
-// поэтому оно хранится и продолжается после перезапуска.
-function botStatusAfterRestart(state) {
-  if (!state.deals.length) return 'stopped';
-  return state.finishing ? 'finishing' : 'paused';
-}
-let botStatus = botStatusAfterRestart(botState);
-let botCoinsCache = { list: [], at: 0 };
-
-// Монеты с торгуемой парой к USD. Если биржа не ответила, отдаём прошлый список.
-async function botCoinList() {
-  if (botCoinsCache.list.length && Date.now() - botCoinsCache.at < BOT_COINS_TTL) return botCoinsCache.list;
-  try {
-    const products = await fetchProducts();
-    const list = products
-      .filter(p => p.quote_currency === 'USD' && p.status === 'online' && !p.trading_disabled)
-      .map(p => p.base_currency)
-      .sort();
-    if (list.length) botCoinsCache = { list, at: Date.now() };
-  } catch (e) { console.warn('[bot] список пар:', e.message); }
-  return botCoinsCache.list;
-}
-
-function botSaveState(next) {
-  fs.writeFileSync(BOT_FILE, JSON.stringify(next, null, 2));
-  botState = next;
-}
-
-// Настоящие ставки аккаунта. Сбой не заменяем нулём и прошлым значением с истёкшим сроком.
-async function botFees() {
-  try {
-    const fresh = volume30dCache.data && Date.now() - volume30dCache.ts < VOLUME_30D_TTL;
-    const data = fresh ? volume30dCache.data : await loadVolume30d();
-    const summary = botLib.feeSummary(data.makerFeePct, data.takerFeePct);
-    return summary && { ...summary, volumeUsd: data.totalUsd, tier: data.feeTier };
-  } catch (e) {
-    console.warn('[bot] комиссии:', e.message);
-    return null;
-  }
+let crashState = { alertOn: false, sent: {}, scan: { at: 0, running: false, coins: 0, rows: [], error: '' } };
+try {
+  const saved = JSON.parse(fs.readFileSync(CRASH_FILE, 'utf8'));
+  crashState.alertOn = !!saved.alertOn;
+  crashState.sent = saved.sent && typeof saved.sent === 'object' ? saved.sent : {};
+} catch { }
+function saveCrashState() {
+  try { fs.writeFileSync(CRASH_FILE, JSON.stringify({ alertOn: crashState.alertOn, sent: crashState.sent }, null, 2)); }
+  catch (e) { console.error('[crash] save', e.message); }
 }
 
-const BOT_DIRECTION_TTL = 60 * 1000;
-let botDirectionCache = { pair: null, at: 0, data: null };
-
-async function botDirection(pair) {
-  const cache = botDirectionCache;
-  if (cache.pair === pair && Date.now() - cache.at < BOT_DIRECTION_TTL) return cache.data;
-  let data = null;
-  try {
-    const r = await fetch(`${DIP_CB}/products/${pair}/candles?granularity=3600`, DIP_H);
-    if (r.ok) data = botLib.trendDirection(await r.json(), Date.now() / 1000);
-  } catch (e) { console.warn('[bot] свечи:', e.message); }
-  botDirectionCache = { pair, at: Date.now(), data };
-  return data;
+const crashEma = (arr, n) => { const k = 2 / (n + 1); let e = arr[0]; for (let i = 1; i < arr.length; i++) e = arr[i] * k + e * (1 - k); return e; };
+function crashRsi(closes) {
+  if (closes.length < 2) return null;
+  let up = 0, dn = 0;
+  for (let i = 1; i < closes.length; i++) { const d = closes[i] - closes[i - 1]; if (d >= 0) up += d; else dn -= d; }
+  return dn === 0 ? 100 : 100 - 100 / (1 + (up / (closes.length - 1)) / (dn / (closes.length - 1)));
 }
 
-let botQuoteCache = { pair: null, at: 0, data: null };
+// Разбор одной монеты по часовым свечам. Возвращает null, если данных мало:
+// неизвестное условие не должно превращаться в выполненное.
+function crashAnalyze(coin, bars, vol24) {
+  if (!Array.isArray(bars) || bars.length < 200) return null;
+  const last = bars[bars.length - 1];
+  const price = last.cl;
+  if (!(price > 0)) return null;
+  const deep = bars.slice(-336);
+  const high = Math.max(...deep.map(x => x.hi));
+  const fall = high > 0 ? (high - price) / high * 100 : 0;
+  const lw = bars.slice(-25);
+  const low = Math.min(...lw.map(x => x.lo));
+  const rise = low > 0 ? (price / low - 1) * 100 : 0;
+  const lowIdx = lw.reduce((b, x, k) => (x.lo < lw[b].lo ? k : b), 0);
+  const sinceLow = lw.length - 1 - lowIdx;
+  const volAvg = bars.slice(-73, -1).reduce((s, x) => s + x.v, 0) / 72;
+  const volAtLow = volAvg > 0 ? lw[lowIdx].v / volAvg : 0;
+  const volNow = volAvg > 0 ? last.v / volAvg : 0;
+  const volFading = volAtLow > 0 ? volNow / volAtLow : null;
+  const rsi = crashRsi(bars.slice(-15).map(x => x.cl));
+  const e20 = crashEma(bars.slice(-20).map(x => x.cl), 20);
+  const prev = bars[bars.length - 25];
+  const d24 = prev && prev.cl > 0 ? (price / prev.cl - 1) * 100 : null;
+  const atr = bars.slice(-169, -1).reduce((s, x) => s + (x.hi - x.lo) / x.cl * 100, 0) / 168;
 
-// at — время последней сделки по данным биржи: по нему движок отсекает устаревшую цену.
-async function botQuote(pair) {
-  const cache = botQuoteCache;
-  if (cache.pair === pair && Date.now() - cache.at < BOT_QUOTE_TTL) return cache.data;
-  let data = null;
-  try {
-    const r = await fetch(`${DIP_CB}/products/${pair}/ticker`, DIP_H);
-    if (r.ok) {
-      const t = await r.json();
-      data = { bid: parseFloat(t.bid), ask: parseFloat(t.ask), price: parseFloat(t.price), at: Date.parse(t.time) };
-    }
-  } catch (e) { console.warn('[bot] котировка:', e.message); }
-  botQuoteCache = { pair, at: Date.now(), data };
-  return data;
-}
+  const checks = [];
+  const add = (k, ok, v, why) => checks.push({ k, ok: !!ok, v: v == null ? '—' : String(v), why });
+  add('Упала от максимума 14 дней ≥ 25%', fall >= 25, fall.toFixed(1) + '%',
+    'Ищем именно глубокое падение: на мелком откате разворота нет.');
+  add('Уже растёт от дна', rise >= 3, rise.toFixed(1) + '%',
+    'Дно должно быть позади: ловить падающий нож замер не советует.');
+  add('Рост от дна меньше 6%', rise >= 3 && rise < 6, rise.toFixed(1) + '%',
+    'Лучшая полоса на замере: +0.83 и +0.81 п.п. Рост от 12% — худшая (−1.46 и −1.27): вход уже поздний.');
+  add('Дно было 2–4 часа назад', sinceLow >= 2 && sinceLow < 4, sinceLow + ' ч',
+    'Свежий разворот лучше старого: +0.29 и +1.03 п.п. Дно старше 10 часов — хуже в обеих половинах.');
+  add('Объём затух вдвое от дна', volFading != null && volFading < 0.5,
+    volFading == null ? 'неизвестно' : volFading.toFixed(2) + '× от дна',
+    'Продавец выдохся: +0.38 и +0.47 п.п. Если объём держится — хуже в обеих.');
+  add('RSI 25–40', rsi != null && rsi >= 25 && rsi < 40, rsi == null ? 'неизвестен' : Math.round(rsi),
+    'Вышел из ямы, но не перегрет: +0.63 и +0.78 п.п. RSI от 40 — хуже в обеих.');
+  add('Цена ниже EMA20', price < e20, price < e20 ? 'да' : 'нет',
+    'Выше EMA20 отскок обычно уже случился: там результат хуже в обеих половинах (+0.85 и +1.11 в пользу «ниже»).');
+  add('За сутки ещё в минусе', d24 != null && d24 < 0, d24 == null ? 'неизвестно' : d24.toFixed(1) + '%',
+    'Разворот внутри падения лучше, чем вход после суточного роста: +0.46 и +0.72 п.п.');
 
-function botRulesNote(mode, fees, orderTypes) {
-  if (mode !== 'test') return BOT_REAL_NOTE;
-  const {
-    netTargetPct, stopLossPct, maxHoldMs, entryTimeoutMs, entrySpacingMs, stopLimitMaxSlipPct, stopLimitTimeoutMs,
-  } = botEngine.PARAMS;
-  const target = fees && orderTypes
-    ? 'цель +' + botEngine.targetPct(fees).toFixed(2) + '% (+' + netTargetPct + '% чистыми)'
-    : 'цель неизвестна';
-  return 'Правила: вход, когда направление вверх; не исполнился за ' + (entryTimeoutMs / 60000) +
-    ' мин — снимается; ' + target + ', стоп −' + stopLossPct + '% по Stop-Limit (ещё −' + stopLimitMaxSlipPct +
-    '% или ' + (stopLimitTimeoutMs / 60000) + ' мин без исполнения — Market), не дольше ' + (maxHoldMs / 3600000) +
-    ' ч. Свободные места занимаются сразу, после снятой покупки и после стопа пауза до ' +
-    (entrySpacingMs / 60000) + ' мин. Сделки виртуальные, по настоящим ценам.';
-}
-
-let botTickBusy = false;
-
-async function botTick() {
-  if (botTickBusy || botStatus === 'stopped' || botState.mode !== 'test') return;
-  botTickBusy = true;
-  try {
-    const pair = botState.coin + '-USD';
-    const [quote, direction, fees] = [await botQuote(pair), await botDirection(pair), await botFees()];
-    // Пока шли запросы, бота могли остановить: решаем только по текущему статусу.
-    if (botStatus === 'stopped' || botState.mode !== 'test' || botState.coin + '-USD' !== pair) return;
-    const spread = quote ? botLib.spreadPct(quote.bid, quote.ask) : null;
-    const next = botEngine.step(botState, {
-      status: botStatus, pair, quote, direction, fees,
-      orderTypes: botLib.chooseOrderTypes(fees, spread),
-      maxDeals: botState.maxDeals, maxUsd: botState.maxUsd, now: Date.now(),
-    });
-    // Доделал последнюю сделку: останавливается полностью.
-    if (botStatus === 'finishing' && !next.deals.length) {
-      next.finishing = false;
-      botStatus = 'stopped';
-      console.log('[bot] доделал, остановлен');
-    }
-    if (JSON.stringify(next) !== JSON.stringify(botState)) botSaveState(next);
-  } catch (e) {
-    console.error('[bot] тик:', e.message);
-  } finally {
-    botTickBusy = false;
-  }
-}
-setInterval(botTick, BOT_TICK_MS);
-
-async function botView() {
-  const { mode, coin, maxDeals, maxUsd } = botState;
-  const fees = await botFees();
-  const quote = await botQuote(coin + '-USD');
-  const orderTypes = botLib.chooseOrderTypes(fees, quote ? botLib.spreadPct(quote.bid, quote.ask) : null);
-  // Сбой биржи не подменяем прошлым значением: неизвестный баланс остаётся null,
-  // и Старт его не пропустит. Тестовый режим к счёту не обращается.
-  let balance = null;
-  if (mode === 'test') {
-    balance = botEngine.cashUsd(botState);
-  } else {
-    try { balance = await fetchUsdBalance(); }
-    catch (e) { console.warn('[bot] баланс:', e.message); }
-  }
+  const done = checks.filter(c => c.ok).length;
   return {
-    success: true,
-    status: botStatus,
-    mode,
-    coin, pair: coin + '-USD', maxDeals, maxUsd,
-    minDealUsd: botLib.MIN_DEAL_USD,
-    balance,
-    plan: botLib.planDeals(balance, maxDeals, maxUsd),
-    lockedUsd: mode === 'test' ? botEngine.lockedUsd(botState) : 0,
-    fees,
-    orderTypes,
-    direction: await botDirection(coin + '-USD'),
-    coins: await botCoinList(),
-    // Сделки только виртуальные: в реальном режиме показывать нечего.
-    deals: mode === 'test'
-      ? botEngine.dealViews(botState, quote, Date.now())
-      : { open: [], closed: [], cancelledEntries: 0 },
-    // Только когда бот работает и у него есть свободное место под сделку.
-    nextEntryAt: botStatus === 'running' && botState.deals.length < maxDeals &&
-      botEngine.nextEntryAt(botState) > Date.now() ? botEngine.nextEntryAt(botState) : null,
-    netProfitUsd: mode === 'test' ? botState.realizedNetUsd : 0,
-    paidFeesUsd: mode === 'test' ? botState.paidFeesUsd : 0,
-    note: botRulesNote(mode, fees, orderTypes),
+    coin, pair: coin + '-USD', price, vol24: vol24 || 0,
+    fall: Math.round(fall * 10) / 10,
+    rise: Math.round(rise * 10) / 10,
+    sinceLow, rsi: rsi == null ? null : Math.round(rsi),
+    volFading: volFading == null ? null : Math.round(volFading * 100) / 100,
+    d24: d24 == null ? null : Math.round(d24 * 10) / 10,
+    belowE20: price < e20,
+    atr: Math.round(atr * 10) / 10,
+    checks, done, total: checks.length, ready: done === checks.length,
+    at: Date.now(),
   };
 }
 
-app.get('/api/bot', async (req, res) => {
-  try { res.json(await botView()); }
-  catch (e) { res.status(500).json({ success: false, error: e.message }); }
-});
+async function crashFetchBars(pair) {
+  const r = await cbTry(`${DIP_CB}/products/${pair}/candles?granularity=3600`);
+  if (!r) return null;
+  const raw = await r.json();
+  if (!Array.isArray(raw) || raw.length < 200) return null;
+  return raw.map(x => ({ t: Number(x[0]), lo: Number(x[1]), hi: Number(x[2]), cl: Number(x[4]), v: Number(x[5]) }))
+    .filter(x => x.lo > 0 && x.hi > 0 && x.cl > 0)
+    .sort((a, b) => a.t - b.t);
+}
 
-app.post('/api/bot/config', async (req, res) => {
+// Полный проход: сначала дешёвый отбор по суточной статистике, потом свечи
+// только у кандидатов — иначе на каждый цикл уходило бы 400 запросов к бирже.
+async function crashScanRun() {
+  if (crashState.scan.running) return;
+  crashState.scan.running = true;
   try {
-    if (botStatus !== 'stopped') return res.json({ success: false, error: 'Сначала остановите бота' });
-    const { config, error } = botLib.normalizeConfig(req.body);
-    if (error) return res.json({ success: false, error });
-    const coins = await botCoinList();
-    if (!coins.length) return res.json({ success: false, error: 'Список пар биржи недоступен, валюта не проверена' });
-    if (!coins.includes(config.coin)) return res.json({ success: false, error: 'На бирже нет торгуемой пары ' + config.coin + '-USD' });
-    botSaveState({ ...botState, ...config });
-    res.json(await botView());
-  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
-});
-
-app.post('/api/bot/mode', async (req, res) => {
-  try {
-    if (botStatus !== 'stopped') return res.json({ success: false, error: 'Сначала остановите бота' });
-    const { mode } = req.body || {};
-    if (mode !== 'test' && mode !== 'real') return res.json({ success: false, error: 'Неизвестный режим' });
-    botSaveState({ ...botState, mode });
-    console.log('[bot] режим:', mode);
-    res.json(await botView());
-  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
-});
-
-app.post('/api/bot/start', async (req, res) => {
-  try {
-    if (botState.mode !== 'test') return res.json({ success: false, error: 'Реальная торговля не подключена: включите тестовый режим' });
-    const view = await botView();
-    if (!view.fees) return res.json({ success: false, error: 'Комиссии неизвестны: бот не запущен' });
-    // Старт после Стопа — новый прогон: журнал очищается, только когда запуск уже
-    // точно состоится. Старт с паузы продолжает текущий прогон.
-    if (botStatus === 'stopped') {
-      botSaveState(botEngine.clearJournal(botState));
-    } else {
-      if (view.plan === null) return res.json({ success: false, error: 'Баланс неизвестен: бот не запущен' });
-      if (!view.plan.length) return res.json({ success: false, error: 'На балансе меньше минимальной сделки $' + botLib.MIN_DEAL_USD });
-      if (botState.finishing) botSaveState({ ...botState, finishing: false });
+    const products = await fetchProducts();
+    const pairs = products
+      .filter(p => p.quote_currency === 'USD' && p.status === 'online' && !p.trading_disabled)
+      .map(p => p.id)
+      .filter(id => !STABLECOINS.has(id.replace('-USD', '')));
+    const picked = [];
+    for (const id of pairs) {
+      const r = await cbTry(`${DIP_CB}/products/${id}/stats`);
+      if (!r) continue;
+      const s = await r.json();
+      const last = Number(s.last), low = Number(s.low), high = Number(s.high);
+      const vol = Number(s.volume) * last;
+      if (!(last > 0) || !(low > 0) || !(vol >= CRASH_MIN_VOL)) continue;
+      // Близко ко дну суток и заметно ниже суточного максимума — только таких
+      // есть смысл разбирать подробно.
+      const offLow = (last / low - 1) * 100;
+      const offHigh = high > 0 ? (high - last) / high * 100 : 0;
+      if (offHigh < 8 || offLow > 25) continue;
+      picked.push({ id, vol, offHigh });
+      await new Promise(r2 => setTimeout(r2, 40));
     }
-    botStatus = 'running';
-    console.log('[bot] старт:', view.mode, view.pair);
-    await botTick();
-    res.json(await botView());
-  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
-});
-
-app.post('/api/bot/pause', async (req, res) => {
-  // Пауза не должна превращать остановленного бота в «приостановленного».
-  if (botStatus === 'running') botStatus = 'paused';
-  console.log('[bot] пауза');
-  try { res.json(await botView()); }
-  catch (e) { res.status(500).json({ success: false, error: e.message }); }
-});
-
-// Новых сделок нет, неисполненные покупки снимаются, купленное доводится до конца.
-app.post('/api/bot/finish', async (req, res) => {
-  try {
-    if (botStatus !== 'running' && botStatus !== 'paused') {
-      return res.json({ success: false, error: 'Бот не запущен' });
+    picked.sort((a, b) => b.offHigh - a.offHigh);
+    const rows = [];
+    for (const { id, vol } of picked.slice(0, CRASH_MAX_CANDIDATES)) {
+      const bars = await crashFetchBars(id);
+      const a = bars && crashAnalyze(id.replace('-USD', ''), bars, vol);
+      if (a) rows.push(a);
+      await new Promise(r2 => setTimeout(r2, 90));
     }
-    const next = botEngine.beginFinish(botState, Date.now());
-    botSaveState(next);
-    botStatus = next.deals.length ? 'finishing' : 'stopped';
-    console.log('[bot] доделать:', next.deals.length, 'сделок');
-    res.json(await botView());
-  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+    // Сверху те, у кого выполнено больше условий, при равенстве — глубже падение.
+    rows.sort((a, b) => b.done - a.done || b.fall - a.fall);
+    crashState.scan = { at: Date.now(), running: false, coins: picked.length, rows: rows.slice(0, CRASH_KEEP), error: '' };
+    await crashAlert();
+  } catch (e) {
+    crashState.scan.running = false;
+    crashState.scan.error = String(e.message || e).slice(0, 200);
+    console.error('[crash]', crashState.scan.error);
+  }
+}
+
+// Отчёт в Telegram: одна монета — одно сообщение, пока она не уйдёт из
+// находок и не вернётся. Иначе монета на границе условий слала бы отчёт
+// каждые десять минут.
+async function crashAlert() {
+  if (!crashState.alertOn || !tgConfigured()) return;
+  const ready = crashState.scan.rows.filter(r => r.ready);
+  const now = Date.now();
+  // Забываем монеты, которых в находках больше нет
+  for (const coin of Object.keys(crashState.sent)) {
+    if (!ready.some(r => r.coin === coin) && now - crashState.sent[coin] > 2 * 3600_000) delete crashState.sent[coin];
+  }
+  for (const r of ready) {
+    if (crashState.sent[r.coin]) continue;
+    const m = CRASH_MEASURE;
+    const sent = await sendTelegram(
+      `📉➚ <b>ОБВАЛ И РАЗВОРОТ</b> — <b>${escTg(r.pair)}</b>\n` +
+      `Упала на ${escTg(String(r.fall))}% от максимума двух недель, растёт от дна ${escTg(String(r.rise))}%\n` +
+      `━━━━━━━━━━━━━━━━━━\n` +
+      r.checks.map(c => `${c.ok ? '✅' : '❌'} ${escTg(c.k)}: ${escTg(c.v)}`).join('\n') + '\n' +
+      `━━━━━━━━━━━━━━━━━━\n` +
+      `💵 Цена ${escTg(String(r.price))} · объём ${Math.round(r.vol24 / 1e3)}K` +
+      (r.rsi != null ? ` · RSI ${r.rsi}` : '') + '\n\n' +
+      `<i>Правила измерены на ${m.events} событиях за ${m.coins} монет (${m.from} — ${m.to}).\n` +
+      `Такие входы на замере давали ${m.filtered.netPct}% ±${m.filtered.netSe} за сделку после комиссий, ` +
+      `в плюсе ${m.filtered.winPct}%. Прибыльных сочетаний цели и срока: ${m.profitableModes} из ${m.modesChecked}.\n` +
+      `Это находка для разбора, а не сигнал к покупке.</i>`, 'HTML');
+    if (!sent) { console.error('[crash] ' + r.coin + ': отправка не удалась'); continue; }
+    crashState.sent[r.coin] = now;
+    saveCrashState();
+    console.log('[crash] отчёт по ' + r.coin + ' отправлен');
+  }
+}
+
+function crashView() {
+  return {
+    success: true,
+    alertOn: crashState.alertOn,
+    tgConfigured: tgConfigured(),
+    at: crashState.scan.at,
+    running: crashState.scan.running,
+    coins: crashState.scan.coins,
+    error: crashState.scan.error,
+    intervalMs: CRASH_TICK_MS,
+    serverNow: Date.now(),
+    measure: CRASH_MEASURE,
+    rows: crashState.scan.rows,
+  };
+}
+
+app.get('/api/crash-scan', (req, res) => res.json(crashView()));
+
+app.post('/api/crash-alert', (req, res) => {
+  const enable = !!(req.body || {}).enable;
+  if (enable && !tgConfigured()) {
+    return res.json({ success: false, error: 'Telegram не настроен: укажите Bot Token и Chat ID в настройках' });
+  }
+  crashState.alertOn = enable;
+  // При включении начинаем с чистого листа: иначе монеты из прошлого сеанса
+  // молчали бы без всякой причины.
+  if (enable) crashState.sent = {};
+  saveCrashState();
+  res.json(crashView());
 });
 
-// Снимает виртуальные ордера и закрывает виртуальные позиции по Market.
-app.post('/api/bot/stop', async (req, res) => {
-  try {
-    const quote = botState.deals.length ? await botQuote(botState.coin + '-USD') : null;
-    const next = botEngine.closeAll(botState, quote, Date.now());
-    if (!next) return res.json({ success: false, error: 'Нет свежей цены: позицию закрыть нечем, бот не остановлен' });
-    if (botState.deals.length) botSaveState(next);
-    botStatus = 'stopped';
-    console.log('[bot] стоп');
-    res.json(await botView());
-  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+app.post('/api/crash-scan/refresh', async (req, res) => {
+  if (crashState.scan.running) return res.json({ success: false, error: 'Проход уже идёт' });
+  crashScanRun().catch(() => {});
+  res.json({ success: true, started: true });
 });
+
+setInterval(() => { crashScanRun().catch(() => {}); }, CRASH_TICK_MS);
+setTimeout(() => { crashScanRun().catch(() => {}); }, 45_000);
+
 
 // Start server — check port first, then listen
 const net = require('net');
