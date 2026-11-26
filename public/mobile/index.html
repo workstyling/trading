@@ -7375,7 +7375,11 @@
     function paintCrashM() {
       const el = document.getElementById('crashRoot');
       if (!el || !crashDataM) return;
+      // Раскрытые карточки переживают обновление: иначе график, который
+      // грузится пару секунд, закрывался бы раньше, чем успеешь посмотреть.
+      const open = crashOpenCoins(el);
       el.innerHTML = renderCrashPanel(crashDataM, 'crashToggleAlertM()', 'crashRefreshM()');
+      crashRestoreOpen(el, open);
     }
     async function loadCrashM() {
       try {

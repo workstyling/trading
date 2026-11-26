@@ -93,6 +93,41 @@ console.log('Панель: находки, цена вопроса, управл
   ok(html.includes('Что отброшено') && html.includes('EMA50'), 'в правилах сказано, какие признаки не подтвердились');
 }
 
+console.log('График TradingView и самообновление');
+{
+  const data = { success: true, alertOn: false, tgConfigured: true, at: Date.now() - 120000, running: false,
+    coins: 20, serverNow: Date.now(), intervalMs: 600000,
+    measure: { events: 1, coins: 1, from: 'a', to: 'b', all: { netPct: -0.9 },
+      filtered: { netPct: -0.21, netSe: 0.15, winPct: 50 }, profitableModes: 0, modesChecked: 7 },
+    rows: [{ coin: 'HONEY', price: 0.0002, fall: 88, rise: 4, sinceLow: 3, rsi: 33, volFading: 0.1,
+      d24: -5, vol24: 1e6, done: 8, total: 8, ready: true, checks: [{ k: 'тест', ok: true, v: '1', why: 'основание теста' }] }] };
+  const html = view.renderCrashPanel(data, 't()', 'r()');
+  ok(html.includes("crashChart(this, 'HONEY')"), 'раскрытие карточки грузит график');
+  ok(html.includes('data-crash-chart'), 'место под график есть');
+  ok(!html.includes('tradingview.com'), 'кадр не грузится, пока карточка закрыта');
+  ok(/следующий через 8 мин/.test(html), 'видно, когда будет следующий проход', html.match(/следующий через [^<·]*/));
+
+  // Кадр появляется только при раскрытии
+  const calls = [];
+  const details = { open: false, querySelector: () => null };
+  view.crashChart(details, 'HONEY');
+  ok(true, 'закрытая карточка график не грузит');
+  const box = { dataset: {}, innerHTML: '' };
+  const open = { open: true, querySelector: s => (s === '[data-crash-chart]' ? box : null) };
+  view.crashChart(open, 'HONEY');
+  ok(box.innerHTML.includes('COINBASE%3AHONEYUSD'), 'кадр показывает нужную монету');
+  ok(box.innerHTML.includes('loading="lazy"'), 'кадр грузится лениво');
+  ok(box.innerHTML.includes('tradingview.com/chart'), 'есть ссылка открыть на TradingView');
+  ok(box.dataset.loaded === '1', 'повторно кадр не вставляется');
+  const before = box.innerHTML;
+  view.crashChart(open, 'HONEY');
+  ok(box.innerHTML === before, 'второй вызов ничего не меняет');
+  // Имя монеты чистится: в адрес кадра не должно попасть ничего лишнего
+  const box2 = { dataset: {}, innerHTML: '' };
+  view.crashChart({ open: true, querySelector: () => box2 }, '<b>he</b>');
+  ok(box2.innerHTML.includes('COINBASE%3ABHEBUSD') && !box2.innerHTML.includes('<b>he'), 'имя монеты чистится');
+}
+
 console.log('Вкладка в обеих вёрстках');
 for (const [file, tab, root, loader] of [
   ['public/index.html', 'tab-crash', 'crashRoot', 'loadCrash'],
@@ -105,6 +140,11 @@ for (const [file, tab, root, loader] of [
   ok(src.includes('data-tab="crash"'), file + ': кнопка вкладки есть');
   ok(src.includes(loader + '()'), file + ': вкладка загружает данные');
   ok(src.includes('renderCrashPanel('), file + ': рисует общим кодом');
+  // Список обновляется сам, и раскрытая карточка это переживает
+  ok(new RegExp('setInterval\\(\\(\\) => \\{ if \\(document\\.getElementById\\(.[^)]+.\\)\\?\\.classList\\.contains\\(.active.\\)\\) ' + loader).test(src),
+    file + ': список обновляется сам, пока вкладка открыта');
+  ok(src.includes('crashOpenCoins(el)') && src.includes('crashRestoreOpen(el, open)'),
+    file + ': раскрытые карточки переживают обновление');
 }
 
 console.log('Бот удалён целиком');

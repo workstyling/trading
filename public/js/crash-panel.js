@@ -24,6 +24,34 @@
     const sec = Math.max(0, Math.round((now - Number(at)) / 1000));
     return sec < 60 ? sec + ' с назад' : sec < 3600 ? Math.round(sec / 60) + ' мин назад' : Math.round(sec / 3600) + ' ч назад';
   }
+  // Когда ждать следующий проход. Без этого непонятно, живой список или
+  // застывший, и приходится гадать, нажимать ли «Обновить».
+  function nextIn(at, intervalMs, now) {
+    if (!finite(at) || !(Number(at) > 0) || !finite(intervalMs)) return '';
+    const left = Number(at) + Number(intervalMs) - now;
+    if (left <= 0) return 'обновление вот-вот';
+    const min = Math.floor(left / 60000), sec = Math.round((left % 60000) / 1000);
+    return 'следующий через ' + (min > 0 ? min + ' мин ' + sec + ' с' : sec + ' с');
+  }
+
+  // График TradingView прямо в карточке. Вставляется при первом раскрытии:
+  // два десятка кадров сразу повесили бы страницу, особенно на телефоне.
+  function crashChart(details, coin) {
+    if (!details || !details.open) return;
+    const box = details.querySelector('[data-crash-chart]');
+    if (!box || box.dataset.loaded === '1') return;
+    // Тикер у TradingView заглавный, и в адрес не должно попасть ничего,
+    // кроме букв и цифр.
+    const safe = String(coin || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+    if (!safe) return;
+    box.dataset.loaded = '1';
+    box.innerHTML = '<iframe loading="lazy" title="График ' + safe + '" ' +
+      'src="https://s.tradingview.com/widgetembed/?symbol=COINBASE%3A' + safe +
+      'USD&interval=60&theme=dark&style=1&timezone=exchange&hide_top_toolbar=1&hide_legend=1&hide_side_toolbar=1&save_image=0" ' +
+      'style="width:100%;height:260px;border:0;border-radius:6px;" frameborder="0" allowtransparency="true" scrolling="no"></iframe>' +
+      '<div style="margin-top:3px;"><a href="https://www.tradingview.com/chart/?symbol=COINBASE%3A' + safe + 'USD" ' +
+      'target="_blank" rel="noopener" style="color:var(--blue);font-size:10px;">Открыть ' + safe + ' на TradingView ↗</a></div>';
+  }
 
   // Шапка: состояние прохода, выключатель отчётов и измеренная цена вопроса.
   function renderCrashHead(data, onToggle, onRefresh) {
@@ -32,7 +60,8 @@
     const f = m.filtered || {};
     const state = data.running ? 'идёт проход…'
       : data.error ? '<span style="color:#ff6b6b;">сбой: ' + esc(data.error) + '</span>'
-        : 'проверено ' + (data.coins || 0) + ' монет · ' + ago(data.at, now);
+        : 'проверено ' + (data.coins || 0) + ' монет · ' + ago(data.at, now) +
+          (nextIn(data.at, data.intervalMs, now) ? ' · ' + nextIn(data.at, data.intervalMs, now) : '');
     const alertBtn = '<button data-crash-alert onclick="' + onToggle + '" ' +
       'title="' + (data.alertOn ? 'Выключить отчёты в Telegram' : 'Присылать отчёт в Telegram по каждой новой находке') +
       '. Одна монета — один отчёт, пока она не уйдёт из списка." ' +
@@ -98,9 +127,11 @@
         '<span style="color:var(--t2);">' + esc(c.k) + '</span>' +
         '<span style="margin-left:auto;color:' + (c.ok ? 'var(--t1)' : '#ff9f9f') + ';white-space:nowrap;">' +
         esc(c.v) + '</span></div>').join('');
-      return '<details style="margin-bottom:6px;border:1px solid ' + (r.ready ? 'rgba(0,229,160,0.4)' : 'var(--b1)') +
+      return '<details ontoggle="crashChart(this, \'' + safe + '\')" ' +
+        'style="margin-bottom:6px;border:1px solid ' + (r.ready ? 'rgba(0,229,160,0.4)' : 'var(--b1)') +
         ';border-radius:8px;padding:6px 8px;' + (r.ready ? 'background:rgba(0,229,160,0.06);' : '') + '">' +
-        '<summary style="cursor:pointer;display:flex;align-items:center;gap:7px;flex-wrap:wrap;">' +
+        '<summary title="Нажмите, чтобы раскрыть условия и график TradingView" ' +
+        'style="cursor:pointer;display:flex;align-items:center;gap:7px;flex-wrap:wrap;">' +
         '<b style="color:var(--t0);font-size:12px;">' + safe + '</b>' +
         '<span style="color:var(--t2);font-size:10px;">$' + price(r.price) + '</span>' +
         '<span style="color:#ff6b6b;font-size:11px;font-weight:700;">−' + r.fall + '%</span>' +
@@ -112,7 +143,9 @@
         '<div style="color:var(--t2);margin-bottom:3px;">дно ' + r.sinceLow + ' ч назад · RSI ' +
         (r.rsi == null ? '—' : r.rsi) + ' · объём ' + (r.volFading == null ? '—' : r.volFading + '× от дна') +
         ' · за сутки ' + (r.d24 == null ? '—' : (r.d24 > 0 ? '+' : '') + r.d24 + '%') +
-        ' · оборот ' + money(r.vol24) + '</div>' + checks + '</div></details>';
+        ' · оборот ' + money(r.vol24) + '</div>' + checks +
+        '<div data-crash-chart style="margin-top:6px;color:var(--t2);">График загрузится при раскрытии…</div>' +
+        '</div></details>';
     }).join('') + '</div>';
   }
 
@@ -124,7 +157,32 @@
     return renderCrashHead(data, onToggle, onRefresh) + renderCrashRules(data) + renderCrashRows(data);
   }
 
-  const api = { renderCrashPanel, renderCrashHead, renderCrashRules, renderCrashRows };
+  // Список обновляется сам раз в минуту. Без этого раскрытая карточка с
+  // графиком схлопывалась бы при каждом обновлении, и смотреть график было бы
+  // невозможно: он успевал бы прожить меньше минуты.
+  function crashOpenCoins(root) {
+    const out = [];
+    if (!root) return out;
+    root.querySelectorAll('details[ontoggle]').forEach(d => {
+      const coin = (d.querySelector('b') || {}).textContent;
+      if (d.open && coin) out.push(coin.trim());
+    });
+    return out;
+  }
+  function crashRestoreOpen(root, coins) {
+    if (!root || !coins || !coins.length) return;
+    root.querySelectorAll('details[ontoggle]').forEach(d => {
+      const coin = (d.querySelector('b') || {}).textContent;
+      if (coin && coins.includes(coin.trim())) {
+        d.open = true;
+        const m = /crashChart\(this, '([A-Z0-9]+)'\)/.exec(d.getAttribute('ontoggle') || '');
+        if (m) crashChart(d, m[1]);
+      }
+    });
+  }
+
+  const api = { renderCrashPanel, renderCrashHead, renderCrashRules, renderCrashRows,
+    crashChart, nextIn, crashOpenCoins, crashRestoreOpen };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else Object.assign(root, api);
 })(typeof globalThis !== 'undefined' ? globalThis : this);

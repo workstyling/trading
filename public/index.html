@@ -16321,7 +16321,11 @@ Requirements:
     function paintCrash() {
       const el = document.getElementById('crashRoot');
       if (!el || !crashData) return;
+      // Раскрытые карточки переживают обновление: иначе график, который
+      // грузится пару секунд, закрывался бы раньше, чем успеешь посмотреть.
+      const open = crashOpenCoins(el);
       el.innerHTML = renderCrashPanel(crashData, 'crashToggleAlert()', 'crashRefresh()');
+      crashRestoreOpen(el, open);
     }
     async function loadCrash() {
       try {
